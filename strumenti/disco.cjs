@@ -265,21 +265,231 @@ function avviaComando(comando, opzioni = {}) {
 /** CAS del config intero, senza scartare campi di altri progetti o modifiche di un altro pannello. */
 async function configura(file, richiesta) {
   if (!richiesta || typeof richiesta.repo !== 'string' || !richiesta.repo || !richiesta.campi ||
-      Object.keys(richiesta.campi).some(k => !['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi'].includes(k))) return 2
+      Object.keys(richiesta.campi).some(k => !['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board'].includes(k))) return 2
+  if (richiesta.campi.board !== undefined && !BOARD_MODI.includes(richiesta.campi.board?.modo)) return 2
   const dir = path.dirname(file)
   fs.mkdirSync(dir, { recursive: true })
-  const r = await conMutex(`${MUTEX_AZIONI(dir)}:config`, 8000, () => {
+  const r = await conMutex(mutexConfig(file), 8000, () => {
     const prima = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null
     if (prima !== richiesta.atteso) return 4
     const c = prima === null ? {} : JSON.parse(prima)
     if (!c || typeof c !== 'object' || Array.isArray(c) || (c.progetti && (typeof c.progetti !== 'object' || Array.isArray(c.progetti)))) return 2
     const precedente = c.progetti?.[richiesta.repo] ?? {}
     if (!precedente || typeof precedente !== 'object' || Array.isArray(precedente)) return 2
-    const progetti = { ...c.progetti, [richiesta.repo]: { ...precedente, ...richiesta.campi } }
+    const campi = { ...richiesta.campi }
+    if (campi.board) {
+      // La generazione la decide l'helper, sotto lo stesso lock: ogni cambio di modo invalida il lavoro in volo.
+      const b = precedente.board
+      const gen = Number.isInteger(b?.generazione) && b.generazione >= 0 ? b.generazione : 0
+      campi.board = { modo: campi.board.modo, generazione: b?.modo === campi.board.modo ? gen : gen + 1 }
+    }
+    const progetti = { ...c.progetti, [richiesta.repo]: { ...precedente, ...campi } }
     scriviAtomico(file, JSON.stringify({ ...c, progetti }, null, 2))
     return 0
   })
   return r.occupato ? 3 : r.valore
+}
+
+// --- board di progetto -------------------------------------------------------------------------------
+// Tutti i comandi `board-*` prendono il mutex di `configura` e rileggono sotto lock modo e generazione:
+// un lavoro avviato prima di un cambio di modo (anche spento → acceso) non si pubblica mai.
+// Uscite: 0 ok · 4 rifiuto (board cambiata, marcatore, già prenotata) · 5 tetto del giorno · 6 percorso non sicuro.
+
+const BOARD_MODI = ['spenta', 'accesa', 'riassunti']
+const MARCATORE = '.chipmanager-board'
+const TETTO_GIORNO = 100
+const mutexConfig = file => `${MUTEX_AZIONI(path.dirname(file))}:config`
+const stessoPercorso = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b)
+class Rifiuto extends Error {
+  constructor(codice, messaggio) {
+    super(messaggio)
+    this.codice = codice
+  }
+}
+
+/** `<pulito>-<hash dell'identità>`: l'hash c'è sempre, così due identità con lo stesso nome pulito non si incontrano. */
+const nomeBoard = repo =>
+  `${repo.replace(/\//g, '__').replace(/[^A-Za-z0-9._-]+/g, '_').slice(-60)}-${crypto.createHash('sha256').update(repo).digest('hex').slice(0, 12)}`
+
+/** Nessun componente da `<cartella>` in giù può essere un link o una junction. */
+function senzaLink(...percorsi) {
+  for (const p of percorsi) {
+    let st
+    try {
+      st = fs.lstatSync(p)
+    } catch (e) {
+      if (e.code === 'ENOENT') continue
+      throw e
+    }
+    if (st.isSymbolicLink() || !st.isDirectory()) throw new Rifiuto(6, `percorso non sicuro: ${p} è un collegamento o non è una cartella`)
+  }
+}
+
+function dentroWorkingTree(dir) {
+  const env = { ...process.env }
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CEILING_DIRECTORIES']) delete env[k]
+  const g = spawnSync('git', ['-C', dir, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8', windowsHide: true, timeout: 10_000, env })
+  if (g.error) throw new Rifiuto(6, 'git non disponibile: non posso escludere che la cartella sia dentro un working tree')
+  return g.status === 0 && g.stdout.trim() === 'true'
+}
+
+/**
+ * La cartella della board di `repo` dentro `<cartella>/board/`. Con `crea` la crea e scrive il marcatore con
+ * l'identità; senza, restituisce null se non c'è. Rifiuta link, junction, identità diverse e working tree.
+ */
+function destBoard(cartella, repo, crea) {
+  if (!path.isAbsolute(cartella)) throw new Rifiuto(2, 'cartella non assoluta')
+  const base = path.resolve(cartella)
+  const contenitore = path.join(base, 'board')
+  const dest = path.join(contenitore, nomeBoard(repo))
+  senzaLink(base, contenitore, dest)
+  if (!fs.existsSync(dest)) {
+    if (!crea) return null
+    fs.mkdirSync(base, { recursive: true })
+    // Il controllo «fuori da ogni working tree» va fatto prima di scrivere, sul percorso reale.
+    if (dentroWorkingTree(fs.realpathSync.native(base)))
+      throw new Rifiuto(6, 'la cartella dei dati è dentro un working tree git: cambia «cartella» nella configurazione del progetto')
+    if (!fs.existsSync(contenitore)) fs.mkdirSync(contenitore)
+    senzaLink(contenitore)
+    fs.mkdirSync(dest)
+  }
+  senzaLink(base, contenitore, dest)
+  const reale = fs.realpathSync.native(dest)
+  if (!stessoPercorso(reale, path.join(fs.realpathSync.native(base), 'board', nomeBoard(repo))))
+    throw new Rifiuto(6, 'percorso non sicuro: la destinazione non è dove deve essere')
+  if (dentroWorkingTree(reale)) throw new Rifiuto(6, 'la cartella dei dati è dentro un working tree git: cambia «cartella» nella configurazione del progetto')
+  const marcatore = path.join(reale, MARCATORE)
+  let st
+  try {
+    st = fs.lstatSync(marcatore)
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e
+  }
+  if (!st) {
+    if (!crea || fs.readdirSync(reale).length) throw new Rifiuto(4, 'cartella della board senza marcatore: non la tocco')
+    fs.writeFileSync(marcatore, repo, { mode: 0o600 })
+  } else if (!st.isFile() || fs.readFileSync(marcatore, 'utf8') !== repo) throw new Rifiuto(4, 'il marcatore è di un altro progetto')
+  return reale
+}
+
+/** Esegue `fn(dest)` sotto il mutex del config, solo se la board di `repo` vale ancora `modi` alla `generazione` attesa. */
+async function conBoard(file, cartella, repo, generazione, modi, crea, fn) {
+  const gen = Number(generazione)
+  if (typeof repo !== 'string' || !repo || repo.length > 400 || !Number.isInteger(gen) || gen < 0) return [2, 'argomenti non validi']
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const r = await conMutex(mutexConfig(file), 8000, () => {
+    try {
+      const c = JSON.parse(fs.readFileSync(file, 'utf8'))
+      const b = c?.progetti?.[repo]?.board
+      if (!b || !modi.includes(b.modo) || b.generazione !== gen) return [4, 'board cambiata: lavoro scartato']
+      return fn(destBoard(cartella, repo, crea))
+    } catch (e) {
+      if (e instanceof Rifiuto) return [e.codice, e.message]
+      throw e
+    }
+  })
+  return r.occupato ? [3, 'mutex occupato'] : r.valore
+}
+
+const leggiJson = (f, vuoto) => {
+  try {
+    return JSON.parse(fs.readFileSync(f, 'utf8'))
+  } catch (e) {
+    if (e.code === 'ENOENT') return vuoto
+    throw e
+  }
+}
+const oggi = () => new Date().toISOString().slice(0, 10)
+
+const boardScrivi = (file, cartella, repo, gen, impronta, html) =>
+  conBoard(file, cartella, repo, gen, ['accesa', 'riassunti'], true, dest => {
+    const indice = path.join(dest, 'index.html')
+    // Stessa impronta già scritta (da un altro pannello): niente da fare.
+    if (fs.existsSync(indice) && fs.readFileSync(indice, 'utf8').includes(`name="chipmanager-impronta" content="${impronta}"`)) return [0, indice]
+    scriviAtomico(indice, html)
+    return [0, indice]
+  })
+
+const boardSpegni = (file, cartella, repo, gen) =>
+  conBoard(file, cartella, repo, gen, ['spenta'], false, dest => {
+    if (!dest) return [0, '']
+    // Solo i due file della board, solo se sono file regolari: niente cartelle, niente link seguiti. Il budget resta.
+    for (const n of ['index.html', 'riassunti.json']) {
+      const f = path.join(dest, n)
+      try {
+        if (fs.lstatSync(f).isFile()) fs.unlinkSync(f)
+      } catch (e) {
+        if (e.code !== 'ENOENT') throw e
+      }
+    }
+    return [0, '']
+  })
+
+/** Prenota un riassunto: impronta e un'unità del budget del giorno, insieme. Una prenotazione conta sempre. */
+const boardPrenota = (file, cartella, repo, gen, impronta) =>
+  conBoard(file, cartella, repo, gen, ['riassunti'], true, dest => {
+    const fr = path.join(dest, 'riassunti.json')
+    const fb = path.join(dest, 'budget.json')
+    const r = leggiJson(fr, { voci: {} })
+    const b = leggiJson(fb, { giorno: oggi(), usati: 0 })
+    if (r.voci?.[impronta]) return [4, 'già prenotata']
+    const usati = b.giorno === oggi() && Number.isInteger(b.usati) ? b.usati : 0
+    if (usati >= TETTO_GIORNO) return [5, 'tetto giornaliero dei riassunti raggiunto']
+    scriviAtomico(fb, JSON.stringify({ giorno: oggi(), usati: usati + 1 }))
+    scriviAtomico(fr, JSON.stringify({ voci: { ...r.voci, [impronta]: { stato: 'prenotata', quando: new Date().toISOString() } } }))
+    return [0, '']
+  })
+
+const boardFinalizza = (file, cartella, repo, gen, impronta, esito) =>
+  conBoard(file, cartella, repo, gen, ['riassunti'], false, dest => {
+    if (!dest) return [4, 'board assente']
+    const fr = path.join(dest, 'riassunti.json')
+    const r = leggiJson(fr, { voci: {} })
+    if (r.voci?.[impronta]?.stato !== 'prenotata') return [4, 'nessuna prenotazione aperta']
+    const testo = typeof esito?.testo === 'string' && esito.testo.trim() ? esito.testo.trim().slice(0, 1000) : undefined
+    const voce = testo ? { stato: 'fatto', testo, quando: new Date().toISOString() } : { stato: 'fallita', quando: new Date().toISOString() }
+    scriviAtomico(fr, JSON.stringify({ voci: { ...r.voci, [impronta]: voce } }))
+    return [0, '']
+  })
+
+const PIANO_MAX = 200 * 1024
+
+/** Il piano di una chip: percorso relativo, sotto la radice REALE (link e junction risolti), file regolare, 200 KB. */
+function leggiPiano(radice, relativo) {
+  if (typeof relativo !== 'string' || !relativo || relativo.length > 300 || /[\x00-\x1f:*?"<>|]/.test(relativo) ||
+      /^[\\/]/.test(relativo) || /(^|[\\/])\.\.([\\/]|$)/.test(relativo) || !/\.(md|txt)$/i.test(relativo)) return [4, 'percorso del piano non ammesso']
+  try {
+    const root = fs.realpathSync.native(radice)
+    const reale = fs.realpathSync.native(path.resolve(root, relativo))
+    const rel = path.relative(root, reale)
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return [4, 'il piano è fuori dal repository']
+    const st = fs.statSync(reale)
+    if (!st.isFile()) return [4, 'il piano non è un file']
+    const fd = fs.openSync(reale, 'r')
+    try {
+      const buf = Buffer.alloc(Math.min(st.size, PIANO_MAX))
+      const n = fs.readSync(fd, buf, 0, buf.length, 0)
+      return [0, JSON.stringify({ testo: buf.subarray(0, n).toString('utf8'), troncato: st.size > PIANO_MAX })]
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch (e) {
+    return [4, e.code === 'ENOENT' ? 'piano non trovato' : 'piano illeggibile']
+  }
+}
+
+/** Le ultime 15 voci del ramo base (first-parent): SHA corto, data, oggetto. Nient'altro del commit. */
+function gitLog(radice) {
+  const git = args => spawnSync('git', ['-C', radice, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15_000 })
+  const remoto = git(['rev-parse', '--abbrev-ref', 'origin/HEAD'])
+  const ref = remoto.status === 0 && /^[A-Za-z0-9._/-]{1,100}$/.test(remoto.stdout.trim()) ? remoto.stdout.trim() : 'HEAD'
+  const r = git(['log', '--first-parent', '-15', '--format=%h%x09%cI%x09%s', ref, '--'])
+  if (r.status !== 0) return [4, 'git log non riuscito']
+  const voci = r.stdout.split('\n').filter(Boolean).map(riga => {
+    const [sha, data, ...oggetto] = riga.split('\t')
+    return { sha, data, oggetto: oggetto.join('\t').replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 200) }
+  })
+  return [0, JSON.stringify(voci)]
 }
 
 const tentativoValido = t => typeof t === 'string' && /^az-[a-z0-9]{6,20}$/.test(t)
@@ -510,6 +720,12 @@ async function main(argv) {
   }
   if (cmd === 'occupata' && a.length === 1) return esci(await occupata(a[0] === 'codex' ? MUTEX_CODEX : a[0]))
   if (cmd === 'corsia-codex') return esci(await corsiaCodex(a))
+  if (cmd === 'leggi-piano' && a.length === 2) return esci(...leggiPiano(...a))
+  if (cmd === 'git-log' && a.length === 1) return esci(...gitLog(a[0]))
+  if (cmd === 'board-scrivi' && a.length === 5) return esci(...(await boardScrivi(...a, fs.readFileSync(0, 'utf8'))))
+  if (cmd === 'board-spegni' && a.length === 4) return esci(...(await boardSpegni(...a)))
+  if (cmd === 'board-prenota' && a.length === 5) return esci(...(await boardPrenota(...a)))
+  if (cmd === 'board-finalizza' && a.length === 5) return esci(...(await boardFinalizza(...a, stdin())))
   esci(2, 'uso: cas <file> <versione|nuovo> | prenota <cartella> | occupata <mutex|codex> | corsia-codex [--revisione] -- <comando>')
 }
 

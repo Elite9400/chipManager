@@ -9,10 +9,14 @@ const path = require('node:path')
 
 // Anche i segni dei mutex e i processi figli delle prove restano nel worktree.
 const radiceProve = path.resolve(__dirname, '..', '.cache', 'prove-disco')
+// La board rifiuta le cartelle dentro un working tree: le sue prove usano la temporanea vera, fuori dal repo.
+const tmpVero = os.tmpdir()
+const fuoriDalRepo = []
+const fuori = () => { const d = fs.mkdtempSync(path.join(tmpVero, 'board-')); fuoriDalRepo.push(d); return d }
 fs.mkdirSync(radiceProve, { recursive: true })
 process.env.TMP = process.env.TEMP = process.env.TMPDIR = radiceProve
 // I collegamenti simbolici lasciati qui fanno fallire `claude plugin install` dalla cartella.
-after(() => fs.rmSync(radiceProve, { recursive: true, force: true, maxRetries: 3 }))
+after(() => { for (const d of [radiceProve, ...fuoriDalRepo]) fs.rmSync(d, { recursive: true, force: true, maxRetries: 3 }) })
 
 const DISCO = path.join(__dirname, 'disco.cjs')
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'disco-'))
@@ -468,4 +472,163 @@ test('2.0 CLI: un errore di preparazione conserva il worktree e non avvia nulla'
   assert.strictEqual(avvii, 0)
   assert.strictEqual(fs.existsSync(path.join(fuori, 'worktrees')), false)
   assert.strictEqual(JSON.parse(fs.readFileSync(file)).stato, 'fallita')
+})
+
+// --- 2.4 board di progetto e piani -------------------------------------------------------------------
+
+const preparaBoard = (repo = 'esempio/demo') => {
+  const base = fuori()
+  const cartella = path.join(base, 'dati')
+  fs.mkdirSync(cartella)
+  return { config: path.join(base, 'config.json'), cartella, repo }
+}
+/** Cambia il modo come il pannello (CAS di `configura`) e restituisce la generazione scritta dall'helper. */
+const imposta = async (b, modo) => {
+  const atteso = fs.existsSync(b.config) ? fs.readFileSync(b.config, 'utf8') : null
+  assert.strictEqual(await configura(b.config, { atteso, repo: b.repo, campi: { board: { modo } } }), 0)
+  return JSON.parse(fs.readFileSync(b.config, 'utf8')).progetti[b.repo].board.generazione
+}
+const bc = (b, cmd, gen, extra = [], input) => esegui([cmd, b.config, b.cartella, b.repo, String(gen), ...extra], input)
+const bcAsync = (b, cmd, gen, extra = []) =>
+  new Promise(r => spawn(process.execPath, [DISCO, cmd, b.config, b.cartella, b.repo, String(gen), ...extra]).on('exit', r))
+const HTML = '<html>prova</html>'
+
+test('2.4 board: la generazione cresce a ogni cambio di modo; dopo spento → acceso il lavoro vecchio non si pubblica', async () => {
+  const b = preparaBoard()
+  const g1 = await imposta(b, 'riassunti')
+  assert.strictEqual(g1, 1)
+  assert.strictEqual(await imposta(b, 'riassunti'), 1)
+  assert.strictEqual(bc(b, 'board-prenota', g1, ['imp1']).status, 0)
+  const g2 = await imposta(b, 'spenta')
+  const g3 = await imposta(b, 'riassunti')
+  assert.deepStrictEqual([g2, g3], [2, 3])
+  assert.strictEqual(bc(b, 'board-finalizza', g1, ['imp1'], JSON.stringify({ testo: 'vecchio' })).status, 4)
+  assert.strictEqual(bc(b, 'board-scrivi', g1, ['h1'], HTML).status, 4)
+  assert.strictEqual(bc(b, 'board-prenota', g1, ['imp2']).status, 4)
+  const r = bc(b, 'board-scrivi', g3, ['h3'], HTML)
+  assert.strictEqual(r.status, 0, r.stdout)
+  const file = r.stdout.trim()
+  assert.strictEqual(path.basename(file), 'index.html')
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), HTML)
+  // Accesa senza riassunti: nessuna prenotazione di chiamate al modello.
+  const g4 = await imposta(b, 'accesa')
+  assert.strictEqual(bc(b, 'board-prenota', g4, ['imp3']).status, 4)
+  assert.strictEqual(bc(b, 'board-scrivi', g4, ['h4'], HTML).status, 0)
+})
+
+test('2.4 board: lo spegnimento cancella solo HTML e riassunti, con il marcatore; il budget del giorno resta', async () => {
+  const b = preparaBoard()
+  let g = await imposta(b, 'riassunti')
+  for (const i of ['i0', 'i1', 'i2']) assert.strictEqual(bc(b, 'board-prenota', g, [i]).status, 0)
+  const dest = path.dirname(bc(b, 'board-scrivi', g, ['h'], HTML).stdout.trim())
+  fs.writeFileSync(path.join(dest, 'altro.txt'), 'resta')
+  assert.strictEqual(bc(b, 'board-spegni', g).status, 4, 'spegnere con la board ancora accesa')
+  g = await imposta(b, 'spenta')
+  assert.strictEqual(bc(b, 'board-spegni', g).status, 0)
+  assert.deepStrictEqual(fs.readdirSync(dest).sort(), ['.chipmanager-board', 'altro.txt', 'budget.json'])
+  g = await imposta(b, 'riassunti')
+  const budget = path.join(dest, 'budget.json')
+  assert.strictEqual(JSON.parse(fs.readFileSync(budget, 'utf8')).usati, 3)
+  fs.writeFileSync(budget, JSON.stringify({ ...JSON.parse(fs.readFileSync(budget, 'utf8')), usati: 100 }))
+  assert.strictEqual(bc(b, 'board-prenota', g, ['oltre']).status, 5)
+})
+
+test('2.4 board: due pannelli prenotano la stessa impronta insieme: una prenotazione; una senza risposta non si ritenta', async () => {
+  const b = preparaBoard()
+  const g = await imposta(b, 'riassunti')
+  const codici = await Promise.all(Array.from({ length: 6 }, () => bcAsync(b, 'board-prenota', g, ['stessa'])))
+  assert.strictEqual(codici.filter(c => c === 0).length, 1, String(codici))
+  assert.strictEqual(bc(b, 'board-finalizza', g, ['stessa'], JSON.stringify({ testo: 'Riassunto.' })).status, 0)
+  assert.strictEqual(bc(b, 'board-finalizza', g, ['stessa'], JSON.stringify({ testo: 'Doppio.' })).status, 4)
+  assert.strictEqual(bc(b, 'board-prenota', g, ['stessa']).status, 4)
+  // Senza risposta (isAnswered: false) la prenotazione conta e la stessa impronta non si ritenta.
+  assert.strictEqual(bc(b, 'board-prenota', g, ['muta']).status, 0)
+  assert.strictEqual(bc(b, 'board-finalizza', g, ['muta'], '{}').status, 0)
+  assert.strictEqual(bc(b, 'board-prenota', g, ['muta']).status, 4)
+  const dest = path.dirname(bc(b, 'board-scrivi', g, ['h'], HTML).stdout.trim())
+  const voci = JSON.parse(fs.readFileSync(path.join(dest, 'riassunti.json'), 'utf8')).voci
+  assert.deepStrictEqual([voci.stessa.stato, voci.stessa.testo, voci.muta.stato], ['fatto', 'Riassunto.', 'fallita'])
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dest, 'budget.json'), 'utf8')).usati, 2)
+})
+
+test('2.4 board: identità completa nel marcatore; due progetti con lo stesso nome pulito non si incontrano', async () => {
+  const b1 = preparaBoard('C:/work/a b')
+  const b2 = { ...b1, repo: 'C:/work/a_b' }
+  const g1 = await imposta(b1, 'accesa')
+  const g2 = await imposta(b2, 'accesa')
+  const d1 = path.dirname(bc(b1, 'board-scrivi', g1, ['h'], HTML).stdout.trim())
+  const d2 = path.dirname(bc(b2, 'board-scrivi', g2, ['h'], HTML).stdout.trim())
+  assert.notStrictEqual(d1, d2)
+  assert.strictEqual(fs.readFileSync(path.join(d1, '.chipmanager-board'), 'utf8'), 'C:/work/a b')
+  fs.writeFileSync(path.join(d1, '.chipmanager-board'), 'C:/work/a_b')
+  assert.strictEqual(bc(b1, 'board-scrivi', g1, ['h2'], HTML).status, 4)
+  const s1 = await imposta(b1, 'spenta')
+  assert.strictEqual(bc(b1, 'board-spegni', s1).status, 4)
+  assert.ok(fs.existsSync(path.join(d1, 'index.html')))
+})
+
+test('2.4 board: junction nel percorso o cartella dentro un working tree: board rifiutata', async () => {
+  const b = preparaBoard()
+  const g = await imposta(b, 'accesa')
+  const altrove = fuori()
+  fs.symlinkSync(altrove, path.join(b.cartella, 'board'), process.platform === 'win32' ? 'junction' : 'dir')
+  const r = bc(b, 'board-scrivi', g, ['h'], HTML)
+  assert.strictEqual(r.status, 6, r.stdout)
+  assert.deepStrictEqual(fs.readdirSync(altrove), [])
+  const repo = fuori()
+  assert.strictEqual(spawnSync('git', ['init', '-q', repo]).status, 0)
+  const dentro = { ...preparaBoard(), cartella: path.join(repo, 'dati') }
+  fs.mkdirSync(dentro.cartella)
+  const gd = await imposta(dentro, 'accesa')
+  const rd = bc(dentro, 'board-scrivi', gd, ['h'], HTML)
+  assert.strictEqual(rd.status, 6)
+  assert.match(rd.stdout, /working tree/)
+  assert.strictEqual(fs.existsSync(path.join(dentro.cartella, 'board')), false)
+})
+
+test('2.4 leggi-piano: solo file regolari sotto la radice reale; link fuori rifiutati; oltre 200 KB troncato', () => {
+  const root = fuori()
+  fs.mkdirSync(path.join(root, 'docs'))
+  fs.writeFileSync(path.join(root, 'docs', 'p.md'), '# piano')
+  let r = esegui(['leggi-piano', root, 'docs/p.md'])
+  assert.strictEqual(r.status, 0, r.stdout)
+  assert.deepStrictEqual(JSON.parse(r.stdout), { testo: '# piano', troncato: false })
+  fs.writeFileSync(path.join(root, 'docs', 'grande.txt'), 'x'.repeat(250 * 1024))
+  const g = JSON.parse(esegui(['leggi-piano', root, 'docs/grande.txt']).stdout)
+  assert.deepStrictEqual([g.testo.length, g.troncato], [200 * 1024, true])
+  for (const no of ['../fuori.md', 'docs/../../x.md', '/x.md', 'C:x.md', '\\\\?\\C:\\x.md', '\\\\srv\\s\\x.md', 'docs/p.md:alt', 'docs/p.pdf'])
+    assert.strictEqual(esegui(['leggi-piano', root, no]).status, 4, no)
+  const altrove = fuori()
+  fs.writeFileSync(path.join(altrove, 'segreto.md'), 'non deve uscire')
+  fs.symlinkSync(altrove, path.join(root, 'ponte'), process.platform === 'win32' ? 'junction' : 'dir')
+  r = esegui(['leggi-piano', root, 'ponte/segreto.md'])
+  assert.strictEqual(r.status, 4)
+  assert.doesNotMatch(r.stdout, /non deve uscire/)
+  fs.mkdirSync(path.join(root, 'cartella.md'))
+  assert.strictEqual(esegui(['leggi-piano', root, 'cartella.md']).status, 4)
+})
+
+test('2.4 git-log: oggetto, data e SHA corto del ramo base, al massimo 15', () => {
+  const repo = fuori()
+  const git = (...a) => spawnSync('git', ['-C', repo, '-c', 'user.name=prova', '-c', 'user.email=prova@example.invalid', ...a], { encoding: 'utf8' })
+  git('init', '-q', '-b', 'main')
+  for (let i = 0; i < 17; i++) git('commit', '-q', '--allow-empty', '-m', `commit ${i} <b>`)
+  const r = esegui(['git-log', repo])
+  assert.strictEqual(r.status, 0, r.stdout)
+  const l = JSON.parse(r.stdout)
+  assert.strictEqual(l.length, 15)
+  assert.strictEqual(l[0].oggetto, 'commit 16 <b>')
+  assert.match(l[0].sha, /^[0-9a-f]{7,12}$/)
+  assert.ok(Number.isFinite(Date.parse(l[0].data)))
+})
+
+test('2.4 date: ogni cambio di stato di un\'azione passa da transizione()', () => {
+  for (const f of ['register.tsx', 'pannello.tsx']) {
+    const righe = fs.readFileSync(path.join(__dirname, '..', 'hooks', f), 'utf8').split('\n')
+    // Gli unici `stato:` ammessi fuori da transizione() sono quelli delle sessioni (in-corso / ferma).
+    const scritte = righe
+      .map((r, i) => `${f}:${i + 1}: ${r.trim()}`)
+      .filter(r => /\bstato: /.test(r) && !/\bstato: (s\.isRunning|'in-corso'|fermaOra)/.test(r))
+    assert.deepStrictEqual(scritte, [])
+  }
 })
