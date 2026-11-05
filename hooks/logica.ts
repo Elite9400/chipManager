@@ -207,12 +207,13 @@ export const conMisura = (l: Limite) => l.percentuale !== undefined || l.valore 
 // Come in osservaRisorse: la spesa Claude API è una fonte a sé, le altre righe di un fornitore vengono da una lettura sola.
 const gruppo = (l: Limite) => (l.id === 'claude-api' ? l.id : l.fornitore)
 /**
- * L'ultima misura per id. Un gruppo letto con almeno una misura sostituisce le sue precedenti (un id sparito, come
- * l'uso extra disattivato, esce); un gruppo fallito (solo errori o assente) le conserva, e invecchiano da sole.
+ * L'ultima misura per id. Un gruppo letto con almeno una misura, o dichiarato letto in `vuoti` (risposta valida senza
+ * misure), sostituisce le sue precedenti: un id sparito, come l'uso extra disattivato, esce. Un gruppo fallito (solo
+ * errori o assente) le conserva, e invecchiano da sole.
  */
-export function conUltime(prima: Readonly<Record<string, Limite>>, limiti: readonly Limite[]): Record<string, Limite> {
+export function conUltime(prima: Readonly<Record<string, Limite>>, limiti: readonly Limite[], vuoti: readonly string[] = []): Record<string, Limite> {
   const misure = limiti.filter(l => !l.manuale && conMisura(l))
-  const letti = new Set(misure.map(gruppo))
+  const letti = new Set([...misure.map(gruppo), ...vuoti])
   return { ...Object.fromEntries(Object.entries(prima).filter(([, l]) => !letti.has(gruppo(l)))), ...Object.fromEntries(misure.map(l => [l.id, l])) }
 }
 /** Come si mostra un limite: barra solo con una misura fresca (o manuale), grigio quando la misura è vecchia. */

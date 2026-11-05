@@ -22,7 +22,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   quotas (Claude, Codex).
 - The last measurement of each limit is kept for the session, so a failed reading no longer empties the view. A
   successful reading replaces the provider's previous measurements, so a limit the source no longer reports (extra
-  usage turned off) disappears; Claude API spend is tracked on its own.
+  usage turned off) disappears, even when the plan answers with no window at all; Claude API spend is tracked on
+  its own.
 
 ### Fixed
 

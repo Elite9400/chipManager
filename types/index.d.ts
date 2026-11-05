@@ -27,7 +27,13 @@ export type RisorseProgetto = {
   soglie: Record<Fornitore, Soglia | null>
 }
 export type Soglia = { attenzione: number; critica: number }
-export type Risorse = { limiti: Limite[]; proxy: string; chiavi: { anthropic: boolean; deepseek: boolean; freellmapi: boolean } }
+export type Risorse = {
+  limiti: Limite[]
+  proxy: string
+  chiavi: { anthropic: boolean; deepseek: boolean; freellmapi: boolean }
+  /** Gruppi di limiti (vedi conUltime) letti con esito positivo anche senza nessuna misura: le loro misure precedenti escono. */
+  letti?: string[]
+}
 export type Corsia = 'R0' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5'
 /**
  * Ciclo di una proposta:

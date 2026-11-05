@@ -107,7 +107,10 @@ export async function osservaRisorse($: EngineInterface, options: Record<string,
         void $.mcp.call('ccd_session_mgmt', 'get_usage', {}).then(risposta => { timer.cancel(); ok(risposta) }, () => { timer.cancel(); ok(null) })
       }) : null
       if (m && !m.isError) {
-        const l = usoDesktop(JSON.parse(m.content.filter(c => c.type === 'text').map(c => c.text).join('\n')), new Date().toISOString())
+        const json = JSON.parse(m.content.filter(c => c.type === 'text').map(c => c.text).join('\n')) as { plan?: { status?: unknown } } | null
+        const l = usoDesktop(json, new Date().toISOString())
+        // Piano letto senza finestre né uso extra: è una risposta, non un guasto; le finestre di prima non valgono più.
+        if (!l.length && json?.plan?.status === 'ok') risultato = { ...risultato, letti: ['claude'] }
         // Un «non disponibile» dall'app non cancella una misura della status line ancora presente.
         const misurato = risultato.limiti.some(x => x.fornitore === 'claude' && x.id !== 'claude-api' && x.percentuale !== undefined)
         if (l.length && !(misurato && l.every(x => x.errore))) risultato ={ ...risultato, limiti: [...risultato.limiti.filter(x => x.fornitore !== 'claude' || x.id === 'claude-api'), ...l] }

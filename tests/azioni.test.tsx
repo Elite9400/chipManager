@@ -1662,6 +1662,9 @@ test('2.3.1: ultime misure e fornitori visibili: solo ammessi con una misura o u
   expect(Object.keys(conUltime(conExtra, [{ ...misura, id: 'claude-five_hour', fonte: 'status line' }]))).toEqual(['claude-five_hour'])
   // Una lettura fallita di un gruppo non tocca gli altri.
   expect(conUltime(conExtra, [errore, { ...errore, id: 'claude', fornitore: 'claude' }])).toEqual(conExtra)
+  // Un gruppo letto con esito positivo ma senza misure svuota le sue; la spesa API resta.
+  const conApi = conUltime(conExtra, [RIGA('claude-api', 'claude', 'Claude API', { valore: 3, unita: 'USD', letto: LIMITE.letto })])
+  expect(Object.keys(conUltime(conApi, [], ['claude']))).toEqual(['claude-api'])
   expect(fornitoriVisibili(RISORSE_DEFAULT, ultime)).toEqual(['claude'])
   expect(fornitoriVisibili({ ...RISORSE_DEFAULT, fornitori: ['codex'] }, ultime)).toEqual([])
   const manuale = RIGA('manuale-budget', 'deepseek', 'Budget', { valore: 10, unita: 'USD', letto: LIMITE.letto, manuale: true })
@@ -1745,4 +1748,27 @@ test('2.3.1: giro fallito dopo uno riuscito: la misura resta; a fonte sempre gua
   expect(aspettoLimite(ultime['deepseek-saldo']!, dopo)).toEqual({ fresco: false, barra: false, grigio: true })
   // Il manuale non invecchia come una misura: barra e colore restano.
   expect(aspettoLimite({ ...ultime['claude-weekly']!, manuale: true }, dopo)).toEqual({ fresco: false, barra: true, grigio: false })
+})
+
+test('2.3.1: piano letto senza finestre dopo l\'uso extra al 99%: l\'extra esce subito, non resta critico né grigio', async ($, on) => {
+  let piano: Record<string, unknown> = { status: 'ok', plan: 'Esempio', windows: [], extraUsage: { enabled: true, percentUsed: 99, spent: '9.90', monthlyLimit: '10.00', currency: 'EUR' } }
+  ambiente(on, { strumenti: ['mcp__ccd_session_mgmt__get_usage'],
+    mcp: (_s, tool) => (tool === 'get_usage' ? { isError: false, content: [{ type: 'text', text: JSON.stringify({ plan: piano }) }] } : undefined) })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  let ui = await $.ui.mount({ ...PANE('terminal') })
+  expect(await ui.find({ type: 'Text', text: /Claude 99% oltre la soglia critica/ })).toBeDefined()
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /Claude uso extra · tetto 10\.00 EUR: 99% usato/ })).toBeDefined()
+  await ui.press({ key: 'vista-lavoro' })
+  await ui.unmount()
+  piano = { status: 'ok', plan: 'Esempio', windows: [], extraUsage: { enabled: false, percentUsed: 0, spent: '0.00', monthlyLimit: '10.00', currency: 'EUR' } }
+  await clock.advance(300_000)
+  ui = await $.ui.mount({ ...PANE('terminal') })
+  expect(await ui.find({ type: 'Text', text: /Claude 99%|non letti/ })).toBeUndefined()
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /Claude uso extra/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Nessun limite collegato · vai a Impostazioni$/ })).toBeDefined()
+  await ui.press({ key: 'vista-lavoro' })
+  await ui.unmount()
 })

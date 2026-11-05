@@ -999,7 +999,7 @@ async function aggiornaRisorse($: Eng, opz: Record<string, unknown>) {
   const r = await leggiRegole($)
   const lette = await osservaRisorse($, opz, r)
   await update($, risorse, () => lette)
-  await update($, ultimeMisure, prima => conUltime(prima, lette.limiti))
+  await update($, ultimeMisure, prima => conUltime(prima, lette.limiti, lette.letti))
 }
 
 async function configura($: Eng, opz: Record<string, unknown>, campi: Record<string, unknown>, attese: RisorseProgetto) {
