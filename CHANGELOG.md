@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-11-05
+
+### Changed
+
+- The working views show only configured limits. **Carico** lists a provider only when the project allows it and it
+  has a measurement or a manual limit, and for each provider only the limits with a measurement: a bar when fresh,
+  a grey row with its age and no bar when old. Placeholder rows (*not available*, *provider not enabled*) and the
+  FreeLLMAPI proxy line are gone; with nothing to show, the view says *Nessun limite collegato* and points to
+  **Impostazioni**, which still lists every provider.
+- The summary line counts only allowed providers and fresh measurements; a provider whose measurement went stale
+  adds one grey note such as *Claude: limiti non letti da 12 min*.
+- The last measurement of each limit is kept for the session, so a failed reading no longer empties the view.
+
 ## [2.3.0] - 2026-11-05
 
 ### Added
