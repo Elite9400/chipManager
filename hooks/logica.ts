@@ -1,5 +1,5 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
-import type { Azione, Chiamante, Corsia, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo } from '../types'
+import type { Azione, BoardProgetto, Chiamante, Corsia, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo, Vita } from '../types'
 
 // --- regole (routing.json) ---------------------------------------------------------------------
 
@@ -17,6 +17,7 @@ export const RISORSE_DEFAULT: RisorseProgetto = {
   fornitori: ['claude', 'codex'], soloLocale: false, milestoneGithub: false, pesi: [], limitiManuali: [],
   freellmapi: { livello: 'niente', endpoint: 'http://localhost:3001/v1' },
   soglie: { claude: SOGLIA_PREDEFINITA, codex: SOGLIA_PREDEFINITA, deepseek: SOGLIA_PREDEFINITA, freellmapi: SOGLIA_PREDEFINITA },
+  board: { modo: 'spenta', generazione: 0 },
 }
 export const REGOLE_DEFAULT: Regole = {
   lette: false,
@@ -178,7 +179,12 @@ export function risorseDa(p: Record<string, unknown>): RisorseProgetto | string 
     const v = soglie[k] as { attenzione: number; critica: number } | null | undefined
     return v === undefined ? SOGLIA_PREDEFINITA : v && { attenzione: v.attenzione, critica: v.critica }
   }
-  return { fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
+  // Board: assente = spenta; `generazione` la incrementa l'helper a ogni cambio di modo.
+  const b = p.board ?? RISORSE_DEFAULT.board
+  if (!oggettoRisorse(b) || !['spenta', 'accesa', 'riassunti'].includes(String(b.modo)) ||
+      (b.generazione !== undefined && !(Number.isInteger(b.generazione) && (b.generazione as number) >= 0))) return errore
+  const board: BoardProgetto = { modo: b.modo as BoardProgetto['modo'], generazione: (b.generazione as number | undefined) ?? 0 }
+  return { board, fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
     freellmapi: { livello: f.livello as RisorseProgetto['freellmapi']['livello'], endpoint: (f.endpoint as string | undefined) ?? RISORSE_DEFAULT.freellmapi.endpoint },
     pesi: pesi.map(x => ({ tipo: x.tipo, nome: x.nome, percentuale: x.percentuale, assoluto: x.assoluto })), limitiManuali,
     soglie: { claude: soglia('claude'), codex: soglia('codex'), deepseek: soglia('deepseek'), freellmapi: soglia('freellmapi') } }
@@ -561,6 +567,40 @@ export const TRANSIZIONI: Record<string, readonly StatoAzione[]> = {
   scartata: ['proposta', 'accodata', 'fallita'],
 }
 
+/**
+ * L'unico punto che cambia lo stato di un'azione: scrive le date della transizione. Restare nello stesso stato
+ * non tocca le date; un nuovo avvio («in-avvio») le azzera insieme all'esito di revisione.
+ */
+export function transizione(a: Pick<Azione, 'stato'>, stato: StatoAzione, ora: string): Partial<Azione> {
+  if (a.stato === stato) return { stato }
+  if (stato === 'in-avvio') return { stato, avviataIl: undefined, consegnataIl: undefined, completataIl: undefined, revisione: undefined }
+  if (stato === 'avviata') return { stato, avviataIl: ora }
+  if (stato === 'consegnata') return { stato, consegnataIl: ora }
+  if (stato === 'completata') return { stato, completataIl: ora }
+  return { stato }
+}
+
+/** Le chip che aspettano una decisione (vista Lavoro e board): ferme, fallite, tentativi annullabili da `io`. */
+export function aspettaTe(a: Azione, vive: Record<string, Vita>, io: string | undefined, adesso: number) {
+  const ferma = a.stato === 'avviata' && !a.qui && vive[a.id]?.stato === 'ferma'
+  const annullabile =
+    a.stato === 'in-avvio' && a.lanciatore !== 'cli' && !!io && a.lanciataDa === io &&
+    ((!!a.manuale && !a.presa) || (!a.manuale && (a.avvioScade ?? '') < new Date(adesso).toISOString()))
+  return ferma || a.stato === 'fallita' || annullabile
+}
+
+/**
+ * Percorso del piano al confine: relativo alla radice del repo, `.md` o `.txt`, niente `..`, assoluti, prefissi
+ * `\\?\`, `\\.\` o UNC, niente `:` (lettere di unità e flussi NTFS). Il resto (link, junction) lo controlla l'helper.
+ */
+export function pianoValido(v: unknown): string | undefined {
+  if (typeof v !== 'string' || !v || v.length > 300) return 'piano: percorso fino a 300 caratteri'
+  if (/[\x00-\x1f:*?"<>|]/.test(v) || /^[\\/]/.test(v) || /(^|[\\/])\.\.([\\/]|$)/.test(v))
+    return 'piano: percorso relativo alla radice del repo, senza «..», «:» o prefissi speciali'
+  if (!/\.(md|txt)$/i.test(v)) return 'piano: solo file .md o .txt'
+  return undefined
+}
+
 // --- validazione dei record su disco ---------------------------------------------------------------
 
 export const ID_RE = /^a-[a-z0-9]{6,20}$/
@@ -593,8 +633,16 @@ export function normalizza(x: unknown): Azione | string {
   if (a.base !== undefined && !(typeof a.base === 'string' && BASE_RE.test(a.base))) return 'ramo base non valido'
   for (const k of ['background', 'modello', 'effort', 'repo', 'proponente', 'motivoCoda', 'lanciataDa', 'tentativo', 'tentatoIl', 'avvioScade', 'avviataIl', 'errore', 'ramoSessione', 'taskId', 'origineFork', 'origineNome'])
     if (!str(k, 20000)) return `${k} non valido`
+  if (a.piano !== undefined && pianoValido(a.piano)) return 'piano non valido'
+  if (a.revisione !== undefined) {
+    const r = a.revisione as Record<string, unknown>
+    if (!r || typeof r !== 'object' || !['in-corso', 'approvata', 'da-correggere'].includes(r.esito as string) ||
+        typeof r.riferitaDa !== 'string' || r.riferitaDa.length > 200 || typeof r.quando !== 'string' || Number.isNaN(Date.parse(r.quando)) ||
+        (r.nota !== undefined && (typeof r.nota !== 'string' || r.nota.length > 300)) ||
+        (r.tentativo !== undefined && typeof r.tentativo !== 'string')) return 'revisione non valida'
+  }
   if (typeof a.creata !== 'string' || typeof a.aggiornata !== 'string') return 'date mancanti'
-  for (const k of ['tentatoIl', 'avvioScade', 'avviataIl', 'creata'])
+  for (const k of ['tentatoIl', 'avvioScade', 'avviataIl', 'creata', 'consegnataIl', 'completataIl'])
     if (a[k] !== undefined && Number.isNaN(Date.parse(a[k] as string))) return `${k} non è una data`
   // Migrazioni esplicite. Le azioni della 0.1 non hanno `versione`. Uno stato che non regge i suoi
   // invarianti (avviata senza sessione, avvio senza gettone o scadenza) non occupa un posto in silenzio:
@@ -664,7 +712,8 @@ export function mandato(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strument
   parti.push(
     `_Azione suggerita \`${a.id}\`, tentativo \`${a.tentativo ?? '-'}\`._ A lavoro consegnato (ramo pushato, rapporto a chi coordina), se hai ` +
       `lo strumento \`mcp__chip-manager__aggiorna_azione\` chiamalo con id "${a.id}", stato "consegnata" e tentativo "${a.tentativo ?? ''}". ` +
-      'La chiusura la decide la fusione.',
+      'La chiusura la decide la fusione. Quando la revisione ha un esito, riferiscilo con lo stesso strumento: id, tentativo e ' +
+      '`revisione` ({ esito: "in-corso" | "approvata" | "da-correggere", nota }).',
   )
   // Al cloud va solo il contesto fisso: il background dell'azione è contesto locale e resta qui.
   const cloud = a.destinazione === 'cloud'

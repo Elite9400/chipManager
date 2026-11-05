@@ -25,6 +25,19 @@ export type RisorseProgetto = {
   freellmapi: { livello: 'niente' | 'R1' | 'R2'; endpoint: string }
   /** Soglie di attenzione e critica per fornitore, in percentuale di quota; null = nessuna. */
   soglie: Record<Fornitore, Soglia | null>
+  /** Board di progetto in HTML: `generazione` cresce a ogni cambio di `modo` (lo incrementa l'helper sotto il lock del config). */
+  board: BoardProgetto
+}
+export type BoardProgetto = { modo: 'spenta' | 'accesa' | 'riassunti'; generazione: number }
+/** Esito di revisione riferito da una sessione: la board scrive «riferita da», mai «verificata». */
+export type Revisione = {
+  esito: 'in-corso' | 'approvata' | 'da-correggere'
+  nota?: string
+  /** Id della sessione che l'ha scritta, da `$.session.id()`, mai dagli argomenti. */
+  riferitaDa: string
+  quando: string
+  /** Il tentativo a cui si riferisce: con un tentativo nuovo non vale più. */
+  tentativo?: string
 }
 export type Soglia = { attenzione: number; critica: number }
 export type Risorse = { limiti: Limite[]; proxy: string; chiavi: { anthropic: boolean; deepseek: boolean; freellmapi: boolean } }
@@ -136,6 +149,11 @@ export type Azione = {
   lanciatore?: 'cli' | 'freellmapi'
   /** Risultato testuale del proxy, mai eseguito; da approvare e rivedere localmente. */
   risultato?: string
+  /** Piano del lavoro: percorso relativo alla radice del repo (`.md` o `.txt`), letto dall'helper. */
+  piano?: string
+  revisione?: Revisione
+  consegnataIl?: string
+  completataIl?: string
 }
 
 /** La sessione che avvia: start_session non concede modello, effort o permessi sopra i suoi. */
