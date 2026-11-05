@@ -365,4 +365,4 @@ rivista in modo avversariale da Claude. La versione 1 ha superato 17 giri di rev
 
 ## Licenza
 
-[MIT](LICENSE) © 2026 Elite9400.
+[MIT](LICENSE) © 2026 Cristian TATTINI.

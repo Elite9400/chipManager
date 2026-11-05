@@ -1,6 +1,6 @@
 {
   "name": "chipmanager",
   "description": "chipManager: pannello di Claude Code per le azioni suggerite dalle sessioni",
-  "owner": { "name": "Elite9400" },
+  "owner": { "name": "Cristian TATTINI" },
   "plugins": [{ "name": "chipManager", "source": "./" }]
 }

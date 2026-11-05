@@ -366,4 +366,4 @@ adversarially by Claude. Version 1 went through 17 rounds of adversarial review 
 
 ## License
 
-[MIT](LICENSE) © 2026 Elite9400.
+[MIT](LICENSE) © 2026 Cristian TATTINI.
