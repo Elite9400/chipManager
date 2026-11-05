@@ -387,7 +387,8 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
     if (cmd?.startsWith('board-')) {
       // Come l'helper vero: modo e generazione riletti dal config, prenotazione e budget sotto lo stesso lock.
       const [cfg, cartella, repo, gen, impronta] = a as [string, string, string, string, string]
-      const b = (JSON.parse(disco.get(p(cfg)) ?? '{}') as { progetti?: Record<string, { board?: { modo: string; generazione: number } }> }).progetti?.[repo]?.board
+      const progetto = (JSON.parse(disco.get(p(cfg)) ?? '{}') as { progetti?: Record<string, { board?: { modo: string; generazione: number }; soloLocale?: boolean; fornitori?: string[] }> }).progetti?.[repo]
+      const b = progetto?.board
       const modi = cmd === 'board-spegni' ? ['spenta'] : cmd === 'board-scrivi' ? ['accesa', 'riassunti'] : ['riassunti']
       if (!b || !modi.includes(b.modo) || String(b.generazione) !== gen) return fine(4, 'board cambiata')
       const dest = `${p(cartella)}/board/demo`
@@ -403,6 +404,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
         return fine(0)
       }
       if (cmd === 'board-prenota') {
+        if (progetto?.soloLocale || !(progetto?.fornitori ?? ['claude', 'codex']).includes('claude')) return fine(4, 'politica')
         if (voci[impronta]) return fine(4, 'già prenotata')
         if (budget.usati >= 100) return fine(5, 'tetto')
         disco.set(`${dest}/budget.json`, JSON.stringify({ usati: budget.usati + 1 }))
@@ -1866,4 +1868,66 @@ test('2.4: riassunti: soloLocale e tetto del giorno = zero chiamate; spegnimento
   expect(amb.modello.length).toBe(1)
   expect(Object.values(voci(amb)).map(v => v.stato)).toEqual(['prenotata'])
   expect(amb.disco.get(INDICE)).not.toContain('Riassunto d&#39;esempio.')
+})
+
+// --- 2.4: correzioni dopo la revisione ---------------------------------------------------------------------
+
+/** Un record d'azione del progetto, scritto direttamente sul disco finto. */
+const scriviAzione = (amb: ReturnType<typeof ambiente>, id: string, extra: Partial<Azione>) =>
+  amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({
+    id, versione: 1, repo: 'acme/progetto', titolo: `Lavoro ${id}`, brief: 'Mandato d\'esempio.', ordine: 1, dipende: [],
+    esecutore: 'claude', revisore: 'codex', stato: 'proposta', creata: '2026-09-01T00:00:00Z', aggiornata: '2026-09-01T00:00:00Z', ...extra,
+  }))
+
+test('2.4: la politica cambia durante un giro di riassunti: la chiamata successiva non parte', async ($, on) => {
+  const amb = ambiente(on, {
+    modello: () => {
+      conBoard(amb, { modo: 'riassunti', generazione: 1 }, { soloLocale: true })
+      return undefined
+    },
+  })
+  conBoard(amb, { modo: 'riassunti', generazione: 1 })
+  scriviAzione(amb, 'a-pol00001', { ordine: 1 })
+  scriviAzione(amb, 'a-pol00002', { ordine: 2 })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(60_000)
+  expect(amb.modello.length).toBe(1)
+  await clock.advance(60_000)
+  expect(amb.modello.length).toBe(1)
+})
+
+test('2.4: la board riceve tutte le chip: completate vecchie contate, dipendenze trovate, riassunti allineati', async ($, on) => {
+  const amb = ambiente(on)
+  conBoard(amb, { modo: 'riassunti', generazione: 1 })
+  scriviAzione(amb, 'a-vec00001', { titolo: 'Base vecchia', stato: 'completata', completataIl: '2026-09-01T00:00:00Z' })
+  scriviAzione(amb, 'a-dip00001', { titolo: 'Dipende dalla vecchia', dipende: ['a-vec00001'], ordine: 2 })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(60_000)
+  await clock.advance(60_000)
+  await clock.advance(60_000)
+  const html = amb.disco.get(INDICE)!
+  expect(html).toContain('1 completate da più di 30 giorni')
+  expect(html).not.toContain('non esiste')
+  expect(html).toContain('Base vecchia')
+  // Il riassunto della chip che dipende dalla vecchia si vede: stesso testo (con i titoli delle dipendenze) per generare e mostrare.
+  expect(amb.modello.length).toBe(1)
+  expect(amb.modello[0]!.prompt).toContain('Dipende da: Base vecchia')
+  expect(html).toContain('Riassunto d&#39;esempio.')
+  await clock.advance(60_000)
+  expect(amb.modello.length).toBe(1)
+})
+
+test('2.4: routing illeggibile: la board resta accesa dal config e mostra i blocchi d\'avvio', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.delete('X:/repo/.claude/routing.json')
+  conBoard(amb, { modo: 'accesa', generazione: 1 })
+  scriviAzione(amb, 'a-rou00001', { titolo: 'Senza regole' })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(30_000)
+  const html = amb.disco.get(INDICE)!
+  expect(html).toContain('Senza regole')
+  expect(html).toContain('routing.json non letto')
 })

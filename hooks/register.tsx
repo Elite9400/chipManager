@@ -263,8 +263,9 @@ async function leggiRegole($: Eng) {
   const sr = await $.session.repo().catch(() => null)
   const root = sr?.root
   let r: Regole
+  let progetto: ReturnType<typeof progettoDa> | undefined
   try {
-    const progetto = progettoDa(await leggiConfig($), repoGithub(sr?.remote) ?? (root ? checkoutDi(root) : null))
+    progetto = progettoDa(await leggiConfig($), repoGithub(sr?.remote) ?? (root ? checkoutDi(root) : null))
     if (typeof progetto === 'string') throw new Error(progetto)
     const f = root ? `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/${progetto.routing}` : undefined
     if (!f || !(await $.fs.exists(f))) throw new Error('routing.json assente')
@@ -276,8 +277,9 @@ async function leggiRegole($: Eng) {
       risorse: progetto.risorse,
     }
   } catch (err) {
-    // Fail-closed: si disegna con i valori di ripiego, ma `lette: false` blocca ogni avvio.
-    r = { ...REGOLE_DEFAULT, fonte: `non letto (${String((err as Error)?.message ?? err).slice(0, 60)})` }
+    // Fail-closed: si disegna con i valori di ripiego, ma `lette: false` blocca ogni avvio. La politica del progetto
+    // (board compresa) resta quella del config valido: un routing illeggibile non la allenta e non spegne la board.
+    r = { ...REGOLE_DEFAULT, fonte: `non letto (${String((err as Error)?.message ?? err).slice(0, 60)})`, ...(progetto && typeof progetto !== 'string' ? { risorse: progetto.risorse } : {}) }
   }
   await update($, regole, () => r)
   return r
@@ -1078,6 +1080,7 @@ async function generaBoard($: Eng) {
   const tr = await read($, traguardi)
   const prima = await read($, statoBoard)
   const adesso = Date.now()
+  // Solo per la lettura dei piani: board() riceve tutte le chip e fa da sé il filtro dei 30 giorni per «Fatto».
   const mostrate = tutte.filter(a => a.stato !== 'scartata' && (a.stato !== 'completata' || adesso - Date.parse(a.completataIl ?? a.aggiornata) <= 30 * GIORNO))
   const piani: Record<string, { size: number; mtimeMs: number } | null> = {}
   for (const a of mostrate)
@@ -1093,7 +1096,7 @@ async function generaBoard($: Eng) {
   const versioneOra = await versioneMod($)
   // Il percorso entra nell'impronta: la prima scrittura non lo conosce ancora, la seconda lo mette nel piede.
   const impronta = improntaBoard({
-    azioni: mostrate, vive: vv, regole: r, piani, registro, commit, traguardi: tr, riassunti, chi,
+    azioni: tutte, vive: vv, regole: r, piani, registro, commit, traguardi: tr, riassunti, chi,
     oggi: new Date(adesso).toISOString().slice(0, 10), modo: `${modo.modo}:${modo.generazione}:${prima.percorso ?? ''}`, versione: versioneOra,
   })
   if (impronta === improntaScritta && prima.percorso && (await $.fs.exists(prima.percorso))) return
@@ -1108,7 +1111,7 @@ async function generaBoard($: Eng) {
     }
   }
   const html = board({
-    progetto: chi.repo, versione: versioneOra, generata: new Date(adesso).toISOString(), azioni: mostrate, vive: vv, regole: r, chi,
+    progetto: chi.repo, versione: versioneOra, generata: new Date(adesso).toISOString(), azioni: tutte, vive: vv, regole: r, chi,
     strumenti: strumenti($), piani: testi, commit, traguardi: tr, riassunti, percorso: prima.percorso ?? 'in preparazione', impronta,
   })
   const x = await helper($, ['board-scrivi', await fileConfig($), base, chi.repo, String(modo.generazione), impronta], html)
@@ -1138,13 +1141,14 @@ async function riassumi($: Eng) {
   if (!st.percorso || st.riassunti) return
   const chi = (await read($, contesto)) ?? (await chiSonoIo($))
   if (!chi.repo) return
-  const lista = attive(delProgetto(await read($, azioni), chi))
+  const tutte = delProgetto(await read($, azioni), chi)
   const voci = await vociRiassunti($, st.percorso)
   const argomenti = [await fileConfig($), await baseOrch($), chi.repo, String(b.generazione)]
   let fatte = 0
-  for (const a of lista) {
+  // Quali chip riassumere (le attive) è una scelta; il testo usa sempre l'elenco completo, come board().
+  for (const a of attive(tutte)) {
     if (fatte >= MAX_RIASSUNTI_GIRO) break
-    const testo = testoRiassunto(a, lista)
+    const testo = testoRiassunto(a, tutte)
     const impronta = hash(testo)
     if (voci[impronta]) continue
     fatte += 1
