@@ -6,7 +6,9 @@
 export const ICONA = '#00BFFF'
 
 /** Selezione, chip attiva, primario, fuoco della Gamma. Nient'altro. */
-export const ACCENTO = '#0A8FD6'
+export const ACCENTO = '#0A86C9'
+/** Opacità del velo dell'accento (12%): il segno nell'accento sopra il proprio velo regge ancora 3:1. */
+export const ALFA_VELO = '1F'
 
 export const STATO = {
   inCorso: '#1A9E4B',
@@ -38,6 +40,13 @@ export function luminanza(hex: string) {
     return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
   }) as [number, number, number]
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/** Il colore che si vede: `colore` con opacità `alfa` (esadecimale, come in `velo`) sopra `sfondo`. */
+export function sopra(colore: string, alfa: string, sfondo: string) {
+  const a = parseInt(alfa, 16) / 255
+  const canale = (h: string, i: number) => parseInt(h.slice(i, i + 2), 16)
+  return `#${[1, 3, 5].map(i => Math.round(a * canale(colore, i) + (1 - a) * canale(sfondo, i)).toString(16).padStart(2, '0')).join('').toUpperCase()}`
 }
 
 /** Rapporto di contrasto WCAG fra due colori, da 1 a 21. */

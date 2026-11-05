@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { ACCENTO, contrasto, ICONA, MOTORE, SFONDI, STATO } from '../hooks/tema'
+import { ACCENTO, ALFA_VELO, contrasto, ICONA, MOTORE, SFONDI, sopra, STATO } from '../hooks/tema'
 import { classeDi, componenti } from '../hooks/ui'
 
 // Dati d'esempio. I componenti si disegnano con l'hook del test (l'albero passa la validazione della superficie)
@@ -54,6 +54,13 @@ test('tema: rapporto di contrasto calcolato; accento, stati e motori reggono 3:1
       const r = contrasto(colore, sfondo)
       if (r < 3) throw new Error(`${nome} ${colore} su ${sfondo}: ${r.toFixed(2)} < 3`)
     }
+  // La chip attiva: segno nell'accento sopra il velo dell'accento, che si compone con lo sfondo.
+  expect(sopra('#000000', '80', '#FFFFFF')).toBe('#7F7F7F')
+  expect(sopra(ACCENTO, 'FF', '#262624')).toBe(ACCENTO)
+  for (const sfondo of [...SFONDI.chiaro, ...SFONDI.scuro]) {
+    const r = contrasto(ACCENTO, sopra(ACCENTO, ALFA_VELO, sfondo))
+    if (r < 3) throw new Error(`accento sul suo velo sopra ${sfondo}: ${r.toFixed(2)} < 3`)
+  }
   // L'azzurro dell'icona non regge sul chiaro: per questo non è l'accento.
   expect(contrasto(ICONA, '#FFFFFF')).toBeLessThan(3)
 })
@@ -80,10 +87,10 @@ test('Chip: la scelta sta nel segno e nell\'etichetta; il terminale la scrive tr
     )
     const t = surface === 'terminal'
     const attiva = await ui.find({ key: 'auto-premi' })
-    expect(attiva?.props).toMatchObject({ label: 'Automatico, selezionato' })
+    expect(attiva?.props).toMatchObject({ label: '● Automatico, selezionato' })
     expect(attiva?.text).toBe(t ? '[● Automatico]' : '● Automatico')
     const spenta = await ui.find({ key: 'qual-premi' })
-    expect(spenta?.props).toMatchObject({ label: 'Qualità, non selezionato' })
+    expect(spenta?.props).toMatchObject({ label: '○ Qualità, non selezionato' })
     expect(spenta?.text).toBe(t ? '[○ Qualità]' : '○ Qualità')
     expect((await ui.find({ key: 'bud-via' }))?.props).toMatchObject({ label: 'Rimuovi Claude · settimanale · 40%' })
     // Una chip di stato non è un pulsante: segno e parola, nessuna etichetta di scelta.
@@ -113,8 +120,8 @@ test('GruppoChip: «scelta» cambia solo verso un\'altra voce; «filtro» accend
       u.GruppoChip({ chiave: 'rete', etichetta: 'Rete', modo: 'scelta', valore: 'claude', voci: VOCI, onCambia: v => void scelte.push(v) }),
       u.GruppoChip({ chiave: 'ammessi', etichetta: 'Ammessi', modo: 'filtro', valore: ['claude', 'codex'], voci: VOCI, onCambia: v => void filtri.push(v) }),
     ])
-    expect((await ui.find({ key: 'rete-claude-premi' }))?.props).toMatchObject({ label: 'Claude, selezionato' })
-    expect((await ui.find({ key: 'rete-codex-premi' }))?.props).toMatchObject({ label: 'Codex, non selezionato' })
+    expect((await ui.find({ key: 'rete-claude-premi' }))?.props).toMatchObject({ label: '● Claude, selezionato' })
+    expect((await ui.find({ key: 'rete-codex-premi' }))?.props).toMatchObject({ label: '○ Codex, non selezionato' })
     expect(await ui.find({ type: 'Text', text: 'Ammessi' })).toBeDefined()
     premi(albero, 'rete-claude-premi')
     premi(albero, 'rete-codex-premi')

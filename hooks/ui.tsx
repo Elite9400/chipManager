@@ -4,7 +4,7 @@
 import type { ElementTable, RenderSurface } from 'claude-code'
 
 import { velo } from './logica'
-import { ACCENTO, GRIGIO } from './tema'
+import { ACCENTO, ALFA_VELO, GRIGIO } from './tema'
 
 /** Classe di larghezza del pannello, in colonne. */
 export type Classe = 'larga' | 'media' | 'stretta'
@@ -19,7 +19,7 @@ export function componenti(el: ElementTable, surface: RenderSurface) {
   const terminale = surface === 'terminal'
 
   /**
-   * Una chip. Con `attiva` definito è una chip di scelta o filtro: ● e «, selezionato» se attiva, ○ se no.
+   * Una chip. Con `attiva` definito è una chip di scelta o filtro: ● e «, selezionato» se attiva, ○ se no, nel testo e nella label.
    * Senza, è un'etichetta di stato con il suo `segno` nel suo `colore`.
    */
   function Chip(p: {
@@ -33,7 +33,8 @@ export function componenti(el: ElementTable, surface: RenderSurface) {
   }) {
     const segno = p.segno ?? (p.attiva ? '●' : '○')
     const tinta = p.attiva ? ACCENTO : p.colore
-    const etichetta = p.attiva === undefined ? p.testo : `${p.testo}, ${p.attiva ? 'selezionato' : 'non selezionato'}`
+    // Il desktop disegna la label, non i figli: il segno sta anche lì.
+    const etichetta = `${segno} ${p.testo}${p.attiva === undefined ? '' : p.attiva ? ', selezionato' : ', non selezionato'}`
     const chiusa = terminale && !p.onRimuovi ? ']' : ''
     const corpo = (
       <Text key={`${p.chiave}-testo`}>
@@ -50,7 +51,7 @@ export function componenti(el: ElementTable, surface: RenderSurface) {
         borderStyle={terminale ? undefined : 'round'}
         borderColor={!terminale && p.attiva ? ACCENTO : undefined}
         borderDimColor={!terminale && !p.attiva}
-        backgroundColor={!terminale && p.attiva ? velo(ACCENTO) : undefined}
+        backgroundColor={!terminale && p.attiva ? velo(ACCENTO, ALFA_VELO) : undefined}
         paddingX={terminale ? 0 : 1}
       >
         {p.onPress ? (
