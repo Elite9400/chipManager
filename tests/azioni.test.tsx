@@ -49,6 +49,7 @@ import {
 } from '../hooks/logica'
 import type { Azione, Chiamante, Limite } from '../types'
 import { INSTALLAZIONE, risorseLette, usoDesktop } from '../hooks/risorse'
+import { hash, testoRiassunto } from '../hooks/board'
 
 // Un routing.json d'esempio, nella forma che il pannello legge.
 const ROUTING = {
@@ -315,15 +316,16 @@ test('codex senza corsia, o routing senza la regola: bloccato', () => {
 // --- il pannello contro un engine finto --------------------------------------------------------------
 
 /** Engine finto: disco in memoria, helper (lock/CAS) e `gh` emulati, servizio di sessione scriptabile. */
-function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown } = {}) {
+function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown } = {}) {
   const disco = new Map<string, string>()
   const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
   const chiamate: { server: string; tool: string; args: Record<string, unknown> }[] = []
   const toast: string[] = []
   const processi: { argv: readonly string[]; stdin?: string }[] = []
+  const modello: { prompt: string; model: string }[] = []
   disco.set(p('X:/repo/.claude/routing.json'), JSON.stringify(ROUTING))
   disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { milestoneGithub: true } } }))
-  on('env.get', (_, e) => ({ value: e.name === 'CHIPMANAGER_DIR' && !opz.senzaDir ? 'X:/orch' : e.name === 'USERPROFILE' ? 'X:/casa' : undefined }))
+  on('env.get', (_, e) => ({ value: e.name === 'CHIPMANAGER_DIR' && !opz.senzaDir ? 'X:/orch' : e.name === 'USERPROFILE' ? 'X:/casa' : e.name === 'OS' ? 'Windows_NT' : undefined }))
   on('session.id', () => ({ value: 'sessione-master' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('tool.list', () => ({ value: [...(opz.cli ? [] : [{ name: 'mcp__ccd_session__start_session' }]), ...(opz.strumenti ?? []).map(name => ({ name }))] as never }))
@@ -373,8 +375,46 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
       const precedente = disco.get(p(a[0])) ?? null
       if (precedente !== input.atteso) return fine(4)
       const c = precedente === null ? {} : JSON.parse(precedente)
-      disco.set(p(a[0]), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: { ...c.progetti?.[input.repo], ...input.campi } } }))
+      const campi = { ...input.campi }
+      // Come l'helper vero: la generazione della board cresce a ogni cambio di modo.
+      const b = c.progetti?.[input.repo]?.board
+      if (campi.board) campi.board = { modo: campi.board.modo, generazione: (b?.generazione ?? 0) + (b?.modo === campi.board.modo ? 0 : 1) }
+      disco.set(p(a[0]), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: { ...c.progetti?.[input.repo], ...campi } } }))
       return fine(0)
+    }
+    if (cmd === 'git-log') return fine(0, JSON.stringify([{ sha: 'abc1234', data: '2026-11-04T10:00:00Z', oggetto: 'commit d\'esempio' }]))
+    if (cmd === 'leggi-piano') return fine(0, JSON.stringify({ testo: `# Piano d'esempio (${a[1]})`, troncato: false }))
+    if (cmd?.startsWith('board-')) {
+      // Come l'helper vero: modo e generazione riletti dal config, prenotazione e budget sotto lo stesso lock.
+      const [cfg, cartella, repo, gen, impronta] = a as [string, string, string, string, string]
+      const b = (JSON.parse(disco.get(p(cfg)) ?? '{}') as { progetti?: Record<string, { board?: { modo: string; generazione: number } }> }).progetti?.[repo]?.board
+      const modi = cmd === 'board-spegni' ? ['spenta'] : cmd === 'board-scrivi' ? ['accesa', 'riassunti'] : ['riassunti']
+      if (!b || !modi.includes(b.modo) || String(b.generazione) !== gen) return fine(4, 'board cambiata')
+      const dest = `${p(cartella)}/board/demo`
+      const voci = (JSON.parse(disco.get(`${dest}/riassunti.json`) ?? '{"voci":{}}') as { voci: Record<string, { stato: string; testo?: string }> }).voci
+      const budget = JSON.parse(disco.get(`${dest}/budget.json`) ?? '{"usati":0}') as { usati: number }
+      if (cmd === 'board-scrivi') {
+        disco.set(`${dest}/index.html`, String(e.init?.stdin))
+        return fine(0, `${dest}/index.html`)
+      }
+      if (cmd === 'board-spegni') {
+        disco.delete(`${dest}/index.html`)
+        disco.delete(`${dest}/riassunti.json`)
+        return fine(0)
+      }
+      if (cmd === 'board-prenota') {
+        if (voci[impronta]) return fine(4, 'già prenotata')
+        if (budget.usati >= 100) return fine(5, 'tetto')
+        disco.set(`${dest}/budget.json`, JSON.stringify({ usati: budget.usati + 1 }))
+        disco.set(`${dest}/riassunti.json`, JSON.stringify({ voci: { ...voci, [impronta]: { stato: 'prenotata' } } }))
+        return fine(0)
+      }
+      if (cmd === 'board-finalizza') {
+        if (voci[impronta]?.stato !== 'prenotata') return fine(4, 'nessuna prenotazione')
+        const t = (JSON.parse(String(e.init?.stdin)) as { testo?: string }).testo
+        disco.set(`${dest}/riassunti.json`, JSON.stringify({ voci: { ...voci, [impronta]: t ? { stato: 'fatto', testo: t } : { stato: 'fallita' } } }))
+        return fine(0)
+      }
     }
     if (cmd === 'lancia-cli') {
       const [dir, id, tentativo] = a
@@ -421,6 +461,12 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
     return { value: undefined }
   })
   on('ui.notify', () => ({ value: { isSent: false, reason: 'no-surface' } as never }))
+  on('model.complete', (_, e) => {
+    const req = e as unknown as { prompt: string; model: string }
+    modello.push(req)
+    const r = opz.modello?.(req)
+    return { value: (r ?? { isAnswered: true, text: 'Riassunto d\'esempio.', usage: { input_tokens: 700, output_tokens: 20, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } }) as never }
+  })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('prompt.submit', (_, e) => ({ text: (e as { text: string }).text }))
   on('tool.register', (_, e) => ({ value: { tool: e.name } }))
@@ -436,7 +482,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
           return []
         }
       })
-  return { disco, chiamate, toast, processi, azione }
+  return { disco, chiamate, toast, processi, azione, modello }
 }
 
 const PANE = (surface: 'desktop' | 'terminal') =>
@@ -1627,4 +1673,197 @@ test('2.3: vista Carico: matrice modello × effort, limiti per fornitore con le 
     await ui.press({ key: 'vista-lavoro' })
     await ui.unmount()
   }
+})
+
+// --- 2.4: board di progetto, revisione riferita, date --------------------------------------------------------
+
+const CONFIG = 'X:/casa/.claude/chipmanager/config.json'
+const INDICE = 'X:/orch/board/demo/index.html'
+const conBoard = (amb: ReturnType<typeof ambiente>, board: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'acme/progetto': { milestoneGithub: true, board, ...extra } } }))
+const voci = (amb: ReturnType<typeof ambiente>) =>
+  (JSON.parse(amb.disco.get('X:/orch/board/demo/riassunti.json') ?? '{"voci":{}}') as { voci: Record<string, { stato: string; testo?: string }> }).voci
+const comandi = (amb: ReturnType<typeof ambiente>) => amb.processi.map(x => String(x.argv[2] ?? x.argv[0]))
+
+test('2.4: board spenta per difetto: nessuna scrittura, nessuna chiamata al modello, nessun pulsante', async ($, on) => {
+  const amb = ambiente(on)
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  for (let i = 0; i < 4; i++) await clock.advance(30_000)
+  expect(comandi(amb).filter(c => c.startsWith('board-') || c === 'git-log' || c === 'leggi-piano')).toEqual([])
+  expect(amb.modello.length).toBe(0)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  expect(await ui.find({ key: 'apri-board' })).toBeUndefined()
+  expect(await ui.find({ key: `board-${amb.azione()[0]!.id}` })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('2.4: board accesa: HTML dall\'helper senza gettoni, «Apri board» con argv fisso, spegnimento da Impostazioni', async ($, on) => {
+  const amb = ambiente(on)
+  conBoard(amb, { modo: 'accesa', generazione: 1 })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Fix ricerca', brief: 'Correggi il dedup.', piano: 'docs/PIANO.md' } as never)
+  const rifiutato = await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'X', brief: 'Y', piano: '../fuori.md' } as never)
+  expect(String((rifiutato as { deny?: unknown }).deny)).toContain('piano')
+  const id = amb.azione()[0]!.id
+  expect(amb.azione()[0]!.piano).toBe('docs/PIANO.md')
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await clock.advance(30_000)
+  // «Nella board» sulla scheda della chip, solo a board scritta.
+  await ui.press({ key: `mod-${id}` })
+  expect(await ui.find({ key: `board-${id}` })).toBeDefined()
+  await ui.press({ key: `mod-${id}` })
+  await ui.press({ key: `avvia-${id}` })
+  await clock.advance(30_000)
+  await clock.advance(30_000)
+  const html = amb.disco.get(INDICE)!
+  expect(html).toContain('Fix ricerca')
+  expect(html).toContain('# Piano d&#39;esempio (docs/PIANO.md)')
+  expect(html).toContain("content=\"default-src 'none'; style-src 'unsafe-inline'\"")
+  expect(html).toContain(`File: ${INDICE}`)
+  const tentativo = amb.azione()[0]!.tentativo!
+  expect(html.includes(tentativo)).toBe(false)
+  expect(amb.processi.some(x => x.argv[2] === 'board-scrivi' && x.argv[6] === '1')).toBe(true)
+  // Due giri senza cambiamenti: nessuna riscrittura.
+  const scritture = comandi(amb).filter(c => c === 'board-scrivi').length
+  await clock.advance(30_000)
+  expect(comandi(amb).filter(c => c === 'board-scrivi').length).toBe(scritture)
+  await ui.press({ key: 'apri-board' })
+  expect(amb.processi.some(x => x.argv.length === 2 && x.argv[0] === 'explorer.exe' && x.argv[1] === 'X:\\orch\\board\\demo\\index.html')).toBe(true)
+  await ui.press({ key: 'impostazioni' })
+  await ui.select({ key: 'board-progetto', value: 'spenta' })
+  expect(JSON.parse(amb.disco.get(CONFIG)!).progetti['acme/progetto'].board).toEqual({ modo: 'spenta', generazione: 2 })
+  expect(amb.processi.some(x => x.argv[2] === 'board-spegni' && x.argv[6] === '2')).toBe(true)
+  expect(amb.disco.has(INDICE)).toBe(false)
+  await ui.press({ key: 'vista-lavoro' })
+  expect(await ui.find({ key: 'apri-board' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('2.4: aggiorna_azione con sola revisione: stato invariato, gettone vecchio e sessione estranea rifiutati', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  const id = amb.azione()[0]!.id
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `avvia-${id}` })
+  const t = amb.azione()[0]!.tentativo!
+  const chiama = (args: Record<string, unknown>) => $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id, ...args } as never) as Promise<{ deny?: string; result?: string }>
+  const ok = await chiama({ tentativo: t, revisione: { esito: 'approvata', nota: 'tutto a posto', riferitaDa: 'falso' } })
+  expect(ok.deny).toBeUndefined()
+  expect(amb.azione()[0]).toMatchObject({ stato: 'avviata', revisione: { esito: 'approvata', nota: 'tutto a posto', riferitaDa: 'sessione-master', tentativo: t } })
+  expect((await chiama({ tentativo: 'az-vecchio001', revisione: { esito: 'da-correggere' } })).deny).toContain('tentativo')
+  expect((await chiama({ revisione: { esito: 'verificata' } })).deny).toContain('esito')
+  expect((await chiama({ tentativo: t, revisione: { esito: 'approvata', nota: 'x'.repeat(301) } })).deny).toContain('300')
+  expect((await chiama({})).deny).toContain('stato')
+  // Il proponente può riferirla senza gettone; un'altra sessione senza gettone no.
+  expect((await chiama({ revisione: { esito: 'in-corso' } })).deny).toBeUndefined()
+  const a = amb.azione()[0]!
+  amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...a, proponente: 'altra-sessione' }))
+  expect((await chiama({ revisione: { esito: 'approvata' } })).deny).toContain('tentativo corrente')
+  expect(amb.azione()[0]!.revisione!.esito).toBe('in-corso')
+  expect(amb.azione()[0]!.stato).toBe('avviata')
+  // Stato e revisione insieme: la data di consegna la scrive transizione().
+  expect((await chiama({ stato: 'consegnata', tentativo: t, revisione: { esito: 'approvata' } })).deny).toBeUndefined()
+  expect(amb.azione()[0]!.consegnataIl).toBeDefined()
+  expect(amb.azione()[0]!.revisione!.esito).toBe('approvata')
+  // «Segna completata» dal pannello: la data della pressione.
+  await ui.press({ key: `fatta-${id}` })
+  expect(amb.azione()[0]).toMatchObject({ stato: 'completata' })
+  expect(amb.azione()[0]!.completataIl).toBeDefined()
+  await ui.unmount()
+})
+
+test('2.4: a ogni nuovo avvio la revisione si azzera; la chiusura dal registro scrive la data di completamento', async ($, on) => {
+  const sessione = { isArchived: false, isRunning: true, lastActivityAt: '2026-11-05T00:00:00Z', branch: 'claude/x' }
+  const amb = ambiente(on, {
+    mcp: (_s, tool, args) =>
+      tool === 'get_session' && (args as { session_id?: unknown }).session_id !== 'self'
+        ? { isError: false, content: [{ type: 'text', text: JSON.stringify(sessione) }] }
+        : undefined,
+  })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.', issue: 1 } as never)
+  const id = amb.azione()[0]!.id
+  const a = amb.azione()[0]!
+  amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...a, stato: 'fallita', tentativo: 'az-vecchio001',
+    revisione: { esito: 'approvata', riferitaDa: 'x', quando: '2026-11-04T00:00:00Z', tentativo: 'az-vecchio001' } }))
+  await clock.advance(20_000)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `riprova-${id}` })
+  expect(amb.azione()[0]!.stato).toBe('avviata')
+  expect(amb.azione()[0]!.revisione).toBeUndefined()
+  expect(amb.azione()[0]!.avviataIl).toBeDefined()
+  amb.disco.set('X:/orch/registro.json', JSON.stringify({ task: { t1: { issue: 1, ramo: 'claude/x', stato: 'fuso', creato: '2999-01-01' } } }))
+  await clock.advance(20_000)
+  expect(amb.azione()[0]!.stato).toBe('completata')
+  expect(amb.azione()[0]!.completataIl).toBeDefined()
+  await ui.unmount()
+})
+
+test('2.4: riassunti: uno per testo, mai per un cambio di stato; senza risposta conta; due pannelli, una chiamata', async ($, on) => {
+  let risposta: unknown
+  const amb = ambiente(on, { modello: () => risposta })
+  conBoard(amb, { modo: 'riassunti', generazione: 1 })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await clock.advance(60_000)
+  await clock.advance(60_000)
+  expect(amb.modello.length).toBe(1)
+  expect(amb.modello[0]!.model).toBe('haiku')
+  expect(amb.modello[0]!.prompt).toContain('<chip>')
+  expect(Object.values(voci(amb)).map(v => v.stato)).toEqual(['fatto'])
+  await clock.advance(30_000)
+  expect(amb.disco.get(INDICE)).toContain('Riassunto d&#39;esempio.')
+  // Cambio di stato: nessuna chiamata. Testo nuovo: una chiamata; senza risposta conta e non si ritenta.
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `avvia-${amb.azione()[0]!.id}` })
+  await clock.advance(60_000)
+  expect(amb.modello.length).toBe(1)
+  risposta = { isAnswered: false, reason: 'empty-reply', usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } }
+  const a = amb.azione()[0]!
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify({ ...a, brief: 'Aggiorna il README e il CHANGELOG.' }))
+  await clock.advance(60_000)
+  await clock.advance(60_000)
+  expect(amb.modello.length).toBe(2)
+  expect(Object.values(voci(amb)).map(v => v.stato).sort()).toEqual(['fallita', 'fatto'])
+  // Un'altra chip già prenotata da un altro pannello: nessuna seconda chiamata.
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Altro', brief: 'Altro lavoro.' } as never)
+  const nuova = amb.azione().find(x => x.titolo === 'Altro')!
+  const lista = amb.azione().filter(x => !['completata', 'scartata'].includes(x.stato))
+  amb.disco.set('X:/orch/board/demo/riassunti.json', JSON.stringify({ voci: { ...voci(amb), [hash(testoRiassunto(nuova, lista))]: { stato: 'prenotata' } } }))
+  await clock.advance(60_000)
+  expect(amb.modello.length).toBe(2)
+  await ui.unmount()
+})
+
+test('2.4: riassunti: soloLocale e tetto del giorno = zero chiamate; spegnimento durante la chiamata scarta il risultato', async ($, on) => {
+  const amb = ambiente(on, {
+    modello: () => {
+      // Il committente spegne mentre la chiamata è in volo.
+      conBoard(amb, { modo: 'spenta', generazione: 2 })
+      return undefined
+    },
+  })
+  conBoard(amb, { modo: 'riassunti', generazione: 1 }, { soloLocale: true })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await clock.advance(60_000)
+  await clock.advance(60_000)
+  expect(amb.modello.length).toBe(0)
+  conBoard(amb, { modo: 'riassunti', generazione: 1 })
+  amb.disco.set('X:/orch/board/demo/budget.json', JSON.stringify({ usati: 100 }))
+  await clock.advance(60_000)
+  expect(amb.modello.length).toBe(0)
+  amb.disco.set('X:/orch/board/demo/budget.json', JSON.stringify({ usati: 0 }))
+  await clock.advance(60_000)
+  expect(amb.modello.length).toBe(1)
+  expect(Object.values(voci(amb)).map(v => v.stato)).toEqual(['prenotata'])
+  expect(amb.disco.get(INDICE)).not.toContain('Riassunto d&#39;esempio.')
 })
