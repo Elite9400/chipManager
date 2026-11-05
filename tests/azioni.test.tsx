@@ -15,6 +15,10 @@ import {
   sessioniClaude,
   sessioniCodex,
   coloreLimite,
+  aspettoLimite,
+  conUltime,
+  etaVecchie,
+  fornitoriVisibili,
   limiteFresco,
   punteggio,
   RISORSE_DEFAULT,
@@ -48,7 +52,7 @@ import {
   violazioniAvvio,
 } from '../hooks/logica'
 import type { Azione, Chiamante, Limite } from '../types'
-import { INSTALLAZIONE, risorseLette, usoDesktop } from '../hooks/risorse'
+import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
 import { hash, testoRiassunto } from '../hooks/board'
 
 // Un routing.json d'esempio, nella forma che il pannello legge.
@@ -1162,8 +1166,9 @@ test('2.0: helper con schema ignoto lascia il pannello disponibile senza inventa
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('terminal') })
   await ui.press({ key: 'vista-carico' })
-  expect(await ui.find({ type: 'Text', text: /helper non disponibile/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Claude API: non disponibile/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Limiti non letti: helper non disponibile$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Nessun limite collegato · vai a Impostazioni$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /non disponibile ·|FreeLLMAPI/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -1175,7 +1180,7 @@ test('2.0: limiti sempre visibili e impostazioni modificabili su desktop e termi
     const ui = await $.ui.mount({ ...PANE(surface) })
     await ui.press({ key: 'vista-carico' })
     expect(await ui.find({ type: 'Text', text: /^Limiti e budget$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Claude API: non disponibile/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Nessun limite collegato · vai a Impostazioni$/ })).toBeDefined()
     await ui.press({ key: 'impostazioni' })
     await ui.input({ key: 'percentuale-fornitore-codex', text: '120' })
     expect(JSON.parse(amb.disco.get('X:/casa/.claude/chipmanager/config.json')!).progetti['acme/progetto'].pesi[0]).toMatchObject({ nome: 'codex', percentuale: 120 })
@@ -1432,13 +1437,13 @@ test('2.2: sessioni del progetto: worktree inclusi, altri progetti, archiviate e
 })
 
 const ID_ESEMPIO = (n: number) => `local_aaaaaaa${n}-1234-1234-1234-123456789abc`
-function ambienteSessioni(on: Parameters<TestBody>[1], adesso: () => number) {
+function ambienteSessioni(on: Parameters<TestBody>[1], adesso: () => number, limiti?: () => Limite[]) {
   const quando = (min: number) => new Date(adesso() - min * 60_000).toISOString()
   return ambiente(on, {
     strumenti: ['mcp__ccd_session_mgmt__list_sessions', 'mcp__ccd_session_mgmt__get_usage'],
     fonte: cmd => (cmd === 'sessioni'
       ? [{ id: 'esempio-0001', cwd: 'X:/repo/.claude/worktrees/fix-ricerca', ramo: 'fix-ricerca', modello: 'gpt-6-astra', effort: 'xhigh', inCorso: true, attivita: quando(0), token: 61_000, finestra: 100_000 }]
-      : undefined),
+      : cmd === 'limiti' && limiti ? { limiti: limiti(), proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } } : undefined),
     mcp: (_s, tool, args) => {
       const testo = (v: unknown) => ({ isError: false, content: [{ type: 'text', text: JSON.stringify(v) }] })
       const sid = (args as { session_id?: string }).session_id
@@ -1656,7 +1661,11 @@ test('2.3: «Avvia tutte» sotto soglia chiede «Avvia» e parte', async ($, on)
 
 test('2.3: vista Carico: matrice modello × effort, limiti per fornitore con le soglie, contesto e pesi in uso', async ($, on) => {
   const clock = mock.clock(on)
-  const amb = ambienteSessioni(on, () => Date.now())
+  const letto = () => new Date().toISOString()
+  const amb = ambienteSessioni(on, () => Date.now(), () => [
+    { id: 'claude-weekly', fornitore: 'claude', nome: 'Claude piano · settimanale', percentuale: 30, unita: '%', fonte: 'prova', letto: letto() },
+    { id: 'codex-primary', fornitore: 'codex', nome: 'Codex piano · primaria', percentuale: 20, unita: '%', fonte: 'prova', letto: letto() },
+  ])
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': {
     soglie: { codex: null }, pesi: [{ tipo: 'fornitore', nome: 'codex', percentuale: 50, assoluto: 0 }] } } }))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -1942,4 +1951,161 @@ test('2.4: routing illeggibile: board scritta, ma nessun riassunto (nessuna chia
   for (let i = 0; i < 3; i++) await clock.advance(60_000)
   expect(amb.disco.get(INDICE)).toContain('Senza regole, senza riassunti')
   expect(amb.modello.length).toBe(0)
+})
+
+// --- 2.3.1: nelle viste operative solo i limiti configurati ---------------------------------------------
+
+const RIGA = (id: string, fornitore: Limite['fornitore'], nome: string, extra: Partial<Limite> = {}): Limite => ({ id, fornitore, nome, fonte: 'prova', ...extra })
+const RISPOSTA = (limiti: unknown) => ({ limiti, proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } })
+
+test('2.3.1: ultime misure e fornitori visibili: solo ammessi con una misura o un limite manuale', () => {
+  const misura = RIGA('claude-weekly', 'claude', 'Claude piano · settimanale', { percentuale: 40, unita: '%', letto: LIMITE.letto })
+  const errore = RIGA('codex', 'codex', 'Codex piano', { errore: 'fonte non disponibile' })
+  const ultime = conUltime({}, [misura, errore, { ...misura, id: 'manuale-x', manuale: true }])
+  expect(Object.keys(ultime)).toEqual(['claude-weekly'])
+  // Un giro senza dati, o con il solo errore, non cancella l'ultima misura.
+  expect(conUltime(ultime, [])).toEqual(ultime)
+  expect(conUltime(ultime, [{ ...errore, id: 'claude-weekly', fornitore: 'claude' }])).toEqual(ultime)
+  expect(conUltime(ultime, [{ ...misura, percentuale: 55 }])['claude-weekly']!.percentuale).toBe(55)
+  // Una lettura riuscita che non riporta più un id lo toglie (uso extra disattivato al 99%); la spesa API è un gruppo a sé.
+  const extra = RIGA('claude-extra', 'claude', 'Claude uso extra', { percentuale: 99, unita: '%', letto: LIMITE.letto })
+  const conExtra = conUltime(ultime, [misura, extra])
+  expect(Object.keys(conUltime(conExtra, [misura]))).toEqual(['claude-weekly'])
+  expect(Object.keys(conUltime(conExtra, [RIGA('claude-api', 'claude', 'Claude API', { valore: 3, unita: 'USD', letto: LIMITE.letto })])))
+    .toEqual(['claude-weekly', 'claude-extra', 'claude-api'])
+  // La stessa finestra da un'altra fonte (status line al posto di get_usage) sostituisce la vecchia, non si somma.
+  expect(Object.keys(conUltime(conExtra, [{ ...misura, id: 'claude-five_hour', fonte: 'status line' }]))).toEqual(['claude-five_hour'])
+  // Una lettura fallita di un gruppo non tocca gli altri.
+  expect(conUltime(conExtra, [errore, { ...errore, id: 'claude', fornitore: 'claude' }])).toEqual(conExtra)
+  // Un gruppo letto con esito positivo ma senza misure svuota le sue; la spesa API resta.
+  const conApi = conUltime(conExtra, [RIGA('claude-api', 'claude', 'Claude API', { valore: 3, unita: 'USD', letto: LIMITE.letto })])
+  expect(Object.keys(conUltime(conApi, [], ['claude']))).toEqual(['claude-api'])
+  expect(fornitoriVisibili(RISORSE_DEFAULT, ultime)).toEqual(['claude'])
+  expect(fornitoriVisibili({ ...RISORSE_DEFAULT, fornitori: ['codex'] }, ultime)).toEqual([])
+  const manuale = RIGA('manuale-budget', 'deepseek', 'Budget', { valore: 10, unita: 'USD', letto: LIMITE.letto, manuale: true })
+  expect(fornitoriVisibili({ ...RISORSE_DEFAULT, fornitori: ['claude', 'deepseek'], limitiManuali: [manuale] }, {})).toEqual(['deepseek'])
+})
+
+test('2.3.1: un fornitore misurato, uno vietato con misura: Carico e sintesi mostrano solo il primo', async ($, on) => {
+  const letto = new Date().toISOString()
+  const amb = ambiente(on, {
+    fonte: cmd => (cmd === 'limiti' ? RISPOSTA([
+      RIGA('claude-weekly', 'claude', 'Claude piano · settimanale', { percentuale: 37, unita: '%', letto }),
+      RIGA('codex-primary', 'codex', 'Codex piano · primaria', { percentuale: 95, unita: '%', letto }),
+      RIGA('claude-api', 'claude', 'Claude API', { errore: 'chiave admin mancante' }),
+      RIGA('deepseek', 'deepseek', 'DeepSeek saldo', { errore: 'rete non abilitata' }),
+      RIGA('freellmapi', 'freellmapi', 'FreeLLMAPI', { errore: 'non abilitato' }),
+    ]) : undefined),
+  })
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { fornitori: ['claude'] } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount({ ...PANE(surface) })
+    expect(await ui.find({ type: 'Text', text: /Claude 37%/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Codex 95%|non letti/ })).toBeUndefined()
+    await ui.press({ key: 'vista-carico' })
+    expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /100%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /non disponibile|FreeLLMAPI|Claude API|DeepSeek|Codex piano|Codex \(95%\)|Nessun limite collegato/ })).toBeUndefined()
+    // Impostazioni resta il posto dove si vedono tutti i fornitori e, per gli ammessi, gli errori delle sonde.
+    await ui.press({ key: 'impostazioni' })
+    expect(await ui.find({ key: 'fornitore-codex' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Claude: Claude piano · settimanale · letto 0 min fa · Claude API · chiave admin mancante$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^(Codex|DeepSeek|FreeLLMAPI): / })).toBeUndefined()
+    await ui.press({ key: 'vista-lavoro' })
+    await ui.unmount()
+  }
+})
+
+test('2.3.1: giro fallito dopo uno riuscito: la misura resta; a fonte sempre guasta invecchia senza barra, in grigio e con un segno nella sintesi', async ($, on) => {
+  let rotto = false
+  const amb = ambiente(on, {
+    fonte: cmd => (cmd !== 'limiti' ? undefined : rotto ? { limiti: 'formato cambiato' } : RISPOSTA([
+      RIGA('claude-weekly', 'claude', 'Claude piano · settimanale', { percentuale: 37, unita: '%', letto: new Date().toISOString() }),
+      RIGA('deepseek-saldo', 'deepseek', 'DeepSeek saldo', { valore: 12, unita: 'USD', letto: new Date().toISOString() }),
+    ])),
+  })
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { fornitori: ['claude', 'codex', 'deepseek'] } } }))
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  rotto = true
+  await clock.advance(300_000)
+  const ui = await $.ui.mount({ ...PANE('terminal') })
+  expect(await ui.find({ type: 'Text', text: /Claude 37%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /non letti/ })).toBeUndefined()
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /^Limiti non letti: helper non disponibile$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /DeepSeek saldo: 12 USD/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /100%$/ })).toBeDefined()
+  await ui.press({ key: 'impostazioni' })
+  expect(await ui.find({ type: 'Text', text: /^Claude: helper non disponibile$/ })).toBeDefined()
+  await ui.press({ key: 'vista-lavoro' })
+  await ui.unmount()
+
+  // L'invecchiamento con la fonte sempre guasta. Il clock simulato muove $.clock e non Date (di sola lettura qui):
+  // si prova con l'orologio iniettato nelle funzioni che il pannello usa per la sintesi e per le righe.
+  const ora = Date.now()
+  const lette = [
+    RIGA('claude-weekly', 'claude', 'Claude piano · settimanale', { percentuale: 37, unita: '%', letto: new Date(ora).toISOString() }),
+    RIGA('deepseek-saldo', 'deepseek', 'DeepSeek saldo', { valore: 12, unita: 'USD', letto: new Date(ora).toISOString() }),
+  ]
+  let ultime = conUltime({}, lette)
+  for (const fallita of [[], [RIGA('claude', 'claude', 'Claude piano', { errore: 'limiti di piano non leggibili ora' })], []]) ultime = conUltime(ultime, fallita)
+  const dopo = ora + 7 * 60_000
+  const tutte = Object.values(ultime)
+  expect(tutte.map(l => l.id)).toEqual(['claude-weekly', 'deepseek-saldo'])
+  expect([etaVecchie(tutte, 'claude', ora), etaVecchie(tutte, 'deepseek', ora)]).toEqual([undefined, undefined])
+  expect([durata(etaVecchie(tutte, 'claude', dopo)!), durata(etaVecchie(tutte, 'deepseek', dopo)!), etaVecchie(tutte, 'codex', dopo)]).toEqual(['7 min', '7 min', undefined])
+  expect(aspettoLimite(ultime['claude-weekly']!, ora)).toEqual({ fresco: true, barra: true, grigio: false })
+  expect(aspettoLimite(ultime['claude-weekly']!, dopo)).toEqual({ fresco: false, barra: false, grigio: true })
+  expect(aspettoLimite(ultime['deepseek-saldo']!, dopo)).toEqual({ fresco: false, barra: false, grigio: true })
+  // Il manuale non invecchia come una misura: barra e colore restano.
+  expect(aspettoLimite({ ...ultime['claude-weekly']!, manuale: true }, dopo)).toEqual({ fresco: false, barra: true, grigio: false })
+})
+
+const MALFORMATI: Record<string, unknown>[] = [
+  { status: 'ok', windows: 'unrecognized' },
+  { status: 'ok', windows: [{ label: 'Weekly · all models', percentUsed: 140 }] },
+  { status: 'ok', windows: [], extraUsage: { enabled: true, percentUsed: 'molto' } },
+]
+
+test('2.3.1: un piano vuoto è valido solo con windows [] ed extra assente o spento', () => {
+  expect(pianoVuoto({ plan: { status: 'ok', windows: [] } })).toBe(true)
+  expect(pianoVuoto({ plan: { status: 'ok', windows: [], extraUsage: { enabled: false, percentUsed: 0 } } })).toBe(true)
+  for (const piano of [...MALFORMATI, { status: 'unavailable', windows: [] }, { status: 'ok' }, { status: 'ok', windows: [], extraUsage: null }])
+    expect(pianoVuoto({ plan: piano })).toBe(false)
+  for (const rotto of [null, 'testo', {}, { plan: 'ok' }]) expect(pianoVuoto(rotto)).toBe(false)
+})
+
+test('2.3.1: piano letto senza finestre dopo l\'uso extra al 99%: l\'extra esce subito, non resta critico né grigio', async ($, on) => {
+  let piano: Record<string, unknown> = { status: 'ok', plan: 'Esempio', windows: [], extraUsage: { enabled: true, percentUsed: 99, spent: '9.90', monthlyLimit: '10.00', currency: 'EUR' } }
+  ambiente(on, { strumenti: ['mcp__ccd_session_mgmt__get_usage'],
+    mcp: (_s, tool) => (tool === 'get_usage' ? { isError: false, content: [{ type: 'text', text: JSON.stringify({ plan: piano }) }] } : undefined) })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  let ui = await $.ui.mount({ ...PANE('terminal') })
+  expect(await ui.find({ type: 'Text', text: /Claude 99% oltre la soglia critica/ })).toBeDefined()
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /Claude uso extra · tetto 10\.00 EUR: 99% usato/ })).toBeDefined()
+  await ui.press({ key: 'vista-lavoro' })
+  await ui.unmount()
+  // Risposte che il parser scarta (finestre malformate, percentuale non valida, extra non valido) valgono come lettura fallita: l'extra resta.
+  for (const scartato of MALFORMATI) {
+    piano = scartato
+    await clock.advance(300_000)
+    ui = await $.ui.mount({ ...PANE('terminal') })
+    expect(await ui.find({ type: 'Text', text: /Claude 99% oltre la soglia critica/ })).toBeDefined()
+    await ui.unmount()
+  }
+  piano = { status: 'ok', plan: 'Esempio', windows: [], extraUsage: { enabled: false, percentUsed: 0, spent: '0.00', monthlyLimit: '10.00', currency: 'EUR' } }
+  await clock.advance(300_000)
+  ui = await $.ui.mount({ ...PANE('terminal') })
+  expect(await ui.find({ type: 'Text', text: /Claude 99%|non letti/ })).toBeUndefined()
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /Claude uso extra/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Nessun limite collegato · vai a Impostazioni$/ })).toBeDefined()
+  await ui.press({ key: 'vista-lavoro' })
+  await ui.unmount()
 })

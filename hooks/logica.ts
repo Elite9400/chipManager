@@ -208,6 +208,35 @@ export function piuPieno(limiti: readonly Limite[], f: Fornitore, adesso = Date.
     .reduce<Limite | undefined>((m, l) => (!m || l.percentuale! > m.percentuale! ? l : m), undefined)
 }
 
+/** Un limite ha una misura se porta un numero: una riga con il solo errore non ne ha. */
+export const conMisura = (l: Limite) => l.percentuale !== undefined || l.valore !== undefined
+// Come in osservaRisorse: la spesa Claude API è una fonte a sé, le altre righe di un fornitore vengono da una lettura sola.
+const gruppo = (l: Limite) => (l.id === 'claude-api' ? l.id : l.fornitore)
+/**
+ * L'ultima misura per id. Un gruppo letto con almeno una misura, o dichiarato letto in `vuoti` (risposta valida senza
+ * misure), sostituisce le sue precedenti: un id sparito, come l'uso extra disattivato, esce. Un gruppo fallito (solo
+ * errori o assente) le conserva, e invecchiano da sole.
+ */
+export function conUltime(prima: Readonly<Record<string, Limite>>, limiti: readonly Limite[], vuoti: readonly string[] = []): Record<string, Limite> {
+  const misure = limiti.filter(l => !l.manuale && conMisura(l))
+  const letti = new Set([...misure.map(gruppo), ...vuoti])
+  return { ...Object.fromEntries(Object.entries(prima).filter(([, l]) => !letti.has(gruppo(l)))), ...Object.fromEntries(misure.map(l => [l.id, l])) }
+}
+/** Come si mostra un limite: barra solo con una misura fresca (o manuale), grigio quando la misura è vecchia. */
+export const aspettoLimite = (l: Limite, adesso = Date.now()) => {
+  const fresco = limiteFresco(l, adesso)
+  return { fresco, barra: l.percentuale !== undefined && (fresco || !!l.manuale), grigio: !fresco && !l.manuale }
+}
+/** Da quanto un fornitore non ha misure fresche: undefined se non ne ha mai avute o se una è ancora fresca. */
+export function etaVecchie(limiti: readonly Limite[], f: Fornitore, adesso = Date.now()): number | undefined {
+  const misure = limiti.filter(l => l.fornitore === f && !l.manuale && l.letto)
+  if (!misure.length || misure.some(l => limiteFresco(l, adesso))) return undefined
+  return Math.max(0, adesso - Math.max(...misure.map(l => Date.parse(l.letto!))))
+}
+/** Nelle viste operative compare solo un fornitore ammesso con una misura (anche vecchia) o un limite manuale. */
+export const fornitoriVisibili = (r: RisorseProgetto, ultime: Readonly<Record<string, Limite>>): Fornitore[] =>
+  FORNITORI.filter(f => r.fornitori.includes(f) && [...Object.values(ultime), ...r.limitiManuali].some(l => l.fornitore === f))
+
 /** Peso = preferenza, mai autorizzazione. Quote sconosciute non equivalgono a 100% libero. */
 export function punteggio(a: Azione, r: Regole, limiti: readonly Limite[], lista: readonly Azione[]) {
   let peso = 100

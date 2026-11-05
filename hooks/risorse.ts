@@ -94,6 +94,17 @@ export function usoDesktop(json: unknown, letto: string): Limite[] {
   })
 }
 
+/**
+ * Un piano che risponde «nessuna finestra e nessun uso extra» in forma valida: windows è un array vuoto, extraUsage
+ * manca o è spento. Una risposta con elementi scartati o tipi sbagliati non lo è: vale come lettura fallita.
+ */
+export function pianoVuoto(json: unknown): boolean {
+  const piano = (json as { plan?: unknown } | null)?.plan as Record<string, unknown> | undefined
+  if (!piano || typeof piano !== 'object' || piano.status !== 'ok' || !Array.isArray(piano.windows) || piano.windows.length) return false
+  const extra = piano.extraUsage as Record<string, unknown> | null | undefined
+  return extra === undefined || (!!extra && typeof extra === 'object' && extra.enabled === false)
+}
+
 export async function osservaRisorse($: EngineInterface, options: Record<string, unknown>, r: Regole): Promise<Risorse> {
   if (!r.lette) return { ...RISORSE_VUOTE, proxy: 'regole non leggibili: sonde disabilitate' }
   let risultato: Risorse
@@ -107,7 +118,10 @@ export async function osservaRisorse($: EngineInterface, options: Record<string,
         void $.mcp.call('ccd_session_mgmt', 'get_usage', {}).then(risposta => { timer.cancel(); ok(risposta) }, () => { timer.cancel(); ok(null) })
       }) : null
       if (m && !m.isError) {
-        const l = usoDesktop(JSON.parse(m.content.filter(c => c.type === 'text').map(c => c.text).join('\n')), new Date().toISOString())
+        const json: unknown = JSON.parse(m.content.filter(c => c.type === 'text').map(c => c.text).join('\n'))
+        const l = usoDesktop(json, new Date().toISOString())
+        // Piano letto senza finestre né uso extra: è una risposta, non un guasto; le finestre di prima non valgono più.
+        if (!l.length && pianoVuoto(json)) risultato = { ...risultato, letti: ['claude'] }
         // Un «non disponibile» dall'app non cancella una misura della status line ancora presente.
         const misurato = risultato.limiti.some(x => x.fornitore === 'claude' && x.id !== 'claude-api' && x.percentuale !== undefined)
         if (l.length && !(misurato && l.every(x => x.errore))) risultato ={ ...risultato, limiti: [...risultato.limiti.filter(x => x.fornitore !== 'claude' || x.id === 'claude-api'), ...l] }

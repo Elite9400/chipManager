@@ -267,6 +267,12 @@ loro fornitore (predefinite 70% e 90%, `soglie` nella configurazione). Dopo cinq
 il reset o in caso d'errore, un valore misurato non è più capacità fresca. I valori manuali dicono quando li hai
 inseriti e non contano mai come margine automatico. *Non disponibile* non vuol dire zero uso.
 
+Le viste operative mostrano solo ciò che è configurato: un fornitore compare in **Carico** e nella riga di sintesi
+solo se il progetto lo ammette e ha una misura (anche vecchia) o un limite manuale. Una misura vecchia resta come riga
+grigia con l'età e senza barra, e la riga di sintesi dice da quanto i limiti non sono letti. I fornitori mai misurati,
+o che riportano solo un errore, compaiono solo in **Impostazioni**, che per ogni fornitore ammesso mostra lo stato
+della lettura con i suoi errori; se non ne resta nessuno, **Carico** dice *Nessun limite collegato* e rimanda lì.
+
 | Fonte | Che cosa legge davvero | Attenzione |
 |---|---|---|
 | Desktop `ccd_session_mgmt.get_usage` | ogni finestra del piano (5 ore, settimanale, settimanale per modello) e l'uso extra se attivo; vecchio formato `five_hour` / `seven_day` | altri formati restano *non disponibili*; un piano non applicabile o non leggibile lo dice con il motivo |

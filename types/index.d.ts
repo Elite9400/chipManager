@@ -40,7 +40,13 @@ export type Revisione = {
   tentativo?: string
 }
 export type Soglia = { attenzione: number; critica: number }
-export type Risorse = { limiti: Limite[]; proxy: string; chiavi: { anthropic: boolean; deepseek: boolean; freellmapi: boolean } }
+export type Risorse = {
+  limiti: Limite[]
+  proxy: string
+  chiavi: { anthropic: boolean; deepseek: boolean; freellmapi: boolean }
+  /** Gruppi di limiti (vedi conUltime) letti con esito positivo anche senza nessuna misura: le loro misure precedenti escono. */
+  letti?: string[]
+}
 export type Corsia = 'R0' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5'
 /**
  * Ciclo di una proposta:
@@ -249,6 +255,8 @@ declare module 'claude-code' {
       /** Questa sessione: id del transcript, progetto, modello, effort e modalità permessi effettivi. */
       contesto: Shaped<Chiamante | null>
       risorse: Shaped<Risorse>
+      /** Ultima misura valida per id di limite: un giro fallito non la cancella. */
+      ultimeMisure: Shaped<Record<string, Limite>>
       sessioni: Shaped<Sessioni>
       vista: Vista
       /** «Mostra tutte» nella tabella delle sessioni. */

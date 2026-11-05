@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Azione, BoardProgetto, Chiamante, Contesto, Corsia, Destinazione, Motore, Permessi, Peso, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
+import type { Azione, BoardProgetto, Chiamante, Contesto, Corsia, Destinazione, Limite, Motore, Permessi, Peso, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
 import {
   attive,
   bilancia,
@@ -9,6 +9,7 @@ import {
   cartellaDati,
   checkoutDi,
   contestoDa,
+  conUltime,
   CORSIE,
   dettagliSessione,
   faseChiusa,
@@ -63,6 +64,7 @@ const illeggibili = atom({ plugin: 'chip-manager', key: 'illeggibili' } as const
 })
 const contesto = atom({ plugin: 'chip-manager', key: 'contesto' } as const, null as Chiamante | null, { shape: 'chiamante-1' })
 const risorse = atom({ plugin: 'chip-manager', key: 'risorse' } as const, RISORSE_VUOTE as Risorse, { shape: 'risorse-1' })
+const ultimeMisure = atom({ plugin: 'chip-manager', key: 'ultimeMisure' } as const, {} as Record<string, Limite>, { shape: 'misure-1' })
 const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { lista: [] } as Sessioni, { shape: 'sessioni-1' })
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
 
@@ -1014,6 +1016,7 @@ async function aggiornaRisorse($: Eng, opz: Record<string, unknown>) {
   const r = await leggiRegole($)
   const lette = await osservaRisorse($, opz, r)
   await update($, risorse, () => lette)
+  await update($, ultimeMisure, prima => conUltime(prima, lette.limiti, lette.letti))
 }
 
 async function configura($: Eng, opz: Record<string, unknown>, campi: Record<string, unknown>, attese: RisorseProgetto) {
