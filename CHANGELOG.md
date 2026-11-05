@@ -1,0 +1,36 @@
+# Changelog
+
+All notable changes to chipManager are documented here.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
+[Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+## [2.0.0] - 2026-11-05
+
+First public release.
+
+### Added
+
+- **Suggested-actions panel** for Claude Code, on the desktop app and in the terminal: agents put proposed work
+  in the panel instead of the chat, and you review order, executor (Claude or Codex), reviewer, model, effort and
+  session options before launching.
+- **Single or bulk launch** in dependency order, each action in its own worktree, with live status and milestone
+  progress.
+- **MCP tools** `suggerisci_azione`, `aggiorna_azione` and `risorse_agenti`, plus the `/chipmanager` command.
+- **Agent limits** at a glance: Claude and Codex plan usage, API spend, DeepSeek balance, FreeLLMAPI usage and
+  manual budgets, each with its source and age.
+- **Load weights** by provider, model or effort, as a percentage or an absolute value, used to fill the choices
+  the agent leaves open.
+- **FreeLLMAPI integration**, opt-in per project, with a guided local install and a usage level.
+- **Per-project configuration** in `~/.claude/chipmanager/config.json`: routing rules, sensitive terms, allowed
+  providers, background, local-only mode.
+- **CLI launcher** for the terminal, without the desktop app.
+
+### Security
+
+- Fail-closed guards: sensitive work is never delegated autonomously or sent to the cloud, an unreadable
+  configuration blocks instead of guessing, and API keys are stored as sensitive plugin settings.
+
+[Unreleased]: https://github.com/Elite9400/chipManager/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/Elite9400/chipManager/releases/tag/v2.0.0
