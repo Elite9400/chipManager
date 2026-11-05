@@ -52,7 +52,7 @@ import {
   violazioniAvvio,
 } from '../hooks/logica'
 import type { Azione, Chiamante, Limite } from '../types'
-import { INSTALLAZIONE, risorseLette, usoDesktop } from '../hooks/risorse'
+import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
 
 // Un routing.json d'esempio, nella forma che il pannello legge.
 const ROUTING = {
@@ -1750,6 +1750,20 @@ test('2.3.1: giro fallito dopo uno riuscito: la misura resta; a fonte sempre gua
   expect(aspettoLimite({ ...ultime['claude-weekly']!, manuale: true }, dopo)).toEqual({ fresco: false, barra: true, grigio: false })
 })
 
+const MALFORMATI: Record<string, unknown>[] = [
+  { status: 'ok', windows: 'unrecognized' },
+  { status: 'ok', windows: [{ label: 'Weekly · all models', percentUsed: 140 }] },
+  { status: 'ok', windows: [], extraUsage: { enabled: true, percentUsed: 'molto' } },
+]
+
+test('2.3.1: un piano vuoto è valido solo con windows [] ed extra assente o spento', () => {
+  expect(pianoVuoto({ plan: { status: 'ok', windows: [] } })).toBe(true)
+  expect(pianoVuoto({ plan: { status: 'ok', windows: [], extraUsage: { enabled: false, percentUsed: 0 } } })).toBe(true)
+  for (const piano of [...MALFORMATI, { status: 'unavailable', windows: [] }, { status: 'ok' }, { status: 'ok', windows: [], extraUsage: null }])
+    expect(pianoVuoto({ plan: piano })).toBe(false)
+  for (const rotto of [null, 'testo', {}, { plan: 'ok' }]) expect(pianoVuoto(rotto)).toBe(false)
+})
+
 test('2.3.1: piano letto senza finestre dopo l\'uso extra al 99%: l\'extra esce subito, non resta critico né grigio', async ($, on) => {
   let piano: Record<string, unknown> = { status: 'ok', plan: 'Esempio', windows: [], extraUsage: { enabled: true, percentUsed: 99, spent: '9.90', monthlyLimit: '10.00', currency: 'EUR' } }
   ambiente(on, { strumenti: ['mcp__ccd_session_mgmt__get_usage'],
@@ -1762,6 +1776,14 @@ test('2.3.1: piano letto senza finestre dopo l\'uso extra al 99%: l\'extra esce 
   expect(await ui.find({ type: 'Text', text: /Claude uso extra · tetto 10\.00 EUR: 99% usato/ })).toBeDefined()
   await ui.press({ key: 'vista-lavoro' })
   await ui.unmount()
+  // Risposte che il parser scarta (finestre malformate, percentuale non valida, extra non valido) valgono come lettura fallita: l'extra resta.
+  for (const scartato of MALFORMATI) {
+    piano = scartato
+    await clock.advance(300_000)
+    ui = await $.ui.mount({ ...PANE('terminal') })
+    expect(await ui.find({ type: 'Text', text: /Claude 99% oltre la soglia critica/ })).toBeDefined()
+    await ui.unmount()
+  }
   piano = { status: 'ok', plan: 'Esempio', windows: [], extraUsage: { enabled: false, percentUsed: 0, spent: '0.00', monthlyLimit: '10.00', currency: 'EUR' } }
   await clock.advance(300_000)
   ui = await $.ui.mount({ ...PANE('terminal') })
