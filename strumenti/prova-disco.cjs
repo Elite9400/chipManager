@@ -690,3 +690,15 @@ test('2.4 git-log: il ramo base locale, non origin/HEAD né il ramo del task', (
   g2('commit', '-q', '--allow-empty', '-m', 'del task')
   assert.deepStrictEqual(JSON.parse(esegui(['git-log', altro]).stdout).map(c => c.oggetto), ['su master'])
 })
+
+test('2.4 riassunti: politica non valida sotto lock (tipi o fornitori ignoti) = nessuna prenotazione', async () => {
+  for (const guasto of [{ soloLocale: 'true' }, { fornitori: ['claude', 'NON_VALIDO'] }, { fornitori: 'claude' }, { soloLocale: 1 }]) {
+    const b = preparaBoard()
+    const g = await imposta(b, 'riassunti')
+    // Scrittura a mano del config: `configura` non accetterebbe questi valori.
+    const c = JSON.parse(fs.readFileSync(b.config, 'utf8'))
+    Object.assign(c.progetti[b.repo], guasto)
+    fs.writeFileSync(b.config, JSON.stringify(c))
+    assert.strictEqual(bc(b, 'board-prenota', g, ['x']).status, 4, JSON.stringify(guasto))
+  }
+})

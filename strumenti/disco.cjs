@@ -446,9 +446,11 @@ const boardSpegni = (file, cartella, repo, gen) =>
  */
 const boardPrenota = (file, cartella, repo, gen, impronta) =>
   conBoard(file, cartella, repo, gen, ['riassunti'], true, (dest, progetto) => {
-    // Stessi predefiniti di risorseDa: fornitori assenti = Claude e Codex.
+    // Stessa regola di risorseDa: soloLocale booleano, fornitori noti (assenti = Claude e Codex). Non valida = no.
     const fornitori = progetto.fornitori ?? ['claude', 'codex']
-    if (progetto.soloLocale === true || !Array.isArray(fornitori) || !fornitori.includes('claude')) return [4, 'politica del progetto: niente riassunti con Claude']
+    const valida = (progetto.soloLocale === undefined || typeof progetto.soloLocale === 'boolean') &&
+      Array.isArray(fornitori) && fornitori.every(f => ['claude', 'codex', 'deepseek', 'freellmapi'].includes(f))
+    if (!valida || progetto.soloLocale === true || !fornitori.includes('claude')) return [4, 'politica del progetto: niente riassunti con Claude']
     const fr = path.join(dest, 'riassunti.json')
     const fb = path.join(dest, 'budget.json')
     const r = leggiJson(fr, { voci: {} })

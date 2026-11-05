@@ -1136,7 +1136,8 @@ const cicloRiassunti = ($: Eng) => (riassuntiInCorso ??= riassumi($).finally(() 
 async function riassumi($: Eng) {
   const r = await leggiRegole($)
   const b = r.risorse.board
-  if (b.modo !== 'riassunti' || r.risorse.soloLocale || !r.risorse.fornitori.includes('claude')) return
+  // Regole non lette: la board si genera (con i blocchi), ma nessuna chiamata al modello.
+  if (!r.lette || b.modo !== 'riassunti' || r.risorse.soloLocale || !r.risorse.fornitori.includes('claude')) return
   const st = await read($, statoBoard)
   if (!st.percorso || st.riassunti) return
   const chi = (await read($, contesto)) ?? (await chiSonoIo($))

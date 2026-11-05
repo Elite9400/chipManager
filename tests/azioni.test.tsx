@@ -1931,3 +1931,15 @@ test('2.4: routing illeggibile: la board resta accesa dal config e mostra i bloc
   expect(html).toContain('Senza regole')
   expect(html).toContain('routing.json non letto')
 })
+
+test('2.4: routing illeggibile: board scritta, ma nessun riassunto (nessuna chiamata al modello)', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.delete('X:/repo/.claude/routing.json')
+  conBoard(amb, { modo: 'riassunti', generazione: 1 })
+  scriviAzione(amb, 'a-rou00002', { titolo: 'Senza regole, senza riassunti' })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (let i = 0; i < 3; i++) await clock.advance(60_000)
+  expect(amb.disco.get(INDICE)).toContain('Senza regole, senza riassunti')
+  expect(amb.modello.length).toBe(0)
+})
