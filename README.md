@@ -345,7 +345,7 @@ claude plugin test .
 node --test strumenti/prova-disco.cjs
 ```
 
-75 module tests on a fake engine (both surfaces, policy, weights, confirmations, secrets, CLI, sessions) and 27 helper tests
+77 module tests on a fake engine (both surfaces, policy, weights, confirmations, secrets, CLI, sessions) and 27 helper tests
 with real processes for the mutex, reservation and Codex lane. No real HTTP in tests.
 
 ## FAQ

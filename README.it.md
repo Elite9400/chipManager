@@ -349,7 +349,7 @@ claude plugin test .
 node --test strumenti/prova-disco.cjs
 ```
 
-75 test del modulo su un motore finto (due superfici, politica, pesi, conferme, segreti, CLI, sessioni) e 27 test
+77 test del modulo su un motore finto (due superfici, politica, pesi, conferme, segreti, CLI, sessioni) e 27 test
 dell'helper con processi veri per mutex, prenotazione e corsia Codex. Nessuna chiamata HTTP reale nei test.
 
 ## Domande

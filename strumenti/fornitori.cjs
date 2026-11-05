@@ -187,7 +187,10 @@ function sessioniCodexLocali(home, adesso = Date.now()) {
       if (v.isSymbolicLink()) continue
       const f = path.join(dir, v.name)
       if (v.isDirectory() && /^\d{2,4}$/.test(v.name)) visita(f, livello + 1)
-      else if (v.isFile() && v.name.endsWith('.jsonl') && adesso - fs.statSync(f).mtimeMs <= 86_400_000) file.push(f)
+      else if (v.isFile() && v.name.endsWith('.jsonl')) {
+        // Un file sparito fra readdir e stat salta da solo, non svuota l'elenco.
+        try { if (adesso - fs.statSync(f).mtimeMs <= 86_400_000) file.push(f) } catch { /* sparito */ }
+      }
     }
   }
   try { visita(radice, 0) } catch { return [] }

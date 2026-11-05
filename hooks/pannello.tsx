@@ -650,7 +650,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   type Riga = SessioneProgetto & { azione?: Azione; parola: string; segno: string; colore: string }
   const avviate = lista.filter(a => a.stato === 'avviata' || a.stato === 'in-avvio')
   const righe: Riga[] = ses.lista.map(s => {
-    const a = avviate.find(x => (s.motore === 'claude' && x.sessione === s.id) || (s.motore === 'codex' && !!s.ramo && stati[x.id]?.ramo === s.ramo))
+    const a = avviate.find(x => (s.motore === 'claude' && x.sessione === s.id) || (s.motore === 'codex' && x.esecutore === 'codex' && !!s.ramo && stati[x.id]?.ramo === s.ramo))
     const fermaOra = a ? ferma(a) : s.stato === 'ferma'
     return { ...s, azione: a, titolo: a?.titolo ?? s.titolo, parola: fermaOra ? 'Ferma' : 'In corso', segno: fermaOra ? '◐' : '●', colore: fermaOra ? COLORE_STATO.ferma : COLORE_STATO.inCorso }
   })
@@ -712,7 +712,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
                 : <Box key={`t-${r.id}`}>{titolo}</Box>,
           <Box key={`r2-${r.id}`} flexDirection="row" gap={1}>
             {seconda ? <Text size="caption" dimColor wrap="truncate-end">{seconda}</Text> : null}
-            {sessioneChip && <Button key={`mod-${r.azione!.id}`} plain dimColor label="Dettagli" onPress={apriChiudi(r.azione!.id)} />}
+            {r.azione && (sessioneChip || apribile) && <Button key={`mod-${r.azione.id}`} plain dimColor label="Dettagli" onPress={apriChiudi(r.azione.id)} />}
           </Box>,
         ])}
         {cella(`c-chi-${r.id}`, COL.chi, <Text><Text color={COLORE_MOTORE[r.motore]}>{'◆ '}</Text>{r.motore === 'codex' ? 'Codex' : 'Claude'}</Text>)}

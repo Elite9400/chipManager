@@ -7,6 +7,7 @@ import {
   bilancia,
   BASE_RE,
   cartellaDati,
+  checkoutDi,
   contestoDa,
   CORSIE,
   dettagliSessione,
@@ -88,7 +89,8 @@ async function leggiConfig($: Eng): Promise<unknown> {
 async function progettoSessione($: Eng) {
   const r = await $.session.repo().catch(() => null)
   const root = r?.root ? r.root.replace(/\\/g, '/') : undefined
-  return { repo: repoGithub(r?.remote) ?? root ?? null, root }
+  // Senza remote GitHub il progetto è il checkout: un worktree e il suo checkout sono lo stesso progetto.
+  return { repo: repoGithub(r?.remote) ?? (root ? checkoutDi(root) : null), root }
 }
 
 /**
@@ -98,7 +100,10 @@ async function progettoSessione($: Eng) {
 async function baseOrch($: Eng) {
   const env = await $.env.get('CHIPMANAGER_DIR')
   if (env) return env.replace(/\\/g, '/')
-  return cartellaDati(await leggiConfig($).catch(() => null), (await progettoSessione($)).repo, await casa($))
+  // Configurazione illeggibile o cartella non valida: niente ripiego su un'altra cartella, si ferma tutto.
+  const dir = cartellaDati(await leggiConfig($), (await progettoSessione($)).repo, await casa($))
+  if (!dir) throw new Error('config.json: «cartella» non è un percorso assoluto o che inizia con ~')
+  return dir
 }
 const cartella = async ($: Eng) => `${await baseOrch($)}/azioni`
 const strumenti = ($: Eng): Strumenti => ({ disco: `${$.plugin.root.replace(/\\/g, '/')}/strumenti/disco.cjs` })
@@ -215,7 +220,7 @@ const testoMcp = (r: { content: readonly { type: string; text?: string }[] }) =>
 /** Questa sessione COM'È ADESSO: progetto, modello, effort e permessi effettivi (get_session "self"). */
 async function chiSonoIo($: Eng): Promise<Chiamante> {
   const r = await $.session.repo().catch(() => null)
-  const repo = repoGithub(r?.remote) ?? (r?.root ? r.root.replace(/\\/g, '/') : null)
+  const repo = repoGithub(r?.remote) ?? (r?.root ? checkoutDi(r.root) : null)
   const c: Chiamante = { io: await $.session.id(), repo, modello: await $.session.model().catch(() => ''), lanciatore: 'ignoto' }
   try {
     c.lanciatore = (await $.tool.list()).some(t => t.name === 'mcp__ccd_session__start_session') ? 'desktop' : 'cli'
@@ -249,7 +254,7 @@ async function leggiRegole($: Eng) {
   const root = sr?.root
   let r: Regole
   try {
-    const progetto = progettoDa(await leggiConfig($), repoGithub(sr?.remote) ?? (root ? root.replace(/\\/g, '/') : null))
+    const progetto = progettoDa(await leggiConfig($), repoGithub(sr?.remote) ?? (root ? checkoutDi(root) : null))
     if (typeof progetto === 'string') throw new Error(progetto)
     const f = root ? `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/${progetto.routing}` : undefined
     if (!f || !(await $.fs.exists(f))) throw new Error('routing.json assente')
@@ -310,7 +315,7 @@ async function leggiSessioni($: Eng) {
   }
   const io: SessioneProgetto = { id: 'self', motore: 'claude', titolo: chi.titolo ?? 'Questa sessione', ramo: chi.ramo, modello: chi.modello || undefined, effort: chi.effort, stato: 'in-corso', qui: true }
   // Le sonde dell'app (get_usage) seguono la politica del progetto come i limiti: regole illeggibili o solo locale = niente.
-  const sonde = r.lette && !r.risorse.soloLocale
+  const sonde = r.lette && !r.risorse.soloLocale && r.risorse.fornitori.includes('claude')
   const daLeggere = desktop ? [io, ...claude.sort((x, y) => Number(y.stato === 'in-corso') - Number(x.stato === 'in-corso')).slice(0, MAX_DETTAGLI - 1)] : []
   await Promise.all(
     daLeggere.map(async s => {

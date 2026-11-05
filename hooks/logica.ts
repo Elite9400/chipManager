@@ -899,24 +899,31 @@ export const corrisponde = (a: Azione, filtro: string, regole: Regole = REGOLE_D
 /**
  * Cartella dei dati del progetto (dopo `CHIPMANAGER_DIR`, che vince su tutto): `progetti[repo].cartella`, poi la
  * `cartella` globale (compatibilità), poi `~/.claude/chipmanager/progetti/<owner>__<repo>`.
+ * `null` = una cartella configurata non è un percorso assoluto o con ~: chi chiama non legge né scrive (fail-closed).
  */
-export function cartellaDati(config: unknown, repo: string | null, home: string): string {
+export function cartellaDati(config: unknown, repo: string | null, home: string): string | null {
   const oggetto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+  const valida = (d: unknown): d is string => typeof d === 'string' && d.length <= 400 && /^(~(?=[\\/]|$)|[a-z]:[\\/]|[\\/])/i.test(d)
   const espandi = (d: string) => d.replace(/\\/g, '/').replace(/^~(?=\/|$)/, home).replace(/\/+$/, '')
   const c = oggetto(config) ? config : {}
   const sezione = repo && oggetto(c.progetti) ? c.progetti[repo] : undefined
   const propria = oggetto(sezione) ? sezione.cartella : undefined
-  if (typeof propria === 'string' && propria) return espandi(propria)
-  if (typeof c.cartella === 'string' && c.cartella) return espandi(c.cartella)
-  const nome = repo ? repo.replace(/\//g, '__').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 120) : '_senza-progetto'
-  return `${home}/.claude/chipmanager/progetti/${nome}`
+  if (propria !== undefined) return valida(propria) ? espandi(propria) : null
+  if (c.cartella !== undefined) return valida(c.cartella) ? espandi(c.cartella) : null
+  // Nomi lunghi: coda tenuta e un'impronta dell'intero, così due percorsi con lo stesso inizio non si incontrano.
+  const pulito = repo ? repo.replace(/\//g, '__').replace(/[^A-Za-z0-9._-]+/g, '_') : '_senza-progetto'
+  const impronta = [...pulito].reduce((h, ch) => (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0, 7).toString(36)
+  return `${home}/.claude/chipmanager/progetti/${pulito.length > 120 ? `${pulito.slice(-100)}-${impronta}` : pulito}`
 }
 
-/** Radice comune di un percorso: un worktree in `.claude/worktrees/<nome>` appartiene al checkout che lo ospita. */
+/** Il checkout di un percorso: un worktree in `.claude/worktrees/<nome>` appartiene al checkout che lo ospita. */
+export const checkoutDi = (percorso: string) =>
+  percorso.replace(/\\/g, '/').replace(/\/+$/, '').replace(/\/\.claude\/worktrees\/[^/]+(\/.*)?$/, '')
+
+/** Radice di confronto: il checkout, in minuscolo su Windows (maiuscole e minuscole sono lo stesso percorso). */
 export function radiceProgetto(percorso: string) {
-  let r = percorso.replace(/\\/g, '/').replace(/\/+$/, '')
-  if (/^[a-z]:\//i.test(r)) r = r.toLowerCase() // Windows: maiuscole e minuscole sono lo stesso percorso
-  return r.replace(/\/\.claude\/worktrees\/[^/]+(\/.*)?$/, '')
+  const r = checkoutDi(percorso)
+  return /^[a-z]:\//i.test(r) ? r.toLowerCase() : r
 }
 export const nelProgetto = (cwd: unknown, radice: string) => {
   if (typeof cwd !== 'string' || !cwd || !radice) return false

@@ -26,6 +26,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Each project has its own data folder**: `CHIPMANAGER_DIR`, then `progetti[repo].cartella`, then the global
   `cartella` (kept for compatibility), then `~/.claude/chipmanager/progetti/<owner>__<repo>`. Actions saved in the
   old default folder `~/.claude/chipmanager/azioni` are not moved: to keep them, set that folder as `cartella`.
+  An unreadable configuration or a `cartella` that is not an absolute or `~` path stops reading and writing actions
+  instead of falling back to another folder. Without a GitHub remote, a worktree and its checkout are one project.
 - Actions are compact rows instead of cards: title and dependency on the first line, engine, model, effort and
   reviewer on a grey second line, **Dettagli** opens the full editor in place. Only rows waiting for a decision keep
   a coloured border, and an uncertain launch that can be cancelled now waits in **Aspettano te**.

@@ -5,6 +5,7 @@ import {
   COLORE_EFFORT,
   bilancia,
   cartellaDati,
+  checkoutDi,
   contestoDa,
   dettagliSessione,
   nelProgetto,
@@ -312,7 +313,7 @@ test('codex senza corsia, o routing senza la regola: bloccato', () => {
 // --- il pannello contro un engine finto --------------------------------------------------------------
 
 /** Engine finto: disco in memoria, helper (lock/CAS) e `gh` emulati, servizio di sessione scriptabile. */
-function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown } = {}) {
+function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown } = {}) {
   const disco = new Map<string, string>()
   const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
   const chiamate: { server: string; tool: string; args: Record<string, unknown> }[] = []
@@ -320,7 +321,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; strumenti?:
   const processi: { argv: readonly string[]; stdin?: string }[] = []
   disco.set(p('X:/repo/.claude/routing.json'), JSON.stringify(ROUTING))
   disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { milestoneGithub: true } } }))
-  on('env.get', (_, e) => ({ value: e.name === 'CHIPMANAGER_DIR' ? 'X:/orch' : e.name === 'USERPROFILE' ? 'X:/casa' : undefined }))
+  on('env.get', (_, e) => ({ value: e.name === 'CHIPMANAGER_DIR' && !opz.senzaDir ? 'X:/orch' : e.name === 'USERPROFILE' ? 'X:/casa' : undefined }))
   on('session.id', () => ({ value: 'sessione-master' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('tool.list', () => ({ value: [...(opz.cli ? [] : [{ name: 'mcp__ccd_session__start_session' }]), ...(opz.strumenti ?? []).map(name => ({ name }))] as never }))
@@ -1334,6 +1335,13 @@ test('2.2: cartella dei dati per progetto; la globale resta per compatibilità; 
   expect(cartellaDati({ progetti: { 'acme/progetto': { cartella: '~/a' } } }, 'altro/repo', home)).toBe('C:/casa/.claude/chipmanager/progetti/altro__repo')
   expect(cartellaDati(null, 'C:/lavori/senza remote', home)).toBe('C:/casa/.claude/chipmanager/progetti/C___lavori__senza_remote')
   expect(cartellaDati(null, null, home)).toBe('C:/casa/.claude/chipmanager/progetti/_senza-progetto')
+  // Una cartella configurata non valida non ripiega su un'altra: null, e chi chiama si ferma.
+  expect(cartellaDati({ progetti: { 'acme/progetto': { cartella: 'relativa' } } }, 'acme/progetto', home)).toBeNull()
+  expect(cartellaDati({ cartella: 3 }, 'acme/progetto', home)).toBeNull()
+  const lungo = (fine: string) => cartellaDati(null, `C:/${'a'.repeat(130)}/${fine}`, home)!
+  expect(lungo('uno')).not.toBe(lungo('due'))
+  expect(lungo('uno').length).toBeLessThan(200)
+  expect(checkoutDi('C:\\Lavori\\Progetto\\.claude\\worktrees\\fix-a')).toBe('C:/Lavori/Progetto')
   for (const cartella of ['relativa/x', 3, '', '../su'])
     expect(typeof progettoDa({ progetti: { 'acme/progetto': { cartella } } }, 'acme/progetto')).toBe('string')
   expect(typeof progettoDa({ progetti: { 'acme/progetto': { cartella: '~/orch' } } }, 'acme/progetto')).toBe('object')
@@ -1422,16 +1430,33 @@ test('2.2: «Al lavoro adesso» mostra anche le sessioni aperte a mano e quelle 
   await largo.unmount()
 })
 
-test('2.2: solo rete locale: le sessioni si leggono, il contesto (get_usage) no', async ($, on) => {
-  const clock = mock.clock(on)
-  const amb = ambienteSessioni(on, () => Date.now())
-  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { soloLocale: true } } }))
+for (const [nome, politica] of [['solo rete locale', { soloLocale: true }], ['Claude vietato', { fornitori: ['codex'] }]] as const)
+  test(`2.2: ${nome}: le sessioni si leggono, il contesto (get_usage) no`, async ($, on) => {
+    const clock = mock.clock(on)
+    const amb = ambienteSessioni(on, () => Date.now())
+    amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': politica } }))
+    await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+    await clock.advance(20_000)
+    const ui = await $.ui.mount({ ...PANE('desktop') })
+    expect(await ui.find({ type: 'Text', text: /^Guida delle API$/ })).toBeDefined()
+    expect(amb.chiamate.filter(c => c.tool === 'get_usage').length).toBe(0)
+    await ui.unmount()
+  })
+
+test('2.2: senza CHIPMANAGER_DIR una configurazione rotta non sposta le azioni in un\'altra cartella', async ($, on) => {
+  const amb = ambiente(on, { senzaDir: true })
+  mock.clock(on)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { cartella: 'relativa/dati' } } }))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await clock.advance(20_000)
-  const ui = await $.ui.mount({ ...PANE('desktop') })
-  expect(await ui.find({ type: 'Text', text: /^Guida delle API$/ })).toBeDefined()
-  expect(amb.chiamate.filter(c => c.tool === 'get_usage').length).toBe(0)
-  await ui.unmount()
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Frase.' } as never).catch(() => undefined)
+  expect([...amb.disco.keys()].filter(k => /\/a-[a-z0-9]+\.json$/.test(k))).toEqual([])
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', '{ rotto')
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Frase.' } as never).catch(() => undefined)
+  expect([...amb.disco.keys()].filter(k => /\/a-[a-z0-9]+\.json$/.test(k))).toEqual([])
+  // Con una cartella valida, le azioni vanno nella cartella del progetto.
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: {} }))
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Frase.' } as never)
+  expect([...amb.disco.keys()].some(k => k.startsWith('X:/casa/.claude/chipmanager/progetti/acme__progetto/azioni/a-'))).toBe(true)
 })
 
 test('2.2: azioni senza progetto: richiesta in linea, scarto annullabile, assegnazione al progetto', async ($, on) => {
