@@ -1093,7 +1093,7 @@ async function generaBoard($: Eng) {
   const versioneOra = await versioneMod($)
   // Il percorso entra nell'impronta: la prima scrittura non lo conosce ancora, la seconda lo mette nel piede.
   const impronta = improntaBoard({
-    azioni: mostrate, vive: vv, regole: r, piani, registro, commit, traguardi: tr, riassunti,
+    azioni: mostrate, vive: vv, regole: r, piani, registro, commit, traguardi: tr, riassunti, chi,
     oggi: new Date(adesso).toISOString().slice(0, 10), modo: `${modo.modo}:${modo.generazione}:${prima.percorso ?? ''}`, versione: versioneOra,
   })
   if (impronta === improntaScritta && prima.percorso && (await $.fs.exists(prima.percorso))) return

@@ -49,6 +49,9 @@ decidere come usarli nel progetto in cui lavora. Tutto ciò che è proprio di un
 - **Desktop e terminale** — lo stesso pannello nell'app Claude Code e nella CLI, con un lanciatore da terminale
   dove il servizio delle sessioni desktop non c'è.
 - **Avanzamento delle milestone** — milestone GitHub aperte con percentuale e stima d'arrivo dal ritmo recente.
+- **Board di progetto, su richiesta** — una pagina HTML locale con la linea dello sviluppo e, per ogni task, piano,
+  mandato, processo, a chi è affidato, effort e revisione. Generata senza modello; i riassunti di una frase con il
+  modello più leggero sono una scelta a parte.
 - **Guardie che falliscono chiuse** — il lavoro sensibile è sempre rivisto da Claude, una prenotazione atomica
   impedisce gli avvii doppi, le regole si rileggono prima di ogni decisione, i segreti non stanno mai in chiaro.
 
@@ -153,7 +156,7 @@ stateDiagram-v2
 |---|---|---|
 | `suggerisci_azione` | il modello che propone | mette un'azione nel pannello con titolo, mandato autoportante, ordine, dipendenze e pre-impostazioni |
 | `risorse_agenti` | il modello che propone | sola lettura: limiti con fonte ed età, pesi, fornitori ammessi, livello FreeLLMAPI, modelli ed effort ammessi; delle chiavi solo impostata / mancante |
-| `aggiorna_azione` | le sessioni avviate | segna l'azione *consegnata* (o *fallita*) con il gettone di tentativo scritto nel mandato |
+| `aggiorna_azione` | le sessioni avviate | segna l'azione *consegnata* (o *fallita*) con il gettone di tentativo scritto nel mandato; riferisce l'esito della revisione (`revisione`), anche senza stato |
 
 ## Configurazione
 
@@ -234,6 +237,23 @@ la sposti nella sezione del progetto che la usa: gli altri progetti avranno cos�
 Un file parziale non conta come letto: al pannello servono tutte le sezioni che applica.
 
 </details>
+
+## Board di progetto
+
+Spenta per difetto. In **Impostazioni → Board di progetto** scegli *Accesa* o *Accesa con riassunti*. Il pannello
+scrive allora `<cartella dati>/board/<progetto>-<hash>/index.html` ogni 30 secondi, se qualcosa è cambiato, e
+**Apri board** nell'intestazione la apre nel browser.
+
+- **Che cosa mostra** — aspettano te · in corso (con le fasi del registro) · prossimi (ordine, dipendenze e blocchi
+  d'avvio) · fatto (ultimi 30 giorni e ultimi 15 commit del ramo base). Ogni task apre una scheda con il piano
+  (`piano`, un percorso `.md`/`.txt` nel repo), il mandato ricostruito con le regole attuali, mandato e background
+  originali, corsia e passi, esecutore, modello, effort, permessi, worktree, il revisore previsto e l'esito riferito
+  da una sessione («riferita da», mai «verificata»), date e legami.
+- **Costo** — la pagina la scrive il codice, zero token. I riassunti, se li accendi, costano circa 700 token in
+  ingresso e 120 in uscita per task cambiato con `haiku`, al più 5 al minuto e 100 al giorno. Mandano a Claude solo
+  titolo, mandato e titoli delle dipendenze, e non girano mai con *Solo rete locale* o con Claude vietato.
+- **Mai pubblicata** — è un file locale. Niente script, niente risorse remote, niente link costruiti dai dati, una
+  Content-Security-Policy stretta, gettoni oscurati. Rifiuta le cartelle dati dentro un working tree git.
 
 ## Limiti e bilanciamento
 
@@ -335,6 +355,8 @@ condivisa. Un record per tentativo nasce prima del processo; l'uscita del proces
   *mancante*.
 - **Fallire chiusi** — regole, configurazione o file d'azione illeggibili bloccano avvii e chiusure automatiche
   invece di tirare a indovinare.
+- **Board** — la scrive l'helper sotto il lock della configurazione, solo se modo e generazione sono ancora quelli
+  attesi; rifiuta link, junction, marcatori d'identità di altri progetti e cartelle dati dentro un working tree.
 
 ## Struttura
 
@@ -343,8 +365,9 @@ condivisa. Un record per tentativo nasce prima del processo; l'uscita del proces
 | `hooks/register.tsx` | eventi, strumenti MCP, avvio delle sessioni, sorveglianza |
 | `hooks/pannello.tsx` | il pannello, desktop e terminale |
 | `hooks/logica.ts` | logica pura: regole, pianificazione, transizioni, pesi, colori |
+| `hooks/board.ts` | generatore puro della board di progetto (HTML) |
 | `hooks/risorse.ts`, `strumenti/fornitori.cjs` | fonti dei limiti, trasporto limitato, installazione guidata, proxy testuale |
-| `strumenti/disco.cjs` | helper Node: mutex del sistema, compare-and-swap, corsia Codex, lanciatore CLI |
+| `strumenti/disco.cjs` | helper Node: mutex del sistema, compare-and-swap, corsia Codex, lanciatore CLI, board e lettura dei piani |
 | `types/index.d.ts` | contratto dei tipi e dello stato |
 | `docs/ANALISI-2.0.md` | analisi avversaria e design della 2.0 |
 

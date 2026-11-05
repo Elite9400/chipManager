@@ -48,6 +48,9 @@ model decides how to use them for the project at hand. Everything project-specif
 - **Desktop and terminal** — the same panel in the Claude Code app and in the CLI, with a CLI launcher where the
   desktop session service is not available.
 - **Milestone progress** — open GitHub milestones with percentage and an ETA from the recent closing pace.
+- **Project board, opt-in** — a local HTML page with the line of work and, for each task, plan, brief, process,
+  owner, effort and review. Generated without any model; one-sentence summaries by the lightest model are a
+  separate opt-in.
 - **Fail-closed guards** — sensitive work always reviewed by Claude, an atomic reservation so nothing launches
   twice, rules re-read before every decision, secrets never stored in plain text.
 
@@ -153,7 +156,7 @@ stateDiagram-v2
 |---|---|---|
 | `suggerisci_azione` | the proposing model | puts an action in the panel with title, self-contained brief, order, dependencies and any preset |
 | `risorse_agenti` | the proposing model | read-only: limits with source and age, weights, allowed providers, FreeLLMAPI level, allowed models and efforts; keys only as set / missing |
-| `aggiorna_azione` | launched sessions | marks the action *delivered* (or *failed*) with the attempt token written in its brief |
+| `aggiorna_azione` | launched sessions | marks the action *delivered* (or *failed*) with the attempt token written in its brief; reports the review outcome (`revisione`), also without a state |
 
 ## Configuration
 
@@ -234,6 +237,23 @@ cannot be shown, the same request stays at the top of the Lavoro view. When upgr
 A partial file does not count as read: the panel needs every section it enforces.
 
 </details>
+
+## Project board
+
+Off by default. In **Settings → Board di progetto** choose *Accesa* (on) or *Accesa con riassunti* (on with
+summaries). The panel then writes `<data folder>/board/<project>-<hash>/index.html` every 30 seconds when something
+changed, and **Open board** in the header opens it in your browser.
+
+- **What it shows** — waiting for you · in progress (with the registry phases) · next (order, dependencies and launch
+  blocks) · done (last 30 days and the last 15 commits of the base branch). Each task opens a card with its plan
+  (`piano`, a `.md`/`.txt` path in the repository), the brief rebuilt with the current rules, the original brief
+  and background, lane and steps, executor, model, effort, permissions, worktree, the expected reviewer and the
+  outcome reported by a session ("riferita da", never "verified"), dates and links.
+- **Cost** — the page is built by code, zero tokens. Summaries, if you turn them on, cost about 700 input and 120
+  output tokens per changed task with `haiku`, at most 5 a minute and 100 a day. They only send title, brief and
+  dependency titles to Claude, and never run with *Solo rete locale* or with Claude disabled.
+- **Never published** — a local file only. No scripts, no remote resources, no links built from data, a strict
+  Content-Security-Policy, attempt tokens masked. It refuses data folders inside a git working tree.
 
 ## Limits & load balancing
 
@@ -332,6 +352,8 @@ are never deleted automatically.
   (`/config`) or in the environment (`ANTHROPIC_ADMIN_KEY`, `DEEPSEEK_API_KEY`, `FREELLMAPI_KEY`). They reach the
   helper only through its environment, never argv; state, panel and messages show only *set* / *missing*.
 - **Fail closed** — unreadable rules, config or action files block launches and auto-closing instead of guessing.
+- **Board** — written by the helper under the configuration lock, only if mode and generation are still the
+  expected ones; links, junctions, foreign identity markers and data folders inside a working tree are refused.
 
 ## Project layout
 
@@ -340,8 +362,9 @@ are never deleted automatically.
 | `hooks/register.tsx` | events, MCP tools, session launch, watch loop |
 | `hooks/pannello.tsx` | the panel, desktop and terminal |
 | `hooks/logica.ts` | pure logic: rules, planning, transitions, weights, colours |
+| `hooks/board.ts` | pure generator of the project board (HTML) |
 | `hooks/risorse.ts`, `strumenti/fornitori.cjs` | limit sources, bounded transport, guided install, text proxy |
-| `strumenti/disco.cjs` | Node helper: OS mutex, compare-and-swap, Codex lane, CLI worker |
+| `strumenti/disco.cjs` | Node helper: OS mutex, compare-and-swap, Codex lane, CLI worker, board and plan reading |
 | `types/index.d.ts` | types and state contract |
 | `docs/ANALISI-2.0.md` | adversarial analysis and design of 2.0 (Italian) |
 

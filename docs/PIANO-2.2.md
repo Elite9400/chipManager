@@ -250,8 +250,10 @@ Ogni fase è un rilascio con la sua voce nel CHANGELOG, i test e le immagini agg
 | F0 | 2.1.1 | B2 (limiti Claude) e la parte di B1 che nasconde le chip senza progetto | Claude piano visibile sul desktop; nessuna chip senza progetto in vista; test sul nuovo formato. |
 | F1 | 2.2.0 | B1 completo, B3, vista **Lavoro**, layout del terminale | Tabella con le sessioni anche aperte a mano; prima schermata come l'abbozzo, desktop e terminale. |
 | F2 | 2.3.0 | Vista **Carico**, B7 | Matrice e limiti al rapporto vero; soglie per fornitore in uso. |
-| F3 | 2.4.0 | **Impostazioni** riprogettate, procedure guidate, popup | Ogni connessione si collega senza toccare JSON; budget manuali da popup. |
-| F4 | 2.5.0 | B4, B5, B6 | Profilo Automatico predefinito; proposta della master confermata in popup; `risorse_agenti` con i token. |
+| F2b | 2.3.1 | Limiti: solo ciò che è configurato (`PIANO-board.md`, parte A) | Nelle viste operative nessuna riga per fornitori vietati o mai misurati. |
+| F2c | 2.4.0 | **Board di progetto** in HTML (`PIANO-board.md`, parte B) | Board accesa da Impostazioni, «Apri board», schede con piano, mandato, processo e revisione. |
+| F3 | 2.5.0 | **Impostazioni** riprogettate, procedure guidate, popup | Ogni connessione si collega senza toccare JSON; budget manuali da popup. |
+| F4 | 2.6.0 | B4, B5, B6 | Profilo Automatico predefinito; proposta della master confermata in popup; `risorse_agenti` con i token. |
 | F5 | — | Rifinitura e revisione grafica; **B10** legenda | `impeccable critique` e `audit` sulle catture, README e GIF aggiornati; un neofita trova il significato di ogni sigla senza uscire dal pannello. |
 
 **Verifica di ogni fase**:

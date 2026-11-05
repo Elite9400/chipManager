@@ -84,6 +84,8 @@ export type IngressiBoard = {
   oggi: string
   modo: string
   versione: string
+  /** La sessione che genera: i blocchi di avvio mostrati dipendono da lei. */
+  chi?: Chiamante | null
 }
 
 /** Impronta degli ingressi: cambia solo se cambia ciò che la board mostra (mai per `aggiornata` o per l'ora). */

@@ -6,6 +6,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-05
+
+### Added
+
+- **Project board**: a static, self-contained HTML file (`<data folder>/board/<project>-<hash>/index.html`), off by
+  default and switched on per project in Settings. It shows the line of work in four groups (waiting for you, in
+  progress, next, done, with the last 15 commits of the base branch) and, for each task, an expandable card with its
+  plan, the brief rebuilt with the current rules, the process (lane, execution → review → merge, registry phase),
+  who works on it with which model and effort, the expected reviewer and the reported review outcome, dates, links
+  and errors. It is generated without any model, has no scripts, no links built from data and a strict
+  Content-Security-Policy; attempt tokens are masked in the whole file.
+- **Open board** in the panel header (and **In the board** on each task card) opens the file with the system
+  opener, with a fixed argument list and no shell; the path is shown in plain text as a fallback.
+- **Optional summaries with the lightest model** (`haiku`, effort low, 120 output tokens): one sentence per task,
+  only when its text changes, at most 5 per minute and 100 per day, reserved under the helper lock so two panels
+  never pay twice. Off by default; never with `soloLocale` or with Claude disabled for the project.
+- `piano` on an action: a `.md` or `.txt` file relative to the repository root, set by `suggerisci_azione` or in
+  the editor and read by the helper (real path under the repository, regular file, 200 KB).
+- `aggiorna_azione` takes a `revisione` (`in-corso` | `approvata` | `da-correggere`, note up to 300
+  characters), with or without a state. Only the session holding the current attempt token, or the proposer, may
+  write it; the author is the calling session, never an argument. A new attempt clears it.
+- Actions record `consegnataIl` and `completataIl`; every state change goes through a single transition function.
+
+### Security
+
+- The board is refused when the data folder is inside a git working tree, when any folder on its path is a link or
+  junction, or when the identity marker in its folder belongs to another project. Turning it off deletes only the
+  HTML and the summaries, never folders; the daily summary budget survives off → on.
+- Every `board-*` helper command runs under the configuration lock and re-reads mode and generation: work started
+  before a mode change (even off → on) is never published.
+
 ## [2.3.0] - 2026-11-05
 
 ### Added
