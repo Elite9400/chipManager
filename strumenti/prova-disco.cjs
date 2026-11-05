@@ -633,3 +633,60 @@ test('2.4 date: ogni cambio di stato di un\'azione passa da transizione()', () =
     assert.deepStrictEqual(scritte, [])
   }
 })
+
+// --- 2.4 correzioni dopo la revisione ------------------------------------------------------------------
+
+test('2.4 riassunti: la politica si ricontrolla sotto lock a ogni prenotazione (soloLocale, Claude vietato)', async () => {
+  const b = preparaBoard()
+  const g = await imposta(b, 'riassunti')
+  assert.strictEqual(bc(b, 'board-prenota', g, ['prima']).status, 0)
+  const cambia = async campi => {
+    const atteso = fs.readFileSync(b.config, 'utf8')
+    assert.strictEqual(await configura(b.config, { atteso, repo: b.repo, campi }), 0)
+  }
+  await cambia({ soloLocale: true })
+  assert.strictEqual(bc(b, 'board-prenota', g, ['seconda']).status, 4)
+  await cambia({ soloLocale: false, fornitori: ['codex'] })
+  assert.strictEqual(bc(b, 'board-prenota', g, ['terza']).status, 4)
+  await cambia({ fornitori: ['claude', 'codex'] })
+  assert.strictEqual(bc(b, 'board-prenota', g, ['quarta']).status, 0)
+})
+
+test('2.4 board: un errore di git non vale «fuori dal working tree»: scrittura bloccata con il motivo', async () => {
+  const b = preparaBoard()
+  const g = await imposta(b, 'accesa')
+  const rotta = path.join(fuori(), 'gitconfig-rotta')
+  fs.writeFileSync(rotta, '[core\n  questa non è una configurazione')
+  const r = spawnSync(process.execPath, [DISCO, 'board-scrivi', b.config, b.cartella, b.repo, String(g), 'h'], {
+    input: HTML, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: rotta },
+  })
+  assert.strictEqual(r.status, 6, r.stdout)
+  assert.match(r.stdout, /git/)
+  assert.strictEqual(fs.existsSync(path.join(b.cartella, 'board')), false)
+  // Con git sano la stessa cartella passa.
+  assert.strictEqual(bc(b, 'board-scrivi', g, ['h'], HTML).status, 0)
+})
+
+test('2.4 git-log: il ramo base locale, non origin/HEAD né il ramo del task', () => {
+  const repo = fuori()
+  const git = (...a) => spawnSync('git', ['-C', repo, '-c', 'user.name=prova', '-c', 'user.email=prova@example.invalid', ...a], { encoding: 'utf8' })
+  git('init', '-q', '-b', 'main')
+  git('commit', '-q', '--allow-empty', '-m', 'base remota')
+  // origin/main resta indietro: il commit locale di main deve comparire.
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+  git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+  git('commit', '-q', '--allow-empty', '-m', 'locale su main')
+  // Il checkout è sul ramo del task: i suoi commit non sono del ramo base.
+  git('checkout', '-q', '-b', 'task')
+  git('commit', '-q', '--allow-empty', '-m', 'lavoro del task')
+  const l = JSON.parse(esegui(['git-log', repo]).stdout)
+  assert.deepStrictEqual(l.map(c => c.oggetto), ['locale su main', 'base remota'])
+  // Un altro nome di ramo base locale (master), senza remoto.
+  const altro = fuori()
+  const g2 = (...a) => spawnSync('git', ['-C', altro, '-c', 'user.name=prova', '-c', 'user.email=prova@example.invalid', ...a], { encoding: 'utf8' })
+  g2('init', '-q', '-b', 'master')
+  g2('commit', '-q', '--allow-empty', '-m', 'su master')
+  g2('checkout', '-q', '-b', 'task')
+  g2('commit', '-q', '--allow-empty', '-m', 'del task')
+  assert.deepStrictEqual(JSON.parse(esegui(['git-log', altro]).stdout).map(c => c.oggetto), ['su master'])
+})

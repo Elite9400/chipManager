@@ -325,12 +325,27 @@ function senzaLink(...percorsi) {
   }
 }
 
+/** Un `.git` (cartella o file di un worktree) in `dir` o in uno dei suoi genitori. */
+function gitRisalendo(dir) {
+  for (let d = dir; ; d = path.dirname(d)) {
+    if (fs.existsSync(path.join(d, '.git'))) return true
+    if (path.dirname(d) === d) return false
+  }
+}
+
+/**
+ * Fuori da ogni working tree solo se è ACCERTATO: git risponde «not a git repository» e nessun `.git` risale
+ * i genitori del percorso reale (o, senza git installato, nessun `.git`). Ogni altro esito blocca con il motivo.
+ */
 function dentroWorkingTree(dir) {
-  const env = { ...process.env }
+  const env = { ...process.env, LC_ALL: 'C', LANG: 'C', LANGUAGE: 'C' }
   for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CEILING_DIRECTORIES']) delete env[k]
   const g = spawnSync('git', ['-C', dir, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8', windowsHide: true, timeout: 10_000, env })
-  if (g.error) throw new Rifiuto(6, 'git non disponibile: non posso escludere che la cartella sia dentro un working tree')
-  return g.status === 0 && g.stdout.trim() === 'true'
+  if (g.error?.code === 'ENOENT') return gitRisalendo(dir)
+  if (g.error) throw new Rifiuto(6, `git non ha risposto (${g.error.code ?? g.error.message}): non posso escludere un working tree`)
+  if (g.status === 0) return true
+  if (/not a git repository/i.test(g.stderr)) return gitRisalendo(dir)
+  throw new Rifiuto(6, `git non riesce a dire se la cartella è in un working tree: ${(g.stderr.trim().split('\n')[0] || `uscita ${g.status}`).slice(0, 160)}`)
 }
 
 /**
@@ -382,7 +397,7 @@ async function conBoard(file, cartella, repo, generazione, modi, crea, fn) {
       const c = JSON.parse(fs.readFileSync(file, 'utf8'))
       const b = c?.progetti?.[repo]?.board
       if (!b || !modi.includes(b.modo) || b.generazione !== gen) return [4, 'board cambiata: lavoro scartato']
-      return fn(destBoard(cartella, repo, crea))
+      return fn(destBoard(cartella, repo, crea), c.progetti[repo])
     } catch (e) {
       if (e instanceof Rifiuto) return [e.codice, e.message]
       throw e
@@ -425,9 +440,15 @@ const boardSpegni = (file, cartella, repo, gen) =>
     return [0, '']
   })
 
-/** Prenota un riassunto: impronta e un'unità del budget del giorno, insieme. Una prenotazione conta sempre. */
+/**
+ * Prenota un riassunto: impronta e un'unità del budget del giorno, insieme. Una prenotazione conta sempre. La
+ * politica del progetto si rilegge qui, sotto lock, prima di OGNI chiamata: solo rete locale o Claude vietato = no.
+ */
 const boardPrenota = (file, cartella, repo, gen, impronta) =>
-  conBoard(file, cartella, repo, gen, ['riassunti'], true, dest => {
+  conBoard(file, cartella, repo, gen, ['riassunti'], true, (dest, progetto) => {
+    // Stessi predefiniti di risorseDa: fornitori assenti = Claude e Codex.
+    const fornitori = progetto.fornitori ?? ['claude', 'codex']
+    if (progetto.soloLocale === true || !Array.isArray(fornitori) || !fornitori.includes('claude')) return [4, 'politica del progetto: niente riassunti con Claude']
     const fr = path.join(dest, 'riassunti.json')
     const fb = path.join(dest, 'budget.json')
     const r = leggiJson(fr, { voci: {} })
@@ -481,9 +502,13 @@ function leggiPiano(radice, relativo) {
 /** Le ultime 15 voci del ramo base (first-parent): SHA corto, data, oggetto. Nient'altro del commit. */
 function gitLog(radice) {
   const git = args => spawnSync('git', ['-C', radice, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15_000 })
-  const remoto = git(['rev-parse', '--abbrev-ref', 'origin/HEAD'])
-  const ref = remoto.status === 0 && /^[A-Za-z0-9._/-]{1,100}$/.test(remoto.stdout.trim()) ? remoto.stdout.trim() : 'HEAD'
-  const r = git(['log', '--first-parent', '-15', '--format=%h%x09%cI%x09%s', ref, '--'])
+  // Il ramo base LOCALE: il nome che origin/HEAD indica, poi main e master. Mai origin/… (perde i commit locali)
+  // né HEAD (nel worktree di un task è il ramo del task).
+  const remoto = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
+  const daRemoto = remoto.status === 0 ? remoto.stdout.trim().replace(/^origin\//, '') : ''
+  const nome = [daRemoto, 'main', 'master'].find(n => /^[A-Za-z0-9._/-]{1,100}$/.test(n) && git(['rev-parse', '--verify', '--quiet', `refs/heads/${n}`]).status === 0)
+  if (!nome) return [4, 'ramo base locale non trovato']
+  const r = git(['log', '--first-parent', '-15', '--format=%h%x09%cI%x09%s', `refs/heads/${nome}`, '--'])
   if (r.status !== 0) return [4, 'git log non riuscito']
   const voci = r.stdout.split('\n').filter(Boolean).map(riga => {
     const [sha, data, ...oggetto] = riga.split('\t')
