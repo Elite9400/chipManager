@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-05
+
+### Fixed
+
+- **Claude plan limits show again on the desktop app.** The panel reads the current shape of
+  `ccd_session_mgmt.get_usage`: one limit per plan window (5-hour, weekly, weekly per model) with its reset time,
+  plus extra usage when it is enabled. When plan limits do not apply or cannot be read, the panel says so with the
+  reason instead of an unexplained "not available". The previous format is still accepted.
+- **Actions from other projects no longer appear.** Actions saved without a project by an earlier version are no
+  longer shown in any project.
+
 ## [2.1.0] - 2026-11-05
 
 ### Changed
@@ -52,6 +63,7 @@ First public release.
 - Fail-closed guards: sensitive work is never delegated autonomously or sent to the cloud, an unreadable
   configuration blocks instead of guessing, and API keys are stored as sensitive plugin settings.
 
-[Unreleased]: https://github.com/Elite9400/chipManager/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/Elite9400/chipManager/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/Elite9400/chipManager/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Elite9400/chipManager/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/Elite9400/chipManager/releases/tag/v2.0.0

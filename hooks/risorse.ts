@@ -51,10 +51,39 @@ export function risorseLette(json: unknown): Risorse {
   return { limiti, proxy: json.proxy, chiavi: { anthropic: chiavi.anthropic === true, deepseek: chiavi.deepseek === true, freellmapi: chiavi.freellmapi === true } }
 }
 
-/** get_usage non ha un contratto tipizzato: accettiamo solo le finestre numeriche riconosciute. */
+/**
+ * get_usage non ha un contratto tipizzato: accettiamo solo forme note.
+ * Attuale: plan { status, windows[{ label, percentUsed, resetsAt }], extraUsage }; vecchia: rate_limits.five_hour / seven_day.
+ */
 export function usoDesktop(json: unknown, letto: string): Limite[] {
   if (!json || typeof json !== 'object') return []
   const j = json as Record<string, unknown>
+  const fonte = 'ccd_session_mgmt.get_usage'
+  const pct = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100
+  const quando = (v: unknown) => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : undefined)
+  const etichetta = (v: unknown) => (typeof v === 'string' && v.length > 0 && v.length <= 80 && !/[\x00-\x1f\x7f]/.test(v) ? v : undefined)
+  const piano = j.plan as Record<string, unknown> | undefined
+  if (piano && typeof piano === 'object') {
+    if (piano.status !== 'ok') {
+      const motivo = piano.status === 'not_applicable' ? 'limiti di piano non applicabili qui' : 'limiti di piano non leggibili ora'
+      const nota = etichetta(piano.note)
+      return [{ id: 'claude', fornitore: 'claude', nome: 'Claude piano', fonte, errore: nota ? `${motivo}: ${nota}` : motivo }]
+    }
+    const visti = new Set<string>()
+    const finestre: Limite[] = (Array.isArray(piano.windows) ? piano.windows.slice(0, 20) : []).flatMap((w: Record<string, unknown>) => {
+      const nome = etichetta(w?.label)
+      const id = nome && `claude-${nome.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+      if (!nome || !id || id === 'claude-' || id === 'claude-api' || visti.has(id) || !pct(w.percentUsed)) return []
+      visti.add(id)
+      return [{ id, fornitore: 'claude' as const, nome: `Claude piano · ${nome}`, percentuale: w.percentUsed, unita: '%' as const, letto, fonte, reset: quando(w.resetsAt) }]
+    })
+    const extra = piano.extraUsage as Record<string, unknown> | undefined
+    const tetto = typeof extra?.monthlyLimit === 'string' && /^\d+(\.\d+)?$/.test(extra.monthlyLimit) ? extra.monthlyLimit : undefined
+    const valuta = ['EUR', 'USD', 'CNY'].includes(String(extra?.currency)) ? (extra!.currency as string) : undefined
+    if (extra?.enabled === true && pct(extra.percentUsed))
+      finestre.push({ id: 'claude-extra', fornitore: 'claude', nome: `Claude uso extra${tetto && valuta ? ` · tetto ${tetto} ${valuta}` : ''}`, percentuale: extra.percentUsed, unita: '%', letto, fonte })
+    return finestre
+  }
   const dati = (j.rate_limits ?? j) as Record<string, unknown>
   return ['five_hour', 'seven_day'].flatMap(k => {
     const v = dati?.[k] as Record<string, unknown> | undefined
@@ -79,7 +108,9 @@ export async function osservaRisorse($: EngineInterface, options: Record<string,
       }) : null
       if (m && !m.isError) {
         const l = usoDesktop(JSON.parse(m.content.filter(c => c.type === 'text').map(c => c.text).join('\n')), new Date().toISOString())
-        if (l.length) risultato = { ...risultato, limiti: [...risultato.limiti.filter(x => x.fornitore !== 'claude' || x.id === 'claude-api'), ...l] }
+        // Un «non disponibile» dall'app non cancella una misura della status line ancora presente.
+        const misurato = risultato.limiti.some(x => x.fornitore === 'claude' && x.id !== 'claude-api' && x.percentuale !== undefined)
+        if (l.length && !(misurato && l.every(x => x.errore))) risultato ={ ...risultato, limiti: [...risultato.limiti.filter(x => x.fornitore !== 'claude' || x.id === 'claude-api'), ...l] }
       }
     } catch { /* il dato locale resta con la propria età; nessuna percentuale inventata */ }
   }

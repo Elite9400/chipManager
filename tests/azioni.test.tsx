@@ -305,7 +305,7 @@ test('codex senza corsia, o routing senza la regola: bloccato', () => {
 // --- il pannello contro un engine finto --------------------------------------------------------------
 
 /** Engine finto: disco in memoria, helper (lock/CAS) e `gh` emulati, servizio di sessione scriptabile. */
-function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown } = {}) {
+function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown } = {}) {
   const disco = new Map<string, string>()
   const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
   const chiamate: { server: string; tool: string; args: Record<string, unknown> }[] = []
@@ -316,7 +316,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; fonte?: (cm
   on('env.get', (_, e) => ({ value: e.name === 'CHIPMANAGER_DIR' ? 'X:/orch' : e.name === 'USERPROFILE' ? 'X:/casa' : undefined }))
   on('session.id', () => ({ value: 'sessione-master' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
-  on('tool.list', () => ({ value: (opz.cli ? [] : [{ name: 'mcp__ccd_session__start_session' }]) as never }))
+  on('tool.list', () => ({ value: [...(opz.cli ? [] : [{ name: 'mcp__ccd_session__start_session' }]), ...(opz.strumenti ?? []).map(name => ({ name }))] as never }))
   on('session.repo', () => ({ value: { root: 'X:/repo', remote: 'https://github.com/acme/progetto.git', internal: false, repo: null } as never }))
   on('fs.exists', (_, e) => ({ value: [...disco.keys()].some(k => k === p(e.path) || k.startsWith(`${p(e.path)}/`)) }))
   on('fs.list', (_, e) => ({
@@ -1027,6 +1027,26 @@ test('2.0: fonti sconosciute, vecchie, future e manuali non fingono margini fres
   expect(usoDesktop('week 70%', new Date().toISOString())).toEqual([])
   expect(usoDesktop({ five_hour: { utilization: 170 } }, new Date().toISOString())).toEqual([])
   expect(usoDesktop({ five_hour: { utilization: 70 } }, new Date().toISOString())[0]).toMatchObject({ percentuale: 70, fonte: 'ccd_session_mgmt.get_usage' })
+  const letto = new Date().toISOString()
+  const piano = (p: Record<string, unknown>) => ({ plan: { status: 'ok', plan: 'Esempio', ...p }, context: { tokensUsed: 1 } })
+  const finestre = usoDesktop(piano({
+    windows: [
+      { label: 'Weekly · all models', percentUsed: 12, resetsAt: '2999-01-01T00:00:00Z', resetsIn: '3d' },
+      { label: 'Weekly · Modello', percentUsed: 3, resetsAt: '2999-01-01T00:00:00Z' },
+      { label: 'Weekly · all models', percentUsed: 99 },
+      { label: 'Fuori scala', percentUsed: 140 },
+      { label: 'x\u0000y', percentUsed: 5 },
+    ],
+    extraUsage: { enabled: true, percentUsed: 25, spent: '1.00', monthlyLimit: '4.00', currency: 'EUR' },
+  }), letto)
+  expect(finestre.map(l => l.id)).toEqual(['claude-weekly-all-models', 'claude-weekly-modello', 'claude-extra'])
+  expect(finestre[0]).toMatchObject({ fornitore: 'claude', nome: 'Claude piano · Weekly · all models', percentuale: 12, reset: '2999-01-01T00:00:00Z', fonte: 'ccd_session_mgmt.get_usage' })
+  expect(finestre[2]).toMatchObject({ nome: 'Claude uso extra · tetto 4.00 EUR', percentuale: 25 })
+  expect(limiteFresco(finestre[0]!)).toBe(true)
+  expect(usoDesktop(piano({ windows: [], extraUsage: { enabled: false, percentUsed: 0 } }), letto)).toEqual([])
+  expect(usoDesktop({ plan: { status: 'not_applicable' } }, letto)[0]).toMatchObject({ id: 'claude', errore: 'limiti di piano non applicabili qui' })
+  expect(usoDesktop({ plan: { status: 'unavailable', note: 'riprova tra poco' } }, letto)[0]!.errore).toBe('limiti di piano non leggibili ora: riprova tra poco')
+  expect(() => risorseLette({ limiti: [...finestre, ...usoDesktop({ plan: { status: 'unavailable' } }, letto)], proxy: 'x', chiavi: { anthropic: false, deepseek: false, freellmapi: false } })).not.toThrow()
   const vecchio = { ...LIMITE, letto: '2000-01-01T00:00:00Z' }
   expect(limiteFresco(vecchio)).toBe(false)
   expect(limiteFresco({ ...LIMITE, letto: '2999-01-01T00:00:00Z' })).toBe(false)
@@ -1052,6 +1072,26 @@ test('2.0: le fonti proiettano il contratto e rifiutano numeri, tempi o forme no
     expect(() => risorseLette(rotto)).toThrow()
   const finestra = usoDesktop({ five_hour: { utilization: 70, resets_at: '2000-01-01T00:00:00Z' } }, LIMITE.letto!)[0]!
   expect(limiteFresco(finestra)).toBe(false)
+})
+
+test('2.1.1: limiti Claude dal formato attuale di get_usage; nessuna azione di altri progetti o senza progetto', async ($, on) => {
+  const piano = { plan: { status: 'ok', plan: 'Esempio', windows: [{ label: 'Weekly · all models', percentUsed: 37, resetsAt: '2999-01-01T00:00:00Z', resetsIn: '5d' }],
+    extraUsage: { enabled: false, percentUsed: 0, spent: '0.00', monthlyLimit: '10.00', currency: 'EUR' } } }
+  const amb = ambiente(on, { strumenti: ['mcp__ccd_session_mgmt__get_usage'],
+    mcp: (_s, tool) => (tool === 'get_usage' ? { isError: false, content: [{ type: 'text', text: JSON.stringify(piano) }] } : undefined) })
+  mock.clock(on)
+  amb.disco.set('X:/orch/azioni/a-vecchia01.json', JSON.stringify({ ...base('a-vecchia01', 1, { titolo: 'Senza progetto' }), repo: undefined }))
+  amb.disco.set('X:/orch/azioni/a-altrorp1.json', JSON.stringify(base('a-altrorp1', 2, { titolo: 'Di un altro progetto', repo: 'altro/progetto' })))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Del progetto', brief: 'Frase.' } as never)
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount({ ...PANE(surface) })
+    expect(await ui.find({ type: 'Text', text: /Claude piano · Weekly · all models: 37% usato/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Claude piano: non disponibile/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Del progetto/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Senza progetto|Di un altro progetto/ })).toBeUndefined()
+    await ui.unmount()
+  }
 })
 
 test('2.0: helper con schema ignoto lascia il pannello disponibile senza inventare limiti', async ($, on) => {

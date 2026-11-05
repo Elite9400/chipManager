@@ -102,8 +102,8 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   const conVelo = surface !== 'terminal'
 
   const io = await read($, contesto)
-  // Solo le azioni di questo progetto (o senza progetto, scritte dalla versione precedente).
-  const tutte = (await read($, azioni)).filter(a => !a.repo || !io?.repo || a.repo === io.repo)
+  // Solo le azioni di questo progetto: quelle senza progetto non si mostrano più da nessuna parte.
+  const tutte = (await read($, azioni)).filter(a => !!a.repo && a.repo === io?.repo)
   const regoleOra = (await read($, regole)) ?? REGOLE_DEFAULT
   const testoFiltro = await read($, filtro)
   const lista = attive(tutte)
@@ -638,7 +638,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   )
 
   const mancanti: Limite[] = [
-    { id: 'claude', fornitore: 'claude', nome: 'Claude piano', fonte: 'desktop / status line' },
+    { id: 'claude', fornitore: 'claude', nome: 'Claude piano', fonte: 'app desktop (get_usage) o status line' },
     { id: 'claude-api', fornitore: 'claude', nome: 'Claude API', fonte: 'Anthropic Admin' },
     { id: 'codex', fornitore: 'codex', nome: 'Codex piano', fonte: 'sessioni locali' },
     { id: 'deepseek', fornitore: 'deepseek', nome: 'DeepSeek', fonte: 'balance API' },
