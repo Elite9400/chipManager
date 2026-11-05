@@ -2,6 +2,7 @@
   "name": "chipManager",
   "version": "2.0.0",
   "author": { "name": "Elite9400" },
+  "license": "MIT",
   "description": "Pannello delle azioni suggerite dalle sessioni: ordine, motore (Claude/Codex) e revisore modificabili, avvio singolo o massivo con le regole di routing.json, stato dal vivo e avanzamento delle milestone",
   "types": "./types/index.d.ts",
   "userConfig": {

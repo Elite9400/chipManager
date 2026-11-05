@@ -8,6 +8,7 @@
 [![versione](https://img.shields.io/badge/versione-2.0.0-00BFFF)](#)
 [![superfici](https://img.shields.io/badge/superfici-desktop%20%C2%B7%20terminale-555)](#immagini)
 [![test](https://img.shields.io/badge/test-67%20%2B%2026%20verdi-059669)](#collaudo)
+[![licenza](https://img.shields.io/badge/licenza-MIT-blue)](LICENSE)
 
 **[Perché](#perché)** · **[Funzioni](#funzioni)** · **[Immagini](#immagini)** · **[Installazione](#installazione)** · **[Primi passi](#primi-passi)** · **[Come funziona](#come-funziona)** · **[Configurazione](#configurazione)** · **[Limiti e pesi](#limiti-e-bilanciamento)** · **[FreeLLMAPI](#freellmapi)** · **[Terminale](#terminale)** · **[Sicurezza](#sicurezza-e-guardie)** · **[Domande](#domande)**
 
@@ -364,4 +365,4 @@ rivista in modo avversariale da Claude. La versione 1 ha superato 17 giri di rev
 
 ## Licenza
 
-Nessuna licenza scelta per ora: il codice è pubblico da leggere, tutti i diritti riservati.
+[MIT](LICENSE) © 2026 Elite9400.
