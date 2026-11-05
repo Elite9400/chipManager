@@ -1,7 +1,7 @@
 # Piano — chipManager 2.2: dashboard di gestione del lavoro
 
 Stato: **in corso**. F0, F1 e F2 sono consegnate sul ramo di sviluppo e aspettano la fusione. Il 5 novembre 2026 il
-committente ha aggiunto due richieste (B8 e B9, §6): la tabella delle fasi (§7) le include. Sviluppo in una sessione
+committente ha aggiunto tre richieste (B8, B9 e B10, §6): la tabella delle fasi (§7) le include. Sviluppo in una sessione
 aperta su questa cartella, non da un progetto che usa la mod: le chip del lavoro sulla mod restano di questo
 repository.
 
@@ -242,6 +242,15 @@ Da avviare  2                                                       [ Avvia tutt
     **Impostazioni › Connessioni** con lo stato «Da collegare» o «Non disponibile qui» e il motivo.
   - `risorse_agenti` continua a dare alla master tutte le righe, anche quelle assenti, con il motivo: decide
     meglio sapendo che cosa manca.
+- **B10. Legenda per chi è nuovo** (richiesta del 5 novembre 2026, nella revisione grafica). Ogni sigla e ogni
+  termine tecnico ha una spiegazione in parole semplici, dove serve:
+  - **corsie** R0–R5: che cosa vuol dire ciascuna, chi le esegue e perché R4 e R5 restano a Claude;
+  - **fasi** del piano (F0–F6) e **blocchi** di lavoro (B1–B10), nel README e nel piano;
+  - **termini**: effort, worktree, fork, fusione, registro, MCP, PII, soglia di attenzione e critica, contesto,
+    token, cartella condivisa, cloud;
+  - **dove**: una voce «Legenda» nel pannello (vista Impostazioni, e un rimando breve dalla riga che usa la
+    sigla), una sezione «Legenda» in README italiano e inglese, e la stessa legenda in fondo alla board (B9);
+  - una sola fonte per il testo, così pannello, README e board non si contraddicono.
 - **B9. Board di progetto** (richiesta del 5 novembre 2026). Una pagina HTML semplice per avere tutto sotto
   controllo: la linea dello sviluppo, i prossimi lavori e, per ogni task, come viene fatto.
   - **Che cos'è.** Un solo file, `board.html`, nella cartella dati del progetto (B1), fuori dal repository.
@@ -284,7 +293,7 @@ Ogni fase è un rilascio con la sua voce nel CHANGELOG, i test e le immagini agg
 | F3 | 2.4.0 | **Impostazioni** riprogettate, procedure guidate, popup; **B8** | Ogni connessione si collega senza toccare JSON; budget manuali da popup; Lavoro e Carico mostrano solo fornitori configurati e con dati reali, il resto sta in Connessioni. |
 | F4 | 2.5.0 | **B9** Board di progetto | `board.html` locale, deterministica, con linea dello sviluppo e dettaglio dei task; interruttori in Impostazioni, spenti per difetto; nessun token senza i riassunti. |
 | F5 | 2.6.0 | B4, B5, B6 | Profilo Automatico predefinito; proposta della master confermata in popup; `risorse_agenti` con i token. |
-| F6 | — | Rifinitura | `impeccable critique` e `audit` sulle catture, README e GIF aggiornati. |
+| F6 | — | Rifinitura e revisione grafica; **B10** legenda | `impeccable critique` e `audit` sulle catture, README e GIF aggiornati; un neofita trova il significato di ogni sigla senza uscire dal pannello. |
 
 Perché in quest'ordine:
 
