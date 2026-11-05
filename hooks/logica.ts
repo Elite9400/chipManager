@@ -211,8 +211,10 @@ export function punteggio(a: Azione, r: Regole, limiti: readonly Limite[], lista
   }
   const quote = limiti.filter(l => l.fornitore === a.esecutore && !l.manuale && l.percentuale !== undefined && limiteFresco(l))
   const pieno = quote.length ? Math.max(...quote.map(l => l.percentuale!)) : undefined
-  // Oltre la soglia critica del fornitore il margine è zero: la scelta va altrove, se un'alternativa ammessa c'è.
-  const margine = pieno === undefined ? 0.25 : livelloDi(pieno, sogliaDi(r.risorse, a.esecutore)) === 'critica' ? 0 : Math.max(0, 1 - pieno / 100)
+  // Oltre la soglia critica il margine scende a un residuo: la scelta va altrove se un'alternativa ammessa c'è,
+  // e se tutti sono oltre, il residuo tiene ancora l'ordine fra di loro.
+  const libero = pieno === undefined ? 0.25 : Math.max(0, 1 - pieno / 100)
+  const margine = pieno !== undefined && livelloDi(pieno, sogliaDi(r.risorse, a.esecutore)) === 'critica' ? libero * 0.001 : libero
   const attivi = lista.filter(x => occupa(x) && x.esecutore === a.esecutore && modelloDi(x, r) === modelloDi(a, r)).length
   return peso * margine / (1 + attivi)
 }

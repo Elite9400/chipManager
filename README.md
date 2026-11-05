@@ -272,8 +272,9 @@ with candidates that pass every guard. With no weights configured, bulk launch f
 at least one weight it follows the score, ties keeping your order. Dependencies, reviewers, minimum effort and the
 mutex always win.
 
-**Thresholds.** Above a provider's critical threshold its margin counts as zero: the choices left open go to another
-allowed provider, if there is one; explicit choices stay. The summary line says so, and **Avvia tutte** (launch all)
+**Thresholds.** Above a provider's critical threshold its margin drops to a thousandth: the choices left open go to
+another allowed provider, if there is one (when all are above, the margins still rank them); explicit choices stay.
+A manual limit above a threshold is flagged as a declaration and does not change the choices. The summary line says so, and **Avvia tutte** (launch all)
 writes it in the confirmation and asks "Avvia comunque" (launch anyway). Closing the confirmation without a choice
 launches nothing.
 
@@ -358,7 +359,7 @@ claude plugin test .
 node --test strumenti/prova-disco.cjs
 ```
 
-82 module tests on a fake engine (both surfaces, policy, weights, confirmations, secrets, CLI, sessions) and 27 helper tests
+83 module tests on a fake engine (both surfaces, policy, weights, confirmations, secrets, CLI, sessions) and 27 helper tests
 with real processes for the mutex, reservation and Codex lane. No real HTTP in tests.
 
 ## FAQ

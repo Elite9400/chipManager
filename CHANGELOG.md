@@ -20,10 +20,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Changed
 
-- Above a provider's critical threshold its margin counts as zero, so the choices the proposer left open go to
-  another allowed provider; explicit choices are kept.
+- Above a provider's critical threshold its margin drops to a thousandth, so the choices the proposer left open go
+  to another allowed provider; when every provider is above, the margins still rank them. Explicit choices are
+  kept. Manual limits above a threshold are flagged as declarations and do not change the choices.
 - **Avvia tutte** (launch all) names the providers above their critical threshold in its confirmation and asks to
-  launch anyway. Closing the confirmation without a choice now cancels instead of showing an error.
+  launch anyway, also for actions that would only be queued. Closing the confirmation without a choice now cancels
+  instead of showing an error.
 - The context reading of a session also keeps its token count.
 
 ## [2.2.0] - 2026-11-05

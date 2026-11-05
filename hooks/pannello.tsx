@@ -831,15 +831,17 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   const parolaSoglia = (s: Soglia | null) => (s ? `attenzione da ${s.attenzione}% · critica da ${s.critica}%` : 'nessuna soglia')
 
   /** Barra al rapporto vero con entrambi gli estremi: Box in proporzione sul desktop, 20 celle sul terminale. */
-  const barraPct = (k: string, pct: number, colore: string) => {
+  const barraPct = (k: string, pct: number, colore: string, corta = false) => {
     const p = Math.min(100, Math.max(0, pct))
     if (!conVelo) {
-      const pieni = Math.round(p / 5)
+      // Terminale stretto o colonna stretta: 10 celle, così la riga non va a capo.
+      const celle = stretto || corta ? 10 : 20
+      const pieni = Math.round((p / 100) * celle)
       return (
         <Text key={k}>
           <Text dimColor>{'0 '}</Text>
           <Text color={colore}>{'█'.repeat(pieni)}</Text>
-          <Text dimColor>{`${'░'.repeat(20 - pieni)} 100%`}</Text>
+          <Text dimColor>{`${'░'.repeat(celle - pieni)} 100%`}</Text>
         </Text>
       )
     }
@@ -883,7 +885,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
       <Box key={`limite-${l.id}`} flexDirection="column">
         <Text>
           {n === undefined ? <Text color={colore}>{'○ '}</Text> : livello && livello !== 'ok' ? <Text color={colore}>{'▲ '}</Text> : ''}
-          {`${l.nome}: ${valore}${l.manuale ? ' · manuale' : ''}${livello === 'critica' ? ' · oltre la soglia critica' : livello === 'attenzione' ? ' · sopra la soglia di attenzione' : ''}`}
+          {`${l.nome}: ${valore}${l.manuale ? ' · manuale' : ''}${livello === 'critica' ? ' · oltre la soglia critica' : livello === 'attenzione' ? ' · sopra la soglia di attenzione' : ''}${l.manuale && livello && livello !== 'ok' ? ' (dichiarato: non cambia le scelte)' : ''}`}
         </Text>
         {n !== undefined && barraPct(`barra-${l.id}`, n, colore)}
         <Text dimColor size="caption">{`${l.fonte} · ${eta}${l.errore ? ` · ${l.errore}` : ''}${reset ? ` · reset ${reset}` : ''}`}</Text>
@@ -920,7 +922,8 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     coda: inCodaOra.filter(a => modelloDi(a, regoleOra) === m && effortDi(a, regoleOra) === e).length,
   })
   const modelliAttivi = modelliNoti.filter(m => regoleOra.effort.some(e => { const c = conta2(m, e); return c.lavoro + c.coda > 0 }))
-  const senzaDati = alLavoroOra.filter(r => !r.modello || !r.effort).length
+  // Ogni sessione al lavoro che non cade in una cella si conta qui: la matrice non sottostima in silenzio.
+  const senzaDati = alLavoroOra.filter(r => !r.modello || !r.effort || !regoleOra.effort.includes(r.effort)).length
   const larghezzaEffort = `${Math.floor(64 / Math.max(1, regoleOra.effort.length))}%`
   const VELI = ['', '26', '4D', '80'] as const
   const matrice = (
@@ -977,7 +980,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
         conContesto.map(r => (
           <Box key={`tok-${r.id}`} flexDirection="row" alignItems="center">
             {cella(`tok-t-${r.id}`, '40%', <Text wrap="truncate-end">{r.titolo}</Text>)}
-            <Box width="45%" paddingRight={1}>{barraPct(`tok-b-${r.id}`, r.contesto!, COLORE_STATO.proposta)}</Box>
+            <Box width="45%" paddingRight={1}>{barraPct(`tok-b-${r.id}`, r.contesto!, COLORE_STATO.proposta, true)}</Box>
             {cella(`tok-p-${r.id}`, '15%', <Text tabular>{`${r.contesto}%`}</Text>, true)}
           </Box>
         ))

@@ -637,7 +637,8 @@ async function avviaTutte($: Eng, options: Record<string, unknown>) {
   ].filter(Boolean)
   // Un fornitore oltre la soglia critica non blocca, ma lo dice la domanda e il pulsante cambia nome.
   const limiti = (await read($, risorse)).limiti
-  const oltre = [...new Set(piano.avvia.map(a => a.esecutore))].flatMap(f => {
+  // Anche le accodate partono da questo comando: contano per l'avviso come quelle che partono subito.
+  const oltre = [...new Set([...piano.avvia, ...piano.coda.map(c => c.a)].map(a => a.esecutore))].flatMap(f => {
     const l = piuPieno(limiti, f)
     const s = sogliaDi(r.risorse, f)
     return l && s && livelloDi(l.percentuale!, s) === 'critica' ? [`${l.nome} al ${l.percentuale}% (critica da ${s.critica}%)`] : []

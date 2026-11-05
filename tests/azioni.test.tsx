@@ -1402,7 +1402,7 @@ function ambienteSessioni(on: Parameters<TestBody>[1], adesso: () => number) {
         ])
       if (tool === 'get_session' && sid === ID_ESEMPIO(1)) return testo({ model: 'claude-sonnet-5-5', effort: 'medium', branch: 'docs-api', isRunning: true })
       if (tool === 'get_session' && sid === ID_ESEMPIO(3)) return testo({ model: 'claude-opus-5-5', effort: 'high', isRunning: false })
-      if (tool === 'get_usage' && sid === ID_ESEMPIO(1)) return testo({ context: { status: 'ok', percentUsed: 34 } })
+      if (tool === 'get_usage' && sid === ID_ESEMPIO(1)) return testo({ context: { status: 'ok', percentUsed: 34, tokensUsed: 340_000 } })
       return undefined
     },
   })
@@ -1549,7 +1549,11 @@ test('2.3: oltre la soglia critica le scelte aperte vanno altrove; quelle esplic
   // Senza soglia per Codex torna a contare solo il margine (8%) contro il peso.
   const senza = { ...r, risorse: { ...r.risorse, soglie: { ...r.risorse.soglie, codex: null } } }
   expect(punteggio({ ...a, esecutore: 'codex' }, senza, [codexPieno], [a])).toBeGreaterThan(0)
-  expect(punteggio({ ...a, esecutore: 'codex' }, r, [codexPieno], [a])).toBe(0)
+  // Oltre la critica resta un millesimo del punteggio senza soglia: abbastanza per ordinare, mai per vincere.
+  const conSoglia = punteggio({ ...a, esecutore: 'codex' }, r, [codexPieno], [a])
+  expect(Math.abs(conSoglia - punteggio({ ...a, esecutore: 'codex' }, senza, [codexPieno], [a]) / 1000)).toBeLessThan(1e-9)
+  // Tutti oltre la critica: il residuo tiene l'ordine dei margini (Codex 9% libero batte Claude 1%).
+  expect(bilancia(a, {}, R, [{ ...codexPieno, percentuale: 91 }, { ...claudeMeta, percentuale: 99 }], [a], chi).esecutore).toBe('codex')
 })
 
 test('2.3: «Avvia tutte» oltre la soglia critica lo dice e chiede «Avvia comunque»; chiusa senza scelta non avvia', async ($, on) => {
@@ -1572,6 +1576,21 @@ test('2.3: «Avvia tutte» oltre la soglia critica lo dice e chiede «Avvia comu
   risposta = 'Avvia comunque'
   await ui.press({ key: 'tutte' })
   expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(1)
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /^Avvii nelle ultime 24 ore: Claude 1 \(100%\)$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('2.3: conferma di «Avvia tutte» chiusa senza scelta: non parte niente e non compare un errore', async ($, on) => {
+  const amb = ambiente(on)
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ deny: 'chiusa senza scelta' }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Frase.', esecutore: 'claude' } as never)
+  const ui = await $.ui.mount({ ...PANE('terminal') })
+  await ui.press({ key: 'tutte' })
+  expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(0)
+  expect(await ui.find({ type: 'Text', text: /^! / })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -1595,9 +1614,11 @@ test('2.3: vista Carico: matrice modello × effort, limiti per fornitore con le 
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'In coda', brief: 'Frase.', esecutore: 'claude', modello: 'claude-sonnet-5-5', effort: 'medium' } as never)
   await clock.advance(20_000)
-  for (const surface of ['desktop', 'terminal'] as const) {
-    const ui = await $.ui.mount({ ...PANE(surface), props: { ...PANE(surface).props, bodyColumns: 120 } })
+  for (const [surface, colonne] of [['desktop', 120], ['terminal', 120], ['terminal', 50]] as const) {
+    const ui = await $.ui.mount({ ...PANE(surface), props: { ...PANE(surface).props, bodyColumns: colonne } })
     await ui.press({ key: 'vista-carico' })
+    expect(await ui.find({ type: 'Text', text: /Sonnet 5\.5: 1 sessione · 340k token/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /(GPT-6 Astra|gpt-6-astra): 1 sessione · 61k token/ })).toBeDefined()
     for (const testo of [/^Al lavoro per modello ed effort$/, /^Sonnet 5\.5$/, /^Limiti e budget$/, /attenzione da 70% · critica da 90%/, /nessuna soglia/,
       /^Contesto delle sessioni al lavoro$/, /^Guida delle API$/, /^Codex \+50%\. Valgono solo/, /Nessun avvio nelle ultime 24 ore/])
       expect(await ui.find({ type: 'Text', text: testo })).toBeDefined()

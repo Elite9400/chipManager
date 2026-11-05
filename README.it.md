@@ -273,8 +273,9 @@ vuoti**, e solo con candidati che superano tutte le guardie. Senza pesi l'avvio 
 almeno un peso segue il punteggio, e a parità il tuo ordine. Dipendenze, revisori, effort minimo e mutex vincono
 sempre.
 
-**Soglie.** Oltre la soglia critica di un fornitore il suo margine vale zero: le scelte lasciate aperte vanno a un
-altro fornitore ammesso, se c'è; quelle esplicite restano. La riga di sintesi lo dice, e **Avvia tutte** lo scrive
+**Soglie.** Oltre la soglia critica di un fornitore il suo margine scende a un millesimo: le scelte lasciate aperte
+vanno a un altro fornitore ammesso, se c'è (se sono tutti oltre, i margini li ordinano ancora); quelle esplicite
+restano. Un limite manuale oltre soglia si segnala come dichiarazione e non cambia le scelte. La riga di sintesi lo dice, e **Avvia tutte** lo scrive
 nella conferma e chiede «Avvia comunque». Chiudere la conferma senza scegliere non avvia niente.
 
 ## FreeLLMAPI
@@ -361,7 +362,7 @@ claude plugin test .
 node --test strumenti/prova-disco.cjs
 ```
 
-82 test del modulo su un motore finto (due superfici, politica, pesi, conferme, segreti, CLI, sessioni) e 27 test
+83 test del modulo su un motore finto (due superfici, politica, pesi, conferme, segreti, CLI, sessioni) e 27 test
 dell'helper con processi veri per mutex, prenotazione e corsia Codex. Nessuna chiamata HTTP reale nei test.
 
 ## Domande
