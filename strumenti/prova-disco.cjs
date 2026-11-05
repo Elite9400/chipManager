@@ -277,6 +277,30 @@ test('2.0 fonti: log Codex troncati, ultima osservazione valida senza promuovere
   assert.ok(!JSON.stringify(l).includes('privato'))
 })
 
+test('2.2 sessioni Codex: solo metadati, turno aperto solo se recente, sotto-thread e file vecchi esclusi', () => {
+  const home = tmp()
+  const dir = path.join(home, '.codex', 'sessions', '2026', '01', '01')
+  fs.mkdirSync(dir, { recursive: true })
+  const riga = (type, payload) => JSON.stringify({ type, timestamp: '2026-01-01T00:00:00Z', payload })
+  const meta = (id, extra = {}) => riga('session_meta', { id, cwd: 'C:/esempio/progetto', git: { branch: 'fix-ricerca' }, ...extra })
+  const conto = riga('event_msg', { type: 'token_count', info: { last_token_usage: { total_tokens: 61_000 }, model_context_window: 100_000 } })
+  fs.writeFileSync(path.join(dir, 'a.jsonl'), [meta('sessione-a'), riga('turn_context', { model: 'gpt-esempio', effort: 'xhigh' }),
+    riga('response_item', { type: 'message', content: 'testo privato' }), riga('event_msg', { type: 'task_started' }), conto].join('\n'))
+  fs.writeFileSync(path.join(dir, 'b.jsonl'), [meta('sessione-b', { parent_thread_id: 'sessione-a' }), conto].join('\n'))
+  fs.writeFileSync(path.join(dir, 'c.jsonl'), [meta('sessione-c'), conto].join('\n'))
+  const vecchio = (Date.now() - 3 * 86_400_000) / 1000
+  fs.utimesSync(path.join(dir, 'c.jsonl'), vecchio, vecchio)
+  const s = fonti.sessioniCodexLocali(home)
+  assert.deepStrictEqual(s.map(x => x.id), ['sessione-a'])
+  assert.deepStrictEqual({ ...s[0], attivita: undefined }, { id: 'sessione-a', cwd: 'C:/esempio/progetto', ramo: 'fix-ricerca', modello: 'gpt-esempio', effort: 'xhigh',
+    token: 61_000, finestra: 100_000, inCorso: true, attivita: undefined })
+  assert.ok(!JSON.stringify(s).includes('privato'))
+  // Lo stesso turno aperto in un file fermo da più di 10 minuti non è lavoro in corso.
+  fs.utimesSync(path.join(dir, 'a.jsonl'), Date.now() / 1000 - 900, Date.now() / 1000 - 900)
+  assert.strictEqual(fonti.sessioniCodexLocali(home)[0].inCorso, false)
+  assert.deepStrictEqual(fonti.sessioniCodexLocali(path.join(home, 'nessuna')), [])
+})
+
 test('2.0 fonti: saldo non è percentuale; costi USD, paginazione incompleta mai totale', () => {
   const saldo = fonti.saldoDeepseek({ is_available: true, balance_infos: [{ currency: 'USD', total_balance: '20.50' }] }, '2026-01-01')
   assert.strictEqual(saldo[0].valore, 20.5)

@@ -8,7 +8,7 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
 
-import type { Azione, Chiamante, Contesto, Corsia, Destinazione, Limite, Motore, Permessi, Peso, Regole, Revisore, Risorse, RisorseProgetto, Traguardi, Traguardo, Vita } from '../types'
+import type { Azione, Chiamante, Contesto, Corsia, Destinazione, Limite, Motore, Permessi, Peso, Regole, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, Traguardi, Traguardo, Vista, Vita } from '../types'
 import {
   attive,
   barreEffort,
@@ -51,14 +51,16 @@ const vive = atom({ plugin: 'chip-manager', key: 'vive' } as const, {} as Record
 const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as string | null)
 const traguardi = atom({ plugin: 'chip-manager', key: 'traguardi' } as const, null as Traguardi | null, { shape: 'traguardi-3' })
 const regole = atom({ plugin: 'chip-manager', key: 'regole' } as const, null as Regole | null, { shape: 'regole-4' })
-const annullabile = atom({ plugin: 'chip-manager', key: 'annullabile' } as const, null as { id: string; titolo: string } | null)
+const annullabile = atom({ plugin: 'chip-manager', key: 'annullabile' } as const, null as { id: string; titolo: string; altri?: string[] } | null)
 const filtro = atom({ plugin: 'chip-manager', key: 'filtro' } as const, '')
 const illeggibili = atom({ plugin: 'chip-manager', key: 'illeggibili' } as const, [] as { nome: string; motivo: string }[], {
   shape: 'illeggibili-2',
 })
 const contesto = atom({ plugin: 'chip-manager', key: 'contesto' } as const, null as Chiamante | null, { shape: 'chiamante-1' })
 const risorse = atom({ plugin: 'chip-manager', key: 'risorse' } as const, RISORSE_VUOTE as Risorse, { shape: 'risorse-1' })
-const impostazioni = atom({ plugin: 'chip-manager', key: 'impostazioni' } as const, false)
+const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { lista: [] } as Sessioni, { shape: 'sessioni-1' })
+const vista = atom({ plugin: 'chip-manager', key: 'vista' } as const, 'lavoro' as Vista)
+const tutteSessioni = atom({ plugin: 'chip-manager', key: 'tutteSessioni' } as const, false)
 
 type Eng = EngineInterface
 
@@ -74,7 +76,7 @@ export type Ctx = {
   riordina: (id: string, verso: -1 | 1) => Promise<unknown>
   scarta: (a: Azione) => Promise<unknown>
   annullaTentativo: (a: Azione) => Promise<unknown>
-  associa: (a: Azione) => Promise<unknown>
+  senzaProgetto: (come: 'assegna' | 'scarta') => Promise<unknown>
   annullaScarto: (id: string) => Promise<unknown>
   apri: (sessione: string) => Promise<unknown>
   configura: (campi: Record<string, unknown>, attese: RisorseProgetto) => Promise<unknown>
@@ -94,16 +96,23 @@ const oraDi = (iso: string) => {
 const giornoDi = (d: Date) => `${d.getDate()} ${MESI[d.getMonth()]} ${d.getFullYear()}`
 const corto = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
-export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx) {
+export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, colonne = 100) {
   const { Box, Text, Button } = el
   const Select = 'Select' in el ? el.Select : undefined
   const Input = 'Input' in el ? el.Input : undefined
   // Il terminale non conosce l'alfa: lì l'etichetta è segno + parola, senza velo.
   const conVelo = surface !== 'terminal'
+  // Terminale stretto: cadono «Contesto» e «Attività», modello ed effort in una colonna.
+  const stretto = surface === 'terminal' && colonne < 80
 
   const io = await read($, contesto)
+  const lette = await read($, azioni)
   // Solo le azioni di questo progetto: quelle senza progetto non si mostrano più da nessuna parte.
-  const tutte = (await read($, azioni)).filter(a => !!a.repo && a.repo === io?.repo)
+  const tutte = lette.filter(a => !!a.repo && a.repo === io?.repo)
+  const senzaProgetto = attive(lette).filter(a => !a.repo).length
+  const ses = await read($, sessioni)
+  const vistaOra = await read($, vista)
+  const tutteLeSessioni = await read($, tutteSessioni)
   const regoleOra = (await read($, regole)) ?? REGOLE_DEFAULT
   const testoFiltro = await read($, filtro)
   const lista = attive(tutte)
@@ -116,7 +125,6 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   const tr = await read($, traguardi)
   const adesso = Date.now()
   const capacita = await read($, risorse)
-  const configuraAperta = await read($, impostazioni)
   const configura = (campi: Record<string, unknown>) => c.configura(campi, regoleOra.risorse)
 
   const fai = (fn: () => Promise<unknown>) => () => void c.fai(fn)
@@ -156,20 +164,12 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
 
   const conta = (f: (a: Azione) => boolean) => lista.filter(f).length
   const proposte = conta(a => a.stato === 'proposta')
-  const attese = conta(a => ferma(a) || a.stato === 'fallita')
-  const inCoda = conta(a => a.stato === 'accodata')
-  const inCorso = conta(a => (a.stato === 'avviata' && !ferma(a)) || a.stato === 'in-avvio')
-  const consegnate = conta(a => a.stato === 'consegnata')
-  const riepilogo =
-    [
-      attese && `${attese} aspettano te`,
-      proposte && `${proposte} da avviare`,
-      inCoda && `${inCoda} in coda`,
-      inCorso && `${inCorso} in corso`,
-      consegnate && `${consegnate} da fondere`,
-    ]
-      .filter(Boolean)
-      .join(' · ') || 'Nessuna azione in sospeso'
+  // Un avvio scaduto o chiesto a questa sessione e non ancora preso aspetta una decisione: si può annullare.
+  const tentativoAnnullabile = (a: Azione) =>
+    a.stato === 'in-avvio' && a.lanciatore !== 'cli' && !!io && a.lanciataDa === io.io &&
+    ((a.manuale && !a.presa) || (!a.manuale && (a.avvioScade ?? '') < new Date(adesso).toISOString()))
+  const aspettaTe = (a: Azione) => ferma(a) || a.stato === 'fallita' || tentativoAnnullabile(a)
+  const attese = conta(aspettaTe)
 
   const scelta = (
     a: Azione,
@@ -504,16 +504,13 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
             {a.stato === 'proposta' && dip.chiuse && bloccatoQui.length === 0 && (
               <Button key={`qui-${a.id}`} plain label="Fallo qui" onPress={fai(() => c.faiQui(a))} />
             )}
-            {!a.repo && modificabile && (
-              <Button key={`associa-${a.id}`} variant="secondary" label="Associa a questo progetto" onPress={fai(() => c.associa(a))} />
-            )}
             {a.stato === 'fallita' && blocchi.length === 0 && (
               <Button key={`riprova-${a.id}`} variant="secondary" label="Riprova" onPress={fai(() => c.avvia(a))} />
             )}
             {a.stato === 'fallita' && blocchi.length === 0 && io?.lanciatore !== 'cli' && a.esecutore !== 'freellmapi' && (
               <Button key={`chiedi-${a.id}`} plain label="Chiedi a questa sessione" onPress={fai(() => c.chiediQui(a))} />
             )}
-            {a.stato === 'in-avvio' && a.lanciatore !== 'cli' && mia && ((a.manuale && !a.presa) || (!a.manuale && (a.avvioScade ?? '') < new Date(adesso).toISOString())) && (
+            {tentativoAnnullabile(a) && (
               <Button key={`annullaT-${a.id}`} plain label="Annulla il tentativo" onPress={fai(() => c.annullaTentativo(a))} />
             )}
             {a.stato === 'accodata' && (
@@ -549,14 +546,193 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     )
   }
 
-  // Chi aspetta te viene prima di tutto: è l'unica cosa che richiede una decisione adesso.
-  const sezioni: { titolo: string; righe: Azione[] }[] = [
-    { titolo: 'Aspettano te', righe: visibili.filter(a => ferma(a) || a.stato === 'fallita') },
-    { titolo: 'In corso', righe: visibili.filter(a => (a.stato === 'avviata' && !ferma(a)) || a.stato === 'in-avvio') },
-    { titolo: 'Consegnate, da fondere', righe: visibili.filter(a => a.stato === 'consegnata') },
-    { titolo: 'In coda', righe: visibili.filter(a => a.stato === 'accodata') },
-    { titolo: 'Da avviare', righe: visibili.filter(a => a.stato === 'proposta') },
-  ]
+  // --- vista Lavoro ------------------------------------------------------------------------------------
+  // Righe compatte; «Dettagli» apre al loro posto la scheda completa (con l'editor, se si può modificare).
+
+  const titoloSezione = (k: string, testo: string, n?: number) => (
+    <Text key={k} size="caption" weight="medium" dimColor>
+      {n === undefined ? testo : `${testo}  ${n}`}
+    </Text>
+  )
+  // Stessa chiave del «Modifica» della scheda: lo stesso controllo, chiusa o aperta.
+  const dettagli = (a: Azione) => <Button key={`mod-${a.id}`} plain label="Dettagli" onPress={apriChiudi(a.id)} />
+  const chiLavora = (a: Azione) =>
+    [motore(a.esecutore), nomeModello(modelloDi(a, regoleOra)), effortDi(a, regoleOra), a.revisore === 'nessuno' ? 'senza revisione' : `rivede ${motore(a.revisore)}`].join(' · ')
+
+  /** Una chip che aspetta una decisione: il bordo acceso solo qui, l'azione che la sblocca sulla riga. */
+  const rigaAttesa = (a: Azione) => {
+    if (espansa === a.id) return scheda(a)
+    const s = statoDi(a)
+    const blocchi = a.stato === 'fallita' ? violazioniAvvio(a, regoleOra, tutte, io) : []
+    const mia = !!io && a.lanciataDa === io.io
+    return (
+      <Box key={`riga-${a.id}`} flexDirection="column" borderStyle={conVelo ? 'round' : undefined} borderColor={s.colore} paddingX={conVelo ? 1 : 0}>
+        <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
+          <Text wrap="truncate-end">
+            <Text color={s.colore}>{'▲ '}</Text>
+            <Text weight="semibold">{a.titolo}</Text>
+            {`: ${a.stato === 'fallita' ? `avvio fallito${a.errore ? ` (${corto(a.errore, 60)})` : ''}` : a.stato === 'in-avvio' ? s.parola.toLowerCase() : 'ferma, aspetta te'}`}
+          </Text>
+          <Box flexDirection="row" gap={1}>
+            {a.stato === 'fallita' && blocchi.length === 0 && <Button key={`riprova-${a.id}`} variant="secondary" label="Riprova" onPress={fai(() => c.avvia(a))} />}
+            {a.stato === 'fallita' && blocchi.length === 0 && io?.lanciatore !== 'cli' && a.esecutore !== 'freellmapi' && (
+              <Button key={`chiedi-${a.id}`} plain label="Chiedi a questa sessione" onPress={fai(() => c.chiediQui(a))} />
+            )}
+            {tentativoAnnullabile(a) && <Button key={`annullaT-${a.id}`} plain label="Annulla il tentativo" onPress={fai(() => c.annullaTentativo(a))} />}
+            {ferma(a) && a.sessione && mia && <Button key={`vedi-${a.id}`} variant="secondary" label="Apri" onPress={fai(() => c.apri(a.sessione!))} />}
+            {dettagli(a)}
+          </Box>
+        </Box>
+        <Text size="caption" dimColor>{chiLavora(a)}</Text>
+      </Box>
+    )
+  }
+
+  /** Da avviare e in coda: numero d'ordine, titolo e dipendenza; chi lavora sulla seconda riga, grigia. */
+  const rigaCoda = (a: Azione) => {
+    if (espansa === a.id) return scheda(a)
+    const dip = dipendenze(a, tutte)
+    const blocchi = violazioniAvvio(a, regoleOra, tutte, io)
+    const prima = a.dipende.map(d => tutte.find(x => x.id === d)?.titolo ?? d)
+    const avvisi = [
+      sensibile(a, regoleOra) ? `${corsiaDi(a, regoleOra) ?? 'R4'} sensibile` : undefined,
+      blocchi.length ? 'così non può partire' : undefined,
+      a.stato === 'accodata' && a.motivoCoda ? `in coda: ${a.motivoCoda}` : undefined,
+    ].filter(Boolean)
+    return (
+      <Box key={`riga-${a.id}`} flexDirection="column">
+        <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
+          <Text wrap="truncate-end">
+            <Text dimColor tabular>{`${lista.indexOf(a) + 1}  `}</Text>
+            <Text weight="semibold">{a.titolo}</Text>
+            {prima.length > 0 && <Text dimColor>{` · dopo «${corto(prima.join('», «'), 40)}»`}</Text>}
+          </Text>
+          <Box flexDirection="row" gap={1}>
+            {a.stato === 'proposta' && blocchi.length === 0 && (
+              <Button key={`avvia-${a.id}`} variant="secondary" label={dip.chiuse ? 'Avvia' : 'Accoda'} onPress={fai(() => c.avvia(a))} />
+            )}
+            {a.stato === 'accodata' && (
+              <Button key={`annulla-${a.id}`} plain label="Togli dalla coda" onPress={modifica(a, { stato: 'proposta', motivoCoda: undefined })} />
+            )}
+            {dettagli(a)}
+          </Box>
+        </Box>
+        <Text size="caption" dimColor>
+          {chiLavora(a)}
+          {avvisi.length > 0 && <Text color={COLORE_STATO.fallita}>{'  ▲ '}</Text>}
+          {avvisi.join(' · ')}
+        </Text>
+      </Box>
+    )
+  }
+
+  /** Consegnate: aspettano la fusione. */
+  const rigaFondere = (a: Azione) => {
+    if (espansa === a.id) return scheda(a)
+    const mia = !!io && a.lanciataDa === io.io
+    return (
+      <Box key={`riga-${a.id}`} flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
+        <Text wrap="truncate-end">
+          <Text color={COLORE_STATO.consegnata}>{'✓ '}</Text>
+          <Text weight="semibold">{a.titolo}</Text>
+          <Text dimColor>{stati[a.id]?.ramo ? ` · ${stati[a.id]!.ramo}` : ''}</Text>
+        </Text>
+        <Box flexDirection="row" gap={1}>
+          {a.sessione && mia && <Button key={`vedi-${a.id}`} variant="secondary" label="Apri" onPress={fai(() => c.apri(a.sessione!))} />}
+          <Button key={`fatta-${a.id}`} plain label="Segna completata" onPress={modifica(a, { stato: 'completata' })} />
+          {dettagli(a)}
+        </Box>
+      </Box>
+    )
+  }
+
+  // «Al lavoro adesso»: le sessioni del progetto (anche aperte a mano) più le chip avviate di cui l'app non dà la sessione.
+  type Riga = SessioneProgetto & { azione?: Azione; parola: string; segno: string; colore: string }
+  const avviate = lista.filter(a => a.stato === 'avviata' || a.stato === 'in-avvio')
+  const righe: Riga[] = ses.lista.map(s => {
+    const a = avviate.find(x => (s.motore === 'claude' && x.sessione === s.id) || (s.motore === 'codex' && !!s.ramo && stati[x.id]?.ramo === s.ramo))
+    const fermaOra = a ? ferma(a) : s.stato === 'ferma'
+    return { ...s, azione: a, titolo: a?.titolo ?? s.titolo, parola: fermaOra ? 'Ferma' : 'In corso', segno: fermaOra ? '◐' : '●', colore: fermaOra ? COLORE_STATO.ferma : COLORE_STATO.inCorso }
+  })
+  for (const a of avviate)
+    if (!righe.some(r => r.azione?.id === a.id)) {
+      const fermaOra = ferma(a)
+      righe.push({
+        id: `chip-${a.id}`, motore: a.esecutore === 'codex' ? 'codex' : 'claude', titolo: a.titolo, ramo: stati[a.id]?.ramo,
+        modello: modelloDi(a, regoleOra), effort: effortDi(a, regoleOra), stato: fermaOra ? 'ferma' : 'in-corso', attivita: stati[a.id]?.ultimaAttivita, azione: a,
+        parola: a.stato === 'in-avvio' ? 'In avvio' : fermaOra ? 'Ferma' : 'In corso', segno: a.stato === 'in-avvio' ? '◔' : fermaOra ? '◐' : '●',
+        colore: a.stato === 'in-avvio' ? COLORE_STATO.inAvvio : fermaOra ? COLORE_STATO.ferma : COLORE_STATO.inCorso,
+      })
+    }
+  righe.sort((x, y) => Number(y.stato === 'in-corso') - Number(x.stato === 'in-corso') || (y.attivita ?? '').localeCompare(x.attivita ?? ''))
+  const alLavoro = righe.filter(r => r.stato === 'in-corso').length
+  const mostrate = tutteLeSessioni ? righe : righe.slice(0, 6)
+
+  const quando = (iso?: string) => {
+    if (!iso) return '—'
+    const ms = adesso - Date.parse(iso)
+    return ms < 60_000 ? 'adesso' : durata(ms)
+  }
+  // Larghezze in percentuale: stesse colonne sul desktop e sul terminale; strette, ne cadono due.
+  const COL: { lavoro: string; chi: string; modello: string; stato: string; effort?: string; contesto?: string; attivita?: string } = stretto
+    ? { lavoro: '40%', chi: '18%', modello: '24%', stato: '18%' }
+    : { lavoro: '30%', chi: '11%', modello: '14%', effort: '16%', stato: '11%', contesto: '9%', attivita: '9%' }
+  const cella = (k: string, w: string, figli: unknown, destra = false) => (
+    <Box key={k} width={w} flexDirection="column" alignItems={destra ? 'flex-end' : 'flex-start'} paddingRight={1}>
+      {figli as never}
+    </Box>
+  )
+  const intestazione = (
+    <Box key="tab-testa" flexDirection="row">
+      {cella('h-lav', COL.lavoro, <Text size="caption" dimColor>Lavoro</Text>)}
+      {cella('h-chi', COL.chi, <Text size="caption" dimColor>Chi</Text>)}
+      {cella('h-mod', COL.modello, <Text size="caption" dimColor>{stretto ? 'Modello · effort' : 'Modello'}</Text>)}
+      {COL.effort && cella('h-eff', COL.effort, <Text size="caption" dimColor>Effort</Text>)}
+      {cella('h-st', COL.stato, <Text size="caption" dimColor>Stato</Text>)}
+      {COL.contesto && cella('h-ctx', COL.contesto, <Text size="caption" dimColor>Contesto</Text>, true)}
+      {COL.attivita && cella('h-att', COL.attivita, <Text size="caption" dimColor>Attività</Text>, true)}
+    </Box>
+  )
+  const rigaSessione = (r: Riga) => {
+    const seconda = [r.ramo, r.qui ? 'questa sessione' : r.azione ? undefined : 'aperta a mano'].filter(Boolean).join(' · ')
+    const titolo = <Text weight="semibold" wrap="truncate-end">{r.titolo}</Text>
+    const apribile = r.motore === 'claude' && !r.qui && !r.id.startsWith('chip-')
+    // Solo chi ha chiesto l'avvio apre la sessione di una chip (l'app la affianca a questa).
+    const sessioneChip = r.azione?.sessione && io && r.azione.lanciataDa === io.io ? r.azione.sessione : undefined
+    return [
+      <Box key={`ses-${r.id}`} flexDirection="row">
+        {cella(`c-lav-${r.id}`, COL.lavoro, [
+          // Il titolo apre la sessione quando si può; una chip tiene «Dettagli» sulla seconda riga.
+          sessioneChip
+            ? <Button key={`vedi-${r.azione!.id}`} plain label={`Apri la sessione di ${r.titolo}`} onPress={fai(() => c.apri(sessioneChip))}>{titolo}</Button>
+            : apribile
+              ? <Button key={`apri-ses-${r.id}`} plain label={`Apri la sessione ${r.titolo}`} onPress={fai(() => c.apri(r.id))}>{titolo}</Button>
+              : r.azione
+                ? <Button key={`apri-${r.azione.id}`} plain label={`Dettagli di ${r.titolo}`} onPress={apriChiudi(r.azione.id)}>{titolo}</Button>
+                : <Box key={`t-${r.id}`}>{titolo}</Box>,
+          <Box key={`r2-${r.id}`} flexDirection="row" gap={1}>
+            {seconda ? <Text size="caption" dimColor wrap="truncate-end">{seconda}</Text> : null}
+            {sessioneChip && <Button key={`mod-${r.azione!.id}`} plain dimColor label="Dettagli" onPress={apriChiudi(r.azione!.id)} />}
+          </Box>,
+        ])}
+        {cella(`c-chi-${r.id}`, COL.chi, <Text><Text color={COLORE_MOTORE[r.motore]}>{'◆ '}</Text>{r.motore === 'codex' ? 'Codex' : 'Claude'}</Text>)}
+        {cella(`c-mod-${r.id}`, COL.modello, stretto
+          ? <Text wrap="truncate-end">{[r.modello ? nomeModello(r.modello) : '—', r.effort].filter(Boolean).join(' · ')}</Text>
+          : <Text wrap="truncate-end" dimColor={!r.modello}>{r.modello ? nomeModello(r.modello) : '—'}</Text>)}
+        {COL.effort && cella(`c-eff-${r.id}`, COL.effort, r.effort
+          ? <Text>{`${barreEffort(r.effort)} ${r.effort}`}</Text>
+          : <Text dimColor>—</Text>)}
+        {cella(`c-st-${r.id}`, COL.stato, <Text><Text color={r.colore}>{`${r.segno} `}</Text>{r.parola}</Text>)}
+        {COL.contesto && cella(`c-ctx-${r.id}`, COL.contesto, <Text tabular dimColor={r.contesto === undefined}>{r.contesto === undefined ? '—' : `${r.contesto}%`}</Text>, true)}
+        {COL.attivita && cella(`c-att-${r.id}`, COL.attivita, <Text tabular dimColor>{r.qui ? 'adesso' : quando(r.attivita)}</Text>, true)}
+      </Box>,
+      r.azione && espansa === r.azione.id ? scheda(r.azione) : null,
+    ]
+  }
+
+  const attesaTe = visibili.filter(aspettaTe)
+  const daAvviare = visibili.filter(a => a.stato === 'proposta' || a.stato === 'accodata')
+  const daFondere = visibili.filter(a => a.stato === 'consegnata')
 
   /** Barra di avanzamento: due Box in proporzione sul desktop, celle █ sul terminale. */
   const barra = (t: Traguardo) => {
@@ -669,7 +845,6 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
       })}
       <Text size="caption" dimColor>70% attenzione · 90% quasi esaurito. Saldi e budget non sono quote di piano.</Text>
       <Text>{`FreeLLMAPI: ${capacita.proxy} · chiave ${capacita.chiavi.freellmapi ? 'impostata' : 'mancante'}`}</Text>
-      <Button key="impostazioni" plain hotkey="i" label={configuraAperta ? 'Chiudi impostazioni' : 'Impostazioni e pesi'} onPress={() => void update($, impostazioni, v => !v)} />
     </Box>
   )
 
@@ -678,7 +853,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     ...Object.values(regoleOra.modelli).flat().map(nome => ({ tipo: 'modello' as const, nome })),
     ...regoleOra.effort.map(nome => ({ tipo: 'effort' as const, nome })),
   ]
-  const impostazioniUi = configuraAperta && <Box key="configurazione" flexDirection="column" gap={1} borderStyle="single" paddingX={1}>
+  const impostazioniUi = <Box key="configurazione" flexDirection="column" gap={1}>
     <Text weight="semibold">Politica di questo progetto</Text>
     <Text size="caption">FreeLLMAPI inoltra a fornitori esterni. Solo rete locale blocca anche Claude/Codex e le milestone remote.</Text>
     {Select && <Select key="solo-locale" label="Rete" value={regoleOra.risorse.soloLocale ? 'locale' : 'abilitati'} options={[{ value: 'abilitati', label: 'Fornitori abilitati' }, { value: 'locale', label: 'Solo rete locale' }]} onSelect={v => void c.fai(() => configura({ soloLocale: v === 'locale' }))} />}
@@ -702,45 +877,51 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     <Text size="caption">Piani, percentuali e budget manuali: limitiManuali nel config del progetto; non modificano i dati misurati.</Text>
   </Box>
 
-  return (
-    <Box flexDirection="column" gap={2}>
-      <Box flexDirection="column" gap={1}>
-        <Box flexDirection="row" justifyContent="space-between" alignItems="center">
-          <Text size="title" weight="semibold">
-            chipManager
+  // Riga di sintesi: chi lavora, chi aspetta, e il margine più stretto per fornitore (solo misure fresche).
+  const margine = (f: 'claude' | 'codex', nome: string) => {
+    const n = capacita.limiti
+      .filter(l => l.fornitore === f && l.id !== 'claude-api' && !l.manuale && l.percentuale !== undefined && limiteFresco(l, adesso))
+      .reduce<number | undefined>((m, l) => Math.max(m ?? 0, l.percentuale!), undefined)
+    return n === undefined ? undefined : `${nome} ${n}%`
+  }
+  const sintesi =
+    [
+      `${alLavoro} al lavoro`,
+      attese ? `${attese} ${attese === 1 ? 'aspetta' : 'aspettano'} te` : undefined,
+      proposte ? `${proposte} da avviare` : undefined,
+      margine('claude', 'Claude'),
+      margine('codex', 'Codex'),
+    ]
+      .filter(Boolean)
+      .join(' · ')
+
+  const VISTE: { id: Vista; nome: string; tasto: string; chiave: string }[] = [
+    { id: 'lavoro', nome: 'Lavoro', tasto: '1', chiave: 'vista-lavoro' },
+    { id: 'carico', nome: 'Carico', tasto: '2', chiave: 'vista-carico' },
+    { id: 'impostazioni', nome: 'Impostazioni', tasto: '3', chiave: 'impostazioni' },
+  ]
+  const schede = (
+    <Box key="viste" flexDirection="row" gap={2}>
+      {VISTE.map(v => (
+        <Button key={v.chiave} plain hotkey={v.tasto} label={`Vista ${v.nome}${v.id === vistaOra ? ', attiva' : ''}`} onPress={() => void update($, vista, () => v.id)}>
+          <Text weight={v.id === vistaOra ? 'semibold' : 'regular'} dimColor={v.id !== vistaOra}>
+            {v.nome}
           </Text>
-          <Button key="ricarica" plain dimColor hotkey="r" label="Aggiorna" onPress={fai(c.giro)} />
-        </Box>
-        <Text dimColor>{riepilogo}</Text>
-        <Text size="caption" dimColor>{`Avvio: ${io?.lanciatore === 'cli' ? 'CLI in worktree proprio' : io?.lanciatore === 'desktop' ? 'sessioni desktop' : 'capacità non verificata'}`}</Text>
-        {controlloLimiti}
-        {proposte > 0 && (
-          <Box flexDirection="row" gap={2} alignItems="center" flexWrap="wrap">
-            <Button key="tutte" variant="primary" hotkey="a" label={`Avvia tutte · ${proposte}`} onPress={fai(c.avviaTutte)} />
-            <Text size="caption" dimColor>
-              {`al massimo ${c.max} in parallelo · regole da ${regoleOra.fonte}`}
-            </Text>
-          </Box>
-        )}
-        {!regoleOra.lette && nota1('regole', COLORE_STATO.fallita, '▲', `Regole ${regoleOra.fonte}: nessun avvio finché routing.json non si legge.`)}
-        {rotte.length > 0 &&
-          nota1(
-            'rotte',
-            COLORE_STATO.ferma,
-            '!',
-            `Non si leggono: ${rotte.map(r => `${r.nome} (${r.motivo})`).join('; ')}. Finché non si leggono, il pannello non avvia e non chiude nulla da solo.`,
-          )}
-      </Box>
-      {impostazioniUi}
-      {scartata && (
-        <Box flexDirection="row" gap={1} alignItems="center" backgroundColor={conVelo ? velo('#808080', '1F') : undefined} paddingX={1}>
-          <Text>{`Scartata «${scartata.titolo}»`}</Text>
-          <Button key="annulla-scarto" plain hotkey="u" label="Annulla" onPress={fai(() => c.annullaScarto(scartata.id))} />
-        </Box>
-      )}
-      {nota && (
-        <Box backgroundColor={conVelo ? velo(COLORE_STATO.fallita) : undefined} paddingX={1}>
-          {nota1('nota', COLORE_STATO.fallita, '!', nota)}
+        </Button>
+      ))}
+    </Box>
+  )
+
+  const lavoro = (
+    <Box key="vista-lavoro-corpo" flexDirection="column" gap={2}>
+      {senzaProgetto > 0 && (
+        <Box key="senza-progetto" flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
+          <Text>
+            <Text color={COLORE_STATO.accodata}>{'◔ '}</Text>
+            {`${senzaProgetto} ${senzaProgetto === 1 ? 'azione salvata' : 'azioni salvate'} da una versione precedente senza progetto`}
+          </Text>
+          <Button key="senza-assegna" variant="secondary" label="Assegna a questo progetto" onPress={fai(() => c.senzaProgetto('assegna'))} />
+          <Button key="senza-scarta" plain label="Scarta" onPress={fai(() => c.senzaProgetto('scarta'))} />
         </Box>
       )}
       {Input && (lista.length > 6 || testoFiltro) && (
@@ -758,21 +939,98 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
         </Box>
       )}
       {!Input && testoFiltro && <Button key="via-filtro" plain label={`Cancella il filtro «${testoFiltro}»`} onPress={() => void update($, filtro, () => '')} />}
-      {lista.length === 0 && (
-        <Text dimColor>Quando una sessione suggerisce un'azione con suggerisci_azione, la trovi qui pronta da rivedere e avviare.</Text>
-      )}
       {lista.length > 0 && visibili.length === 0 && <Text dimColor>{`Nessuna azione corrisponde a «${testoFiltro}».`}</Text>}
-      {sezioni
-        .filter(s => s.righe.length > 0)
-        .map(s => (
-          <Box key={`sez-${s.titolo}`} flexDirection="column" gap={1}>
-            <Text size="caption" weight="medium" dimColor>
-              {`${s.titolo}  ${s.righe.length}`}
-            </Text>
-            {s.righe.map(scheda)}
+
+      {attesaTe.length > 0 && (
+        <Box key="sez-attesa" flexDirection="column" gap={1}>
+          {titoloSezione('t-attesa', 'Aspettano te', attesaTe.length)}
+          {attesaTe.map(rigaAttesa)}
+        </Box>
+      )}
+
+      <Box key="sez-lavoro" flexDirection="column" gap={1}>
+        <Box flexDirection="row" justifyContent="space-between" alignItems="center">
+          {titoloSezione('t-lavoro', 'Al lavoro adesso', alLavoro)}
+          {righe.length > 6 && (
+            <Button key="tutte-sessioni" plain label={tutteLeSessioni ? 'Mostra meno' : `Mostra tutte · ${righe.length}`} onPress={() => void update($, tutteSessioni, v => !v)} />
+          )}
+        </Box>
+        {righe.length === 0 ? (
+          <Text dimColor>{ses.nota ? `Nessuna sessione letta: ${ses.nota}.` : 'Nessuna sessione di questo progetto nelle ultime 24 ore.'}</Text>
+        ) : (
+          <Box flexDirection="column" gap={1}>
+            {intestazione}
+            {mostrate.flatMap(rigaSessione)}
           </Box>
-        ))}
+        )}
+        {righe.length > 0 && ses.nota && <Text size="caption" dimColor>{`Lettura parziale: ${ses.nota}.`}</Text>}
+      </Box>
+
+      <Box key="sez-avvio" flexDirection="column" gap={1}>
+        <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
+          {titoloSezione('t-avvio', 'Da avviare e in coda', daAvviare.length)}
+          {proposte > 0 && <Button key="tutte" variant="primary" hotkey="a" label={`Avvia tutte · ${proposte}`} onPress={fai(c.avviaTutte)} />}
+        </Box>
+        {daAvviare.length === 0 ? (
+          <Text dimColor>
+            {lista.length === 0
+              ? 'Quando una sessione suggerisce un\'azione con suggerisci_azione, la trovi qui pronta da rivedere e avviare.'
+              : 'Niente da avviare.'}
+          </Text>
+        ) : (
+          daAvviare.map(rigaCoda)
+        )}
+        {proposte > 0 && <Text size="caption" dimColor>{`al massimo ${c.max} in parallelo · regole da ${regoleOra.fonte}`}</Text>}
+      </Box>
+
+      {daFondere.length > 0 && (
+        <Box key="sez-fondere" flexDirection="column" gap={1}>
+          {titoloSezione('t-fondere', 'Da fondere', daFondere.length)}
+          {daFondere.map(rigaFondere)}
+        </Box>
+      )}
       {footer}
+    </Box>
+  )
+
+  const carico = (
+    <Box key="vista-carico-corpo" flexDirection="column" gap={1}>
+      {controlloLimiti}
+    </Box>
+  )
+
+  return (
+    <Box flexDirection="column" gap={2}>
+      <Box flexDirection="column" gap={1}>
+        <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
+          <Text size="title" weight="semibold" wrap="truncate-end">
+            {`chipManager${io?.repo ? ` · ${io.repo}` : ''}`}
+          </Text>
+          <Button key="ricarica" plain dimColor hotkey="r" label={`Aggiorna${ses.letto ? ` · ${oraDi(ses.letto)}` : ''}`} onPress={fai(c.giro)} />
+        </Box>
+        <Text dimColor>{sintesi}</Text>
+        {schede}
+        {!regoleOra.lette && nota1('regole', COLORE_STATO.fallita, '▲', `Regole ${regoleOra.fonte}: nessun avvio finché routing.json non si legge.`)}
+        {rotte.length > 0 &&
+          nota1(
+            'rotte',
+            COLORE_STATO.ferma,
+            '!',
+            `Non si leggono: ${rotte.map(r => `${r.nome} (${r.motivo})`).join('; ')}. Finché non si leggono, il pannello non avvia e non chiude nulla da solo.`,
+          )}
+      </Box>
+      {scartata && (
+        <Box flexDirection="row" gap={1} alignItems="center" backgroundColor={conVelo ? velo('#808080', '1F') : undefined} paddingX={1}>
+          <Text>{`Scartata «${scartata.titolo}»`}</Text>
+          <Button key="annulla-scarto" plain hotkey="u" label="Annulla" onPress={fai(() => c.annullaScarto(scartata.id))} />
+        </Box>
+      )}
+      {nota && (
+        <Box backgroundColor={conVelo ? velo(COLORE_STATO.fallita) : undefined} paddingX={1}>
+          {nota1('nota', COLORE_STATO.fallita, '!', nota)}
+        </Box>
+      )}
+      {vistaOra === 'carico' ? carico : vistaOra === 'impostazioni' ? impostazioniUi : lavoro}
     </Box>
   )
 }

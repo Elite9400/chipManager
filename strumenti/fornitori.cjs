@@ -172,6 +172,58 @@ async function completa(p, input, chiave, get = richiesta) {
   return msg.content
 }
 
+/**
+ * Sessioni Codex delle ultime 24 ore: solo metadati (cartella, ramo, modello, effort, token, finestra, stato).
+ * Mai testo della conversazione: si leggono soltanto session_meta, turn_context, token_count e task_*.
+ */
+function sessioniCodexLocali(home, adesso = Date.now()) {
+  const radice = path.join(home, '.codex', 'sessions')
+  const file = []
+  const visita = (dir, livello) => {
+    if (file.length >= 40 || livello > 3) return
+    const voci = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => b.name.localeCompare(a.name))
+    for (const v of voci) {
+      if (file.length >= 40) break
+      if (v.isSymbolicLink()) continue
+      const f = path.join(dir, v.name)
+      if (v.isDirectory() && /^\d{2,4}$/.test(v.name)) visita(f, livello + 1)
+      else if (v.isFile() && v.name.endsWith('.jsonl') && adesso - fs.statSync(f).mtimeMs <= 86_400_000) file.push(f)
+    }
+  }
+  try { visita(radice, 0) } catch { return [] }
+  const testo = (v, n) => (typeof v === 'string' && v && v.length <= n && !/[\x00-\x1f\x7f]/.test(v) ? v : undefined)
+  const righe = (fd, da, quanti) => {
+    const b = Buffer.alloc(quanti)
+    fs.readSync(fd, b, 0, quanti, da)
+    return b.toString('utf8').split('\n').flatMap(r => { try { return [JSON.parse(r)] } catch { return [] } })
+  }
+  return file.flatMap(f => {
+    const fd = fs.openSync(f, 'r')
+    try {
+      const st = fs.fstatSync(fd)
+      const testa = righe(fd, 0, Math.min(st.size, 256_000))
+      const meta = testa.find(e => e?.type === 'session_meta')?.payload
+      if (!meta || meta.parent_thread_id || !testo(meta.id, 64) || !testo(meta.cwd, 400)) return []
+      const s = { id: meta.id, cwd: meta.cwd, ramo: testo(meta.git?.branch, 80), attivita: new Date(st.mtimeMs).toISOString(), inCorso: false }
+      let aperto = false
+      // La testa dà il primo turn_context (modello, effort); la coda gli ultimi eventi.
+      const coda = st.size > 256_000 ? righe(fd, Math.max(0, st.size - 512_000), Math.min(st.size, 512_000)) : []
+      for (const e of [...testa, ...coda]) {
+        const p = e?.payload
+        if (e?.type === 'turn_context') { s.modello = testo(p?.model, 60) ?? s.modello; s.effort = testo(p?.effort, 20) ?? s.effort }
+        if (e?.type !== 'event_msg') continue
+        if (p?.type === 'task_started') aperto = true
+        if (p?.type === 'task_complete') aperto = false
+        const t = p?.info?.last_token_usage?.total_tokens
+        if (p?.type === 'token_count' && numero(t) && numero(p.info.model_context_window)) { s.token = t; s.finestra = p.info.model_context_window }
+      }
+      // Un turno aperto in un file fermo da 10 minuti è un processo finito male, non lavoro in corso.
+      s.inCorso = aperto && adesso - st.mtimeMs <= 600_000
+      return [s]
+    } catch { return [] } finally { fs.closeSync(fd) }
+  })
+}
+
 async function main() {
   const cmd = process.argv[2]
   const input = JSON.parse(fs.readFileSync(0, 'utf8'))
@@ -186,6 +238,7 @@ async function main() {
   }
   const chiavi = { anthropic: process.env.CHIPMANAGER_ANTHROPIC_ADMIN_KEY || process.env.ANTHROPIC_ADMIN_KEY,
     deepseek: process.env.CHIPMANAGER_DEEPSEEK_KEY || process.env.DEEPSEEK_API_KEY, freellmapi: process.env.CHIPMANAGER_FREELLMAPI_KEY || process.env.FREELLMAPI_KEY }
+  if (cmd === 'sessioni') { process.stdout.write(JSON.stringify(sessioniCodexLocali(os.homedir()))); return }
   const output = cmd === 'limiti' ? await osserva(input, chiavi) : cmd === 'completa' ? { risultato: await completa(input.politica, input, chiavi.freellmapi) } : null
   if (!output) throw new Error('comando non valido')
   const testo = JSON.stringify(output)
@@ -193,4 +246,4 @@ async function main() {
   process.stdout.write(testo)
 }
 if (require.main === module) main().catch(() => { process.stderr.write('Fonte o richiesta non disponibile'); process.exitCode = 1 })
-module.exports = { finestreClaude, finestreCodex, saldoDeepseek, costoClaude, usoFree, codexLocale, osserva, completa, richiesta, locale }
+module.exports = { sessioniCodexLocali, finestreClaude, finestreCodex, saldoDeepseek, costoClaude, usoFree, codexLocale, osserva, completa, richiesta, locale }

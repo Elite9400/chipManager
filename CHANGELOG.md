@@ -6,6 +6,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-05
+
+### Added
+
+- **Who is doing what, right now.** The panel opens on a new **Lavoro** (work) view: a table of every session of the
+  project, including sessions opened by hand and Codex sessions, with engine, model, effort, status, context window
+  used and last activity. Claude sessions come from the desktop app, Codex sessions from the local
+  `~/.codex/sessions` files (metadata only, never conversation text). Context is read only for working sessions and
+  never when the project is local-only.
+- A summary line under the title: sessions at work, actions waiting for you, actions ready, and the tightest fresh
+  plan margin for Claude and Codex.
+- Three views, **Lavoro**, **Carico** (load: limits and budgets) and **Impostazioni** (settings), on keys `1` `2` `3`.
+- On opening, a one-time popup offers to assign the actions saved without a project to the current project or to
+  discard them; discarding can be undone. If the popup cannot be shown, the same request stays in the panel.
+
+### Changed
+
+- **Each project has its own data folder**: `CHIPMANAGER_DIR`, then `progetti[repo].cartella`, then the global
+  `cartella` (kept for compatibility), then `~/.claude/chipmanager/progetti/<owner>__<repo>`. Actions saved in the
+  old default folder `~/.claude/chipmanager/azioni` are not moved: to keep them, set that folder as `cartella`.
+- Actions are compact rows instead of cards: title and dependency on the first line, engine, model, effort and
+  reviewer on a grey second line, **Dettagli** opens the full editor in place. Only rows waiting for a decision keep
+  a coloured border, and an uncertain launch that can be cancelled now waits in **Aspettano te**.
+- In the terminal, below 80 columns, the sessions table drops context and activity and merges model and effort.
+
+### Removed
+
+- The per-card "Associa a questo progetto" button, replaced by the one-time request above.
+
 ## [2.1.1] - 2026-11-05
 
 ### Fixed
@@ -63,7 +92,8 @@ First public release.
 - Fail-closed guards: sensitive work is never delegated autonomously or sent to the cloud, an unreadable
   configuration blocks instead of guessing, and API keys are stored as sensitive plugin settings.
 
-[Unreleased]: https://github.com/Elite9400/chipManager/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/Elite9400/chipManager/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/Elite9400/chipManager/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/Elite9400/chipManager/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Elite9400/chipManager/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/Elite9400/chipManager/releases/tag/v2.0.0

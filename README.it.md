@@ -36,7 +36,10 @@ decidere come usarli nel progetto in cui lavora. Tutto ciò che è proprio di un
   contesto fork o nuovo, worktree, ramo, permessi. Tutto pre-impostato da chi propone, tutto modificabile.
 - **Avvio massivo nell'ordine giusto** — prima le dipendenze, un tetto di sessioni in parallelo, una sola corsia
   Codex per macchina.
-- **Stato dal vivo** — aspettano te · in corso · consegnate · in coda · da avviare, con avviso al primo blocco.
+- **Chi fa cosa, adesso** — la prima vista mette in tabella tutte le sessioni del progetto, anche quelle aperte a mano
+  e quelle Codex: lavoro, motore, modello, effort, stato, contesto usato e ultima attività. Sopra, una riga di
+  sintesi («3 al lavoro · 1 aspetta te · Claude 49% · Codex 41%»); sotto, aspettano te · da avviare e in coda · da
+  fondere, con avviso al primo blocco.
 - **Limiti degli agenti a colpo d'occhio** — piano Claude, piano Codex, spesa API, saldi e budget manuali, ognuno
   con **fonte ed età**. Ignoto vuol dire ignoto: nessun numero inventato.
 - **Pesi di carico** — aumenta un fornitore, un modello o un effort in percentuale o in assoluto; il pannello
@@ -107,7 +110,10 @@ L'installazione da cartella legge dalla cartella: non spostarla. Dopo una modifi
    [Configurazione](#configurazione)). Senza regole il pannello mostra tutto ma non avvia niente.
 3. **Chiedi al modello** di pianificare nel pannello: *«Dividi il lavoro in azioni e suggeriscile in chipManager»*.
    Chiama `suggerisci_azione` una volta per azione, con le dipendenze, e può leggere prima `risorse_agenti`.
-4. **Rivedi e avvia**: cambia ciò che vuoi su ogni scheda, poi **Avvia** o **Avvia tutte**.
+4. **Rivedi e avvia**: apri **Dettagli** su una riga per cambiare ciò che vuoi, poi **Avvia** o **Avvia tutte**.
+
+Il pannello ha tre viste: **Lavoro** (chi fa cosa, la coda, quello che aspetta te), **Carico** (limiti e budget) e
+**Impostazioni**. I tasti `1` `2` `3` le scelgono anche da tastiera.
 
 ## Come funziona
 
@@ -156,9 +162,9 @@ Tutto ciò che è proprio di un progetto sta in un file locale, fuori da ogni re
 
 ```json
 {
-  "cartella": "~/.claude/chipmanager",
   "progetti": {
     "owner/repo": {
+      "cartella": "~/.claude/chipmanager/progetti/owner__repo",
       "routing": ".claude/routing.json",
       "sensibili": ["anagrafica", "gestione[ _-]?paghe"],
       "background": "Webapp interna: segui CLAUDE.md, lavora nel worktree, riferisci al coordinatore.",
@@ -180,7 +186,7 @@ Tutto ciò che è proprio di un progetto sta in un file locale, fuori da ogni re
 
 | Campo | Che cosa | Predefinito |
 |---|---|---|
-| `cartella` | dati del pannello (`azioni/`) e registro dell'orchestratore facoltativo (`registro.json`); `CHIPMANAGER_DIR` vince | `~/.claude/chipmanager` |
+| `cartella` | dati del progetto (`azioni/`) e registro dell'orchestratore facoltativo (`registro.json`). Ogni progetto ha la sua; `CHIPMANAGER_DIR` vince su tutto, una `cartella` globale (fuori da `progetti`) vale ancora per compatibilità | `~/.claude/chipmanager/progetti/<owner>__<repo>` |
 | `routing` | percorso **relativo alla radice del repo** del `routing.json`: modelli, effort, revisori, corsia Codex | `.claude/routing.json` |
 | `sensibili` | espressioni regolari che rendono sensibile (R4) un'azione, oltre ad auth / login / password / permessi / PII | nessuna |
 | `background` | contesto fisso del mandato locale (il cloud riceve sempre quello generico) | testo generico |
@@ -192,8 +198,13 @@ Tutto ciò che è proprio di un progetto sta in un file locale, fuori da ogni re
 | `limitiManuali` | piani, budget o percentuali che dichiari tu, con istante originale e unità | nessuno |
 
 Configurazione e `routing.json` si rileggono prima di ogni decisione: se uno dei due è illeggibile o non valido
-non parte niente e il pannello dice perché. Le impostazioni si modificano anche da **Impostazioni e pesi**; il
+non parte niente e il pannello dice perché. Le impostazioni si modificano anche dalla vista **Impostazioni**; il
 salvataggio è un compare-and-swap sul file intero, preserva gli altri progetti e rifiuta un editor diventato vecchio.
+
+Le azioni salvate da una versione precedente senza progetto non si vedono in nessun progetto. All'apertura, una volta
+per sessione, un popup chiede se assegnarle al progetto corrente o scartarle (lo scarto si annulla); se il popup non
+si può mostrare, la stessa richiesta resta in cima alla vista Lavoro. Chi passa dalla 2.1 con una `cartella` globale
+la sposti nella sezione del progetto che la usa: gli altri progetti avranno così la loro.
 
 <details>
 <summary>Forma del <code>routing.json</code></summary>
@@ -281,7 +292,8 @@ di Claude. *Gratis* non è una promessa di costo zero: limiti e fatturazione dip
 
 ## Terminale
 
-Lo stesso pannello e gli stessi tasti funzionano nella CLI: `r` aggiorna, `i` impostazioni, `a` avvia tutte. La
+Lo stesso pannello e gli stessi tasti funzionano nella CLI: `1` `2` `3` le viste, `r` aggiorna, `a` avvia tutte. Sotto
+gli 80 caratteri la tabella delle sessioni lascia cadere contesto e attività e unisce modello ed effort. La
 capacità d'avvio si verifica con `tool.list` **prima** di prenotare: dove c'è `start_session` si usa l'app desktop,
 altrove il lanciatore CLI. Una risposta desktop persa non diventa mai un secondo avvio.
 
@@ -337,7 +349,7 @@ claude plugin test .
 node --test strumenti/prova-disco.cjs
 ```
 
-67 test del modulo su un motore finto (due superfici, politica, pesi, conferme, segreti, CLI) e 26 test
+75 test del modulo su un motore finto (due superfici, politica, pesi, conferme, segreti, CLI, sessioni) e 27 test
 dell'helper con processi veri per mutex, prenotazione e corsia Codex. Nessuna chiamata HTTP reale nei test.
 
 ## Domande

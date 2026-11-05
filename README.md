@@ -35,7 +35,10 @@ model decides how to use them for the project at hand. Everything project-specif
 - **Review before launch** — order, executor (Claude / Codex), reviewer, model, effort, lane (R0–R5), fork or
   fresh context, worktree, branch, permissions. Everything pre-set by the proposer, everything editable.
 - **Bulk launch in the right order** — dependencies first, a cap on parallel sessions, one Codex lane per machine.
-- **Live status** — waiting for you · running · delivered · queued · ready, with a notice on the first stall.
+- **Who is doing what, right now** — the first view lists every session of the project in a table, including the ones
+  opened by hand and the Codex ones: work, engine, model, effort, status, context used and last activity. Above it, a
+  summary line ("3 al lavoro · 1 aspetta te · Claude 49% · Codex 41%"); below it, waiting for you · ready and queued ·
+  to merge, with a notice on the first stall.
 - **Agent limits at a glance** — Claude plan, Codex plan, API spend, balances and manual budgets, each with
   **source and age**. Unknown means unknown: no invented numbers.
 - **Load weights** — boost a provider, a model or an effort level by a percentage or an absolute amount; the
@@ -106,7 +109,11 @@ A folder install reads from the folder: do not move it. After a change run
    [Configuration](#configuration)). Without rules the panel shows everything but launches nothing.
 3. **Ask the model** to plan the work into the panel: *"Split this into actions and suggest them in chipManager"*.
    It calls `suggerisci_azione` once per action, with dependencies, and can read `risorse_agenti` first.
-4. **Review and launch**: edit what you want on each card, then **Avvia** (launch) or **Avvia tutte** (launch all).
+4. **Review and launch**: open **Dettagli** (details) on a row to edit what you want, then **Avvia** (launch) or
+   **Avvia tutte** (launch all).
+
+The panel has three views: **Lavoro** (work: who is doing what, the queue, what waits for you), **Carico** (load:
+limits and budgets) and **Impostazioni** (settings). Keys `1` `2` `3` switch between them.
 
 ## How it works
 
@@ -155,9 +162,9 @@ Everything that belongs to a project lives in a local file outside any repositor
 
 ```json
 {
-  "cartella": "~/.claude/chipmanager",
   "progetti": {
     "owner/repo": {
+      "cartella": "~/.claude/chipmanager/progetti/owner__repo",
       "routing": ".claude/routing.json",
       "sensibili": ["payroll", "medical[ _-]?records"],
       "background": "Internal web app: follow CLAUDE.md, work in your worktree, report to the coordinator.",
@@ -179,7 +186,7 @@ Everything that belongs to a project lives in a local file outside any repositor
 
 | Field | Meaning | Default |
 |---|---|---|
-| `cartella` | panel data (`azioni/`) and the optional orchestrator registry (`registro.json`); `CHIPMANAGER_DIR` wins | `~/.claude/chipmanager` |
+| `cartella` | the project's data (`azioni/`) and the optional orchestrator registry (`registro.json`). Each project has its own; `CHIPMANAGER_DIR` wins over everything, and a global `cartella` (outside `progetti`) still applies for compatibility | `~/.claude/chipmanager/progetti/<owner>__<repo>` |
 | `routing` | path **relative to the repo root** of `routing.json`: models, efforts, reviewers, Codex lane | `.claude/routing.json` |
 | `sensibili` | regular expressions that make an action sensitive (R4), on top of auth / login / password / permissions / PII | none |
 | `background` | fixed context for local briefs (the cloud always gets the generic one) | generic text |
@@ -191,8 +198,13 @@ Everything that belongs to a project lives in a local file outside any repositor
 | `limitiManuali` | plans, budgets or percentages you declare, with original time and unit | none |
 
 Config and `routing.json` are re-read before every decision: if either is unreadable or invalid, nothing
-launches and the panel says why. Settings can also be edited from **Impostazioni e pesi**; saving is a
+launches and the panel says why. Settings can also be edited from the **Impostazioni** view; saving is a
 compare-and-swap on the whole file, keeps other projects intact and refuses a stale editor.
+
+Actions saved without a project by an earlier version are not shown in any project. On opening, once per session, a
+popup asks whether to assign them to the current project or discard them (discarding can be undone); if the popup
+cannot be shown, the same request stays at the top of the Lavoro view. When upgrading from 2.1 with a global
+`cartella`, move it into the section of the project that uses it, so the other projects get their own.
 
 <details>
 <summary><code>routing.json</code> shape</summary>
@@ -278,7 +290,8 @@ required. *Free* is not a promise of zero cost: limits and billing depend on the
 
 ## Terminal
 
-The same panel and keys work in the CLI: `r` refresh, `i` settings, `a` launch all. Launch capability is checked
+The same panel and keys work in the CLI: `1` `2` `3` the views, `r` refresh, `a` launch all. Below 80 columns the
+sessions table drops context and activity and merges model and effort. Launch capability is checked
 with `tool.list` **before** reserving: where `start_session` exists the desktop app is used; elsewhere a CLI
 worker. A lost desktop answer never falls back to a second launch.
 
@@ -332,7 +345,7 @@ claude plugin test .
 node --test strumenti/prova-disco.cjs
 ```
 
-67 module tests on a fake engine (both surfaces, policy, weights, confirmations, secrets, CLI) and 26 helper tests
+75 module tests on a fake engine (both surfaces, policy, weights, confirmations, secrets, CLI, sessions) and 27 helper tests
 with real processes for the mutex, reservation and Codex lane. No real HTTP in tests.
 
 ## FAQ

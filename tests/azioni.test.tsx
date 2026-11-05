@@ -4,6 +4,13 @@ import type { TestBody } from 'claude-code/testing'
 import {
   COLORE_EFFORT,
   bilancia,
+  cartellaDati,
+  contestoDa,
+  dettagliSessione,
+  nelProgetto,
+  radiceProgetto,
+  sessioniClaude,
+  sessioniCodex,
   coloreLimite,
   limiteFresco,
   punteggio,
@@ -449,7 +456,7 @@ test('suggerisci, rivedi le opzioni, avvia una volta sola', async ($, on) => {
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE(surface) })
-    expect(await ui.find({ type: 'Text', text: /^Da avviare$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Da avviare e in coda/ })).toBeDefined()
     await ui.press({ key: `mod-${id}` })
     expect(await ui.find({ key: `perm-${id}` })).toBeDefined()
     await ui.select({ key: `perm-${id}`, value: 'auto' })
@@ -1086,8 +1093,12 @@ test('2.1.1: limiti Claude dal formato attuale di get_usage; nessuna azione di a
   await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Del progetto', brief: 'Frase.' } as never)
   for (const surface of ['desktop', 'terminal'] as const) {
     const ui = await $.ui.mount({ ...PANE(surface) })
+    // La riga di sintesi riporta il margine; il dettaglio dei limiti sta nella vista Carico.
+    expect(await ui.find({ type: 'Text', text: /Claude 37%/ })).toBeDefined()
+    await ui.press({ key: 'vista-carico' })
     expect(await ui.find({ type: 'Text', text: /Claude piano · Weekly · all models: 37% usato/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Claude piano: non disponibile/ })).toBeUndefined()
+    await ui.press({ key: 'vista-lavoro' })
     expect(await ui.find({ type: 'Text', text: /Del progetto/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Senza progetto|Di un altro progetto/ })).toBeUndefined()
     await ui.unmount()
@@ -1099,6 +1110,7 @@ test('2.0: helper con schema ignoto lascia il pannello disponibile senza inventa
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('terminal') })
+  await ui.press({ key: 'vista-carico' })
   expect(await ui.find({ type: 'Text', text: /helper non disponibile/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Claude API: non disponibile/ })).toBeDefined()
   await ui.unmount()
@@ -1110,12 +1122,13 @@ test('2.0: limiti sempre visibili e impostazioni modificabili su desktop e termi
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   for (const surface of ['desktop', 'terminal'] as const) {
     const ui = await $.ui.mount({ ...PANE(surface) })
+    await ui.press({ key: 'vista-carico' })
     expect(await ui.find({ type: 'Text', text: /^Limiti e budget$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Claude API: non disponibile/ })).toBeDefined()
     await ui.press({ key: 'impostazioni' })
     await ui.input({ key: 'percentuale-fornitore-codex', text: '120' })
     expect(JSON.parse(amb.disco.get('X:/casa/.claude/chipmanager/config.json')!).progetti['acme/progetto'].pesi[0]).toMatchObject({ nome: 'codex', percentuale: 120 })
-    await ui.press({ key: 'impostazioni' })
+    await ui.press({ key: 'vista-lavoro' })
     await ui.unmount()
   }
 })
@@ -1286,6 +1299,7 @@ test('2.0: fonti e GitHub assenti non fanno rete senza opt-in, budget manuale ma
   ] } } }))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('terminal') })
+  await ui.press({ key: 'vista-carico' })
   expect(await ui.find({ type: 'Text', text: /Claude API budget: 200 EUR · manuale/ })).toBeDefined()
   // Un valore inserito a mano dice quando è stato scritto, non «vecchio»: non è una misura che scade.
   expect(await ui.find({ type: 'Text', text: /manuale · inserito .* fa/ })).toBeDefined()
@@ -1307,5 +1321,165 @@ test('2.0: CLI ignora stato di altro tentativo e non cerca sessioni desktop', as
   await clock.advance(20_000)
   expect(amb.azione()[0]!.stato).toBe('avviata')
   expect(amb.chiamate.filter(c => c.tool === 'list_sessions').length).toBe(0)
+  await ui.unmount()
+})
+
+// --- 2.2: progetto, sessioni, vista Lavoro ----------------------------------------------------------------
+
+test('2.2: cartella dei dati per progetto; la globale resta per compatibilità; percorsi non validi bloccano', () => {
+  const home = 'C:/casa'
+  expect(cartellaDati(null, 'acme/progetto', home)).toBe('C:/casa/.claude/chipmanager/progetti/acme__progetto')
+  expect(cartellaDati({ cartella: '~/dati' }, 'acme/progetto', home)).toBe('C:/casa/dati')
+  expect(cartellaDati({ cartella: '~/dati', progetti: { 'acme/progetto': { cartella: 'D:\\orch\\' } } }, 'acme/progetto', home)).toBe('D:/orch')
+  expect(cartellaDati({ progetti: { 'acme/progetto': { cartella: '~/a' } } }, 'altro/repo', home)).toBe('C:/casa/.claude/chipmanager/progetti/altro__repo')
+  expect(cartellaDati(null, 'C:/lavori/senza remote', home)).toBe('C:/casa/.claude/chipmanager/progetti/C___lavori__senza_remote')
+  expect(cartellaDati(null, null, home)).toBe('C:/casa/.claude/chipmanager/progetti/_senza-progetto')
+  for (const cartella of ['relativa/x', 3, '', '../su'])
+    expect(typeof progettoDa({ progetti: { 'acme/progetto': { cartella } } }, 'acme/progetto')).toBe('string')
+  expect(typeof progettoDa({ progetti: { 'acme/progetto': { cartella: '~/orch' } } }, 'acme/progetto')).toBe('object')
+})
+
+test('2.2: sessioni del progetto: worktree inclusi, altri progetti, archiviate e vecchie escluse; forme strette', () => {
+  const radice = radiceProgetto('C:\\Lavori\\Progetto\\')
+  expect(radice).toBe('c:/lavori/progetto')
+  expect(nelProgetto('C:/lavori/progetto/.claude/worktrees/fix-a/sub', radice)).toBe(true)
+  expect(nelProgetto('C:/lavori/progetto-due', radice)).toBe(false)
+  const adesso = Date.parse('2026-01-02T12:00:00Z')
+  const id = (n: number) => `local_0000000${n}-1234-1234-1234-123456789abc`
+  const lista = [
+    { sessionId: id(1), title: 'Guida', cwd: 'C:\\Lavori\\Progetto\\.claude\\worktrees\\docs', isRunning: true, lastActivityAt: '2026-01-02T11:59:00Z', branch: 'docs' },
+    { sessionId: id(2), title: 'Altrove', cwd: 'C:/altro', isRunning: true, lastActivityAt: '2026-01-02T11:59:00Z' },
+    { sessionId: id(3), title: 'Archiviata', cwd: 'C:/lavori/progetto', isArchived: true, lastActivityAt: '2026-01-02T11:59:00Z' },
+    { sessionId: id(4), title: 'Di ieri l\'altro', cwd: 'C:/lavori/progetto', isRunning: false, lastActivityAt: '2025-12-30T11:59:00Z' },
+    { sessionId: 'non-valida', cwd: 'C:/lavori/progetto', isRunning: true },
+    { sessionId: id(5), title: 'x\u0007y', cwd: 'C:/lavori/progetto', isRunning: false, lastActivityAt: '2026-01-02T10:00:00Z' },
+  ]
+  expect(sessioniClaude(lista, radice, adesso).map(s => [s.id, s.titolo, s.stato])).toEqual([
+    [id(1), 'Guida', 'in-corso'],
+    [id(5), 'Sessione senza titolo', 'ferma'],
+  ])
+  expect(sessioniClaude({ non: 'un elenco' }, radice, adesso)).toEqual([])
+  expect(dettagliSessione({ model: 'claude-sonnet-5-5', effort: 'medium', branch: 'docs', segreto: 'x' })).toEqual({ modello: 'claude-sonnet-5-5', effort: 'medium', ramo: 'docs' })
+  expect(contestoDa({ context: { status: 'ok', percentUsed: 34.4 } })).toBe(34)
+  expect(contestoDa({ context: { status: 'unavailable', percentUsed: 34 } })).toBeUndefined()
+  expect(contestoDa({ context: { status: 'ok', percentUsed: 140 } })).toBeUndefined()
+  const codex = sessioniCodex([
+    { id: 'esempio-0001', cwd: 'C:/lavori/progetto', ramo: 'fix', modello: 'gpt-6-astra', effort: 'xhigh', inCorso: true, attivita: '2026-01-02T11:58:00Z', token: 61_000, finestra: 100_000 },
+    { id: 'esempio-0002', cwd: 'C:/altro', attivita: '2026-01-02T11:58:00Z' },
+    { id: 'esempio-0003', cwd: 'C:/lavori/progetto', attivita: '2025-12-01T00:00:00Z' },
+    { id: '../fuori', cwd: 'C:/lavori/progetto', attivita: '2026-01-02T11:58:00Z' },
+  ], radice, adesso)
+  expect(codex).toEqual([{ id: 'codex-esempio-0001', motore: 'codex', titolo: 'Codex · fix', ramo: 'fix', modello: 'gpt-6-astra', effort: 'xhigh', stato: 'in-corso', contesto: 61, attivita: '2026-01-02T11:58:00Z' }])
+})
+
+const ID_ESEMPIO = (n: number) => `local_aaaaaaa${n}-1234-1234-1234-123456789abc`
+function ambienteSessioni(on: Parameters<TestBody>[1], adesso: () => number) {
+  const quando = (min: number) => new Date(adesso() - min * 60_000).toISOString()
+  return ambiente(on, {
+    strumenti: ['mcp__ccd_session_mgmt__list_sessions', 'mcp__ccd_session_mgmt__get_usage'],
+    fonte: cmd => (cmd === 'sessioni'
+      ? [{ id: 'esempio-0001', cwd: 'X:/repo/.claude/worktrees/fix-ricerca', ramo: 'fix-ricerca', modello: 'gpt-6-astra', effort: 'xhigh', inCorso: true, attivita: quando(0), token: 61_000, finestra: 100_000 }]
+      : undefined),
+    mcp: (_s, tool, args) => {
+      const testo = (v: unknown) => ({ isError: false, content: [{ type: 'text', text: JSON.stringify(v) }] })
+      const sid = (args as { session_id?: string }).session_id
+      if (tool === 'list_sessions')
+        return testo([
+          { sessionId: ID_ESEMPIO(1), title: 'Guida delle API', cwd: 'X:\\repo\\.claude\\worktrees\\docs-api', isRunning: true, lastActivityAt: quando(2) },
+          { sessionId: ID_ESEMPIO(2), title: 'Altro progetto', cwd: 'X:/altro', isRunning: true, lastActivityAt: quando(1) },
+          { sessionId: ID_ESEMPIO(3), title: 'Revisione sessione', cwd: 'X:/repo', isRunning: false, lastActivityAt: quando(18) },
+        ])
+      if (tool === 'get_session' && sid === ID_ESEMPIO(1)) return testo({ model: 'claude-sonnet-5-5', effort: 'medium', branch: 'docs-api', isRunning: true })
+      if (tool === 'get_session' && sid === ID_ESEMPIO(3)) return testo({ model: 'claude-opus-5-5', effort: 'high', isRunning: false })
+      if (tool === 'get_usage' && sid === ID_ESEMPIO(1)) return testo({ context: { status: 'ok', percentUsed: 34 } })
+      return undefined
+    },
+  })
+}
+
+test('2.2: «Al lavoro adesso» mostra anche le sessioni aperte a mano e quelle Codex, con modello, effort e contesto', async ($, on) => {
+  const clock = mock.clock(on)
+  const amb = ambienteSessioni(on, () => Date.now())
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(20_000)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  for (const testo of [/^Guida delle API$/, /^Revisione sessione$/, /^Codex · fix-ricerca$/, /^Sonnet 5\.5$/, /^34%$/, /^61%$/, /aperta a mano/, /^3 al lavoro/])
+    expect(await ui.find({ type: 'Text', text: testo })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Altro progetto/ })).toBeUndefined()
+  // Il contesto si chiede solo per le sessioni al lavoro, mai per quelle ferme.
+  expect(amb.chiamate.some(c => c.tool === 'get_usage' && c.args.session_id === ID_ESEMPIO(3))).toBe(false)
+  await ui.press({ key: `apri-ses-${ID_ESEMPIO(1)}` })
+  expect(amb.chiamate.some(c => c.tool === 'open_session_in' && c.args.session_id === ID_ESEMPIO(1))).toBe(true)
+  await ui.unmount()
+  // Terminale stretto: cadono Contesto e Attività, modello ed effort in una colonna.
+  const t = await $.ui.mount({ ...PANE('terminal') })
+  expect(await t.find({ type: 'Text', text: /^Modello · effort$/ })).toBeDefined()
+  expect(await t.find({ type: 'Text', text: /^Contesto$/ })).toBeUndefined()
+  expect(await t.find({ type: 'Text', text: /^GPT-6 Astra · xhigh$|^gpt-6-astra · xhigh$/ })).toBeDefined()
+  await t.unmount()
+  const largo = await $.ui.mount({ ...PANE('terminal'), props: { ...PANE('terminal').props, bodyColumns: 120 } })
+  expect(await largo.find({ type: 'Text', text: /^Contesto$/ })).toBeDefined()
+  await largo.unmount()
+})
+
+test('2.2: solo rete locale: le sessioni si leggono, il contesto (get_usage) no', async ($, on) => {
+  const clock = mock.clock(on)
+  const amb = ambienteSessioni(on, () => Date.now())
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { soloLocale: true } } }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(20_000)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  expect(await ui.find({ type: 'Text', text: /^Guida delle API$/ })).toBeDefined()
+  expect(amb.chiamate.filter(c => c.tool === 'get_usage').length).toBe(0)
+  await ui.unmount()
+})
+
+test('2.2: azioni senza progetto: richiesta in linea, scarto annullabile, assegnazione al progetto', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  amb.disco.set('X:/orch/azioni/a-orfana01.json', JSON.stringify(base('a-orfana01', 1, { titolo: 'Vecchia proposta' })))
+  amb.disco.set('X:/orch/azioni/a-orfana02.json', JSON.stringify(base('a-orfana02', 2, { titolo: 'Altra vecchia' })))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('terminal') })
+  expect(await ui.find({ type: 'Text', text: /2 azioni salvate da una versione precedente senza progetto/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Vecchia proposta/ })).toBeUndefined()
+  await ui.press({ key: 'senza-scarta' })
+  expect(amb.azione().map(a => a.stato)).toEqual(['scartata', 'scartata'])
+  await ui.press({ key: 'annulla-scarto' })
+  expect(amb.azione().map(a => a.stato)).toEqual(['proposta', 'proposta'])
+  await ui.press({ key: 'senza-assegna' })
+  expect(amb.azione().map(a => a.repo)).toEqual(['acme/progetto', 'acme/progetto'])
+  expect(await ui.find({ type: 'Text', text: /Vecchia proposta/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /senza progetto/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('2.2: popup all\'apertura per le azioni senza progetto, una volta', async ($, on) => {
+  const amb = ambiente(on)
+  const clock = mock.clock(on)
+  const domande: string[] = []
+  conferme(on, q => (domande.push(q), 'Assegna a acme/progetto'))
+  amb.disco.set('X:/orch/azioni/a-orfana01.json', JSON.stringify(base('a-orfana01', 1, { titolo: 'Vecchia proposta' })))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(20_000)
+  expect(domande.filter(d => d.includes('non ha un progetto')).length).toBe(1)
+  expect(amb.azione()[0]!.repo).toBe('acme/progetto')
+})
+
+test('2.2: viste con i tasti 1 2 3; la sintesi dice chi lavora e chi aspetta', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Test per il filtro', brief: 'Frase.' } as never)
+  const ui = await $.ui.mount({ ...PANE('terminal') })
+  expect(await ui.find({ type: 'Text', text: /al lavoro · 1 da avviare/ })).toBeDefined()
+  expect(await ui.find({ key: 'tutte' })).toBeDefined()
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /^Limiti e budget$/ })).toBeDefined()
+  expect(await ui.find({ key: 'tutte' })).toBeUndefined()
+  await ui.press({ key: 'impostazioni' })
+  expect(await ui.find({ type: 'Text', text: /^Politica di questo progetto$/ })).toBeDefined()
+  await ui.press({ key: 'vista-lavoro' })
+  expect(await ui.find({ key: `avvia-${amb.azione()[0]!.id}` })).toBeDefined()
   await ui.unmount()
 })

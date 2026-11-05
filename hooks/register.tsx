@@ -1,12 +1,15 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Azione, Chiamante, Contesto, Corsia, Destinazione, Motore, Permessi, Peso, Regole, Revisore, Risorse, RisorseProgetto, StatoAzione, Traguardi, Vita } from '../types'
+import type { Azione, Chiamante, Contesto, Corsia, Destinazione, Motore, Permessi, Peso, Regole, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, Traguardi, Vita } from '../types'
 import {
   attive,
   bilancia,
   BASE_RE,
+  cartellaDati,
+  contestoDa,
   CORSIE,
+  dettagliSessione,
   faseChiusa,
   faseDiAzione,
   taskAccertato,
@@ -22,10 +25,13 @@ import {
   REGOLE_DEFAULT,
   regoleDa,
   progettoDa,
+  radiceProgetto,
   repoGithub,
   SESSIONE_RE,
   sposta,
   sensibile,
+  sessioniClaude,
+  sessioniCodex,
   traguardiDa,
   TRANSIZIONI,
   violazioni,
@@ -43,12 +49,13 @@ const vive = atom({ plugin: 'chip-manager', key: 'vive' } as const, {} as Record
 const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as string | null)
 const traguardi = atom({ plugin: 'chip-manager', key: 'traguardi' } as const, null as Traguardi | null, { shape: 'traguardi-3' })
 const regole = atom({ plugin: 'chip-manager', key: 'regole' } as const, null as Regole | null, { shape: 'regole-4' })
-const annullabile = atom({ plugin: 'chip-manager', key: 'annullabile' } as const, null as { id: string; titolo: string } | null)
+const annullabile = atom({ plugin: 'chip-manager', key: 'annullabile' } as const, null as { id: string; titolo: string; altri?: string[] } | null)
 const illeggibili = atom({ plugin: 'chip-manager', key: 'illeggibili' } as const, [] as { nome: string; motivo: string }[], {
   shape: 'illeggibili-2',
 })
 const contesto = atom({ plugin: 'chip-manager', key: 'contesto' } as const, null as Chiamante | null, { shape: 'chiamante-1' })
 const risorse = atom({ plugin: 'chip-manager', key: 'risorse' } as const, RISORSE_VUOTE as Risorse, { shape: 'risorse-1' })
+const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { lista: [] } as Sessioni, { shape: 'sessioni-1' })
 
 const PANE = 'chipManager'
 const TITOLO = 'chipManager'
@@ -77,17 +84,21 @@ async function leggiConfig($: Eng): Promise<unknown> {
   }
 }
 
+/** Il progetto della sessione: `owner/repo` dal remote GitHub, altrimenti la radice locale. */
+async function progettoSessione($: Eng) {
+  const r = await $.session.repo().catch(() => null)
+  const root = r?.root ? r.root.replace(/\\/g, '/') : undefined
+  return { repo: repoGithub(r?.remote) ?? root ?? null, root }
+}
+
 /**
- * Cartella dei dati: `CHIPMANAGER_DIR`, poi `cartella` della configurazione (`~` = la home), poi
- * `~/.claude/chipmanager`. Il registro dell'orchestratore, se c'è, sta nella stessa cartella.
+ * Cartella dei dati: `CHIPMANAGER_DIR`, poi `cartellaDati` (sezione del progetto, cartella globale per compatibilità,
+ * `~/.claude/chipmanager/progetti/<owner>__<repo>`). Il registro dell'orchestratore, se c'è, sta nella stessa cartella.
  */
 async function baseOrch($: Eng) {
   const env = await $.env.get('CHIPMANAGER_DIR')
   if (env) return env.replace(/\\/g, '/')
-  const c = await leggiConfig($).catch(() => null)
-  const dir = c && typeof c === 'object' ? (c as { cartella?: unknown }).cartella : undefined
-  const home = await casa($)
-  return typeof dir === 'string' && dir ? dir.replace(/\\/g, '/').replace(/^~(?=\/|$)/, home) : `${home}/.claude/chipmanager`
+  return cartellaDati(await leggiConfig($).catch(() => null), (await progettoSessione($)).repo, await casa($))
 }
 const cartella = async ($: Eng) => `${await baseOrch($)}/azioni`
 const strumenti = ($: Eng): Strumenti => ({ disco: `${$.plugin.root.replace(/\\/g, '/')}/strumenti/disco.cjs` })
@@ -264,6 +275,106 @@ function maxParalleli(options: Record<string, unknown>) {
 
 /** Solo le azioni del progetto della sessione: quelle degli altri non contano nei posti e non partono da qui. */
 const delProgetto = (lista: readonly Azione[], chi: Chiamante | null) => lista.filter(a => !!a.repo && !!chi?.repo && a.repo === chi.repo)
+
+// --- sessioni del progetto (anche quelle aperte a mano) ---------------------------------------------------
+
+/** Dettagli per sessione: get_session al più ogni 60 s, get_usage solo sulle sessioni al lavoro. */
+const dettagli = new Map<string, { letto: number; d: Pick<SessioneProgetto, 'modello' | 'effort' | 'ramo'>; inCorso?: boolean; contesto?: number }>()
+const MAX_DETTAGLI = 8
+
+async function chiamaApp($: Eng, tool: string, args: Record<string, unknown>) {
+  const r = await $.mcp.call('ccd_session_mgmt', tool, args)
+  if (r.isError) throw new Error(`${tool} non disponibile`)
+  return JSON.parse(testoMcp(r)) as unknown
+}
+
+/**
+ * Claude da list_sessions (più questa sessione, che l'elenco esclude), Codex dai file locali via helper.
+ * Solo metadati: titolo, ramo, modello, effort, stato, contesto e ultima attività.
+ */
+async function leggiSessioni($: Eng) {
+  const { root } = await progettoSessione($)
+  if (!root) return void (await update($, sessioni, () => ({ lista: [], nota: 'questa sessione non è in un repository' })))
+  const [chi, r] = [(await read($, contesto)) ?? (await chiSonoIo($)), (await read($, regole)) ?? (await leggiRegole($))]
+  const radice = radiceProgetto(root)
+  const adesso = Date.now()
+  const desktop = (await $.tool.list().catch(() => [])).some(t => t.name === 'mcp__ccd_session_mgmt__list_sessions')
+  const note: string[] = []
+  let claude: SessioneProgetto[] = []
+  if (desktop) {
+    try {
+      claude = sessioniClaude(await chiamaApp($, 'list_sessions', { limit: 50 }), radice, adesso)
+    } catch {
+      note.push('sessioni Claude non lette')
+    }
+  }
+  const io: SessioneProgetto = { id: 'self', motore: 'claude', titolo: chi.titolo ?? 'Questa sessione', ramo: chi.ramo, modello: chi.modello || undefined, effort: chi.effort, stato: 'in-corso', qui: true }
+  // Le sonde dell'app (get_usage) seguono la politica del progetto come i limiti: regole illeggibili o solo locale = niente.
+  const sonde = r.lette && !r.risorse.soloLocale
+  const daLeggere = desktop ? [io, ...claude.sort((x, y) => Number(y.stato === 'in-corso') - Number(x.stato === 'in-corso')).slice(0, MAX_DETTAGLI - 1)] : []
+  await Promise.all(
+    daLeggere.map(async s => {
+      const c = dettagli.get(s.id)
+      if (!c || adesso - c.letto > 60_000) {
+        const g = (await chiamaApp($, 'get_session', { session_id: s.id }).catch(() => null)) as { isRunning?: unknown } | null
+        const inCorso = typeof g?.isRunning === 'boolean' ? g.isRunning : c?.inCorso
+        const lavora = inCorso ?? s.stato === 'in-corso'
+        const contesto = sonde && lavora ? contestoDa(await chiamaApp($, 'get_usage', { session_id: s.id }).catch(() => null)) ?? c?.contesto : undefined
+        dettagli.set(s.id, { letto: adesso, d: g ? dettagliSessione(g) : (c?.d ?? {}), inCorso, contesto })
+      }
+      const x = dettagli.get(s.id)!
+      for (const [k, v] of Object.entries(x.d)) if (v) (s as Record<string, unknown>)[k] = v
+      if (x.inCorso !== undefined) s.stato = x.inCorso ? 'in-corso' : 'ferma'
+      s.contesto = x.contesto
+    }),
+  )
+  let codex: SessioneProgetto[] = []
+  if (r.lette && r.risorse.fornitori.includes('codex')) {
+    try {
+      codex = sessioniCodex(await fonte($, {}, 'sessioni', {}), radice, adesso)
+    } catch {
+      note.push('sessioni Codex non lette')
+    }
+  }
+  await update($, sessioni, () => ({ lista: [io, ...claude, ...codex], letto: new Date(adesso).toISOString(), nota: note.join(' · ') || undefined }))
+}
+
+// --- azioni senza progetto (scritte da una versione precedente) --------------------------------------------
+
+let chiestoSenzaProgetto = false
+
+/** Le assegna al progetto della sessione o le scarta (scarto annullabile: lo stato precedente resta nel record). */
+async function sistemaSenzaProgetto($: Eng, come: 'assegna' | 'scarta') {
+  const chi = await chiSonoIo($)
+  if (!chi.repo) throw new Error('questa sessione non è in un repository')
+  const orfane = attive(await carica($)).filter(a => !a.repo)
+  const scartabili = orfane.filter(a => ['proposta', 'accodata', 'fallita'].includes(a.stato))
+  if (come === 'assegna') for (const a of orfane) await salva($, { ...a, repo: chi.repo })
+  else {
+    for (const a of scartabili) await salva($, { ...a, stato: 'scartata', statoPrima: a.stato })
+    const [prima, ...altri] = scartabili
+    if (prima)
+      await update($, annullabile, () => ({ id: prima.id, titolo: altri.length ? `${scartabili.length} azioni senza progetto` : prima.titolo, altri: altri.map(a => a.id) }))
+    if (scartabili.length < orfane.length) $.ui.toast('Le azioni già avviate senza progetto non si scartano: assegnale per seguirle')
+  }
+}
+
+/** All'apertura, una volta per sessione: un popup. Se il popup non si può mostrare, resta la richiesta nel pannello. */
+async function chiediSenzaProgetto($: Eng) {
+  if (chiestoSenzaProgetto) return
+  const chi = (await read($, contesto)) ?? (await chiSonoIo($))
+  const n = attive(await read($, azioni)).filter(a => !a.repo).length
+  if (!n || !chi.repo) return
+  chiestoSenzaProgetto = true
+  const scelta = await $.ui
+    .ask(`${n === 1 ? 'Un\'azione salvata' : `${n} azioni salvate`} da una versione precedente ${n === 1 ? 'non ha' : 'non hanno'} un progetto e non si vede più. Che cosa ne faccio?`, {
+      header: 'Senza progetto',
+      options: [`Assegna a ${chi.repo}`, 'Scarta', 'Decido dopo'],
+    })
+    .catch(() => 'Decido dopo')
+  if (scelta === `Assegna a ${chi.repo}`) await fai($, () => sistemaSenzaProgetto($, 'assegna'))
+  else if (scelta === 'Scarta') await fai($, () => sistemaSenzaProgetto($, 'scarta'))
+}
 
 // --- avvio --------------------------------------------------------------------------------------------
 
@@ -935,7 +1046,10 @@ export const register: Register = (on, options) => {
     })
     await carica($).catch(() => [] as Azione[])
     void $.ui.open({ id: PANE, title: TITOLO })
+    void chiediSenzaProgetto($).catch(() => {})
+    void leggiSessioni($).catch(() => {})
     $.clock.every(20_000, () => void giro($, opz).catch(() => {}))
+    $.clock.every(20_000, () => void leggiSessioni($).catch(() => {}))
     // Le milestone cambiano di rado: ogni 5 minuti, e a mano con «Aggiorna».
     void leggiTraguardi($).catch(() => {})
     $.clock.every(300_000, () => void leggiTraguardi($).catch(() => {}))
@@ -1053,7 +1167,7 @@ export const register: Register = (on, options) => {
       faiQui: a => faiQui($, opz, a.id),
       chiediQui: a => chiediQui($, opz, a.id),
       avviaTutte: () => avviaTutte($, opz),
-      giro: () => Promise.all([giro($, opz), leggiTraguardi($), aggiornaRisorse($, opz)]),
+      giro: () => Promise.all([giro($, opz), leggiTraguardi($), aggiornaRisorse($, opz), leggiSessioni($)]),
       configura: (campi, attese) => configura($, opz, campi, attese),
       peso: async (peso: Peso, attese: RisorseProgetto) => {
         const r = await leggiRegole($)
@@ -1076,11 +1190,7 @@ export const register: Register = (on, options) => {
         const chi = (await read($, contesto)) ?? (await chiSonoIo($))
         for (const a of sposta(delProgetto(await carica($), chi), id, verso)) await salva($, a)
       },
-      associa: async a => {
-        const chi = await chiSonoIo($)
-        if (!chi.repo) throw new Error('questa sessione non è in un repository')
-        await salva($, { ...a, repo: chi.repo })
-      },
+      senzaProgetto: come => sistemaSenzaProgetto($, come),
       annullaTentativo: async a => {
         if (a.lanciatore === 'cli') throw new Error('CLI: verifica il record del processo; un avvio incerto non autorizza un secondo processo')
         const io = (await read($, contesto))?.io ?? (await $.session.id())
@@ -1107,7 +1217,8 @@ export const register: Register = (on, options) => {
         await update($, annullabile, () => ({ id: a.id, titolo: a.titolo }))
       },
       annullaScarto: async id => {
-        await aggiorna($, id, a => (a.stato === 'scartata' ? { stato: a.statoPrima ?? 'proposta', statoPrima: undefined } : null))
+        const altri = (await read($, annullabile))?.altri ?? []
+        for (const x of [id, ...altri]) await aggiorna($, x, a => (a.stato === 'scartata' ? { stato: a.statoPrima ?? 'proposta', statoPrima: undefined } : null))
         await update($, annullabile, () => null)
       },
       apri: async sessione => {
@@ -1117,6 +1228,6 @@ export const register: Register = (on, options) => {
         // L'app risponde anche quando non cambia nulla (questa sessione non è a schermo): lo si dice.
         if (/nothing|no-op|not on screen|changes nothing/i.test(t)) $.ui.toast('La sessione non si è aperta: questa sessione non è a schermo')
       },
-    }),
+    }, e.props.bodyColumns),
   )
 }

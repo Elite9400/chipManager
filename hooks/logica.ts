@@ -1,5 +1,5 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
-import type { Azione, Chiamante, Corsia, Fornitore, Limite, Peso, Regole, RisorseProgetto, StatoAzione, Traguardo } from '../types'
+import type { Azione, Chiamante, Corsia, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, StatoAzione, Traguardo } from '../types'
 
 // --- regole (routing.json) ---------------------------------------------------------------------
 
@@ -117,6 +117,8 @@ export function progettoDa(config: unknown, repo: string | null): Progetto | str
       return `config.json: termine sensibile non valido: ${t.slice(0, 40)}`
     }
   }
+  if (p.cartella !== undefined && (typeof p.cartella !== 'string' || p.cartella.length > 400 || !/^(~(?=[\\/]|$)|[a-z]:[\\/]|[\\/])/i.test(p.cartella)))
+    return 'config.json: «cartella» è un percorso assoluto o che inizia con ~'
   if (background !== undefined && (typeof background !== 'string' || background.length > 2000))
     return 'config.json: «background» è un testo di al massimo 2000 caratteri'
   const risorse = risorseDa(p)
@@ -890,4 +892,84 @@ export const corrisponde = (a: Azione, filtro: string, regole: Regole = REGOLE_D
   if (!f) return true
   const modello = modelloDi(a, regole)
   return [a.titolo, a.issue ? `#${a.issue}` : '', a.esecutore, modello, nomeModello(modello)].join(' ').toLowerCase().includes(f)
+}
+
+// --- progetto: cartella dei dati e sessioni -----------------------------------------------------------
+
+/**
+ * Cartella dei dati del progetto (dopo `CHIPMANAGER_DIR`, che vince su tutto): `progetti[repo].cartella`, poi la
+ * `cartella` globale (compatibilità), poi `~/.claude/chipmanager/progetti/<owner>__<repo>`.
+ */
+export function cartellaDati(config: unknown, repo: string | null, home: string): string {
+  const oggetto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+  const espandi = (d: string) => d.replace(/\\/g, '/').replace(/^~(?=\/|$)/, home).replace(/\/+$/, '')
+  const c = oggetto(config) ? config : {}
+  const sezione = repo && oggetto(c.progetti) ? c.progetti[repo] : undefined
+  const propria = oggetto(sezione) ? sezione.cartella : undefined
+  if (typeof propria === 'string' && propria) return espandi(propria)
+  if (typeof c.cartella === 'string' && c.cartella) return espandi(c.cartella)
+  const nome = repo ? repo.replace(/\//g, '__').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 120) : '_senza-progetto'
+  return `${home}/.claude/chipmanager/progetti/${nome}`
+}
+
+/** Radice comune di un percorso: un worktree in `.claude/worktrees/<nome>` appartiene al checkout che lo ospita. */
+export function radiceProgetto(percorso: string) {
+  let r = percorso.replace(/\\/g, '/').replace(/\/+$/, '')
+  if (/^[a-z]:\//i.test(r)) r = r.toLowerCase() // Windows: maiuscole e minuscole sono lo stesso percorso
+  return r.replace(/\/\.claude\/worktrees\/[^/]+(\/.*)?$/, '')
+}
+export const nelProgetto = (cwd: unknown, radice: string) => {
+  if (typeof cwd !== 'string' || !cwd || !radice) return false
+  const r = radiceProgetto(cwd)
+  return r === radice || r.startsWith(`${radice}/`)
+}
+
+const GIORNO = 86_400_000
+const testoBreve = (v: unknown, n: number) => (typeof v === 'string' && v.trim() && !/[\x00-\x1f\x7f]/.test(v) ? v.trim().slice(0, n) : undefined)
+const istante = (v: unknown) => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : undefined)
+
+/**
+ * Le sessioni Claude del progetto da `list_sessions`: non archiviate, con la cartella nel progetto, al lavoro o
+ * attive nelle ultime 24 ore. shortcut: finestra fissa di 24 ore; diventa un'impostazione se serve.
+ */
+export function sessioniClaude(json: unknown, radice: string, adesso: number): SessioneProgetto[] {
+  if (!Array.isArray(json)) return []
+  return json.slice(0, 200).flatMap((s: Record<string, unknown>) => {
+    if (!s || typeof s !== 'object' || typeof s.sessionId !== 'string' || !SESSIONE_RE.test(s.sessionId) || s.isArchived === true) return []
+    if (!nelProgetto(s.cwd, radice)) return []
+    const attivita = istante(s.lastActivityAt)
+    const inCorso = s.isRunning === true
+    if (!inCorso && (!attivita || adesso - Date.parse(attivita) > GIORNO)) return []
+    return [{ id: s.sessionId, motore: 'claude' as const, titolo: testoBreve(s.title, 80) ?? 'Sessione senza titolo', ramo: testoBreve(s.branch, 80),
+      stato: inCorso ? ('in-corso' as const) : ('ferma' as const), attivita }]
+  })
+}
+
+/** Modello, effort e ramo da `get_session`: solo stringhe brevi, il resto si ignora. */
+export function dettagliSessione(json: unknown): Pick<SessioneProgetto, 'modello' | 'effort' | 'ramo'> {
+  const s = json && typeof json === 'object' ? (json as Record<string, unknown>) : {}
+  return { modello: testoBreve(s.model, 60), effort: testoBreve(s.effort, 20), ramo: testoBreve(s.branch, 80) }
+}
+
+/** Percentuale di contesto da `get_usage(session_id)`; assente se la sessione non la riporta. */
+export function contestoDa(json: unknown): number | undefined {
+  const c = json && typeof json === 'object' ? (json as { context?: { status?: unknown; percentUsed?: unknown } }).context : undefined
+  const n = c?.status === 'ok' ? c.percentUsed : undefined
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n) : undefined
+}
+
+/** Le sessioni Codex che l'helper legge da `~/.codex/sessions`: forma stretta, solo quelle del progetto. */
+export function sessioniCodex(json: unknown, radice: string, adesso: number): SessioneProgetto[] {
+  if (!Array.isArray(json)) return []
+  return json.slice(0, 50).flatMap((s: Record<string, unknown>) => {
+    if (!s || typeof s !== 'object' || typeof s.id !== 'string' || !/^[A-Za-z0-9-]{8,64}$/.test(s.id) || !nelProgetto(s.cwd, radice)) return []
+    const attivita = istante(s.attivita)
+    if (!attivita || adesso - Date.parse(attivita) > GIORNO) return []
+    const token = typeof s.token === 'number' && Number.isFinite(s.token) && s.token >= 0 ? s.token : undefined
+    const finestra = typeof s.finestra === 'number' && Number.isFinite(s.finestra) && s.finestra > 0 ? s.finestra : undefined
+    const ramo = testoBreve(s.ramo, 80)
+    return [{ id: `codex-${s.id}`, motore: 'codex' as const, titolo: ramo ? `Codex · ${ramo}` : 'Sessione Codex', ramo,
+      modello: testoBreve(s.modello, 60), effort: testoBreve(s.effort, 20), stato: s.inCorso === true ? ('in-corso' as const) : ('ferma' as const),
+      contesto: token !== undefined && finestra ? Math.min(100, Math.round((token / finestra) * 100)) : undefined, attivita }]
+  })
 }

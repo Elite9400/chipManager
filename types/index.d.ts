@@ -189,6 +189,24 @@ export type Traguardi = {
   parziale?: string
 }
 
+/** Una sessione del progetto, aperta da una chip o a mano: solo metadati, mai testo della conversazione. */
+export type SessioneProgetto = {
+  id: string
+  motore: 'claude' | 'codex'
+  titolo: string
+  ramo?: string
+  modello?: string
+  effort?: string
+  stato: 'in-corso' | 'ferma'
+  /** Percentuale della finestra di contesto usata, se letta. */
+  contesto?: number
+  attivita?: string
+  /** La sessione del pannello. */
+  qui?: boolean
+}
+export type Sessioni = { lista: SessioneProgetto[]; letto?: string; nota?: string }
+export type Vista = 'lavoro' | 'carico' | 'impostazioni'
+
 declare module 'claude-code' {
   interface PluginState {
     'chip-manager': {
@@ -198,14 +216,18 @@ declare module 'claude-code' {
       avviso: string | null
       traguardi: Shaped<Traguardi | null>
       regole: Shaped<Regole | null>
-      annullabile: { id: string; titolo: string } | null
+      /** Ultimo scarto annullabile; `altri` quando lo scarto era di più azioni insieme. */
+      annullabile: { id: string; titolo: string; altri?: string[] } | null
       filtro: string
       /** File di azioni che esistono ma non si leggono (nome e motivo). */
       illeggibili: Shaped<{ nome: string; motivo: string }[]>
       /** Questa sessione: id del transcript, progetto, modello, effort e modalità permessi effettivi. */
       contesto: Shaped<Chiamante | null>
       risorse: Shaped<Risorse>
-      impostazioni: boolean
+      sessioni: Shaped<Sessioni>
+      vista: Vista
+      /** «Mostra tutte» nella tabella delle sessioni. */
+      tutteSessioni: boolean
     }
   }
 }

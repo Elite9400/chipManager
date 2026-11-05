@@ -11,7 +11,7 @@ export const INSTALLAZIONE = [
 ] as const
 
 /** Le chiavi vivono solo nel trasporto al processo, mai nel risultato o negli argv. */
-export async function fonte($: EngineInterface, options: Record<string, unknown>, comando: 'limiti' | 'completa', input: unknown) {
+export async function fonte($: EngineInterface, options: Record<string, unknown>, comando: 'limiti' | 'completa' | 'sessioni', input: unknown) {
   const env: Record<string, string> = {}
   if (typeof options.anthropicAdminKey === 'string' && options.anthropicAdminKey) env.CHIPMANAGER_ANTHROPIC_ADMIN_KEY = options.anthropicAdminKey
   if (typeof options.deepseekKey === 'string' && options.deepseekKey) env.CHIPMANAGER_DEEPSEEK_KEY = options.deepseekKey
