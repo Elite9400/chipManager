@@ -24,6 +24,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   successful reading replaces the provider's previous measurements, so a limit the source no longer reports (extra
   usage turned off) disappears; Claude API spend is tracked on its own.
 
+### Fixed
+
+- A successful DeepSeek balance reading made the panel reject the whole limits reading, because its id carried the
+  currency in upper case; the id is now lower case (`deepseek-usd`, `deepseek-cny`).
+
 ## [2.3.0] - 2026-11-05
 
 ### Added

@@ -336,6 +336,9 @@ test('2.0 fonti: sonde abilitate senza testo del progetto e senza chiavi nelle r
   } })
   assert.deepStrictEqual(calls, ['https://api.deepseek.com/user/balance'])
   assert.strictEqual(r.chiavi.deepseek, true)
+  // Gli id passano il confine del pannello (risorseLette in hooks/risorse.ts): un saldo letto non deve far rifiutare la risposta.
+  assert.strictEqual(r.limiti.find(l => l.fornitore === 'deepseek').id, 'deepseek-cny')
+  for (const l of r.limiti) assert.match(l.id, /^[a-z0-9-]+$/)
   assert.ok(!JSON.stringify(r).includes(chiave))
   const errore = await fonti.osserva({ ...politica, fornitori: ['deepseek'] }, { deepseek: chiave }, { home: tmp(), richiesta: async () => { throw new Error(chiave) } })
   assert.ok(!JSON.stringify(errore).includes(chiave))

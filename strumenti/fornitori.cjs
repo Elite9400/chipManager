@@ -37,7 +37,7 @@ function finestreCodex(evento) {
 function saldoDeepseek(json, letto) {
   if (typeof json?.is_available !== 'boolean' || !Array.isArray(json.balance_infos)) return []
   return json.balance_infos.flatMap(x => ['USD', 'CNY'].includes(x?.currency) && decimale(x.total_balance)
-    ? [{ id: `deepseek-${x.currency}`, fornitore: 'deepseek', nome: 'DeepSeek saldo', valore: Number(x.total_balance), unita: x.currency, letto, fonte: 'GET /user/balance' }] : [])
+    ? [{ id: `deepseek-${x.currency.toLowerCase()}`, fornitore: 'deepseek', nome: 'DeepSeek saldo', valore: Number(x.total_balance), unita: x.currency, letto, fonte: 'GET /user/balance' }] : [])
 }
 
 function costoClaude(json, letto) {
