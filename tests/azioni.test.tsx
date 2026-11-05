@@ -8,7 +8,9 @@ import {
   checkoutDi,
   contestoDa,
   dettagliSessione,
+  livelloDi,
   nelProgetto,
+  piuPieno,
   radiceProgetto,
   sessioniClaude,
   sessioniCodex,
@@ -1368,7 +1370,8 @@ test('2.2: sessioni del progetto: worktree inclusi, altri progetti, archiviate e
   ])
   expect(sessioniClaude({ non: 'un elenco' }, radice, adesso)).toEqual([])
   expect(dettagliSessione({ model: 'claude-sonnet-5-5', effort: 'medium', branch: 'docs', segreto: 'x' })).toEqual({ modello: 'claude-sonnet-5-5', effort: 'medium', ramo: 'docs' })
-  expect(contestoDa({ context: { status: 'ok', percentUsed: 34.4 } })).toBe(34)
+  expect(contestoDa({ context: { status: 'ok', percentUsed: 34.4, tokensUsed: 340_000 } })).toEqual({ contesto: 34, token: 340_000 })
+  expect(contestoDa({ context: { status: 'ok', percentUsed: 34, tokensUsed: -1 } })).toEqual({ contesto: 34, token: undefined })
   expect(contestoDa({ context: { status: 'unavailable', percentUsed: 34 } })).toBeUndefined()
   expect(contestoDa({ context: { status: 'ok', percentUsed: 140 } })).toBeUndefined()
   const codex = sessioniCodex([
@@ -1377,7 +1380,7 @@ test('2.2: sessioni del progetto: worktree inclusi, altri progetti, archiviate e
     { id: 'esempio-0003', cwd: 'C:/lavori/progetto', attivita: '2025-12-01T00:00:00Z' },
     { id: '../fuori', cwd: 'C:/lavori/progetto', attivita: '2026-01-02T11:58:00Z' },
   ], radice, adesso)
-  expect(codex).toEqual([{ id: 'codex-esempio-0001', motore: 'codex', titolo: 'Codex · fix', ramo: 'fix', modello: 'gpt-6-astra', effort: 'xhigh', stato: 'in-corso', contesto: 61, attivita: '2026-01-02T11:58:00Z' }])
+  expect(codex).toEqual([{ id: 'codex-esempio-0001', motore: 'codex', titolo: 'Codex · fix', ramo: 'fix', modello: 'gpt-6-astra', effort: 'xhigh', stato: 'in-corso', contesto: 61, token: 61_000, attivita: '2026-01-02T11:58:00Z' }])
 })
 
 const ID_ESEMPIO = (n: number) => `local_aaaaaaa${n}-1234-1234-1234-123456789abc`
@@ -1507,4 +1510,100 @@ test('2.2: viste con i tasti 1 2 3; la sintesi dice chi lavora e chi aspetta', a
   await ui.press({ key: 'vista-lavoro' })
   expect(await ui.find({ key: `avvia-${amb.azione()[0]!.id}` })).toBeDefined()
   await ui.unmount()
+})
+
+// --- 2.3: soglie per fornitore e vista Carico --------------------------------------------------------------
+
+test('2.3: soglie per fornitore: predefinite 70/90, nessuna, personali; forme non valide bloccano', () => {
+  const r = (soglie: unknown) => progettoDa({ progetti: { 'acme/progetto': { soglie } } }, 'acme/progetto')
+  expect(progettoDa(null, 'acme/progetto')).toMatchObject({ risorse: { soglie: { claude: { attenzione: 70, critica: 90 }, codex: { attenzione: 70, critica: 90 } } } })
+  expect(r({ codex: null, claude: { attenzione: 60, critica: 80 } })).toMatchObject({ risorse: { soglie: { claude: { attenzione: 60, critica: 80 }, codex: null, deepseek: { attenzione: 70, critica: 90 } } } })
+  for (const rotta of [{ claude: { attenzione: 90, critica: 90 } }, { claude: { attenzione: 0, critica: 50 } }, { claude: { attenzione: 50, critica: 101 } }, { altro: null }, { claude: '70/90' }, []])
+    expect(typeof r(rotta)).toBe('string')
+  const s = { attenzione: 60, critica: 80 }
+  expect([livelloDi(59, s), livelloDi(60, s), livelloDi(80, s), livelloDi(99, null)]).toEqual(['ok', 'attenzione', 'critica', 'ok'])
+  expect(coloreLimite({ ...LIMITE, percentuale: 85 }, Date.now(), s)).toBe('#DC2626')
+  expect(coloreLimite({ ...LIMITE, percentuale: 85 })).toBe('#D97706')
+  expect(coloreLimite({ ...LIMITE, percentuale: 99 }, Date.now(), null)).toBe('#059669')
+  // La quota più piena conta solo misure fresche di piano: non la spesa API, non i manuali, non le vecchie.
+  const limiti: Limite[] = [
+    { ...LIMITE, id: 'claude-a', percentuale: 40 },
+    { ...LIMITE, id: 'claude-b', percentuale: 75 },
+    { ...LIMITE, id: 'claude-vecchio', percentuale: 99, letto: '2000-01-01T00:00:00Z' },
+    { ...LIMITE, id: 'claude-manuale', percentuale: 98, manuale: true },
+    { ...LIMITE, id: 'claude-api', percentuale: 97 },
+  ]
+  expect(piuPieno(limiti, 'claude')?.id).toBe('claude-b')
+  expect(piuPieno(limiti, 'codex')).toBeUndefined()
+})
+
+test('2.3: oltre la soglia critica le scelte aperte vanno altrove; quelle esplicite restano', () => {
+  const chi: Chiamante = { io: 'm', repo: 'o/r', modello: 'claude-opus-5-5', effort: 'high', permessi: 'auto', lanciatore: 'desktop' }
+  const a = base('a-soglia01', 1, { repo: 'o/r', corsia: 'R2' })
+  const codexPieno: Limite = { ...LIMITE, id: 'codex-primary', fornitore: 'codex', percentuale: 92 }
+  const claudeMeta: Limite = { ...LIMITE, id: 'claude-weekly', percentuale: 50 }
+  const r = { ...R, risorse: { ...RISORSE_DEFAULT, pesi: [{ tipo: 'fornitore' as const, nome: 'codex', percentuale: 400, assoluto: 0 }] } }
+  // Anche con Codex molto preferito dai pesi, oltre la critica il margine è zero e vince Claude.
+  expect(bilancia(a, {}, r, [codexPieno, claudeMeta], [a], chi).esecutore).toBe('claude')
+  expect(bilancia(a, { esecutore: 'codex' }, r, [codexPieno, claudeMeta], [a], chi).esecutore).toBe('codex')
+  // Senza soglia per Codex torna a contare solo il margine (8%) contro il peso.
+  const senza = { ...r, risorse: { ...r.risorse, soglie: { ...r.risorse.soglie, codex: null } } }
+  expect(punteggio({ ...a, esecutore: 'codex' }, senza, [codexPieno], [a])).toBeGreaterThan(0)
+  expect(punteggio({ ...a, esecutore: 'codex' }, r, [codexPieno], [a])).toBe(0)
+})
+
+test('2.3: «Avvia tutte» oltre la soglia critica lo dice e chiede «Avvia comunque»; chiusa senza scelta non avvia', async ($, on) => {
+  const domande: string[] = []
+  let risposta = 'Annulla'
+  const amb = ambiente(on, {
+    fonte: cmd => (cmd === 'limiti'
+      ? { limiti: [{ id: 'claude-weekly', fornitore: 'claude', nome: 'Claude piano · settimanale', percentuale: 93, unita: '%', fonte: 'prova', letto: new Date().toISOString() }], proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } }
+      : undefined),
+  })
+  conferme(on, q => (domande.push(q), risposta))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Frase.', esecutore: 'claude' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  expect(await ui.find({ type: 'Text', text: /Claude 93% oltre la soglia critica/ })).toBeDefined()
+  await ui.press({ key: 'tutte' })
+  expect(domande.at(-1)).toMatch(/^Oltre la soglia critica: Claude piano · settimanale al 93% \(critica da 90%\)\. Avvio 1 sessione/)
+  expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(0)
+  risposta = 'Avvia comunque'
+  await ui.press({ key: 'tutte' })
+  expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(1)
+  await ui.unmount()
+})
+
+test('2.3: «Avvia tutte» sotto soglia chiede «Avvia» e parte', async ($, on) => {
+  const amb = ambiente(on)
+  conferme(on, q => (q.startsWith('Avvio 1 sessione') ? 'Avvia' : 'Annulla'))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Frase.', esecutore: 'claude' } as never)
+  const ui = await $.ui.mount({ ...PANE('terminal') })
+  await ui.press({ key: 'tutte' })
+  expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(1)
+  await ui.unmount()
+})
+
+test('2.3: vista Carico: matrice modello × effort, limiti per fornitore con le soglie, contesto e pesi in uso', async ($, on) => {
+  const clock = mock.clock(on)
+  const amb = ambienteSessioni(on, () => Date.now())
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': {
+    soglie: { codex: null }, pesi: [{ tipo: 'fornitore', nome: 'codex', percentuale: 50, assoluto: 0 }] } } }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'In coda', brief: 'Frase.', esecutore: 'claude', modello: 'claude-sonnet-5-5', effort: 'medium' } as never)
+  await clock.advance(20_000)
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount({ ...PANE(surface), props: { ...PANE(surface).props, bodyColumns: 120 } })
+    await ui.press({ key: 'vista-carico' })
+    for (const testo of [/^Al lavoro per modello ed effort$/, /^Sonnet 5\.5$/, /^Limiti e budget$/, /attenzione da 70% · critica da 90%/, /nessuna soglia/,
+      /^Contesto delle sessioni al lavoro$/, /^Guida delle API$/, /^Codex \+50%\. Valgono solo/, /Nessun avvio nelle ultime 24 ore/])
+      expect(await ui.find({ type: 'Text', text: testo })).toBeDefined()
+    // Sonnet 5.5 · medium: una sessione al lavoro e una chip in coda nella stessa cella.
+    expect((await ui.findAll({ type: 'Text', text: /^1 \+1$/ })).length).toBe(1)
+    await ui.press({ key: 'vista-lavoro' })
+    await ui.unmount()
+  }
 })

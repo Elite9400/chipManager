@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-05
+
+### Added
+
+- **Carico (load) view**: a model × effort matrix with sessions at work and queued actions, limits grouped by
+  provider with a bar at the true ratio and both ends labelled, the context window used by each working session with
+  the token total per model, and the weights in use in plain words with the launches of the last 24 hours per
+  provider.
+- **Thresholds per provider** (`soglie` in the project configuration): a warning and a critical percentage for each
+  provider, 70/90 by default, or none. They drive the bar colours, the summary line and the bulk-launch
+  confirmation.
+
+### Changed
+
+- Above a provider's critical threshold its margin counts as zero, so the choices the proposer left open go to
+  another allowed provider; explicit choices are kept.
+- **Avvia tutte** (launch all) names the providers above their critical threshold in its confirmation and asks to
+  launch anyway. Closing the confirmation without a choice now cancels instead of showing an error.
+- The context reading of a session also keeps its token count.
+
 ## [2.2.0] - 2026-11-05
 
 ### Added
@@ -94,7 +114,8 @@ First public release.
 - Fail-closed guards: sensitive work is never delegated autonomously or sent to the cloud, an unreadable
   configuration blocks instead of guessing, and API keys are stored as sensitive plugin settings.
 
-[Unreleased]: https://github.com/Elite9400/chipManager/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/Elite9400/chipManager/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/Elite9400/chipManager/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Elite9400/chipManager/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/Elite9400/chipManager/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Elite9400/chipManager/compare/v2.0.0...v2.1.0

@@ -23,7 +23,10 @@ export type RisorseProgetto = {
   pesi: Peso[]
   limitiManuali: Limite[]
   freellmapi: { livello: 'niente' | 'R1' | 'R2'; endpoint: string }
+  /** Soglie di attenzione e critica per fornitore, in percentuale di quota; null = nessuna. */
+  soglie: Record<Fornitore, Soglia | null>
 }
+export type Soglia = { attenzione: number; critica: number }
 export type Risorse = { limiti: Limite[]; proxy: string; chiavi: { anthropic: boolean; deepseek: boolean; freellmapi: boolean } }
 export type Corsia = 'R0' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5'
 /**
@@ -200,6 +203,8 @@ export type SessioneProgetto = {
   stato: 'in-corso' | 'ferma'
   /** Percentuale della finestra di contesto usata, se letta. */
   contesto?: number
+  /** Token nella finestra di contesto, se letti. */
+  token?: number
   attivita?: string
   /** La sessione del pannello. */
   qui?: boolean

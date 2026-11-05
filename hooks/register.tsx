@@ -17,6 +17,9 @@ import {
   trovaTask,
   ID_RE,
   idSessione,
+  livelloDi,
+  piuPieno,
+  sogliaDi,
   mandato,
   normalizza,
   parametriAvvio,
@@ -49,7 +52,7 @@ const aperta = atom({ plugin: 'chip-manager', key: 'aperta' } as const, null as 
 const vive = atom({ plugin: 'chip-manager', key: 'vive' } as const, {} as Record<string, Vita>, { shape: 'vive-2' })
 const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as string | null)
 const traguardi = atom({ plugin: 'chip-manager', key: 'traguardi' } as const, null as Traguardi | null, { shape: 'traguardi-3' })
-const regole = atom({ plugin: 'chip-manager', key: 'regole' } as const, null as Regole | null, { shape: 'regole-4' })
+const regole = atom({ plugin: 'chip-manager', key: 'regole' } as const, null as Regole | null, { shape: 'regole-5' })
 const annullabile = atom({ plugin: 'chip-manager', key: 'annullabile' } as const, null as { id: string; titolo: string; altri?: string[] } | null)
 const illeggibili = atom({ plugin: 'chip-manager', key: 'illeggibili' } as const, [] as { nome: string; motivo: string }[], {
   shape: 'illeggibili-2',
@@ -284,7 +287,7 @@ const delProgetto = (lista: readonly Azione[], chi: Chiamante | null) => lista.f
 // --- sessioni del progetto (anche quelle aperte a mano) ---------------------------------------------------
 
 /** Dettagli per sessione: get_session al più ogni 60 s, get_usage solo sulle sessioni al lavoro. */
-const dettagli = new Map<string, { letto: number; d: Pick<SessioneProgetto, 'modello' | 'effort' | 'ramo'>; inCorso?: boolean; contesto?: number }>()
+const dettagli = new Map<string, { letto: number; d: Pick<SessioneProgetto, 'modello' | 'effort' | 'ramo'>; inCorso?: boolean; contesto?: Pick<SessioneProgetto, 'contesto' | 'token'> }>()
 const MAX_DETTAGLI = 8
 
 async function chiamaApp($: Eng, tool: string, args: Record<string, unknown>) {
@@ -330,7 +333,8 @@ async function leggiSessioni($: Eng) {
       const x = dettagli.get(s.id)!
       for (const [k, v] of Object.entries(x.d)) if (v) (s as Record<string, unknown>)[k] = v
       if (x.inCorso !== undefined) s.stato = x.inCorso ? 'in-corso' : 'ferma'
-      s.contesto = x.contesto
+      s.contesto = x.contesto?.contesto
+      s.token = x.contesto?.token
     }),
   )
   let codex: SessioneProgetto[] = []
@@ -631,11 +635,21 @@ async function avviaTutte($: Eng, options: Record<string, unknown>) {
     piano.bloccate.length ? `${piano.bloccate.length} bloccate` : '',
     `massimo ${max} in parallelo`,
   ].filter(Boolean)
-  const scelta = await $.ui.ask(`${parti.join(' · ')}. Procedo?${cloud ? ' Per ogni invio al cloud ti mostro il testo prima.' : ''}`, {
-    options: ['Avvia', 'Annulla'],
-    header: 'Avvio',
+  // Un fornitore oltre la soglia critica non blocca, ma lo dice la domanda e il pulsante cambia nome.
+  const limiti = (await read($, risorse)).limiti
+  const oltre = [...new Set(piano.avvia.map(a => a.esecutore))].flatMap(f => {
+    const l = piuPieno(limiti, f)
+    const s = sogliaDi(r.risorse, f)
+    return l && s && livelloDi(l.percentuale!, s) === 'critica' ? [`${l.nome} al ${l.percentuale}% (critica da ${s.critica}%)`] : []
   })
-  if (scelta !== 'Avvia') return
+  const si = oltre.length ? 'Avvia comunque' : 'Avvia'
+  const scelta = await $.ui
+    .ask(`${oltre.length ? `Oltre la soglia critica: ${oltre.join('; ')}. ` : ''}${parti.join(' · ')}. Procedo?${cloud ? ' Per ogni invio al cloud ti mostro il testo prima.' : ''}`, {
+      options: [si, 'Annulla'],
+      header: oltre.length ? 'Soglia critica' : 'Avvio',
+    })
+    .catch(() => 'Annulla') // chiusa senza scelta: non parte niente
+  if (scelta !== si) return
   const errori: string[] = []
   for (const a of [...piano.avvia, ...piano.coda.map(c => c.a)])
     await avvia($, options, a.id, a.versione).catch(err => errori.push(String((err as Error)?.message ?? err)))

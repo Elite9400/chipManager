@@ -1,5 +1,5 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
-import type { Azione, Chiamante, Corsia, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, StatoAzione, Traguardo } from '../types'
+import type { Azione, Chiamante, Corsia, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo } from '../types'
 
 // --- regole (routing.json) ---------------------------------------------------------------------
 
@@ -12,9 +12,11 @@ export const BACKGROUND_GENERICO =
  * Valori di ripiego per DISEGNARE il pannello quando routing.json non si legge. `lette: false` blocca
  * ogni avvio: le regole non si allentano mai in silenzio.
  */
+export const SOGLIA_PREDEFINITA: Soglia = { attenzione: 70, critica: 90 }
 export const RISORSE_DEFAULT: RisorseProgetto = {
   fornitori: ['claude', 'codex'], soloLocale: false, milestoneGithub: false, pesi: [], limitiManuali: [],
   freellmapi: { livello: 'niente', endpoint: 'http://localhost:3001/v1' },
+  soglie: { claude: SOGLIA_PREDEFINITA, codex: SOGLIA_PREDEFINITA, deepseek: SOGLIA_PREDEFINITA, freellmapi: SOGLIA_PREDEFINITA },
 }
 export const REGOLE_DEFAULT: Regole = {
   lette: false,
@@ -168,14 +170,37 @@ export function risorseDa(p: Record<string, unknown>): RisorseProgetto | string 
     limitiManuali.push({ id: `manuale-${x.id}`, fornitore: x.fornitore as Fornitore, nome: x.nome, letto: x.letto,
       percentuale: x.percentuale as number | undefined, valore: x.valore as number | undefined, unita: x.unita as Limite['unita'], fonte: 'manuale', manuale: true })
   }
+  // Soglie per fornitore: assente = 70/90, null = nessuna soglia; attenzione sempre sotto la critica.
+  const soglie = p.soglie ?? {}
+  if (!oggettoRisorse(soglie) || !Object.entries(soglie).every(([k, v]) => FORNITORI.includes(k as Fornitore) &&
+      (v === null || (oggettoRisorse(v) && numero(v.attenzione, 1, 100) && numero(v.critica, 1, 100) && v.attenzione < v.critica)))) return errore
+  const soglia = (k: Fornitore): Soglia | null => {
+    const v = soglie[k] as { attenzione: number; critica: number } | null | undefined
+    return v === undefined ? SOGLIA_PREDEFINITA : v && { attenzione: v.attenzione, critica: v.critica }
+  }
   return { fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
     freellmapi: { livello: f.livello as RisorseProgetto['freellmapi']['livello'], endpoint: (f.endpoint as string | undefined) ?? RISORSE_DEFAULT.freellmapi.endpoint },
-    pesi: pesi.map(x => ({ tipo: x.tipo, nome: x.nome, percentuale: x.percentuale, assoluto: x.assoluto })), limitiManuali }
+    pesi: pesi.map(x => ({ tipo: x.tipo, nome: x.nome, percentuale: x.percentuale, assoluto: x.assoluto })), limitiManuali,
+    soglie: { claude: soglia('claude'), codex: soglia('codex'), deepseek: soglia('deepseek'), freellmapi: soglia('freellmapi') } }
 }
 
 export const limiteFresco = (l: Limite, adesso = Date.now()) => !l.errore && !!l.letto && adesso >= Date.parse(l.letto) && adesso - Date.parse(l.letto) <= 300_000 && (!l.reset || Date.parse(l.reset) > adesso)
+/** La soglia di un fornitore nella politica del progetto (null = nessuna). */
+export const sogliaDi = (r: RisorseProgetto, f: Fornitore): Soglia | null => (r.soglie?.[f] === undefined ? SOGLIA_PREDEFINITA : r.soglie[f])
+export type Livello = 'ok' | 'attenzione' | 'critica'
+export const livelloDi = (percentuale: number, soglia: Soglia | null): Livello =>
+  !soglia ? 'ok' : percentuale >= soglia.critica ? 'critica' : percentuale >= soglia.attenzione ? 'attenzione' : 'ok'
+export const COLORE_LIVELLO: Record<Livello, string> = { ok: '#059669', attenzione: '#D97706', critica: '#DC2626' }
 // Il manuale si colora per soglia anche se non è «fresco»: è una dichiarazione, non una misura che scade.
-export const coloreLimite = (l: Limite, adesso = Date.now()) => (!l.manuale && !limiteFresco(l, adesso)) || l.percentuale === undefined ? '#808080' : l.percentuale >= 90 ? '#DC2626' : l.percentuale >= 70 ? '#D97706' : '#059669'
+export const coloreLimite = (l: Limite, adesso = Date.now(), soglia: Soglia | null = SOGLIA_PREDEFINITA) =>
+  (!l.manuale && !limiteFresco(l, adesso)) || l.percentuale === undefined ? '#808080' : COLORE_LIVELLO[livelloDi(l.percentuale, soglia)]
+
+/** La quota misurata più piena di un fornitore fra quelle fresche (i manuali e la spesa API non sono quote di piano). */
+export function piuPieno(limiti: readonly Limite[], f: Fornitore, adesso = Date.now()): Limite | undefined {
+  return limiti
+    .filter(l => l.fornitore === f && l.id !== 'claude-api' && !l.manuale && l.percentuale !== undefined && limiteFresco(l, adesso))
+    .reduce<Limite | undefined>((m, l) => (!m || l.percentuale! > m.percentuale! ? l : m), undefined)
+}
 
 /** Peso = preferenza, mai autorizzazione. Quote sconosciute non equivalgono a 100% libero. */
 export function punteggio(a: Azione, r: Regole, limiti: readonly Limite[], lista: readonly Azione[]) {
@@ -185,7 +210,9 @@ export function punteggio(a: Azione, r: Regole, limiti: readonly Limite[], lista
     if (p.nome === nome) peso *= Math.max(0, 100 * (1 + p.percentuale / 100) + p.assoluto) / 100
   }
   const quote = limiti.filter(l => l.fornitore === a.esecutore && !l.manuale && l.percentuale !== undefined && limiteFresco(l))
-  const margine = quote.length ? Math.max(0, 1 - Math.max(...quote.map(l => l.percentuale!)) / 100) : 0.25
+  const pieno = quote.length ? Math.max(...quote.map(l => l.percentuale!)) : undefined
+  // Oltre la soglia critica del fornitore il margine è zero: la scelta va altrove, se un'alternativa ammessa c'è.
+  const margine = pieno === undefined ? 0.25 : livelloDi(pieno, sogliaDi(r.risorse, a.esecutore)) === 'critica' ? 0 : Math.max(0, 1 - pieno / 100)
   const attivi = lista.filter(x => occupa(x) && x.esecutore === a.esecutore && modelloDi(x, r) === modelloDi(a, r)).length
   return peso * margine / (1 + attivi)
 }
@@ -958,11 +985,13 @@ export function dettagliSessione(json: unknown): Pick<SessioneProgetto, 'modello
   return { modello: testoBreve(s.model, 60), effort: testoBreve(s.effort, 20), ramo: testoBreve(s.branch, 80) }
 }
 
-/** Percentuale di contesto da `get_usage(session_id)`; assente se la sessione non la riporta. */
-export function contestoDa(json: unknown): number | undefined {
-  const c = json && typeof json === 'object' ? (json as { context?: { status?: unknown; percentUsed?: unknown } }).context : undefined
+/** Contesto da `get_usage(session_id)`: percentuale e token usati; assente se la sessione non lo riporta. */
+export function contestoDa(json: unknown): Pick<SessioneProgetto, 'contesto' | 'token'> | undefined {
+  const c = json && typeof json === 'object' ? (json as { context?: { status?: unknown; percentUsed?: unknown; tokensUsed?: unknown } }).context : undefined
   const n = c?.status === 'ok' ? c.percentUsed : undefined
-  return typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n) : undefined
+  if (!(typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100)) return undefined
+  const t = c?.tokensUsed
+  return { contesto: Math.round(n), token: typeof t === 'number' && Number.isFinite(t) && t >= 0 ? t : undefined }
 }
 
 /** Le sessioni Codex che l'helper legge da `~/.codex/sessions`: forma stretta, solo quelle del progetto. */
@@ -977,6 +1006,6 @@ export function sessioniCodex(json: unknown, radice: string, adesso: number): Se
     const ramo = testoBreve(s.ramo, 80)
     return [{ id: `codex-${s.id}`, motore: 'codex' as const, titolo: ramo ? `Codex · ${ramo}` : 'Sessione Codex', ramo,
       modello: testoBreve(s.modello, 60), effort: testoBreve(s.effort, 20), stato: s.inCorso === true ? ('in-corso' as const) : ('ferma' as const),
-      contesto: token !== undefined && finestra ? Math.min(100, Math.round((token / finestra) * 100)) : undefined, attivita }]
+      contesto: token !== undefined && finestra ? Math.min(100, Math.round((token / finestra) * 100)) : undefined, token, attivita }]
   })
 }

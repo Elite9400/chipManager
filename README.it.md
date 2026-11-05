@@ -178,7 +178,8 @@ Tutto ciò che è proprio di un progetto sta in un file locale, fuori da ogni re
       ],
       "limitiManuali": [
         { "id": "budget-api", "fornitore": "claude", "nome": "Budget API", "valore": 200, "unita": "EUR", "letto": "2026-11-05T08:00:00Z" }
-      ]
+      ],
+      "soglie": { "claude": { "attenzione": 70, "critica": 90 }, "codex": { "attenzione": 80, "critica": 95 } }
     }
   }
 }
@@ -196,6 +197,7 @@ Tutto ciò che è proprio di un progetto sta in un file locale, fuori da ogni re
 | `freellmapi` | livello `niente`, `R1` (R0–R1), `R2` (R0–R2); endpoint HTTP loopback con porta esplicita e `/v1` | spento, localhost:3001 |
 | `pesi` | incremento percentuale e/o assoluto per fornitore, modello o effort | nessuno |
 | `limitiManuali` | piani, budget o percentuali che dichiari tu, con istante originale e unità | nessuno |
+| `soglie` | per fornitore, `attenzione` e `critica` in percentuale (la prima sotto la seconda); `null` = nessuna soglia | 70 / 90 |
 
 Configurazione e `routing.json` si rileggono prima di ogni decisione: se uno dei due è illeggibile o non valido
 non parte niente e il pannello dice perché. Le impostazioni si modificano anche dalla vista **Impostazioni**; il
@@ -235,7 +237,13 @@ Un file parziale non conta come letto: al pannello servono tutte le sezioni che 
 
 ## Limiti e bilanciamento
 
-Ogni riga mostra **fonte, età e unità**. Le barre diventano ambra al 70% e rosse al 90%. Dopo cinque minuti, dopo
+La vista **Carico** risponde a «quale modello fa cosa, con quale effort, e quanto ne resta»: una matrice modello ×
+effort (sessioni al lavoro in inchiostro, chip in coda in grigio), i limiti raggruppati per fornitore con una barra al
+rapporto vero e i due estremi, il contesto usato da ogni sessione al lavoro con il totale di token per modello, e i
+pesi in uso detti a parole con gli avvii delle ultime 24 ore per fornitore.
+
+Ogni riga mostra **fonte, età e unità**. Le barre diventano ambra alla soglia di attenzione e rosse alla critica del
+loro fornitore (predefinite 70% e 90%, `soglie` nella configurazione). Dopo cinque minuti, dopo
 il reset o in caso d'errore, un valore misurato non è più capacità fresca. I valori manuali dicono quando li hai
 inseriti e non contano mai come margine automatico. *Non disponibile* non vuol dire zero uso.
 
@@ -264,6 +272,10 @@ sullo stesso modello` (capacità ignota = 0,25). Il pannello completa **solo i c
 vuoti**, e solo con candidati che superano tutte le guardie. Senza pesi l'avvio massivo segue il tuo ordine; con
 almeno un peso segue il punteggio, e a parità il tuo ordine. Dipendenze, revisori, effort minimo e mutex vincono
 sempre.
+
+**Soglie.** Oltre la soglia critica di un fornitore il suo margine vale zero: le scelte lasciate aperte vanno a un
+altro fornitore ammesso, se c'è; quelle esplicite restano. La riga di sintesi lo dice, e **Avvia tutte** lo scrive
+nella conferma e chiede «Avvia comunque». Chiudere la conferma senza scegliere non avvia niente.
 
 ## FreeLLMAPI
 
@@ -349,7 +361,7 @@ claude plugin test .
 node --test strumenti/prova-disco.cjs
 ```
 
-77 test del modulo su un motore finto (due superfici, politica, pesi, conferme, segreti, CLI, sessioni) e 27 test
+82 test del modulo su un motore finto (due superfici, politica, pesi, conferme, segreti, CLI, sessioni) e 27 test
 dell'helper con processi veri per mutex, prenotazione e corsia Codex. Nessuna chiamata HTTP reale nei test.
 
 ## Domande

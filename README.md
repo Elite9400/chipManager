@@ -178,7 +178,8 @@ Everything that belongs to a project lives in a local file outside any repositor
       ],
       "limitiManuali": [
         { "id": "api-budget", "fornitore": "claude", "nome": "API budget", "valore": 200, "unita": "EUR", "letto": "2026-11-05T08:00:00Z" }
-      ]
+      ],
+      "soglie": { "claude": { "attenzione": 70, "critica": 90 }, "codex": { "attenzione": 80, "critica": 95 } }
     }
   }
 }
@@ -196,6 +197,7 @@ Everything that belongs to a project lives in a local file outside any repositor
 | `freellmapi` | level `niente`, `R1` (R0–R1), `R2` (R0–R2); loopback HTTP endpoint with explicit port and `/v1` | off, localhost:3001 |
 | `pesi` | percentage and/or absolute boost per provider, model or effort | none |
 | `limitiManuali` | plans, budgets or percentages you declare, with original time and unit | none |
+| `soglie` | per provider, `attenzione` (warning) and `critica` (critical) as percentages, the first below the second; `null` = no threshold | 70 / 90 |
 
 Config and `routing.json` are re-read before every decision: if either is unreadable or invalid, nothing
 launches and the panel says why. Settings can also be edited from the **Impostazioni** view; saving is a
@@ -235,7 +237,13 @@ A partial file does not count as read: the panel needs every section it enforces
 
 ## Limits & load balancing
 
-Each row shows **source, age and unit**. Bars turn amber at 70% and red at 90%. After five minutes, after the
+The **Carico** (load) view answers "which model does what, at which effort, and how much is left": a model × effort
+matrix (sessions at work in ink, queued actions in grey), the limits grouped by provider with a bar at the true ratio
+and both ends labelled, the context used by each working session with the token total per model, and the weights in
+use in plain words with the launches of the last 24 hours per provider.
+
+Each row shows **source, age and unit**. Bars turn amber at the warning threshold and red at the critical threshold
+of their provider (70% and 90% by default, `soglie` in the configuration). After five minutes, after the
 reset or on error, a measured value is no longer fresh capacity. Manual values say when you entered them and never
 count as automatic margin. *Not available* never means zero usage.
 
@@ -263,6 +271,11 @@ model` (unknown capacity counts as 0.25). The panel fills **only the fields the 
 with candidates that pass every guard. With no weights configured, bulk launch follows your manual order; with
 at least one weight it follows the score, ties keeping your order. Dependencies, reviewers, minimum effort and the
 mutex always win.
+
+**Thresholds.** Above a provider's critical threshold its margin counts as zero: the choices left open go to another
+allowed provider, if there is one; explicit choices stay. The summary line says so, and **Avvia tutte** (launch all)
+writes it in the confirmation and asks "Avvia comunque" (launch anyway). Closing the confirmation without a choice
+launches nothing.
 
 ## FreeLLMAPI
 
@@ -345,7 +358,7 @@ claude plugin test .
 node --test strumenti/prova-disco.cjs
 ```
 
-77 module tests on a fake engine (both surfaces, policy, weights, confirmations, secrets, CLI, sessions) and 27 helper tests
+82 module tests on a fake engine (both surfaces, policy, weights, confirmations, secrets, CLI, sessions) and 27 helper tests
 with real processes for the mutex, reservation and Codex lane. No real HTTP in tests.
 
 ## FAQ
