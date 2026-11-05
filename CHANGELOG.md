@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-11-06
+
+### Changed
+
+- The panel code is split into one file per view (`vista-lavoro.tsx`, `vista-carico.tsx`,
+  `vista-impostazioni.tsx`); behaviour and rendering are unchanged.
+
+### Added
+
+- `hooks/tema.ts`: semantic colour tokens. The interface accent (`#0A86C9`) keeps at least 3:1 contrast on light
+  and dark backgrounds, also over its own tint; `#00BFFF` stays the icon colour.
+- `hooks/ui.tsx`: shared building blocks (chip, chip group, stepper with `−`/`+`, section, wrapping row) for the
+  coming layout and settings redesign. They are not used by the views yet.
+
+### Fixed
+
+- The test that keeps every action state change behind `transizione()` now scans every `hooks` source file.
+
 ## [2.4.0] - 2026-11-05
 
 ### Added
