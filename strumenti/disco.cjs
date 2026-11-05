@@ -20,7 +20,9 @@ const { spawn, spawnSync } = require('child_process')
 // Il mutex identifica la cartella FISICA: due spellings della stessa cartella (C:/… e D:/… sullo stesso
 // volume, una junction, un link) devono dare la stessa porta. Si chiama dopo che la cartella esiste.
 const MUTEX_AZIONI = dir => `azioni:${fs.realpathSync.native(path.resolve(dir)).toLowerCase()}`
-const MUTEX_CODEX = 'codex:corsia-della-macchina'
+// Solo le prove danno un nome proprio (prefisso «prova:»): così non contendono il mutex con i Codex veri della
+// macchina. In produzione la variabile non c'è e il nome resta quello unico della macchina.
+const MUTEX_CODEX = /^prova:[\w.-]{1,60}$/.test(process.env.CHIPMANAGER_PROVA_MUTEX_CODEX ?? '') ? process.env.CHIPMANAGER_PROVA_MUTEX_CODEX : 'codex:corsia-della-macchina'
 
 /** Porta 20000-59999 derivata dal nome: stessa porta per lo stesso mutex su tutta la macchina. */
 const porta = nome => 20000 + (crypto.createHash('sha256').update(nome).digest().readUInt32BE(0) % 40000)

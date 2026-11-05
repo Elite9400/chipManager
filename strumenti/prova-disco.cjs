@@ -15,6 +15,8 @@ const fuoriDalRepo = []
 const fuori = () => { const d = fs.mkdtempSync(path.join(tmpVero, 'board-')); fuoriDalRepo.push(d); return d }
 fs.mkdirSync(radiceProve, { recursive: true })
 process.env.TMP = process.env.TEMP = process.env.TMPDIR = radiceProve
+// Corsia Codex delle prove: mutex proprio (i figli lo ereditano), mai quello delle revisioni Codex vere.
+process.env.CHIPMANAGER_PROVA_MUTEX_CODEX = `prova:corsia-${process.pid}`
 // I collegamenti simbolici lasciati qui fanno fallire `claude plugin install` dalla cartella.
 after(() => { for (const d of [radiceProve, ...fuoriDalRepo]) fs.rmSync(d, { recursive: true, force: true, maxRetries: 3 }) })
 
@@ -145,14 +147,15 @@ test('corsia Codex: shim .cmd di npm avviato senza shell, argomenti con spazi e 
 test('corsia Codex: un discendente sopravvissuto al comando e al wrapper tiene la corsia', { skip: process.platform !== 'win32' }, async () => {
   const dir = tmp()
   const fine = path.join(dir, 'nipote-finito')
-  // Il comando avvia un nipote staccato (esce dal job) che vive 3 s, poi termina subito.
-  const nipote = `setTimeout(()=>require('fs').writeFileSync(${JSON.stringify(fine)},'1'),3000)`
+  // Il comando avvia un nipote staccato (esce dal job) che vive 10 s, poi termina subito. 10 s e non meno: con la
+  // macchina carica i censimenti (PowerShell) durano secondi, e un nipote già finito renderebbe la prova falsa.
+  const nipote = `setTimeout(()=>require('fs').writeFileSync(${JSON.stringify(fine)},'1'),10000)`
   const comando = `require('child_process').spawn(process.execPath,['-e',${JSON.stringify(nipote)}],{detached:true,stdio:'ignore'}).unref()`
   const r = esegui(['corsia-codex', '--', process.execPath, '-e', comando])
   assert.strictEqual(r.status, 0)
   // Il comando è finito, il nipote vive: la corsia è ancora occupata.
   assert.strictEqual(esegui(['occupata', 'codex']).status, 3)
-  for (let i = 0; i < 60 && !fs.existsSync(fine); i++) await new Promise(ok => setTimeout(ok, 100))
+  for (let i = 0; i < 150 && !fs.existsSync(fine); i++) await new Promise(ok => setTimeout(ok, 100))
   await new Promise(ok => setTimeout(ok, 300))
   assert.strictEqual(esegui(['occupata', 'codex']).status, 0)
 })
@@ -160,14 +163,14 @@ test('corsia Codex: un discendente sopravvissuto al comando e al wrapper tiene l
 test('corsia Codex: un nipote orfano di un intermedio già uscito tiene la corsia (censimento)', { skip: process.platform !== 'win32' }, async () => {
   const dir = tmp()
   const fine = path.join(dir, 'nipote-finito')
-  // radice → intermedio staccato (vive 4 s, abbastanza per un censimento) → nipote staccato (vive 9 s).
-  const nipote = `setTimeout(()=>require('fs').writeFileSync(${JSON.stringify(fine)},'1'),9000)`
-  const intermedio = `require('child_process').spawn(process.execPath,['-e',${JSON.stringify(nipote)}],{detached:true,stdio:'ignore'}).unref();setTimeout(()=>{},4000)`
-  const radice = `require('child_process').spawn(process.execPath,['-e',${JSON.stringify(intermedio)}],{detached:true,stdio:'ignore'}).unref();setTimeout(()=>{},4500)`
+  // radice → intermedio staccato (vive 8 s: almeno due censimenti anche con la macchina carica) → nipote staccato (vive 16 s).
+  const nipote = `setTimeout(()=>require('fs').writeFileSync(${JSON.stringify(fine)},'1'),16000)`
+  const intermedio = `require('child_process').spawn(process.execPath,['-e',${JSON.stringify(nipote)}],{detached:true,stdio:'ignore'}).unref();setTimeout(()=>{},8000)`
+  const radice = `require('child_process').spawn(process.execPath,['-e',${JSON.stringify(intermedio)}],{detached:true,stdio:'ignore'}).unref();setTimeout(()=>{},8500)`
   assert.strictEqual(esegui(['corsia-codex', '--', process.execPath, '-e', radice]).status, 0)
   // Radice e intermedio sono usciti; il nipote ha per padre un processo morto, ma è stato censito.
   assert.strictEqual(esegui(['occupata', 'codex']).status, 3)
-  for (let i = 0; i < 80 && !fs.existsSync(fine); i++) await new Promise(ok => setTimeout(ok, 100))
+  for (let i = 0; i < 200 && !fs.existsSync(fine); i++) await new Promise(ok => setTimeout(ok, 100))
   await new Promise(ok => setTimeout(ok, 300))
   assert.strictEqual(esegui(['occupata', 'codex']).status, 0)
 })
