@@ -5,7 +5,7 @@
 <img src="docs/img/hero.png" alt="chipManager — one dashboard for the work your agents suggest" width="100%">
 
 [![Claude Code mod](https://img.shields.io/badge/Claude%20Code-mod-D97757)](#install)
-[![version](https://img.shields.io/badge/version-2.0.0-00BFFF)](#)
+[![version](https://img.shields.io/badge/version-2.1.0-00BFFF)](#)
 [![surfaces](https://img.shields.io/badge/surfaces-desktop%20%C2%B7%20terminal-555)](#screenshots)
 [![tests](https://img.shields.io/badge/tests-67%20%2B%2026%20passing-059669)](#testing)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -50,6 +50,8 @@ model decides how to use them for the project at hand. Everything project-specif
 
 ## Screenshots
 
+<p align="center"><img src="docs/img/demo.gif" alt="An agent suggests three actions, they appear in the panel, Launch all starts them in dependency order and each card leaves the panel once merged" width="100%"><br><sub><b>In motion.</b> A session suggests three actions; one launch starts them in dependency order, and each card leaves the panel once merged. Illustration with sample data.</sub></p>
+
 <table>
 <tr>
 <td width="50%" valign="top"><img src="docs/img/desktop-panel.png" alt="chipManager panel in the Claude Code desktop app"><br><sub><b>Desktop app — the panel.</b> Limits with source and age, four suggested actions: a dependency waiting to be merged, a sensitive (R4) action locked to Claude, the release milestone at the bottom.</sub></td>
@@ -67,13 +69,13 @@ model decides how to use them for the project at hand. Everything project-specif
 At the prompt of a Claude Code terminal session:
 
 ```bash
-/plugin install chipManager --marketplace Elite9400/chipManager
+/plugin install chip-manager --marketplace Elite9400/chipManager
 ```
 
 From a shell:
 
 ```bash
-claude plugin install chipManager --marketplace Elite9400/chipManager
+claude plugin install chip-manager --marketplace Elite9400/chipManager
 ```
 
 In the desktop app, where `/plugin` is not available: **+** next to the prompt box → **Plugins** →
@@ -88,7 +90,7 @@ claude plugin marketplace add <path to chipManager>
 ```
 
 ```bash
-claude plugin install chipManager@chipmanager --scope user
+claude plugin install chip-manager@chipmanager --scope user
 ```
 
 A folder install reads from the folder: do not move it. After a change run

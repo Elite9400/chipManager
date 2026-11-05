@@ -632,7 +632,7 @@ export function mandato(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strument
   if (rev) parti.push(rev)
   parti.push(
     `_Azione suggerita \`${a.id}\`, tentativo \`${a.tentativo ?? '-'}\`._ A lavoro consegnato (ramo pushato, rapporto a chi coordina), se hai ` +
-      `lo strumento \`mcp__chipManager__aggiorna_azione\` chiamalo con id "${a.id}", stato "consegnata" e tentativo "${a.tentativo ?? ''}". ` +
+      `lo strumento \`mcp__chip-manager__aggiorna_azione\` chiamalo con id "${a.id}", stato "consegnata" e tentativo "${a.tentativo ?? ''}". ` +
       'La chiusura la decide la fusione.',
   )
   // Al cloud va solo il contesto fisso: il background dell'azione è contesto locale e resta qui.

@@ -37,18 +37,18 @@ import { fonte, INSTALLAZIONE, osservaRisorse, RISORSE_VUOTE } from './risorse'
 
 // Lo scanner dello stato vuole l'atomo scritto nel file che lo usa: register e pannello ne tengono
 // una copia identica (stesso plugin, chiave e shape), che indirizza lo stesso valore.
-const azioni = atom({ plugin: 'chipManager', key: 'azioni' } as const, [] as Azione[], { shape: 'azioni-4' })
-const aperta = atom({ plugin: 'chipManager', key: 'aperta' } as const, null as string | null)
-const vive = atom({ plugin: 'chipManager', key: 'vive' } as const, {} as Record<string, Vita>, { shape: 'vive-2' })
-const avviso = atom({ plugin: 'chipManager', key: 'avviso' } as const, null as string | null)
-const traguardi = atom({ plugin: 'chipManager', key: 'traguardi' } as const, null as Traguardi | null, { shape: 'traguardi-3' })
-const regole = atom({ plugin: 'chipManager', key: 'regole' } as const, null as Regole | null, { shape: 'regole-4' })
-const annullabile = atom({ plugin: 'chipManager', key: 'annullabile' } as const, null as { id: string; titolo: string } | null)
-const illeggibili = atom({ plugin: 'chipManager', key: 'illeggibili' } as const, [] as { nome: string; motivo: string }[], {
+const azioni = atom({ plugin: 'chip-manager', key: 'azioni' } as const, [] as Azione[], { shape: 'azioni-4' })
+const aperta = atom({ plugin: 'chip-manager', key: 'aperta' } as const, null as string | null)
+const vive = atom({ plugin: 'chip-manager', key: 'vive' } as const, {} as Record<string, Vita>, { shape: 'vive-2' })
+const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as string | null)
+const traguardi = atom({ plugin: 'chip-manager', key: 'traguardi' } as const, null as Traguardi | null, { shape: 'traguardi-3' })
+const regole = atom({ plugin: 'chip-manager', key: 'regole' } as const, null as Regole | null, { shape: 'regole-4' })
+const annullabile = atom({ plugin: 'chip-manager', key: 'annullabile' } as const, null as { id: string; titolo: string } | null)
+const illeggibili = atom({ plugin: 'chip-manager', key: 'illeggibili' } as const, [] as { nome: string; motivo: string }[], {
   shape: 'illeggibili-2',
 })
-const contesto = atom({ plugin: 'chipManager', key: 'contesto' } as const, null as Chiamante | null, { shape: 'chiamante-1' })
-const risorse = atom({ plugin: 'chipManager', key: 'risorse' } as const, RISORSE_VUOTE as Risorse, { shape: 'risorse-1' })
+const contesto = atom({ plugin: 'chip-manager', key: 'contesto' } as const, null as Chiamante | null, { shape: 'chiamante-1' })
+const risorse = atom({ plugin: 'chip-manager', key: 'risorse' } as const, RISORSE_VUOTE as Risorse, { shape: 'risorse-1' })
 
 const PANE = 'chipManager'
 const TITOLO = 'chipManager'
@@ -479,10 +479,10 @@ async function chiediQui($: Eng, options: Record<string, unknown>, id: string) {
   try {
     await invia(
       $,
-      `[chipManager] Avvia l'azione «${presa.titolo}» (id ${presa.id}). PRIMA chiama \`mcp__chipManager__aggiorna_azione\` ` +
+      `[chipManager] Avvia l'azione «${presa.titolo}» (id ${presa.id}). PRIMA chiama \`mcp__chip-manager__aggiorna_azione\` ` +
         `con id "${presa.id}", tentativo "${presa.tentativo}" e stato "presa": se rifiuta, il tentativo è stato annullato e NON devi ` +
         `avviare nulla. Se accetta, chiama \`mcp__ccd_session__start_session\` con esattamente ` +
-        `questi argomenti; poi chiama \`mcp__chipManager__aggiorna_azione\` con id "${presa.id}", tentativo "${presa.tentativo}", ` +
+        `questi argomenti; poi chiama \`mcp__chip-manager__aggiorna_azione\` con id "${presa.id}", tentativo "${presa.tentativo}", ` +
         `stato "avviata" e sessione = l'id restituito, oppure stato "fallita" se l'avvio non riesce.\n\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\``,
     )
   } catch (err) {
@@ -949,7 +949,7 @@ export const register: Register = (on, options) => {
     return { text: 'Pannello «chipManager» aperto.' }
   })
 
-  on('tool.call', { tool: 'mcp__chipManager__suggerisci_azione' }, async ($, e) => {
+  on('tool.call', { tool: 'mcp__chip-manager__suggerisci_azione' }, async ($, e) => {
     const [lista, r, chi] = await Promise.all([carica($), leggiRegole($), chiSonoIo($)])
     const v = valida(e as unknown as Record<string, unknown>, r, lista)
     if (typeof v === 'string') return { deny: `suggerisci_azione: ${v}` }
@@ -980,7 +980,7 @@ export const register: Register = (on, options) => {
     }
   })
 
-  on('tool.call', { tool: 'mcp__chipManager__risorse_agenti' }, async $ => {
+  on('tool.call', { tool: 'mcp__chip-manager__risorse_agenti' }, async $ => {
     const [r, ris] = await Promise.all([leggiRegole($), read($, risorse)])
     // Solo ciò che il pannello mostra: delle chiavi si dice se ci sono, mai il valore.
     return {
@@ -994,7 +994,7 @@ export const register: Register = (on, options) => {
     }
   })
 
-  on('tool.call', { tool: 'mcp__chipManager__aggiorna_azione' }, async ($, e) => {
+  on('tool.call', { tool: 'mcp__chip-manager__aggiorna_azione' }, async ($, e) => {
     const { id, stato, sessione, tentativo } = e as unknown as { id?: unknown; stato?: unknown; sessione?: unknown; tentativo?: unknown }
     if (typeof id !== 'string' || !ID_RE.test(id)) return { deny: 'aggiorna_azione: id non valido' }
     // «completata» resta accettata come sinonimo per i mandati della versione precedente.

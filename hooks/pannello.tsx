@@ -45,20 +45,20 @@ import {
 import { INSTALLAZIONE, RISORSE_VUOTE } from './risorse'
 
 // Copia identica degli atomi di register.tsx (lo scanner li vuole nel file che li usa).
-const azioni = atom({ plugin: 'chipManager', key: 'azioni' } as const, [] as Azione[], { shape: 'azioni-4' })
-const aperta = atom({ plugin: 'chipManager', key: 'aperta' } as const, null as string | null)
-const vive = atom({ plugin: 'chipManager', key: 'vive' } as const, {} as Record<string, Vita>, { shape: 'vive-2' })
-const avviso = atom({ plugin: 'chipManager', key: 'avviso' } as const, null as string | null)
-const traguardi = atom({ plugin: 'chipManager', key: 'traguardi' } as const, null as Traguardi | null, { shape: 'traguardi-3' })
-const regole = atom({ plugin: 'chipManager', key: 'regole' } as const, null as Regole | null, { shape: 'regole-4' })
-const annullabile = atom({ plugin: 'chipManager', key: 'annullabile' } as const, null as { id: string; titolo: string } | null)
-const filtro = atom({ plugin: 'chipManager', key: 'filtro' } as const, '')
-const illeggibili = atom({ plugin: 'chipManager', key: 'illeggibili' } as const, [] as { nome: string; motivo: string }[], {
+const azioni = atom({ plugin: 'chip-manager', key: 'azioni' } as const, [] as Azione[], { shape: 'azioni-4' })
+const aperta = atom({ plugin: 'chip-manager', key: 'aperta' } as const, null as string | null)
+const vive = atom({ plugin: 'chip-manager', key: 'vive' } as const, {} as Record<string, Vita>, { shape: 'vive-2' })
+const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as string | null)
+const traguardi = atom({ plugin: 'chip-manager', key: 'traguardi' } as const, null as Traguardi | null, { shape: 'traguardi-3' })
+const regole = atom({ plugin: 'chip-manager', key: 'regole' } as const, null as Regole | null, { shape: 'regole-4' })
+const annullabile = atom({ plugin: 'chip-manager', key: 'annullabile' } as const, null as { id: string; titolo: string } | null)
+const filtro = atom({ plugin: 'chip-manager', key: 'filtro' } as const, '')
+const illeggibili = atom({ plugin: 'chip-manager', key: 'illeggibili' } as const, [] as { nome: string; motivo: string }[], {
   shape: 'illeggibili-2',
 })
-const contesto = atom({ plugin: 'chipManager', key: 'contesto' } as const, null as Chiamante | null, { shape: 'chiamante-1' })
-const risorse = atom({ plugin: 'chipManager', key: 'risorse' } as const, RISORSE_VUOTE as Risorse, { shape: 'risorse-1' })
-const impostazioni = atom({ plugin: 'chipManager', key: 'impostazioni' } as const, false)
+const contesto = atom({ plugin: 'chip-manager', key: 'contesto' } as const, null as Chiamante | null, { shape: 'chiamante-1' })
+const risorse = atom({ plugin: 'chip-manager', key: 'risorse' } as const, RISORSE_VUOTE as Risorse, { shape: 'risorse-1' })
+const impostazioni = atom({ plugin: 'chip-manager', key: 'impostazioni' } as const, false)
 
 type Eng = EngineInterface
 

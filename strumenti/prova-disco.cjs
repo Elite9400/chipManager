@@ -1,6 +1,6 @@
 'use strict'
 // Prova di disco.cjs con processi veri: `node --test strumenti/prova-disco.cjs`.
-const { test } = require('node:test')
+const { test, after } = require('node:test')
 const assert = require('node:assert')
 const { spawn, spawnSync } = require('node:child_process')
 const fs = require('node:fs')
@@ -11,6 +11,8 @@ const path = require('node:path')
 const radiceProve = path.resolve(__dirname, '..', '.cache', 'prove-disco')
 fs.mkdirSync(radiceProve, { recursive: true })
 process.env.TMP = process.env.TEMP = process.env.TMPDIR = radiceProve
+// I collegamenti simbolici lasciati qui fanno fallire `claude plugin install` dalla cartella.
+after(() => fs.rmSync(radiceProve, { recursive: true, force: true, maxRetries: 3 }))
 
 const DISCO = path.join(__dirname, 'disco.cjs')
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'disco-'))

@@ -191,7 +191,7 @@ export type Traguardi = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'chipManager': {
+    'chip-manager': {
       azioni: Shaped<Azione[]>
       aperta: string | null
       vive: Shaped<Record<string, Vita>>

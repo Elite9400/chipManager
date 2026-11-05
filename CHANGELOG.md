@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-05
+
+### Changed
+
+- **The plugin is now called `chip-manager`** (lowercase with hyphens, as the Claude Code plugin directory
+  requires). The MCP tools become `mcp__chip-manager__suggerisci_azione`, `mcp__chip-manager__aggiorna_azione`
+  and `mcp__chip-manager__risorse_agenti`. To upgrade, uninstall `chipManager@chipmanager` and install
+  `chip-manager@chipmanager`; the local configuration in `~/.claude/chipmanager/` and the saved actions are kept,
+  while API keys set in the plugin settings must be entered again.
+
+### Added
+
+- Plugin icon.
+- Animated illustration of the panel in the README.
+
+### Fixed
+
+- The disk tests no longer leave symbolic links in `.cache/`, which made `claude plugin install` from the folder
+  fail.
+
 ## [2.0.0] - 2026-11-05
 
 First public release.
@@ -32,5 +52,6 @@ First public release.
 - Fail-closed guards: sensitive work is never delegated autonomously or sent to the cloud, an unreadable
   configuration blocks instead of guessing, and API keys are stored as sensitive plugin settings.
 
-[Unreleased]: https://github.com/Elite9400/chipManager/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Elite9400/chipManager/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/Elite9400/chipManager/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/Elite9400/chipManager/releases/tag/v2.0.0

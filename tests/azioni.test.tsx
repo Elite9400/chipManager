@@ -431,7 +431,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; fonte?: (cm
 
 const PANE = (surface: 'desktop' | 'terminal') =>
   ({
-    plugin: 'chipManager',
+    plugin: 'chip-manager',
     surface,
     component: 'Pane',
     requestId: 'chipManager',
@@ -442,7 +442,7 @@ test('suggerisci, rivedi le opzioni, avvia una volta sola', async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const r = await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Fix ricerca', brief: 'Correggi il dedup.', esecutore: 'codex', corsia: 'R2' } as never)
+  const r = await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Fix ricerca', brief: 'Correggi il dedup.', esecutore: 'codex', corsia: 'R2' } as never)
   expect(String((r as { result?: unknown }).result)).toContain('nel pannello')
   const id = amb.azione()[0]!.id
   expect(amb.azione()[0]!.repo).toBe('acme/progetto')
@@ -477,7 +477,7 @@ test('due pannelli premono «Avvia» insieme: una sola sessione', async ($, on) 
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
   const id = amb.azione()[0]!.id
   const u1 = await $.ui.mount({ ...PANE('desktop') })
   const u2 = await $.ui.mount({ ...PANE('terminal') })
@@ -498,7 +498,7 @@ test('avvio rifiutato: «fallita» con il motivo; errore di trasporto: esito inc
   })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
   const id = amb.azione()[0]!.id
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `avvia-${id}` })
@@ -520,10 +520,10 @@ test('aggiorna_azione: transizioni ammesse, «completata» = consegnata, «avvia
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
   let id = amb.azione()[0]!.id
   const call = (args: Record<string, unknown>) =>
-    $.tool.call({ tool: 'mcp__chipManager__aggiorna_azione', id, ...args } as never) as Promise<{ deny?: string; isError?: boolean; text?: string }>
+    $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id, ...args } as never) as Promise<{ deny?: string; isError?: boolean; text?: string }>
   const rifiuto = async (args: Record<string, unknown>) => {
     const r = await call(args)
     return r.deny ?? (r.isError ? r.text : undefined) ?? ''
@@ -532,7 +532,7 @@ test('aggiorna_azione: transizioni ammesse, «completata» = consegnata, «avvia
   expect(await rifiuto({ stato: 'avviata', tentativo: 'az-x' })).toContain('sessione')
   // Il proponente può ritirare la propria proposta.
   expect(await rifiuto({ stato: 'scartata' })).toBe('')
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs2', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs2', brief: 'Aggiorna il README.' } as never)
   id = amb.azione().find(a => a.titolo === 'Docs2')!.id
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `avvia-${id}` })
@@ -548,7 +548,7 @@ test('suggerisci: sensibile:false non spegne R4; dipendenze inesistenti rifiutat
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const r = (await $.tool.call({
-    tool: 'mcp__chipManager__suggerisci_azione',
+    tool: 'mcp__chip-manager__suggerisci_azione',
     titolo: 'Fix login MFA',
     brief: 'x',
     sensibile: false,
@@ -558,7 +558,7 @@ test('suggerisci: sensibile:false non spegne R4; dipendenze inesistenti rifiutat
   } as never)) as { result?: unknown }
   expect(String(r.result)).toContain('così non può partire')
   expect(amb.azione()[0]!.sensibile).toBeUndefined()
-  const d = (await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'B', brief: 'x', dipende: ['a-inesist01'] } as never)) as {
+  const d = (await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'B', brief: 'x', dipende: ['a-inesist01'] } as never)) as {
     deny?: string
     text?: string
   }
@@ -575,7 +575,7 @@ test('giro: ferma = toast una volta; archiviata NON è fusa; il task del registr
   })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
   const id = amb.azione()[0]!.id
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `avvia-${id}` })
@@ -609,7 +609,7 @@ test('avvio incerto: a scadenza NON diventa fallita da solo; si annulla a mano; 
   })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
   const id = amb.azione()[0]!.id
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `avvia-${id}` })
@@ -629,7 +629,7 @@ test('avvio incerto: a scadenza NON diventa fallita da solo; si annulla a mano; 
   const t = amb.azione()[0]!.tentativo
   expect(amb.azione()[0]).toMatchObject({ stato: 'in-avvio', manuale: true })
   const presa = (args: Record<string, unknown>) =>
-    $.tool.call({ tool: 'mcp__chipManager__aggiorna_azione', id, stato: 'presa', ...args } as never) as Promise<{ deny?: string; result?: unknown }>
+    $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id, stato: 'presa', ...args } as never) as Promise<{ deny?: string; result?: unknown }>
   expect((await presa({ tentativo: 'az-altro' })).deny).toContain('tentativo')
   expect((await presa({ tentativo: t })).deny).toBeUndefined()
   expect((await presa({ tentativo: t })).deny).toContain('non è (più) prendibile')
@@ -655,12 +655,12 @@ test('seconda presa dopo un fallimento; «Annulla» solo nel pannello che ha chi
   const amb = ambiente(on, { mcp: (_s, tool) => (tool === 'start_session' ? { isError: true, content: [{ type: 'text', text: 'no' }] } : undefined) })
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
   const id = amb.azione()[0]!.id
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `avvia-${id}` })
   const chiama = (args: Record<string, unknown>) =>
-    $.tool.call({ tool: 'mcp__chipManager__aggiorna_azione', id, ...args } as never) as Promise<{ deny?: string }>
+    $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id, ...args } as never) as Promise<{ deny?: string }>
   for (let giro = 0; giro < 2; giro++) {
     await ui.press({ key: `chiedi-${id}` })
     const t = amb.azione()[0]!.tentativo
@@ -698,7 +698,7 @@ test('suggerisci: titolo di soli spazi rifiutato', async ($, on) => {
   ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const r = (await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: '   ', brief: 'x' } as never)) as { deny?: string; text?: string }
+  const r = (await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: '   ', brief: 'x' } as never)) as { deny?: string; text?: string }
   expect(r.deny ?? r.text).toContain('manca titolo')
 })
 
@@ -721,7 +721,7 @@ test('giro: la fusione registrata chiude l\'azione anche se get_session fallisce
   })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
   const a = amb.azione()[0]!
   amb.disco.set(
     `X:/orch/azioni/${a.id}.json`,
@@ -761,7 +761,7 @@ test('giro: la prima osservazione «ferma» di un avvio recente avvisa, una volt
   })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
   const id = amb.azione()[0]!.id
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `avvia-${id}` })
@@ -791,7 +791,7 @@ test('giro: una lettura fallita fra due «ferma» non ripete l\'avviso', async (
   })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
   const id = amb.azione()[0]!.id
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `avvia-${id}` })
@@ -820,7 +820,7 @@ test('giro: «Aggiorna» insieme al timer non avvisa due volte', async ($, on) =
   })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
   const id = amb.azione()[0]!.id
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `avvia-${id}` })
@@ -838,9 +838,9 @@ test('A/B/C: collegamenti persistiti in cartella condivisa non chiudono A e C re
   })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  for (const t of ['A', 'B']) await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: t, brief: 'Lavoro.', issue: 42 } as never)
+  for (const t of ['A', 'B']) await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: t, brief: 'Lavoro.', issue: 42 } as never)
   const [A, B] = amb.azione().sort((x, y) => x.ordine - y.ordine)
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'C', brief: 'Dopo A.', dipende: [A!.id] } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'C', brief: 'Dopo A.', dipende: [A!.id] } as never)
   const comune = { stato: 'avviata', sessione: SID, worktree: false, taskId: 'b', ramoSessione: 'main', tentativo: 'az-x', avviataIl: '2026-11-05T10:00:00Z' }
   amb.disco.set(`X:/orch/azioni/${A!.id}.json`, JSON.stringify({ ...A, ...comune }))
   amb.disco.set(`X:/orch/azioni/${B!.id}.json`, JSON.stringify({ ...B, ...comune }))
@@ -859,7 +859,7 @@ test('elenco incompleto: con un record illeggibile nessun avvio automatico né c
   const amb = ambiente(on)
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'B', brief: 'Lavoro.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'B', brief: 'Lavoro.' } as never)
   const B = amb.azione()[0]!
   // Un record che c'è ma non si legge (scrittura a metà).
   amb.disco.set('X:/orch/azioni/a-rotta0001.json', '{"id":"a-rotta0001","stato":')
@@ -892,9 +892,9 @@ test('elenco incompleto: nessuna chiusura automatica (A/B con task duplicato, B 
   })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  for (const t of ['A', 'B']) await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: t, brief: 'Lavoro.', issue: 42 } as never)
+  for (const t of ['A', 'B']) await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: t, brief: 'Lavoro.', issue: 42 } as never)
   const [A, B] = amb.azione().sort((x, y) => x.ordine - y.ordine)
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'C', brief: 'Dopo A.', dipende: [A!.id] } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'C', brief: 'Dopo A.', dipende: [A!.id] } as never)
   const C = amb.azione().find(a => a.titolo === 'C')!
   const avviata = { stato: 'avviata', sessione: SID, taskId: 'b', ramoSessione: 'claude/a', tentativo: 'az-x', avviataIl: '2026-11-05T10:00:00Z' }
   amb.disco.set(`X:/orch/azioni/${A!.id}.json`, JSON.stringify({ ...A, ...avviata }))
@@ -912,11 +912,11 @@ test('fork scelto dall\'editor su un\'azione in coda: registra l\'origine; senza
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Q', brief: 'Lavoro.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Q', brief: 'Lavoro.' } as never)
   const Q = amb.azione()[0]!
   amb.disco.set(`X:/orch/azioni/${Q.id}.json`, JSON.stringify({ ...Q, stato: 'accodata', motivoCoda: 'limite di 3 sessioni in parallelo' }))
   // Ricarica l'elenco senza un giro (che farebbe ripartire la coda): un aggiornamento rifiutato rilegge il disco.
-  await $.tool.call({ tool: 'mcp__chipManager__aggiorna_azione', id: Q.id, stato: 'consegnata', tentativo: 'az-no' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id: Q.id, stato: 'consegnata', tentativo: 'az-no' } as never)
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `mod-${Q.id}` })
   await ui.select({ key: `ctx-${Q.id}`, value: 'fork' })
@@ -949,8 +949,8 @@ test('configurazione nel pannello: routing e termini del progetto valgono; una r
   const cfg = { progetti: { 'acme/progetto': { routing: 'cfg/routing.json', sensibili: ['gestione[ _-]?magazzino'] } } }
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify(cfg))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Gestione magazzino', brief: 'x', esecutore: 'codex', corsia: 'R2', revisore: 'claude' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Gestione magazzino', brief: 'x', esecutore: 'codex', corsia: 'R2', revisore: 'claude' } as never)
   const [docs, mag] = ['Docs', 'Gestione magazzino'].map(t => amb.azione().find(a => a.titolo === t)!)
   const ui = await $.ui.mount({ ...PANE('desktop') })
   // Il termine del progetto rende sensibile l'azione: Codex non può esserne l'autore.
@@ -1084,7 +1084,7 @@ test('2.0: CLI usa una sola prenotazione, stesso mandato e consegna non equivale
   const amb = ambiente(on, { cli: true })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs CLI', brief: 'Scrivi documentazione.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs CLI', brief: 'Scrivi documentazione.' } as never)
   const id = amb.azione()[0]!.id
   const u1 = await $.ui.mount({ ...PANE('terminal') })
   const u2 = await $.ui.mount({ ...PANE('desktop') })
@@ -1115,7 +1115,7 @@ test('2.0: FreeLLMAPI conferma il testo, nessun background inviato, risultato so
   mock.clock(on)
   conferme(on, testo => { expect(testo).toContain('Trasforma questa frase.'); return 'Invia testo' })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Bozza', brief: 'Trasforma questa frase.', background: 'Contesto da non inviare.', esecutore: 'freellmapi', corsia: 'R1', modello: 'testo-compatto', effort: 'low', revisore: 'claude' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Bozza', brief: 'Trasforma questa frase.', background: 'Contesto da non inviare.', esecutore: 'freellmapi', corsia: 'R1', modello: 'testo-compatto', effort: 'low', revisore: 'claude' } as never)
   const id = amb.azione()[0]!.id
   const ui = await $.ui.mount({ ...PANE('terminal') })
   await ui.press({ key: `avvia-${id}` })
@@ -1137,7 +1137,7 @@ test('2.0: modifica durante la conferma e revoca progetto bloccano FreeLLMAPI', 
     return 'Invia testo'
   })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Bozza', brief: 'Frase.', esecutore: 'freellmapi', corsia: 'R1', effort: 'low', revisore: 'claude' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Bozza', brief: 'Frase.', esecutore: 'freellmapi', corsia: 'R1', effort: 'low', revisore: 'claude' } as never)
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `avvia-${amb.azione()[0]!.id}` })
   expect(amb.processi.filter(p => p.argv[2] === 'completa').length).toBe(0)
@@ -1167,7 +1167,7 @@ test('2.0: solo rete locale blocca tutti gli avvii e nessuna sonda remota viene 
   mock.clock(on)
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { soloLocale: true } } }))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Frase.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Frase.' } as never)
   const ui = await $.ui.mount({ ...PANE('desktop') })
   expect(await ui.find({ key: `avvia-${amb.azione()[0]!.id}` })).toBeUndefined()
   expect(amb.chiamate.filter(c => c.tool === 'get_usage').length).toBe(0)
@@ -1183,7 +1183,7 @@ test('2.0: credenziale segreta non entra in stato, config, argv, prompt o avvisi
   on('state.set', async (_, e, next) => { expect(JSON.stringify(e)).not.toContain(SENTINELLA); return next(e) })
   conferme(on, () => 'Invia testo')
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Bozza', brief: 'Frase.', esecutore: 'freellmapi', corsia: 'R1', effort: 'low', revisore: 'claude' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Bozza', brief: 'Frase.', esecutore: 'freellmapi', corsia: 'R1', effort: 'low', revisore: 'claude' } as never)
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `avvia-${amb.azione()[0]!.id}` })
   expect(amb.azione()[0]).toMatchObject({ stato: 'in-avvio', incerto: true })
@@ -1198,7 +1198,7 @@ test('2.0: risorse_agenti dà al modello politica e limiti, delle chiavi solo la
   configuraFree(amb)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const r = (await $.tool.call({ tool: 'mcp__chipManager__risorse_agenti' } as never)) as { result?: unknown }
+  const r = (await $.tool.call({ tool: 'mcp__chip-manager__risorse_agenti' } as never)) as { result?: unknown }
   const testo = String(r.result)
   expect(testo).not.toContain(SENTINELLA)
   const j = JSON.parse(testo) as { regole: { lette: boolean }; politica: { fornitori: string[]; freellmapi: { livello: string } }; chiavi: Record<string, boolean> }
@@ -1217,7 +1217,7 @@ test('2.0: revoca del fornitore durante la conferma ferma il testo prima della p
     return 'Invia testo'
   })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Bozza', brief: 'Frase.', esecutore: 'freellmapi', corsia: 'R1', effort: 'low', revisore: 'claude' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Bozza', brief: 'Frase.', esecutore: 'freellmapi', corsia: 'R1', effort: 'low', revisore: 'claude' } as never)
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: `avvia-${amb.azione()[0]!.id}` })
   expect(amb.processi.filter(p => p.argv[2] === 'completa').length).toBe(0)
@@ -1258,7 +1258,7 @@ test('2.0: CLI ignora stato di altro tentativo e non cerca sessioni desktop', as
   const amb = ambiente(on, { cli: true })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__chipManager__suggerisci_azione', titolo: 'Docs', brief: 'Frase.' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Frase.' } as never)
   const id = amb.azione()[0]!.id
   const ui = await $.ui.mount({ ...PANE('terminal') })
   await ui.press({ key: `avvia-${id}` })

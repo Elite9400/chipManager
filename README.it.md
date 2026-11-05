@@ -5,7 +5,7 @@
 <img src="docs/img/hero.png" alt="chipManager — un solo pannello per il lavoro che i tuoi agenti suggeriscono" width="100%">
 
 [![Claude Code mod](https://img.shields.io/badge/Claude%20Code-mod-D97757)](#installazione)
-[![versione](https://img.shields.io/badge/versione-2.0.0-00BFFF)](#)
+[![versione](https://img.shields.io/badge/versione-2.1.0-00BFFF)](#)
 [![superfici](https://img.shields.io/badge/superfici-desktop%20%C2%B7%20terminale-555)](#immagini)
 [![test](https://img.shields.io/badge/test-67%20%2B%2026%20verdi-059669)](#collaudo)
 [![licenza](https://img.shields.io/badge/licenza-MIT-blue)](LICENSE)
@@ -51,6 +51,8 @@ decidere come usarli nel progetto in cui lavora. Tutto ciò che è proprio di un
 
 ## Immagini
 
+<p align="center"><img src="docs/img/demo.gif" alt="Un agente suggerisce tre azioni, compaiono nel pannello, Avvia tutte le lancia nell'ordine delle dipendenze e ogni scheda esce dal pannello una volta fusa" width="100%"><br><sub><b>In movimento.</b> Una sessione suggerisce tre azioni; un solo avvio le lancia nell'ordine delle dipendenze, e ogni scheda esce dal pannello una volta fusa. Illustrazione con dati d'esempio.</sub></p>
+
 <table>
 <tr>
 <td width="50%" valign="top"><img src="docs/img/desktop-panel.png" alt="Pannello chipManager nell'app desktop di Claude Code"><br><sub><b>App desktop — il pannello.</b> Limiti con fonte ed età, quattro azioni suggerite: una dipendenza che aspetta la fusione, un'azione sensibile (R4) riservata a Claude, la milestone del rilascio in fondo.</sub></td>
@@ -68,13 +70,13 @@ decidere come usarli nel progetto in cui lavora. Tutto ciò che è proprio di un
 Al prompt di una sessione Claude Code nel terminale:
 
 ```bash
-/plugin install chipManager --marketplace Elite9400/chipManager
+/plugin install chip-manager --marketplace Elite9400/chipManager
 ```
 
 Da una shell:
 
 ```bash
-claude plugin install chipManager --marketplace Elite9400/chipManager
+claude plugin install chip-manager --marketplace Elite9400/chipManager
 ```
 
 Nell'app desktop, dove `/plugin` non è disponibile: **+** accanto al campo del prompt → **Plugins** →
@@ -89,7 +91,7 @@ claude plugin marketplace add <cartella di chipManager>
 ```
 
 ```bash
-claude plugin install chipManager@chipmanager --scope user
+claude plugin install chip-manager@chipmanager --scope user
 ```
 
 L'installazione da cartella legge dalla cartella: non spostarla. Dopo una modifica
