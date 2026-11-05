@@ -250,8 +250,8 @@ count as automatic margin. *Not available* never means zero usage.
 The working views show only what is configured: a provider appears in **Carico** and in the summary line only when
 the project allows it and it has a measurement (even an old one) or a manual limit. An old measurement stays as a
 grey row with its age and no bar, and the summary line says how long ago the limits were read. Providers that were
-never measured, or only report an error, appear only in **Impostazioni**; with none left, **Carico** says *Nessun
-limite collegato* and points there.
+never measured, or only report an error, appear only in **Impostazioni**, which shows the state of each allowed
+provider's reading with its errors; with none left, **Carico** says *Nessun limite collegato* and points there.
 
 | Source | What it really reads | Caveats |
 |---|---|---|

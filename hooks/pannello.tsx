@@ -20,10 +20,11 @@ import {
   COLORE_STATO,
   corrisponde,
   coloreLimite,
+  aspettoLimite,
+  etaVecchie,
   fornitoriVisibili,
   COLORE_LIVELLO,
   FORNITORI,
-  limiteFresco,
   livelloDi,
   piuPieno,
   sogliaDi,
@@ -865,7 +866,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
 
   const rigaLimite = (l: Limite) => {
     const soglia = sogliaDi(regoleOra.risorse, l.fornitore)
-    const fresco = limiteFresco(l, adesso)
+    const { fresco, barra, grigio } = aspettoLimite(l, adesso)
     const n = l.percentuale
     const colore = coloreLimite(l, adesso, soglia)
     const livello = n !== undefined && (fresco || l.manuale) ? livelloDi(n, soglia) : undefined
@@ -881,11 +882,11 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
       : undefined
     return (
       <Box key={`limite-${l.id}`} flexDirection="column">
-        <Text dimColor={!fresco && !l.manuale}>
+        <Text dimColor={grigio}>
           {n === undefined ? <Text color={colore}>{'○ '}</Text> : livello && livello !== 'ok' ? <Text color={colore}>{'▲ '}</Text> : ''}
           {`${l.nome}: ${valore}${l.manuale ? ' · manuale' : ''}${livello === 'critica' ? ' · oltre la soglia critica' : livello === 'attenzione' ? ' · sopra la soglia di attenzione' : ''}${l.manuale && livello && livello !== 'ok' ? ' (dichiarato: non cambia le scelte)' : ''}`}
         </Text>
-        {n !== undefined && (fresco || l.manuale) && barraPct(`barra-${l.id}`, n, colore)}
+        {barra && barraPct(`barra-${l.id}`, n!, colore)}
         <Text dimColor size="caption">{`${l.fonte} · ${eta}${l.errore ? ` · ${l.errore}` : ''}${reset ? ` · reset ${reset}` : ''}`}</Text>
       </Box>
     )
@@ -1034,6 +1035,13 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     {Select && <Select key="milestone-github" label="Milestone GitHub" value={regoleOra.risorse.milestoneGithub ? 'si' : 'no'} options={[{ value: 'no', label: 'Nessuna richiesta a GitHub' }, { value: 'si', label: 'Leggi le milestone del progetto' }]} onSelect={v => void c.fai(() => configura({ milestoneGithub: v === 'si' }))} />}
     {Select && FORNITORI.map(f => <Select key={`fornitore-${f}`} label={`Fornitore ${f}`} value={regoleOra.risorse.fornitori.includes(f) ? 'si' : 'no'} options={[{ value: 'no', label: 'Vietato' }, { value: 'si', label: 'Abilitato per questo progetto' }]} onSelect={v => void c.fai(() => configura({ fornitori: [...regoleOra.risorse.fornitori.filter(x => x !== f), ...(v === 'si' ? [f] : [])] }))} />)}
     <Text>{`Admin Anthropic: ${capacita.chiavi.anthropic ? 'impostata' : 'mancante'} · DeepSeek: ${capacita.chiavi.deepseek ? 'impostata' : 'mancante'}`}</Text>
+    {/* Le viste operative tacciono gli errori delle sonde: la diagnosi del giro corrente sta qui. */}
+    {regoleOra.risorse.fornitori.map(f => {
+      const righe = capacita.limiti.filter(l => l.fornitore === f && !l.manuale)
+        .map(l => (l.errore ? `${l.nome} · ${l.errore}` : `${l.nome} · letto ${durata(Math.max(0, adesso - Date.parse(l.letto!)))} fa`))
+      if (f === 'freellmapi') righe.push(`proxy ${capacita.proxy} · chiave ${capacita.chiavi.freellmapi ? 'impostata' : 'mancante'}`)
+      return <Text key={`stato-${f}`} size="caption" dimColor>{`${NOME_FORNITORE[f]}: ${righe.join(' · ') || (capacita.proxy === 'helper non disponibile' ? 'helper non disponibile' : 'nessuna lettura')}`}</Text>
+    })}
     <Text size="caption" dimColor>Chiavi nei campi segreti di /config o nell’ambiente. Mai nel config del progetto.</Text>
     {Select && <Select key="free-livello" label="Compiti FreeLLMAPI" value={regoleOra.risorse.freellmapi.livello} options={[{ value: 'niente', label: 'Niente' }, { value: 'R1', label: 'Solo R0–R1' }, { value: 'R2', label: 'Anche R2' }]} onSelect={v => void c.fai(() => configura({ freellmapi: { ...regoleOra.risorse.freellmapi, livello: v } }))} />}
     {Input && <Input key="free-endpoint" label="Endpoint FreeLLMAPI (loopback)" value={regoleOra.risorse.freellmapi.endpoint} onSubmit={v => void c.fai(() => configura({ freellmapi: { ...regoleOra.risorse.freellmapi, endpoint: v.trim() } }))} />}
@@ -1052,15 +1060,15 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   </Box>
 
   // Riga di sintesi: chi lavora, chi aspetta, e il margine più stretto per fornitore (solo misure fresche).
-  const margine = (f: 'claude' | 'codex', nome: string) => {
+  const margine = (f: Fornitore) => {
     if (!fornitoriInUso.includes(f)) return undefined
-    const l = piuPieno(limiti, f, adesso)
-    const misure = limiti.filter(x => x.fornitore === f && !x.manuale)
-    if (!l) {
-      // Un solo segno per fornitore: c'era una misura, ora non è più fresca.
-      if (!misure.length || misure.some(x => limiteFresco(x, adesso))) return undefined
-      return `${nome}: limiti non letti da ${durata(Math.max(0, adesso - Math.max(...misure.map(x => Date.parse(x.letto!)))))}`
-    }
+    const nome = NOME_FORNITORE[f]
+    // Un solo segno per fornitore visibile: c'era una misura, ora nessuna è più fresca.
+    const vecchie = etaVecchie(limiti, f, adesso)
+    if (vecchie !== undefined) return `${nome}: limiti non letti da ${durata(vecchie)}`
+    // Il margine in percentuale resta sulle quote di piano.
+    const l = f === 'claude' || f === 'codex' ? piuPieno(limiti, f, adesso) : undefined
+    if (!l) return undefined
     const livello = livelloDi(l.percentuale!, sogliaDi(regoleOra.risorse, f))
     return `${nome} ${l.percentuale}%${livello === 'critica' ? ' oltre la soglia critica' : livello === 'attenzione' ? ' in attenzione' : ''}`
   }
@@ -1069,8 +1077,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
       `${alLavoro} al lavoro`,
       attese ? `${attese} ${attese === 1 ? 'aspetta' : 'aspettano'} te` : undefined,
       proposte ? `${proposte} da avviare` : undefined,
-      margine('claude', 'Claude'),
-      margine('codex', 'Codex'),
+      ...FORNITORI.map(margine),
     ]
       .filter(Boolean)
       .join(' · ')

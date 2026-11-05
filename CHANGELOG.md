@@ -15,9 +15,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   a grey row with its age and no bar when old. Placeholder rows (*not available*, *provider not enabled*) and the
   FreeLLMAPI proxy line are gone; with nothing to show, the view says *Nessun limite collegato* and points to
   **Impostazioni**, which still lists every provider.
-- The summary line counts only allowed providers and fresh measurements; a provider whose measurement went stale
-  adds one grey note such as *Claude: limiti non letti da 12 min*.
-- The last measurement of each limit is kept for the session, so a failed reading no longer empties the view.
+- **Impostazioni** shows, for each allowed provider, one grey line with the state of the current reading: the error
+  of each probe, when it was read, and the proxy state with the key presence for FreeLLMAPI.
+- The summary line counts only allowed providers and fresh measurements; any visible provider whose measurement
+  went stale adds one grey note such as *Claude: limiti non letti da 12 min*. The percentage margin stays on plan
+  quotas (Claude, Codex).
+- The last measurement of each limit is kept for the session, so a failed reading no longer empties the view. A
+  successful reading replaces the provider's previous measurements, so a limit the source no longer reports (extra
+  usage turned off) disappears; Claude API spend is tracked on its own.
 
 ## [2.3.0] - 2026-11-05
 

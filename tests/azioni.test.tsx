@@ -15,7 +15,9 @@ import {
   sessioniClaude,
   sessioniCodex,
   coloreLimite,
+  aspettoLimite,
   conUltime,
+  etaVecchie,
   fornitoriVisibili,
   limiteFresco,
   punteggio,
@@ -1650,6 +1652,16 @@ test('2.3.1: ultime misure e fornitori visibili: solo ammessi con una misura o u
   expect(conUltime(ultime, [])).toEqual(ultime)
   expect(conUltime(ultime, [{ ...errore, id: 'claude-weekly', fornitore: 'claude' }])).toEqual(ultime)
   expect(conUltime(ultime, [{ ...misura, percentuale: 55 }])['claude-weekly']!.percentuale).toBe(55)
+  // Una lettura riuscita che non riporta più un id lo toglie (uso extra disattivato al 99%); la spesa API è un gruppo a sé.
+  const extra = RIGA('claude-extra', 'claude', 'Claude uso extra', { percentuale: 99, unita: '%', letto: LIMITE.letto })
+  const conExtra = conUltime(ultime, [misura, extra])
+  expect(Object.keys(conUltime(conExtra, [misura]))).toEqual(['claude-weekly'])
+  expect(Object.keys(conUltime(conExtra, [RIGA('claude-api', 'claude', 'Claude API', { valore: 3, unita: 'USD', letto: LIMITE.letto })])))
+    .toEqual(['claude-weekly', 'claude-extra', 'claude-api'])
+  // La stessa finestra da un'altra fonte (status line al posto di get_usage) sostituisce la vecchia, non si somma.
+  expect(Object.keys(conUltime(conExtra, [{ ...misura, id: 'claude-five_hour', fonte: 'status line' }]))).toEqual(['claude-five_hour'])
+  // Una lettura fallita di un gruppo non tocca gli altri.
+  expect(conUltime(conExtra, [errore, { ...errore, id: 'claude', fornitore: 'claude' }])).toEqual(conExtra)
   expect(fornitoriVisibili(RISORSE_DEFAULT, ultime)).toEqual(['claude'])
   expect(fornitoriVisibili({ ...RISORSE_DEFAULT, fornitori: ['codex'] }, ultime)).toEqual([])
   const manuale = RIGA('manuale-budget', 'deepseek', 'Budget', { valore: 10, unita: 'USD', letto: LIMITE.letto, manuale: true })
@@ -1678,44 +1690,59 @@ test('2.3.1: un fornitore misurato, uno vietato con misura: Carico e sintesi mos
     expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /100%$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /non disponibile|FreeLLMAPI|Claude API|DeepSeek|Codex piano|Codex \(95%\)|Nessun limite collegato/ })).toBeUndefined()
-    // Impostazioni resta il posto dove si vedono tutti i fornitori.
+    // Impostazioni resta il posto dove si vedono tutti i fornitori e, per gli ammessi, gli errori delle sonde.
     await ui.press({ key: 'impostazioni' })
     expect(await ui.find({ key: 'fornitore-codex' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Claude: Claude piano · settimanale · letto 0 min fa · Claude API · chiave admin mancante$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^(Codex|DeepSeek|FreeLLMAPI): / })).toBeUndefined()
     await ui.press({ key: 'vista-lavoro' })
     await ui.unmount()
   }
 })
 
-test('2.3.1: giro fallito dopo uno riuscito: la misura resta, poi invecchia senza barra e con un segno nella sintesi', async ($, on) => {
-  // Il clock simulato muove $.clock, non Date: l'età della misura la porta la fonte, come una status line non aggiornata.
+test('2.3.1: giro fallito dopo uno riuscito: la misura resta; a fonte sempre guasta invecchia senza barra, in grigio e con un segno nella sintesi', async ($, on) => {
   let rotto = false
-  let eta = 0
-  ambiente(on, {
-    fonte: cmd => (cmd !== 'limiti' ? undefined : rotto ? { limiti: 'formato cambiato' }
-      : RISPOSTA([RIGA('claude-weekly', 'claude', 'Claude piano · settimanale', { percentuale: 37, unita: '%', letto: new Date(Date.now() - eta).toISOString() })])),
+  const amb = ambiente(on, {
+    fonte: cmd => (cmd !== 'limiti' ? undefined : rotto ? { limiti: 'formato cambiato' } : RISPOSTA([
+      RIGA('claude-weekly', 'claude', 'Claude piano · settimanale', { percentuale: 37, unita: '%', letto: new Date().toISOString() }),
+      RIGA('deepseek-saldo', 'deepseek', 'DeepSeek saldo', { valore: 12, unita: 'USD', letto: new Date().toISOString() }),
+    ])),
   })
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { fornitori: ['claude', 'codex', 'deepseek'] } } }))
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   rotto = true
   await clock.advance(300_000)
-  let ui = await $.ui.mount({ ...PANE('terminal') })
+  const ui = await $.ui.mount({ ...PANE('terminal') })
   expect(await ui.find({ type: 'Text', text: /Claude 37%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /non letti/ })).toBeUndefined()
   await ui.press({ key: 'vista-carico' })
   expect(await ui.find({ type: 'Text', text: /^Limiti non letti: helper non disponibile$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /DeepSeek saldo: 12 USD/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /100%$/ })).toBeDefined()
+  await ui.press({ key: 'impostazioni' })
+  expect(await ui.find({ type: 'Text', text: /^Claude: helper non disponibile$/ })).toBeDefined()
   await ui.press({ key: 'vista-lavoro' })
   await ui.unmount()
-  rotto = false
-  eta = 12 * 60_000
-  await clock.advance(300_000)
-  ui = await $.ui.mount({ ...PANE('terminal') })
-  expect(await ui.find({ type: 'Text', text: /Claude: limiti non letti da 12 min/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Claude 37%/ })).toBeUndefined()
-  await ui.press({ key: 'vista-carico' })
-  expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /vecchio, non conta nelle scelte/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /100%$/ })).toBeUndefined()
-  await ui.press({ key: 'vista-lavoro' })
-  await ui.unmount()
+
+  // L'invecchiamento con la fonte sempre guasta. Il clock simulato muove $.clock e non Date (di sola lettura qui):
+  // si prova con l'orologio iniettato nelle funzioni che il pannello usa per la sintesi e per le righe.
+  const ora = Date.now()
+  const lette = [
+    RIGA('claude-weekly', 'claude', 'Claude piano · settimanale', { percentuale: 37, unita: '%', letto: new Date(ora).toISOString() }),
+    RIGA('deepseek-saldo', 'deepseek', 'DeepSeek saldo', { valore: 12, unita: 'USD', letto: new Date(ora).toISOString() }),
+  ]
+  let ultime = conUltime({}, lette)
+  for (const fallita of [[], [RIGA('claude', 'claude', 'Claude piano', { errore: 'limiti di piano non leggibili ora' })], []]) ultime = conUltime(ultime, fallita)
+  const dopo = ora + 7 * 60_000
+  const tutte = Object.values(ultime)
+  expect(tutte.map(l => l.id)).toEqual(['claude-weekly', 'deepseek-saldo'])
+  expect([etaVecchie(tutte, 'claude', ora), etaVecchie(tutte, 'deepseek', ora)]).toEqual([undefined, undefined])
+  expect([durata(etaVecchie(tutte, 'claude', dopo)!), durata(etaVecchie(tutte, 'deepseek', dopo)!), etaVecchie(tutte, 'codex', dopo)]).toEqual(['7 min', '7 min', undefined])
+  expect(aspettoLimite(ultime['claude-weekly']!, ora)).toEqual({ fresco: true, barra: true, grigio: false })
+  expect(aspettoLimite(ultime['claude-weekly']!, dopo)).toEqual({ fresco: false, barra: false, grigio: true })
+  expect(aspettoLimite(ultime['deepseek-saldo']!, dopo)).toEqual({ fresco: false, barra: false, grigio: true })
+  // Il manuale non invecchia come una misura: barra e colore restano.
+  expect(aspettoLimite({ ...ultime['claude-weekly']!, manuale: true }, dopo)).toEqual({ fresco: false, barra: true, grigio: false })
 })
