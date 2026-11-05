@@ -202,6 +202,15 @@ export function piuPieno(limiti: readonly Limite[], f: Fornitore, adesso = Date.
     .reduce<Limite | undefined>((m, l) => (!m || l.percentuale! > m.percentuale! ? l : m), undefined)
 }
 
+/** Un limite ha una misura se porta un numero: una riga con il solo errore non ne ha. */
+export const conMisura = (l: Limite) => l.percentuale !== undefined || l.valore !== undefined
+/** L'ultima misura per id: un giro senza dati non cancella le precedenti, che invecchiano da sole. */
+export const conUltime = (prima: Readonly<Record<string, Limite>>, limiti: readonly Limite[]): Record<string, Limite> =>
+  ({ ...prima, ...Object.fromEntries(limiti.filter(l => !l.manuale && conMisura(l)).map(l => [l.id, l])) })
+/** Nelle viste operative compare solo un fornitore ammesso con una misura (anche vecchia) o un limite manuale. */
+export const fornitoriVisibili = (r: RisorseProgetto, ultime: Readonly<Record<string, Limite>>): Fornitore[] =>
+  FORNITORI.filter(f => r.fornitori.includes(f) && [...Object.values(ultime), ...r.limitiManuali].some(l => l.fornitore === f))
+
 /** Peso = preferenza, mai autorizzazione. Quote sconosciute non equivalgono a 100% libero. */
 export function punteggio(a: Azione, r: Regole, limiti: readonly Limite[], lista: readonly Azione[]) {
   let peso = 100

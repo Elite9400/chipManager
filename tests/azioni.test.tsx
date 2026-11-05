@@ -15,6 +15,8 @@ import {
   sessioniClaude,
   sessioniCodex,
   coloreLimite,
+  conUltime,
+  fornitoriVisibili,
   limiteFresco,
   punteggio,
   RISORSE_DEFAULT,
@@ -1114,8 +1116,9 @@ test('2.0: helper con schema ignoto lascia il pannello disponibile senza inventa
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('terminal') })
   await ui.press({ key: 'vista-carico' })
-  expect(await ui.find({ type: 'Text', text: /helper non disponibile/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Claude API: non disponibile/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Limiti non letti: helper non disponibile$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Nessun limite collegato · vai a Impostazioni$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /non disponibile ·|FreeLLMAPI/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -1127,7 +1130,7 @@ test('2.0: limiti sempre visibili e impostazioni modificabili su desktop e termi
     const ui = await $.ui.mount({ ...PANE(surface) })
     await ui.press({ key: 'vista-carico' })
     expect(await ui.find({ type: 'Text', text: /^Limiti e budget$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Claude API: non disponibile/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Nessun limite collegato · vai a Impostazioni$/ })).toBeDefined()
     await ui.press({ key: 'impostazioni' })
     await ui.input({ key: 'percentuale-fornitore-codex', text: '120' })
     expect(JSON.parse(amb.disco.get('X:/casa/.claude/chipmanager/config.json')!).progetti['acme/progetto'].pesi[0]).toMatchObject({ nome: 'codex', percentuale: 120 })
@@ -1384,13 +1387,13 @@ test('2.2: sessioni del progetto: worktree inclusi, altri progetti, archiviate e
 })
 
 const ID_ESEMPIO = (n: number) => `local_aaaaaaa${n}-1234-1234-1234-123456789abc`
-function ambienteSessioni(on: Parameters<TestBody>[1], adesso: () => number) {
+function ambienteSessioni(on: Parameters<TestBody>[1], adesso: () => number, limiti?: () => Limite[]) {
   const quando = (min: number) => new Date(adesso() - min * 60_000).toISOString()
   return ambiente(on, {
     strumenti: ['mcp__ccd_session_mgmt__list_sessions', 'mcp__ccd_session_mgmt__get_usage'],
     fonte: cmd => (cmd === 'sessioni'
       ? [{ id: 'esempio-0001', cwd: 'X:/repo/.claude/worktrees/fix-ricerca', ramo: 'fix-ricerca', modello: 'gpt-6-astra', effort: 'xhigh', inCorso: true, attivita: quando(0), token: 61_000, finestra: 100_000 }]
-      : undefined),
+      : cmd === 'limiti' && limiti ? { limiti: limiti(), proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } } : undefined),
     mcp: (_s, tool, args) => {
       const testo = (v: unknown) => ({ isError: false, content: [{ type: 'text', text: JSON.stringify(v) }] })
       const sid = (args as { session_id?: string }).session_id
@@ -1608,7 +1611,11 @@ test('2.3: «Avvia tutte» sotto soglia chiede «Avvia» e parte', async ($, on)
 
 test('2.3: vista Carico: matrice modello × effort, limiti per fornitore con le soglie, contesto e pesi in uso', async ($, on) => {
   const clock = mock.clock(on)
-  const amb = ambienteSessioni(on, () => Date.now())
+  const letto = () => new Date().toISOString()
+  const amb = ambienteSessioni(on, () => Date.now(), () => [
+    { id: 'claude-weekly', fornitore: 'claude', nome: 'Claude piano · settimanale', percentuale: 30, unita: '%', fonte: 'prova', letto: letto() },
+    { id: 'codex-primary', fornitore: 'codex', nome: 'Codex piano · primaria', percentuale: 20, unita: '%', fonte: 'prova', letto: letto() },
+  ])
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': {
     soglie: { codex: null }, pesi: [{ tipo: 'fornitore', nome: 'codex', percentuale: 50, assoluto: 0 }] } } }))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -1627,4 +1634,88 @@ test('2.3: vista Carico: matrice modello × effort, limiti per fornitore con le 
     await ui.press({ key: 'vista-lavoro' })
     await ui.unmount()
   }
+})
+
+// --- 2.3.1: nelle viste operative solo i limiti configurati ---------------------------------------------
+
+const RIGA = (id: string, fornitore: Limite['fornitore'], nome: string, extra: Partial<Limite> = {}): Limite => ({ id, fornitore, nome, fonte: 'prova', ...extra })
+const RISPOSTA = (limiti: unknown) => ({ limiti, proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } })
+
+test('2.3.1: ultime misure e fornitori visibili: solo ammessi con una misura o un limite manuale', () => {
+  const misura = RIGA('claude-weekly', 'claude', 'Claude piano · settimanale', { percentuale: 40, unita: '%', letto: LIMITE.letto })
+  const errore = RIGA('codex', 'codex', 'Codex piano', { errore: 'fonte non disponibile' })
+  const ultime = conUltime({}, [misura, errore, { ...misura, id: 'manuale-x', manuale: true }])
+  expect(Object.keys(ultime)).toEqual(['claude-weekly'])
+  // Un giro senza dati, o con il solo errore, non cancella l'ultima misura.
+  expect(conUltime(ultime, [])).toEqual(ultime)
+  expect(conUltime(ultime, [{ ...errore, id: 'claude-weekly', fornitore: 'claude' }])).toEqual(ultime)
+  expect(conUltime(ultime, [{ ...misura, percentuale: 55 }])['claude-weekly']!.percentuale).toBe(55)
+  expect(fornitoriVisibili(RISORSE_DEFAULT, ultime)).toEqual(['claude'])
+  expect(fornitoriVisibili({ ...RISORSE_DEFAULT, fornitori: ['codex'] }, ultime)).toEqual([])
+  const manuale = RIGA('manuale-budget', 'deepseek', 'Budget', { valore: 10, unita: 'USD', letto: LIMITE.letto, manuale: true })
+  expect(fornitoriVisibili({ ...RISORSE_DEFAULT, fornitori: ['claude', 'deepseek'], limitiManuali: [manuale] }, {})).toEqual(['deepseek'])
+})
+
+test('2.3.1: un fornitore misurato, uno vietato con misura: Carico e sintesi mostrano solo il primo', async ($, on) => {
+  const letto = new Date().toISOString()
+  const amb = ambiente(on, {
+    fonte: cmd => (cmd === 'limiti' ? RISPOSTA([
+      RIGA('claude-weekly', 'claude', 'Claude piano · settimanale', { percentuale: 37, unita: '%', letto }),
+      RIGA('codex-primary', 'codex', 'Codex piano · primaria', { percentuale: 95, unita: '%', letto }),
+      RIGA('claude-api', 'claude', 'Claude API', { errore: 'chiave admin mancante' }),
+      RIGA('deepseek', 'deepseek', 'DeepSeek saldo', { errore: 'rete non abilitata' }),
+      RIGA('freellmapi', 'freellmapi', 'FreeLLMAPI', { errore: 'non abilitato' }),
+    ]) : undefined),
+  })
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { fornitori: ['claude'] } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount({ ...PANE(surface) })
+    expect(await ui.find({ type: 'Text', text: /Claude 37%/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Codex 95%|non letti/ })).toBeUndefined()
+    await ui.press({ key: 'vista-carico' })
+    expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /100%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /non disponibile|FreeLLMAPI|Claude API|DeepSeek|Codex piano|Codex \(95%\)|Nessun limite collegato/ })).toBeUndefined()
+    // Impostazioni resta il posto dove si vedono tutti i fornitori.
+    await ui.press({ key: 'impostazioni' })
+    expect(await ui.find({ key: 'fornitore-codex' })).toBeDefined()
+    await ui.press({ key: 'vista-lavoro' })
+    await ui.unmount()
+  }
+})
+
+test('2.3.1: giro fallito dopo uno riuscito: la misura resta, poi invecchia senza barra e con un segno nella sintesi', async ($, on) => {
+  // Il clock simulato muove $.clock, non Date: l'età della misura la porta la fonte, come una status line non aggiornata.
+  let rotto = false
+  let eta = 0
+  ambiente(on, {
+    fonte: cmd => (cmd !== 'limiti' ? undefined : rotto ? { limiti: 'formato cambiato' }
+      : RISPOSTA([RIGA('claude-weekly', 'claude', 'Claude piano · settimanale', { percentuale: 37, unita: '%', letto: new Date(Date.now() - eta).toISOString() })])),
+  })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  rotto = true
+  await clock.advance(300_000)
+  let ui = await $.ui.mount({ ...PANE('terminal') })
+  expect(await ui.find({ type: 'Text', text: /Claude 37%/ })).toBeDefined()
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /^Limiti non letti: helper non disponibile$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /100%$/ })).toBeDefined()
+  await ui.press({ key: 'vista-lavoro' })
+  await ui.unmount()
+  rotto = false
+  eta = 12 * 60_000
+  await clock.advance(300_000)
+  ui = await $.ui.mount({ ...PANE('terminal') })
+  expect(await ui.find({ type: 'Text', text: /Claude: limiti non letti da 12 min/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Claude 37%/ })).toBeUndefined()
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /vecchio, non conta nelle scelte/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /100%$/ })).toBeUndefined()
+  await ui.press({ key: 'vista-lavoro' })
+  await ui.unmount()
 })

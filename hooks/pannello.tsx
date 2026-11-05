@@ -20,6 +20,7 @@ import {
   COLORE_STATO,
   corrisponde,
   coloreLimite,
+  fornitoriVisibili,
   COLORE_LIVELLO,
   FORNITORI,
   limiteFresco,
@@ -62,6 +63,7 @@ const illeggibili = atom({ plugin: 'chip-manager', key: 'illeggibili' } as const
 })
 const contesto = atom({ plugin: 'chip-manager', key: 'contesto' } as const, null as Chiamante | null, { shape: 'chiamante-1' })
 const risorse = atom({ plugin: 'chip-manager', key: 'risorse' } as const, RISORSE_VUOTE as Risorse, { shape: 'risorse-1' })
+const ultimeMisure = atom({ plugin: 'chip-manager', key: 'ultimeMisure' } as const, {} as Record<string, Limite>, { shape: 'misure-1' })
 const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { lista: [] } as Sessioni, { shape: 'sessioni-1' })
 const vista = atom({ plugin: 'chip-manager', key: 'vista' } as const, 'lavoro' as Vista)
 const tutteSessioni = atom({ plugin: 'chip-manager', key: 'tutteSessioni' } as const, false)
@@ -129,6 +131,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   const tr = await read($, traguardi)
   const adesso = Date.now()
   const capacita = await read($, risorse)
+  const ultime = await read($, ultimeMisure)
   const configura = (campi: Record<string, unknown>) => c.configura(campi, regoleOra.risorse)
 
   const fai = (fn: () => Promise<unknown>) => () => void c.fai(fn)
@@ -819,14 +822,9 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
 
   // --- vista Carico: quale modello fa cosa, con quale effort, e quanto ne resta ------------------------------
 
-  const mancanti: Limite[] = [
-    { id: 'claude', fornitore: 'claude', nome: 'Claude piano', fonte: 'app desktop (get_usage) o status line' },
-    { id: 'claude-api', fornitore: 'claude', nome: 'Claude API', fonte: 'Anthropic Admin' },
-    { id: 'codex', fornitore: 'codex', nome: 'Codex piano', fonte: 'sessioni locali' },
-    { id: 'deepseek', fornitore: 'deepseek', nome: 'DeepSeek', fonte: 'balance API' },
-    { id: 'freellmapi', fornitore: 'freellmapi', nome: 'FreeLLMAPI', fonte: 'proxy locale' },
-  ]
-  const limiti = [...capacita.limiti, ...mancanti.filter(m => !capacita.limiti.some(l => m.id === 'claude-api' ? l.id === m.id : l.fornitore === m.fornitore && l.id !== 'claude-api'))]
+  // Solo ciò che è configurato: fornitori ammessi con una misura (anche vecchia) o un limite manuale; le righe di solo errore restano in Impostazioni.
+  const fornitoriInUso = fornitoriVisibili(regoleOra.risorse, ultime)
+  const limiti = [...Object.values(ultime), ...regoleOra.risorse.limitiManuali].filter(l => fornitoriInUso.includes(l.fornitore))
   const NOME_FORNITORE: Record<Fornitore, string> = { claude: 'Claude', codex: 'Codex', deepseek: 'DeepSeek', freellmapi: 'FreeLLMAPI' }
   const parolaSoglia = (s: Soglia | null) => (s ? `attenzione da ${s.attenzione}% · critica da ${s.critica}%` : 'nessuna soglia')
 
@@ -883,11 +881,11 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
       : undefined
     return (
       <Box key={`limite-${l.id}`} flexDirection="column">
-        <Text>
+        <Text dimColor={!fresco && !l.manuale}>
           {n === undefined ? <Text color={colore}>{'○ '}</Text> : livello && livello !== 'ok' ? <Text color={colore}>{'▲ '}</Text> : ''}
           {`${l.nome}: ${valore}${l.manuale ? ' · manuale' : ''}${livello === 'critica' ? ' · oltre la soglia critica' : livello === 'attenzione' ? ' · sopra la soglia di attenzione' : ''}${l.manuale && livello && livello !== 'ok' ? ' (dichiarato: non cambia le scelte)' : ''}`}
         </Text>
-        {n !== undefined && barraPct(`barra-${l.id}`, n, colore)}
+        {n !== undefined && (fresco || l.manuale) && barraPct(`barra-${l.id}`, n, colore)}
         <Text dimColor size="caption">{`${l.fonte} · ${eta}${l.errore ? ` · ${l.errore}` : ''}${reset ? ` · reset ${reset}` : ''}`}</Text>
       </Box>
     )
@@ -896,7 +894,8 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   const controlloLimiti = (
     <Box key="limiti" flexDirection="column" gap={1}>
       {titoloSezione('t-limiti', 'Limiti e budget')}
-      {FORNITORI.filter(f => limiti.some(l => l.fornitore === f)).map(f => (
+      {fornitoriInUso.length === 0 && <Text dimColor>Nessun limite collegato · vai a Impostazioni</Text>}
+      {fornitoriInUso.map(f => (
         <Box key={`forn-${f}`} flexDirection="column" gap={1}>
           <Text>
             <Text weight="semibold">{NOME_FORNITORE[f]}</Text>
@@ -905,8 +904,8 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
           {limiti.filter(l => l.fornitore === f).map(rigaLimite)}
         </Box>
       ))}
-      <Text size="caption" dimColor>Saldi e budget non sono quote di piano. Un dato vecchio resta grigio e non entra nelle scelte.</Text>
-      <Text>{`FreeLLMAPI: ${capacita.proxy} · chiave ${capacita.chiavi.freellmapi ? 'impostata' : 'mancante'}`}</Text>
+      {fornitoriInUso.length > 0 && <Text size="caption" dimColor>Saldi e budget non sono quote di piano. Un dato vecchio resta grigio e non entra nelle scelte.</Text>}
+      {capacita.proxy === 'helper non disponibile' && <Text dimColor>{`Limiti non letti: ${capacita.proxy}`}</Text>}
     </Box>
   )
 
@@ -1000,8 +999,8 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   const parolePesi = regoleOra.risorse.pesi
     .map(p => `${p.tipo === 'modello' ? nomeModello(p.nome) : p.tipo === 'fornitore' ? motore(p.nome as Motore) : `effort ${p.nome}`} ${segno(p.percentuale)}%${p.assoluto ? ` ${segno(p.assoluto)}` : ''}`)
     .join(' · ')
-  const critici = FORNITORI.flatMap(f => {
-    const l = piuPieno(capacita.limiti, f, adesso)
+  const critici = fornitoriInUso.flatMap(f => {
+    const l = piuPieno(limiti, f, adesso)
     return l && livelloDi(l.percentuale!, sogliaDi(regoleOra.risorse, f)) === 'critica' ? [`${NOME_FORNITORE[f]} (${l.percentuale}%)`] : []
   })
   const avviiRecenti = tutte.filter(a => a.avviataIl && adesso - Date.parse(a.avviataIl) <= 86_400_000)
@@ -1054,8 +1053,14 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
 
   // Riga di sintesi: chi lavora, chi aspetta, e il margine più stretto per fornitore (solo misure fresche).
   const margine = (f: 'claude' | 'codex', nome: string) => {
-    const l = piuPieno(capacita.limiti, f, adesso)
-    if (!l) return undefined
+    if (!fornitoriInUso.includes(f)) return undefined
+    const l = piuPieno(limiti, f, adesso)
+    const misure = limiti.filter(x => x.fornitore === f && !x.manuale)
+    if (!l) {
+      // Un solo segno per fornitore: c'era una misura, ora non è più fresca.
+      if (!misure.length || misure.some(x => limiteFresco(x, adesso))) return undefined
+      return `${nome}: limiti non letti da ${durata(Math.max(0, adesso - Math.max(...misure.map(x => Date.parse(x.letto!)))))}`
+    }
     const livello = livelloDi(l.percentuale!, sogliaDi(regoleOra.risorse, f))
     return `${nome} ${l.percentuale}%${livello === 'critica' ? ' oltre la soglia critica' : livello === 'attenzione' ? ' in attenzione' : ''}`
   }
