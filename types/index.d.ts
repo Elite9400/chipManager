@@ -229,6 +229,8 @@ export type SessioneProgetto = {
 }
 export type Sessioni = { lista: SessioneProgetto[]; letto?: string; nota?: string }
 export type Vista = 'lavoro' | 'carico' | 'impostazioni'
+/** Ciò che il pannello sa della board: il file scritto dall'helper, perché non si scrive, stato dei riassunti. */
+export type StatoBoard = { percorso?: string; motivo?: string; riassunti?: string }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -251,6 +253,7 @@ declare module 'claude-code' {
       vista: Vista
       /** «Mostra tutte» nella tabella delle sessioni. */
       tutteSessioni: boolean
+      board: Shaped<StatoBoard>
     }
   }
 }

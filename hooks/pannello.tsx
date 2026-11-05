@@ -8,9 +8,10 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
 
-import type { Azione, Chiamante, Contesto, Corsia, Destinazione, Fornitore, Limite, Motore, Permessi, Peso, Regole, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, Soglia, Traguardi, Traguardo, Vista, Vita } from '../types'
+import type { Azione, Chiamante, Contesto, Corsia, Destinazione, Fornitore, Limite, Motore, Permessi, Peso, Regole, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, Soglia, StatoBoard, Traguardi, Traguardo, Vista, Vita } from '../types'
 import {
   attive,
+  aspettaTe as aspettaTeDi,
   barreEffort,
   BASE_RE,
   blocca,
@@ -37,19 +38,21 @@ import {
   modelloDi,
   nomeModello,
   percentuale,
+  pianoValido,
   PERMESSI,
   RAMO_RE,
   REGOLE_DEFAULT,
   sensibile,
   stimaArrivo,
   taskAccertato,
+  transizione,
   velo,
   violazioniAvvio,
 } from './logica'
 import { INSTALLAZIONE, RISORSE_VUOTE } from './risorse'
 
 // Copia identica degli atomi di register.tsx (lo scanner li vuole nel file che li usa).
-const azioni = atom({ plugin: 'chip-manager', key: 'azioni' } as const, [] as Azione[], { shape: 'azioni-4' })
+const azioni = atom({ plugin: 'chip-manager', key: 'azioni' } as const, [] as Azione[], { shape: 'azioni-5' })
 const aperta = atom({ plugin: 'chip-manager', key: 'aperta' } as const, null as string | null)
 const vive = atom({ plugin: 'chip-manager', key: 'vive' } as const, {} as Record<string, Vita>, { shape: 'vive-2' })
 const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as string | null)
@@ -65,6 +68,7 @@ const risorse = atom({ plugin: 'chip-manager', key: 'risorse' } as const, RISORS
 const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { lista: [] } as Sessioni, { shape: 'sessioni-1' })
 const vista = atom({ plugin: 'chip-manager', key: 'vista' } as const, 'lavoro' as Vista)
 const tutteSessioni = atom({ plugin: 'chip-manager', key: 'tutteSessioni' } as const, false)
+const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
 
 type Eng = EngineInterface
 
@@ -86,6 +90,8 @@ export type Ctx = {
   configura: (campi: Record<string, unknown>, attese: RisorseProgetto) => Promise<unknown>
   peso: (peso: Peso, attese: RisorseProgetto) => Promise<unknown>
   installa: (passo: number) => Promise<unknown>
+  board: (modo: RisorseProgetto['board']['modo'], attese: RisorseProgetto) => Promise<unknown>
+  apriBoard: () => Promise<unknown>
 }
 
 const MOTORI = ['claude', 'codex', 'freellmapi'] as const
@@ -129,10 +135,15 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   const tr = await read($, traguardi)
   const adesso = Date.now()
   const capacita = await read($, risorse)
+  const sb = await read($, statoBoard)
+  // La board si mostra solo accesa e scritta: spenta, nessun pulsante e nessun riferimento.
+  const boardPronta = regoleOra.risorse.board.modo !== 'spenta' && !!sb.percorso
   const configura = (campi: Record<string, unknown>) => c.configura(campi, regoleOra.risorse)
 
   const fai = (fn: () => Promise<unknown>) => () => void c.fai(fn)
   const modifica = (a: Azione, campi: Partial<Azione>) => fai(() => c.salva({ ...a, ...campi }))
+  // La data di completamento è quella della pressione, non del disegno.
+  const completa = (a: Azione) => fai(() => c.salva({ ...a, ...transizione(a, 'completata', new Date().toISOString()) }))
   const apriChiudi = (id: string) => () => update($, aperta, x => (x === id ? null : id))
   const ferma = (a: Azione) => a.stato === 'avviata' && !a.qui && stati[a.id]?.stato === 'ferma'
 
@@ -172,7 +183,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   const tentativoAnnullabile = (a: Azione) =>
     a.stato === 'in-avvio' && a.lanciatore !== 'cli' && !!io && a.lanciataDa === io.io &&
     ((a.manuale && !a.presa) || (!a.manuale && (a.avvioScade ?? '') < new Date(adesso).toISOString()))
-  const aspettaTe = (a: Azione) => ferma(a) || a.stato === 'fallita' || tentativoAnnullabile(a)
+  const aspettaTe = (a: Azione) => aspettaTeDi(a, stati, io?.io, adesso)
   const attese = conta(aspettaTe)
 
   const scelta = (
@@ -331,6 +342,19 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
                 }}
               />
             ),
+            <Input
+              key={`piano-${a.id}`}
+              label="Piano"
+              placeholder="percorso nel repo, es. docs/PIANO.md"
+              value={a.piano ?? ''}
+              submitLabel="salva"
+              onSubmit={v => {
+                const t = v.trim()
+                const no = t ? pianoValido(t) : undefined
+                if (no) return void update($, avviso, () => no)
+                void modifica(a, { piano: t || undefined })()
+              }}
+            />,
             <Input
               key={`tit-${a.id}`}
               label="Titolo"
@@ -522,15 +546,16 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
                 key={`annulla-${a.id}`}
                 variant="secondary"
                 label="Togli dalla coda"
-                onPress={modifica(a, { stato: 'proposta', motivoCoda: undefined })}
+                onPress={modifica(a, { ...transizione(a, 'proposta', new Date(adesso).toISOString()), motivoCoda: undefined })}
               />
             )}
             {(a.stato === 'avviata' || a.stato === 'consegnata') && a.sessione && mia && (
               <Button key={`vedi-${a.id}`} variant="secondary" label="Apri" onPress={fai(() => c.apri(a.sessione!))} />
             )}
             {(a.stato === 'avviata' || a.stato === 'consegnata') && (
-              <Button key={`fatta-${a.id}`} plain label="Segna completata" onPress={modifica(a, { stato: 'completata' })} />
+              <Button key={`fatta-${a.id}`} plain label="Segna completata" onPress={completa(a)} />
             )}
+            {boardPronta && <Button key={`board-${a.id}`} plain label="Nella board" onPress={fai(c.apriBoard)} />}
             {modificabile && <Button key={`mod-${a.id}`} plain label={aperto ? 'Chiudi' : 'Modifica'} onPress={apriChiudi(a.id)} />}
           </Box>
           {modificabile && (
@@ -616,7 +641,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
               <Button key={`avvia-${a.id}`} variant="secondary" label={dip.chiuse ? 'Avvia' : 'Accoda'} onPress={fai(() => c.avvia(a))} />
             )}
             {a.stato === 'accodata' && (
-              <Button key={`annulla-${a.id}`} plain label="Togli dalla coda" onPress={modifica(a, { stato: 'proposta', motivoCoda: undefined })} />
+              <Button key={`annulla-${a.id}`} plain label="Togli dalla coda" onPress={modifica(a, { ...transizione(a, 'proposta', new Date(adesso).toISOString()), motivoCoda: undefined })} />
             )}
             {dettagli(a)}
           </Box>
@@ -643,7 +668,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
         </Text>
         <Box flexDirection="row" gap={1}>
           {a.sessione && mia && <Button key={`vedi-${a.id}`} variant="secondary" label="Apri" onPress={fai(() => c.apri(a.sessione!))} />}
-          <Button key={`fatta-${a.id}`} plain label="Segna completata" onPress={modifica(a, { stato: 'completata' })} />
+          <Button key={`fatta-${a.id}`} plain label="Segna completata" onPress={completa(a)} />
           {dettagli(a)}
         </Box>
       </Box>
@@ -1033,6 +1058,11 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     <Text size="caption">FreeLLMAPI inoltra a fornitori esterni. Solo rete locale blocca anche Claude/Codex e le milestone remote.</Text>
     {Select && <Select key="solo-locale" label="Rete" value={regoleOra.risorse.soloLocale ? 'locale' : 'abilitati'} options={[{ value: 'abilitati', label: 'Fornitori abilitati' }, { value: 'locale', label: 'Solo rete locale' }]} onSelect={v => void c.fai(() => configura({ soloLocale: v === 'locale' }))} />}
     {Select && <Select key="milestone-github" label="Milestone GitHub" value={regoleOra.risorse.milestoneGithub ? 'si' : 'no'} options={[{ value: 'no', label: 'Nessuna richiesta a GitHub' }, { value: 'si', label: 'Leggi le milestone del progetto' }]} onSelect={v => void c.fai(() => configura({ milestoneGithub: v === 'si' }))} />}
+    {Select && <Select key="board-progetto" label="Board di progetto" value={regoleOra.risorse.board.modo} options={[{ value: 'spenta', label: 'Spenta' }, { value: 'accesa', label: 'Accesa (HTML locale, nessun modello)' }, { value: 'riassunti', label: 'Accesa con riassunti (modello leggero)' }]} onSelect={v => void c.fai(() => c.board(v as RisorseProgetto['board']['modo'], regoleOra.risorse))} />}
+    <Text key="board-nota" size="caption" dimColor>{regoleOra.risorse.board.modo === 'riassunti'
+      ? `Riassunti con Haiku: circa 700 token in ingresso e 120 in uscita per chip cambiata, al più 100 al giorno${regoleOra.risorse.soloLocale || !regoleOra.risorse.fornitori.includes('claude') ? '. Fermi: servono Claude abilitato e rete non solo locale' : ''}${sb.riassunti ? `. ${sb.riassunti}` : ''}.`
+      : 'File HTML locale nella cartella dei dati, mai pubblicato. I riassunti sono facoltativi e mandano a Claude solo titolo e mandato delle chip.'}</Text>
+    {regoleOra.risorse.board.modo !== 'spenta' && sb.motivo && nota1('board-motivo', COLORE_STATO.ferma, '!', `Board non scritta: ${sb.motivo}`)}
     {Select && FORNITORI.map(f => <Select key={`fornitore-${f}`} label={`Fornitore ${f}`} value={regoleOra.risorse.fornitori.includes(f) ? 'si' : 'no'} options={[{ value: 'no', label: 'Vietato' }, { value: 'si', label: 'Abilitato per questo progetto' }]} onSelect={v => void c.fai(() => configura({ fornitori: [...regoleOra.risorse.fornitori.filter(x => x !== f), ...(v === 'si' ? [f] : [])] }))} />)}
     <Text>{`Admin Anthropic: ${capacita.chiavi.anthropic ? 'impostata' : 'mancante'} · DeepSeek: ${capacita.chiavi.deepseek ? 'impostata' : 'mancante'}`}</Text>
     <Text size="caption" dimColor>Chiavi nei campi segreti di /config o nell’ambiente. Mai nel config del progetto.</Text>
@@ -1184,9 +1214,13 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
           <Text size="title" weight="semibold" wrap="truncate-end">
             {`chipManager${io?.repo ? ` · ${io.repo}` : ''}`}
           </Text>
-          <Button key="ricarica" plain dimColor hotkey="r" label={`Aggiorna${ses.letto ? ` · ${oraDi(ses.letto)}` : ''}`} onPress={fai(c.giro)} />
+          <Box flexDirection="row" gap={1}>
+            {boardPronta && <Button key="apri-board" plain hotkey="b" label="Apri board" onPress={fai(c.apriBoard)} />}
+            <Button key="ricarica" plain dimColor hotkey="r" label={`Aggiorna${ses.letto ? ` · ${oraDi(ses.letto)}` : ''}`} onPress={fai(c.giro)} />
+          </Box>
         </Box>
         <Text dimColor>{sintesi}</Text>
+        {boardPronta && <Text key="percorso-board" size="caption" dimColor>{`Board: ${sb.percorso}`}</Text>}
         {schede}
         {!regoleOra.lette && nota1('regole', COLORE_STATO.fallita, '▲', `Regole ${regoleOra.fonte}: nessun avvio finché routing.json non si legge.`)}
         {rotte.length > 0 &&

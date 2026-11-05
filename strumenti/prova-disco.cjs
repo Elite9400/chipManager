@@ -625,10 +625,11 @@ test('2.4 git-log: oggetto, data e SHA corto del ramo base, al massimo 15', () =
 test('2.4 date: ogni cambio di stato di un\'azione passa da transizione()', () => {
   for (const f of ['register.tsx', 'pannello.tsx']) {
     const righe = fs.readFileSync(path.join(__dirname, '..', 'hooks', f), 'utf8').split('\n')
-    // Gli unici `stato:` ammessi fuori da transizione() sono quelli delle sessioni (in-corso / ferma).
+    // Fuori da transizione() restano solo: stato delle sessioni (in-corso / ferma), schema dello strumento,
+    // larghezze di colonna e la creazione di un record nuovo.
     const scritte = righe
       .map((r, i) => `${f}:${i + 1}: ${r.trim()}`)
-      .filter(r => /\bstato: /.test(r) && !/\bstato: (s\.isRunning|'in-corso'|fermaOra)/.test(r))
+      .filter(r => /\bstato: /.test(r) && !/\bstato: (s\.isRunning|'in-corso'|fermaOra|\{ type:|string;|'\d+%')/.test(r) && !r.includes('// record nuovo'))
     assert.deepStrictEqual(scritte, [])
   }
 })

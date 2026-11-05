@@ -79,7 +79,7 @@ test('board: escape di ogni testo; nessuno script, nessun href, nessuna risorsa 
 })
 
 test('board: nessun gettone nell\'HTML (mandato, rami, errori, testo annidato), controllo letterale', () => {
-  const gettoni = ['az-abc1234567', 'az-k9x0q1w2e3', 'az-zz00yy11xx']
+  const gettoni = ['az-abc1234567', 'az-k9x0q1w2e3', 'az-zz00yy11xx'] as const
   const lista = [
     az('a-tok00001', 1, { stato: 'avviata', sessione: SID, tentativo: gettoni[0], ramoSessione: `claude/token_${gettoni[0]}` }),
     az('a-tok00002', 2, { stato: 'fallita', tentativo: gettoni[1], errore: `prova x${gettoni[1]} e ${gettoni[1].toUpperCase()}` }),
