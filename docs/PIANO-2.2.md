@@ -1,9 +1,10 @@
 # Piano — chipManager 2.2: dashboard di gestione del lavoro
 
 Stato: **in corso**. F0, F1 e F2 sono consegnate sul ramo di sviluppo e aspettano la fusione. Il 5 novembre 2026 il
-committente ha aggiunto tre richieste (B8, B9 e B10, §6): la tabella delle fasi (§7) le include. Sviluppo in una sessione
-aperta su questa cartella, non da un progetto che usa la mod: le chip del lavoro sulla mod restano di questo
-repository.
+committente ha chiesto anche una board di progetto in HTML e viste di lavoro che mostrino solo ciò che è
+configurato: quel piano lo scrive a parte la sessione master. Qui c'è la legenda per chi è nuovo (B10, §6).
+Sviluppo in una sessione aperta su questa cartella, non da un progetto che usa la mod: le chip del lavoro sulla
+mod restano di questo repository.
 
 Fonti del metodo: impeccable (`shape`, modo *Operate*), design-taste-frontend (`references/app-screens.md`),
 ui-ux-pro-max (accessibilità, interazione, form). Il mondo visivo **non** si inventa: il pannello vive dentro
@@ -230,56 +231,15 @@ Da avviare  2                                                       [ Avvia tutt
   contesto, profilo e soglie: la master decide anche in base ai token.
 - **B7. Soglie per fornitore** (predefinite 70/90). Le usano i colori, la sintesi, la conferma di
   «Avvia tutte» e il bilanciamento.
-- **B8. Solo ciò che è configurato** (richiesta del 5 novembre 2026). Le viste di lavoro sono una dashboard
-  operativa: mostrano solo quello che serve davvero.
-  - **Lavoro**: la riga di sintesi riporta solo i margini dei piani in uso con un dato reale e fresco. Con la F2
-    è già così: nessuna riga «non disponibile».
-  - **Carico**: oggi elenca anche i segnaposto («Claude API: non disponibile», «DeepSeek: rete non abilitata») e
-    i fornitori non abilitati. Con B8 un fornitore compare solo se è abilitato nel progetto **e** la sua fonte
-    ha dato almeno un dato reale. Un dato che invecchia resta, grigio, con la sua età: è configurato, non
-    assente.
-  - Tutto il resto (non abilitato, chiave mancante, fonte mai letta, errore della fonte) vive in
-    **Impostazioni › Connessioni** con lo stato «Da collegare» o «Non disponibile qui» e il motivo.
-  - `risorse_agenti` continua a dare alla master tutte le righe, anche quelle assenti, con il motivo: decide
-    meglio sapendo che cosa manca.
 - **B10. Legenda per chi è nuovo** (richiesta del 5 novembre 2026, nella revisione grafica). Ogni sigla e ogni
   termine tecnico ha una spiegazione in parole semplici, dove serve:
   - **corsie** R0–R5: che cosa vuol dire ciascuna, chi le esegue e perché R4 e R5 restano a Claude;
-  - **fasi** del piano (F0–F6) e **blocchi** di lavoro (B1–B10), nel README e nel piano;
+  - **fasi** del piano (F0–F5) e **blocchi** di lavoro (B1–B10), nel README e nel piano;
   - **termini**: effort, worktree, fork, fusione, registro, MCP, PII, soglia di attenzione e critica, contesto,
     token, cartella condivisa, cloud;
   - **dove**: una voce «Legenda» nel pannello (vista Impostazioni, e un rimando breve dalla riga che usa la
-    sigla), una sezione «Legenda» in README italiano e inglese, e la stessa legenda in fondo alla board (B9);
+    sigla), una sezione «Legenda» in README italiano e inglese, e la stessa legenda nella board di progetto quando ci sarà;
   - una sola fonte per il testo, così pannello, README e board non si contraddicono.
-- **B9. Board di progetto** (richiesta del 5 novembre 2026). Una pagina HTML semplice per avere tutto sotto
-  controllo: la linea dello sviluppo, i prossimi lavori e, per ogni task, come viene fatto.
-  - **Che cos'è.** Un solo file, `board.html`, nella cartella dati del progetto (B1), fuori dal repository.
-    CSS in linea; nessuno script, carattere o risorsa esterna; una CSP che vieta tutto tranne gli stili in linea.
-    Ogni testo (titoli, mandati, errori) è codificato come HTML: il contenuto delle chip non è mai markup.
-  - **Linea dello sviluppo.** Tre fasce: **Fatto** (completate, le ultime due settimane, con le milestone),
-    **In corso** (avviate, in avvio, consegnate da fondere, più le sessioni aperte a mano) e **Prossimi** (da
-    avviare e in coda, nell'ordine di avvio, con le dipendenze). In cima la riga di sintesi e l'avanzamento
-    delle milestone.
-  - **Il task, a un clic.** Ogni task è un `<details>`: si apre senza script. Dentro:
-    - piano: milestone e issue, dipendenze e corsia;
-    - prompt: il brief e il mandato effettivo che riceve la sessione;
-    - processo: le fasi del registro (pronto, avviato, rapporto, revisione, fuso, pubblicato) con la corrente;
-    - chi: esecutore, modello, effort, revisore ed esito della revisione, se il registro lo riporta;
-    - dove: ramo, worktree o cartella condivisa, destinazione, permessi, sessione;
-    - date: proposta, avvio, consegna e chiusura; errori e motivi di coda.
-  - **Al minor costo.** L'HTML si costruisce in modo deterministico da chip, sessioni e registro: zero token.
-    Il modello serve solo per i **riassunti**, facoltativi: una riga per milestone e una per giorno, dal modello
-    più leggero (`$.model.complete` con `haiku`, effort basso). Ricevono solo titoli e stati, mai i mandati. Non
-    si chiedono con «Solo rete locale» né per le chip sensibili (R4/R5), e restano in cache finché i dati non
-    cambiano.
-  - **Quando si aggiorna.** A ogni giro del pannello, ma il file si riscrive solo se il contenuto è cambiato
-    (impronta del contenuto). Nella vista Lavoro il pulsante «Board» apre il file nel browser predefinito e ne
-    mostra il percorso.
-  - **Interruttori.** In Impostazioni › Progetto: «Board di progetto» (spenta per difetto) e «Riassunti del
-    modello» (spenti per difetto, possibili solo con la board accesa). In `config.json`:
-    `board: { attiva, riassunti }`.
-  - **Mai fuori dalla macchina.** Nessuna pubblicazione: niente Artifact, niente caricamento su servizi esterni.
-    Alcuni progetti hanno dati che non devono uscire dalla rete; il README lo dice.
 
 ## 7. Fasi e rilasci
 
@@ -290,17 +250,9 @@ Ogni fase è un rilascio con la sua voce nel CHANGELOG, i test e le immagini agg
 | F0 | 2.1.1 | B2 (limiti Claude) e la parte di B1 che nasconde le chip senza progetto | Claude piano visibile sul desktop; nessuna chip senza progetto in vista; test sul nuovo formato. |
 | F1 | 2.2.0 | B1 completo, B3, vista **Lavoro**, layout del terminale | Tabella con le sessioni anche aperte a mano; prima schermata come l'abbozzo, desktop e terminale. |
 | F2 | 2.3.0 | Vista **Carico**, B7 | Matrice e limiti al rapporto vero; soglie per fornitore in uso. |
-| F3 | 2.4.0 | **Impostazioni** riprogettate, procedure guidate, popup; **B8** | Ogni connessione si collega senza toccare JSON; budget manuali da popup; Lavoro e Carico mostrano solo fornitori configurati e con dati reali, il resto sta in Connessioni. |
-| F4 | 2.5.0 | **B9** Board di progetto | `board.html` locale, deterministica, con linea dello sviluppo e dettaglio dei task; interruttori in Impostazioni, spenti per difetto; nessun token senza i riassunti. |
-| F5 | 2.6.0 | B4, B5, B6 | Profilo Automatico predefinito; proposta della master confermata in popup; `risorse_agenti` con i token. |
-| F6 | — | Rifinitura e revisione grafica; **B10** legenda | `impeccable critique` e `audit` sulle catture, README e GIF aggiornati; un neofita trova il significato di ogni sigla senza uscire dal pannello. |
-
-Perché in quest'ordine:
-
-- **B8 va con F3** perché le righe tolte da Lavoro e Carico finiscono in Connessioni, che F3 costruisce. Separarle
-  lascerebbe per una versione i dati mancanti senza un posto dove vederli.
-- **B9 viene prima dei pesi** perché l'interruttore vive nelle Impostazioni di F3 e la board usa solo dati che
-  ci sono già. Intanto i pesi guadagnano la settimana d'uso che serve a tarare i profili (§8).
+| F3 | 2.4.0 | **Impostazioni** riprogettate, procedure guidate, popup | Ogni connessione si collega senza toccare JSON; budget manuali da popup. |
+| F4 | 2.5.0 | B4, B5, B6 | Profilo Automatico predefinito; proposta della master confermata in popup; `risorse_agenti` con i token. |
+| F5 | — | Rifinitura e revisione grafica; **B10** legenda | `impeccable critique` e `audit` sulle catture, README e GIF aggiornati; un neofita trova il significato di ogni sigla senza uscire dal pannello. |
 
 **Verifica di ogni fase**:
 
@@ -322,9 +274,5 @@ Perché in quest'ordine:
   povero.
 - **Il repository è pubblico.** Documenti, test e immagini non nominano progetti o dati reali di chi
   usa la mod.
-- **Da decidere in F5**: i valori esatti dei profili (Risparmio, Qualità, Velocità) si tarano sui
+- **Da decidere in F4**: i valori esatti dei profili (Risparmio, Qualità, Velocità) si tarano sui
   dati di una settimana d'uso, non a tavolino.
-- **Board e dati riservati.** `board.html` contiene i mandati: resta nella cartella dati locale e non va mai
-  messa nel repository. Se la cartella dati è dentro un repository git, il pannello lo segnala.
-- **Esito della revisione nella board.** Viene dal registro dell'orchestratore: senza registro si mostra un
-  trattino grigio con il motivo.
