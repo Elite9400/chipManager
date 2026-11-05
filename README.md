@@ -359,11 +359,6 @@ No. Without it, actions stop at *delivered* and you close them with **Segna comp
 Yes: in the terminal it uses the CLI worker described in [Terminal](#terminal).
 </details>
 
-## Credits
-
-Designed and written with Claude Opus 5.5; version 2.0 built by Codex GPT-6 Astra on a challenge brief and reviewed
-adversarially by Claude. Version 1 went through 17 rounds of adversarial review with Codex before agreement.
-
 ## License
 
 [MIT](LICENSE) © 2026 Cristian TATTINI.

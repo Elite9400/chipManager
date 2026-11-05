@@ -358,11 +358,6 @@ No. Senza, le azioni si fermano a *consegnata* e le chiudi tu con **Segna comple
 Sì: nel terminale usa il lanciatore CLI descritto in [Terminale](#terminale).
 </details>
 
-## Riconoscimenti
-
-Progettata e scritta con Claude Opus 5.5; la versione 2.0 l'ha costruita Codex GPT-6 Astra su un mandato di sfida,
-rivista in modo avversariale da Claude. La versione 1 ha superato 17 giri di revisione avversariale con Codex.
-
 ## Licenza
 
 [MIT](LICENSE) © 2026 Cristian TATTINI.
