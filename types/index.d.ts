@@ -229,6 +229,8 @@ declare module 'claude-code' {
       /** Questa sessione: id del transcript, progetto, modello, effort e modalità permessi effettivi. */
       contesto: Shaped<Chiamante | null>
       risorse: Shaped<Risorse>
+      /** Ultima misura valida per id di limite: un giro fallito non la cancella. */
+      ultimeMisure: Shaped<Record<string, Limite>>
       sessioni: Shaped<Sessioni>
       vista: Vista
       /** «Mostra tutte» nella tabella delle sessioni. */
