@@ -626,13 +626,19 @@ test('2.4 git-log: oggetto, data e SHA corto del ramo base, al massimo 15', () =
 })
 
 test('2.4 date: ogni cambio di stato di un\'azione passa da transizione()', () => {
-  for (const f of ['register.tsx', 'pannello.tsx']) {
-    const righe = fs.readFileSync(path.join(__dirname, '..', 'hooks', f), 'utf8').split('\n')
-    // Fuori da transizione() restano solo: stato delle sessioni (in-corso / ferma), schema dello strumento,
-    // larghezze di colonna e la creazione di un record nuovo.
+  // Ogni sorgente dei hooks, così un file nuovo (una vista, un modulo) non esce dal controllo.
+  const cartella = path.join(__dirname, '..', 'hooks')
+  const file = fs.readdirSync(cartella).filter(n => /\.tsx?$/.test(n))
+  for (const f of ['register.tsx', 'pannello.tsx', 'vista-lavoro.tsx', 'logica.ts']) assert.ok(file.includes(f), f)
+  for (const f of file) {
+    const righe = fs.readFileSync(path.join(cartella, f), 'utf8').split('\n')
+    // Fuori da transizione() restano solo: la sua firma, i commenti, lo stato delle sessioni (in-corso / ferma),
+    // schema dello strumento, larghezze di colonna e la creazione di un record nuovo.
     const scritte = righe
-      .map((r, i) => `${f}:${i + 1}: ${r.trim()}`)
-      .filter(r => /\bstato: /.test(r) && !/\bstato: (s\.isRunning|'in-corso'|fermaOra|\{ type:|string;|'\d+%')/.test(r) && !r.includes('// record nuovo'))
+      .map((r, i) => ({ r: r.trim(), dove: `${f}:${i + 1}` }))
+      .filter(({ r }) => !r.startsWith('//') && !r.startsWith('export function transizione('))
+      .map(({ r, dove }) => `${dove}: ${r}`)
+      .filter(r => /\bstato: /.test(r) && !/\bstato: (s\.isRunning|'in-corso'|fermaOra|inCorso|s\.inCorso|\{ type:|string;|'\d+%')/.test(r) && !r.includes('// record nuovo'))
     assert.deepStrictEqual(scritte, [])
   }
 })
