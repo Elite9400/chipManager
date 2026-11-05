@@ -1,0 +1,4 @@
+# Tipi che il motore di Claude Code rigenera a ogni caricamento della mod.
+.claude-plugin/types/
+node_modules/
+.cache/

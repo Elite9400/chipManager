@@ -1,0 +1,19 @@
+{
+  "name": "chipManager",
+  "version": "2.0.0",
+  "author": { "name": "Elite9400" },
+  "description": "Pannello delle azioni suggerite dalle sessioni: ordine, motore (Claude/Codex) e revisore modificabili, avvio singolo o massivo con le regole di routing.json, stato dal vivo e avanzamento delle milestone",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "anthropicAdminKey": { "type": "string", "title": "Anthropic Admin API", "description": "Chiave admin per la spesa API; solo con Claude abilitato nel progetto.", "sensitive": true },
+    "deepseekKey": { "type": "string", "title": "DeepSeek API", "description": "Chiave per leggere il saldo; richiede opt-in per progetto.", "sensitive": true },
+    "freellmapiKey": { "type": "string", "title": "FreeLLMAPI", "description": "Chiave unificata dal dashboard locale; richiede opt-in per progetto.", "sensitive": true },
+    "paralleli": {
+      "type": "string",
+      "title": "Sessioni in parallelo",
+      "description": "Quante sessioni avviate dal pannello possono girare insieme; le altre restano in coda.",
+      "default": "3",
+      "options": ["1", "2", "3", "4", "5", "6"]
+    }
+  }
+}
