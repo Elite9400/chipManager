@@ -253,7 +253,7 @@ export type Traguardi = {
   /** Rotazione sulle issue quando sono più di quante se ne leggono a giro. */
   cursore?: number
   /** Copertura parziale dichiarata (troppe milestone o issue per un giro). */
-  parziale?: string
+  parziale?: Messaggio
 }
 
 /** Una sessione del progetto, aperta da una chip o a mano: solo metadati, mai testo della conversazione. */

@@ -49,13 +49,13 @@ export async function fonte($: EngineInterface, options: Record<string, unknown>
     conta({ processi: 1 })
     const r = await $.process.run(['node', `${$.plugin.root.replace(/\\/g, '/')}/strumenti/fornitori.cjs`, comando],
       { stdin: JSON.stringify(input), env, timeoutMs: comando === 'completa' ? 35_000 : 20_000 })
-    if (r.exitCode !== 0 || r.isStdoutTruncated) throw new Error('fonte non disponibile')
-    if (Object.values(env).some(k => r.stdout.includes(k))) throw new Error('risposta non utilizzabile')
+    if (r.exitCode !== 0 || r.isStdoutTruncated) throw new Error('source not available')
+    if (Object.values(env).some(k => r.stdout.includes(k))) throw new Error('answer not usable')
     const json = JSON.parse(r.stdout) as unknown
     // Byte letti e salti dell'helper Codex: solo numeri, per la diagnostica di questa sessione.
     conta(diagnosticaHelper(json))
     return json
-  } catch { throw new Error('Fonte non disponibile: nessun dettaglio delle credenziali viene registrato') }
+  } catch { throw new Error('Source not available: no credential detail is recorded') }
 }
 
 /** Il processo è un confine: schema ignoto e campi estranei non entrano nello stato. */
@@ -65,9 +65,9 @@ export function risorseLette(json: unknown): Risorse {
   const data = (v: unknown) => v === undefined || (typeof v === 'string' && Number.isFinite(Date.parse(v)))
   const numero = (v: unknown) => v === undefined || (typeof v === 'number' && Number.isFinite(v))
   if (!oggetto(json) || !Array.isArray(json.limiti) || json.limiti.length > 50 || !testo(json.proxy) || !oggetto(json.chiavi))
-    throw new Error('formato limiti non disponibile')
+    throw new Error('limits format not available')
   const chiavi = json.chiavi
-  if (!['anthropic', 'deepseek', 'freellmapi'].every(k => typeof chiavi[k] === 'boolean')) throw new Error('formato chiavi non disponibile')
+  if (!['anthropic', 'deepseek', 'freellmapi'].every(k => typeof chiavi[k] === 'boolean')) throw new Error('keys format not available')
   const limiti: Limite[] = json.limiti.map(x => {
     if (!oggetto(x) || !testo(x.id) || !/^[a-z0-9-]+$/.test(x.id) || !FORNITORI.includes(x.fornitore as Limite['fornitore']) ||
         !testo(x.nome) || !testo(x.fonte) || !data(x.letto) || !data(x.reset) || !numero(x.percentuale) || !numero(x.valore) ||
@@ -75,7 +75,7 @@ export function risorseLette(json: unknown): Risorse {
         (x.unita !== undefined && !['%', 'USD', 'CNY', 'EUR', 'richieste', 'token'].includes(String(x.unita))) ||
         (x.errore !== undefined && !testo(x.errore)) ||
         ((x.percentuale !== undefined || x.valore !== undefined) && x.letto === undefined) ||
-        (x.percentuale === undefined && x.valore === undefined && x.errore === undefined)) throw new Error('formato limite non disponibile')
+        (x.percentuale === undefined && x.valore === undefined && x.errore === undefined)) throw new Error('limit format not available')
     return { id: x.id, fornitore: x.fornitore as Limite['fornitore'], nome: x.nome, fonte: x.fonte,
       letto: x.letto as string | undefined, reset: x.reset as string | undefined, percentuale: x.percentuale as number | undefined,
       valore: x.valore as number | undefined, unita: x.unita as Limite['unita'], errore: x.errore as string | undefined }

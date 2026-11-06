@@ -24,7 +24,9 @@ export type Parametri = { [nome: string]: Valore }
 /** Un messaggio come codice e parametri: lo salva chi lo produce, lo traduce chi lo mostra. */
 export type Msg = { k: Chiave; p?: Parametri }
 export const msg = (k: Chiave, p?: Parametri): Msg => (p ? { k, p } : { k })
-export const eMsg = (x: unknown): x is Msg => !!x && typeof x === 'object' && typeof (x as Msg).k === 'string' && (x as Msg).k in en
+/** Una chiave del dizionario inglese, propria: un nome ereditato (`constructor`, `toString`) non lo è. */
+export const eChiave = (k: unknown): k is Chiave => typeof k === 'string' && Object.hasOwn(en, k)
+export const eMsg = (x: unknown): x is Msg => !!x && typeof x === 'object' && eChiave((x as Msg).k)
 
 /** Un errore proprio della mod: il messaggio in inglese (log e agenti), il codice per chi lo mostra tradotto. */
 export class Errore extends Error {
@@ -48,7 +50,7 @@ export function salvato<F extends string, B extends string>(campo: F, base: B, m
 }
 /** Il messaggio di un record: il codice se c'è e si conosce, altrimenti la frase salvata (record vecchi). */
 export const letto = (codice: unknown, parametri: unknown, frase: string | undefined): Msg | string | undefined =>
-  typeof codice === 'string' && codice in en ? { k: codice as Chiave, p: (parametri ?? undefined) as Parametri | undefined } : frase
+  eChiave(codice) ? { k: codice, p: (parametri ?? undefined) as Parametri | undefined } : frase
 
 /** `one` o `other`. Francese e portoghese (Brasile): 0 e 1 sono `one`; le altre lingue: solo 1. */
 export const formaPlurale = (l: Lingua, n: number): keyof Forme =>
@@ -56,28 +58,30 @@ export const formaPlurale = (l: Lingua, n: number): keyof Forme =>
 
 /** La frase della chiave; manca nella lingua → inglese; manca anche lì → la chiave (e il test di completezza fallisce). */
 export function t(l: Lingua, k: Chiave, p: Parametri = {}): string {
-  const v: Voce | undefined = DIZIONARI[l]?.[k] ?? en[k]
-  if (v === undefined) return k
+  if (!eChiave(k)) return k
+  const d = DIZIONARI[l]
+  const v: Voce = d && Object.hasOwn(d, k) ? d[k] : en[k]
   const s = typeof v === 'string' ? v : v[formaPlurale(l, Number(p.n ?? 0))]
-  return s.replace(/\{(\w+)\}/g, (m, nome: string) => (nome in p ? valore(l, p[nome]) : m))
+  return s.replace(/\{(\w+)\}/g, (m, nome: string) => (Object.hasOwn(p, nome) ? valore(l, p[nome]) : m))
 }
 
 /** Un parametro scritto: i messaggi annidati nella stessa lingua, gli elenchi separati da «; ». */
 function valore(l: Lingua, v: unknown): string {
   if (Array.isArray(v)) return v.map(x => valore(l, x)).join('; ')
   if (v && typeof v === 'object' && typeof (v as Msg).k === 'string') return t(l, (v as Msg).k, (v as Msg).p)
-  return String(v)
+  // Un numero si scrive nella lingua della frase (40,5 in italiano); un identificatore numerico va passato come testo.
+  return typeof v === 'number' ? numero(l, v) : String(v)
 }
 
 /** Un codice del dizionario («codice» o «codice: dettaglio») tradotto; ogni altro testo (diagnostica esterna) com'è. */
 export function chiaveOTesto(l: Lingua, s: string | undefined): string {
   if (!s) return ''
   const [k, ...resto] = s.split(': ')
-  return k && k in en ? [t(l, k as Chiave), ...resto].join(': ') : s
+  return eChiave(k) ? [t(l, k), ...resto].join(': ') : s
 }
 
 /** Un testo dell'helper come messaggio: un codice del dizionario diventa codice, ogni altro testo resta testo; vuoto = undefined. */
-export const daTesto = (s: string | undefined): Msg | string | undefined => (!s ? undefined : s in en ? { k: s as Chiave } : s)
+export const daTesto = (s: string | undefined): Msg | string | undefined => (!s ? undefined : eChiave(s) ? { k: s } : s)
 
 /** Un messaggio salvato: codice → frase tradotta; una stringa di un record vecchio si mostra com'è. */
 export const testo = (l: Lingua, x: Msg | string | { k: string; p?: Record<string, unknown> } | null | undefined): string =>
@@ -111,9 +115,11 @@ export function giorno(l: Lingua, quando: Date | string | number): string {
 /** Numero con il separatore decimale della lingua; quello delle migliaia solo da 10.000 in su. */
 export function numero(l: Lingua, n: number, decimali?: number): string {
   const s = decimali === undefined ? String(n) : n.toFixed(decimali)
-  const [intera = '', frazione] = s.replace('-', '').split('.')
+  // Segno, mantissa ed esponente separati: il meno di `1e-7` è dell'esponente, non del numero.
+  const [, segno = '', mantissa = '', esponente = ''] = s.match(/^(-?)([^e]*)(e.*)?$/i) ?? []
+  const [intera = '', frazione] = mantissa.split('.')
   const gruppi = intera.length > 4 ? intera.replace(/\B(?=(\d{3})+$)/g, MIGLIAIA[l]) : intera
-  return `${n < 0 ? '-' : ''}${gruppi}${frazione ? `${l === 'en' ? '.' : ','}${frazione}` : ''}`
+  return `${segno}${gruppi}${frazione ? `${l === 'en' ? '.' : ','}${frazione}` : ''}${esponente}`
 }
 
 /**

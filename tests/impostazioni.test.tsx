@@ -110,7 +110,7 @@ test('simulazione: è la scelta di bilancia sulla stessa proposta e passa la gua
   const r = { ...R, risorse: { ...RISORSE_DEFAULT, pesi: conProfilo([], 'risparmio') } }
   const esito = simula(r, [], [], CHI)
   const proposta: Azione = {
-    id: 'a-simulata', versione: 0, repo: 'esempio/demo', titolo: 'Proposta d\'esempio', brief: 'Simulazione del bilanciamento.', ordine: 0, dipende: [],
+    id: 'a-simulata', versione: 0, repo: 'esempio/demo', titolo: 'Proposta d\'esempio', brief: 'Balancing simulation.', ordine: 0, dipende: [],
     esecutore: 'claude', revisore: 'codex', corsia: 'R2', stato: 'proposta', creata: new Date(0).toISOString(), aggiornata: new Date(0).toISOString(),
   }
   const attesa = bilancia(proposta, {}, r, [], [], CHI)

@@ -278,7 +278,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
               ? T('reg.senzaIssue')
               : a.taskId && !taskAccertato(a, tutte)
                 ? T('reg.nonDimostrabile')
-                : T('reg.nessunTask', { issue: a.issue })}
+                : T('reg.nessunTask', { issue: String(a.issue) })}
         </Text>
       )
     return (
@@ -290,7 +290,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
             <Text key={`f-${a.id}-${f}`}>
               {k ? <Text dimColor>{'  ›  '}</Text> : ''}
               {qui ? <Text color={STATO.inCorso}>{'● '}</Text> : ''}
-              <Text dimColor={!qui} bold={qui}>{`${i > pos ? '✓ ' : ''}${f}`}</Text>
+              <Text dimColor={!qui} bold={qui}>{`${i > pos ? '✓ ' : ''}${T(`fase.${f}`)}`}</Text>
             </Text>
           )
         })}
@@ -800,7 +800,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         )
       })}
       {tr.lista.length === 0 && !tr.errore && <Text dimColor>{T('tr.nessuna', { repo: tr.repo })}</Text>}
-      {tr.parziale && <Text size="caption" dimColor>{T('tr.parziale', { dettaglio: tr.parziale })}</Text>}
+      {tr.parziale && <Text size="caption" dimColor>{T('tr.parziale', { dettaglio: T.m(tr.parziale) })}</Text>}
       {tr.errore && nota1('tr-err', STATO.attesa, '!', T('tr.errore', { errore: T.k(tr.errore) }))}
     </Box>
   )

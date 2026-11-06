@@ -225,12 +225,12 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         {s &&
           u.Gamma({
             chiave: `attenzione-${f}`, etichetta: T('sog.attenzioneDa', { nome }), valore: s.attenzione, min: 1, max: s.critica - 1, passo: 5,
-            formato: v => `${v}%`, onCambia: v => scrivi({ ...s, attenzione: v }),
+            formato: v => `${v === null ? '' : T.numero(v)}%`, onCambia: v => scrivi({ ...s, attenzione: v }),
           })}
         {s &&
           u.Gamma({
             chiave: `critica-${f}`, etichetta: T('sog.criticaDa', { nome }), valore: s.critica, min: s.attenzione + 1, max: 100, passo: 5,
-            formato: v => `${v}%`, onCambia: v => scrivi({ ...s, critica: v }),
+            formato: v => `${v === null ? '' : T.numero(v)}%`, onCambia: v => scrivi({ ...s, critica: v }),
           })}
         {anteprima(f)}
         {errore(`soglia-${f}`)}
@@ -340,7 +340,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     return { config, cartella: cartellaDati(letto, io?.repo ?? null, casa) ?? T('pro.cartellaNonValida') }
   }
   const budgetScritto = (l: RisorseProgetto['limitiManuali'][number]) =>
-    `${NOME_FORNITORE[l.fornitore]} · ${nomeLimiteIn(l, T.lingua)} · ${l.percentuale !== undefined ? `${l.percentuale}%` : `${T.numero(l.valore ?? 0)} ${unitaIn(l.unita, T.lingua)}`}`
+    `${NOME_FORNITORE[l.fornitore]} · ${nomeLimiteIn(l, T.lingua)} · ${l.percentuale !== undefined ? `${T.numero(l.percentuale)}%` : `${T.numero(l.valore ?? 0)} ${unitaIn(l.unita, T.lingua)}`}`
   const aggiungiBudget = async () => {
     const nomi = ammessi.map(f => NOME_FORNITORE[f])
     const bozza: NonNullable<StatoVista['bozza']> = {}
@@ -348,7 +348,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       if (!ammessi.length) throw new Errore(msg('pro.nessunAmmesso'))
       const f = ammessi.length === 1 ? ammessi[0] : ammessi[nomi.indexOf(await $.ui.ask(T('pro.budgetFornitore'), { options: nomi.slice(0, 4), header: T('pro.budget') }))]
       // Una risposta libera («Altro») che non è un fornitore: il resto si sceglie in linea.
-      if (!f) throw new Error('fornitore da scegliere in linea')
+      if (!f) throw new Error('provider to choose in line')
       bozza.fornitore = f
       const t = await $.ui.ask(T('pro.budgetTipo', { fornitore: NOME_FORNITORE[f] }), { options: TIPI_BUDGET.map(nomeTipo), header: T('pro.budget') })
       bozza.tipo = TIPI_BUDGET.find(x => nomeTipo(x) === t)

@@ -841,6 +841,22 @@ test('lingue: nelle viste nessun testo fuori dal dizionario (testo fra i tag, la
   assert.deepStrictEqual(trovati, [])
 })
 
+test('lingue: nessuna frase italiana nei letterali dei hooks (interfaccia, agenti, errori, note)', () => {
+  // Fuori dai dizionari (hooks/lingue) il codice parla solo per chiavi o, verso gli agenti, in inglese. Si cercano parole
+  // funzionali italiane in letterali di almeno due parole; i commenti non contano.
+  const cartella = path.join(__dirname, '..', 'hooks')
+  const ita = /(^|[^\p{L}])(della|delle|degli|dello|nella|nelle|che|con|una|sono|è|dal|alla|alle|ancora|nessun[ao]?|il|gli|lo|la|le|di|da|del|si|questa|questo|lette|non(?=\s))(?=[^\p{L}]|$)/iu
+  const trovati = []
+  for (const f of fs.readdirSync(cartella).filter(n => /\.tsx?$/.test(n))) {
+    const testo = fs.readFileSync(path.join(cartella, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' ')).replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
+    for (const m of testo.matchAll(/'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g)) {
+      const s = m[0].slice(1, -1).replace(/\$\{[^}]*\}/g, ' ')
+      if (/\s/.test(s.trim()) && ita.test(s) && /[a-zà-ù]{3,}\s+[a-zà-ù]{2,}/i.test(s)) trovati.push(`${f}:${testo.slice(0, m.index).split('\n').length}: ${s.trim().slice(0, 80)}`)
+    }
+  }
+  assert.deepStrictEqual(trovati, [])
+})
+
 test('2.4 date: ogni cambio di stato di un\'azione passa da transizione()', () => {
   // Ogni sorgente dei hooks, così un file nuovo (una vista, un modulo) non esce dal controllo.
   const cartella = path.join(__dirname, '..', 'hooks')

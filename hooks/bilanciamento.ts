@@ -138,7 +138,7 @@ export const manualiDaScrivere = (limiti: readonly Limite[]) =>
 export function simula(r: Regole, limiti: readonly Limite[], lista: readonly Azione[], chi: Chiamante | null) {
   const ora = new Date(0).toISOString()
   const esempio: Azione = {
-    id: 'a-simulata', versione: 0, repo: chi?.repo ?? undefined, titolo: 'Proposta d\'esempio', brief: 'Simulazione del bilanciamento.',
+    id: 'a-simulata', versione: 0, repo: chi?.repo ?? undefined, titolo: 'Proposta d\'esempio', brief: 'Balancing simulation.',
     ordine: 0, dipende: [], esecutore: 'claude', revisore: 'codex', corsia: 'R2', stato: 'proposta', creata: ora, aggiornata: ora, // record nuovo, solo in memoria
   }
   const scelta = chi ? bilancia(esempio, {}, r, limiti, lista, chi) : esempio
@@ -334,13 +334,16 @@ export const TETTO_RISORSE = 4_000
  * La risposta di `risorse_agenti` entro il tetto: se è troppo lunga si accorcia per passi, dal meno importante, e lo si
  * dice in `nota`. Ogni passo toglie dettaglio senza inventare numeri.
  */
+/** Le sessioni di un modello (il totale di «k of n»): un numero, qualunque sia la parola fra i due. */
+const sessioniDi = (c: { misurate: string }) => Number(/(\d+)\s*$/.exec(c.misurate)?.[1] ?? 0)
+
 export function rispostaRisorse(dati: Record<string, unknown>, tetto = TETTO_RISORSE) {
   let d: Record<string, unknown> = { ...dati }
   const ridotti: string[] = []
   const passi: [string, (x: Record<string, unknown>) => Record<string, unknown>][] = [
     ['limits without source and name', x => ({ ...x, limiti: (x.limiti as Limite[] | undefined)?.map(l => ({ id: l.id, percentuale: l.percentuale, valore: l.valore, letto: l.letto, reset: l.reset, errore: l.errore })) })],
     ['alLavoro: the 8 most used combinations', x => ({ ...x, alLavoro: Object.fromEntries(Object.entries((x.alLavoro ?? {}) as Record<string, { lavoro: number; coda: number }>).sort((a, b) => b[1].lavoro + b[1].coda - a[1].lavoro - a[1].coda).slice(0, 8)) })],
-    ['contesto: the 5 most used models', x => ({ ...x, contesto: Object.fromEntries(Object.entries((x.contesto ?? {}) as Record<string, { misurate: string }>).sort((a, b) => parseInt(b[1].misurate.split(' of ')[1]!, 10) - parseInt(a[1].misurate.split(' su ')[1]!, 10)).slice(0, 5)) })],
+    ['contesto: the 5 most used models', x => ({ ...x, contesto: Object.fromEntries(Object.entries((x.contesto ?? {}) as Record<string, { misurate: string }>).sort((a, b) => sessioniDi(b[1]) - sessioniDi(a[1])).slice(0, 5)) })],
     ['policy weights: only the count', x => ({ ...x, politica: { ...(x.politica as object), pesi: `${((x.politica as { pesi?: unknown[] }).pesi ?? []).length} weights: see Settings` } })],
     ['limits omitted', x => ({ ...x, limiti: 'omitted: too many for the answer' })],
     ['policy omitted', x => ({ ...x, politica: 'omitted: too long' })],

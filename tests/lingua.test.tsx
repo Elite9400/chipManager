@@ -1,7 +1,7 @@
 // Lingue dell'interfaccia: completezza dei dizionari, segnaposto, plurali, date e numeri propri (niente Intl).
 import { expect, test } from 'claude-code/testing'
 
-import { data, DIZIONARI, formaPlurale, LINGUE, letto, linguaDa, msg, numero, ora, salvato, t, testo } from '../hooks/lingua'
+import { chiaveOTesto, daTesto, data, DIZIONARI, eMsg, formaPlurale, LINGUE, letto, linguaDa, msg, numero, ora, salvato, t, testo } from '../hooks/lingua'
 import type { Chiave } from '../hooks/lingua'
 
 const segnaposto = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort().join(',')
@@ -76,4 +76,20 @@ test('numeri: separatore decimale della lingua, migliaia solo da 10.000', () => 
   expect(numero('fr', 12345)).toBe('12 345')
   expect(numero('de', -12345.25, 2)).toBe('-12.345,25')
   expect(numero('pt', 9999)).toBe('9999')
+  // Notazione esponenziale: segno, mantissa ed esponente restano separati.
+  expect(numero('en', 1e-7)).toBe('1e-7')
+  expect(numero('it', -1.5e-7)).toBe('-1,5e-7')
+  expect(numero('en', 1.5e21)).toBe('1.5e+21')
+  // I parametri numerici si scrivono nella lingua della frase.
+  expect(t('it', 'car.usato', { pct: 40.5 })).toBe('40,5% usato')
+  expect(t('en', 'car.usato', { pct: 40.5 })).toBe('40.5% used')
+})
+
+test('dizionario: solo chiavi proprie; un nome ereditato (constructor, toString) non è un codice', () => {
+  expect(testo('it', letto('constructor', {}, 'frase salvata'))).toBe('frase salvata')
+  expect(t('it', 'constructor' as Chiave)).toBe('constructor')
+  expect(chiaveOTesto('it', 'toString: dettaglio')).toBe('toString: dettaglio')
+  expect(daTesto('hasOwnProperty')).toBe('hasOwnProperty')
+  expect(eMsg({ k: 'constructor' })).toBe(false)
+  expect(testo('it', { k: '__proto__' })).toBe('__proto__')
 })

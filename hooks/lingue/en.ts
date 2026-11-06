@@ -708,6 +708,19 @@ const en = {
   "toast.ferma": "“{titolo}” stopped: waiting for you",
   "toast.nonAperta": "The session did not open: this session is not on screen",
   "comando.aperto": "“chipManager” panel opened.",
+  // Orchestrator registry phases and review outcomes (the saved values stay as they are)
+  "fase.pronto": "ready",
+  "fase.avviato": "started",
+  "fase.rapporto": "report",
+  "fase.revisione": "review",
+  "fase.fuso": "merged",
+  "fase.pubblicato": "released",
+  "esito.in-corso": "in progress",
+  "esito.approvata": "approved",
+  "esito.da-correggere": "changes requested",
+  "tr.parzialeLette": "{lette} issues read out of {totale} per round",
+  "rec.fallitaSessione": "start failed (reported by the session)",
+  "err.strumento": "{tool} not available",
   // ‹fine›
 } satisfies Record<string, Voce>
 

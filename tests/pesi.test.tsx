@@ -19,6 +19,12 @@ import {
   TESTI_PESI,
   TETTO_RISORSE,
 } from '../hooks/bilanciamento'
+
+test('risorse_agenti: ridotta, tiene i 5 modelli con più sessioni (50 → 46), non i primi dell\'elenco', () => {
+  const contesto = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`modello-di-esempio-${String(i + 1).padStart(2, '0')}`, { media: 50, massimo: 60, misurate: `1 of ${i + 1}`, ultima: null }]))
+  const r = JSON.parse(rispostaRisorse({ contesto }, 1200)) as { contesto: Record<string, unknown> }
+  expect(Object.keys(r.contesto).sort()).toEqual(['46', '47', '48', '49', '50'].map(n => `modello-di-esempio-${n}`))
+})
 import { bilancia, MOLTIPLICATORE_CORSIA, pianifica, profiloDi, punteggio, regoleDa, risorseDa, RISORSE_DEFAULT, radiceProgetto, sessioniCodex } from '../hooks/logica'
 import type { Azione, Chiamante, Corsia, Peso, Regole, SessioneProgetto } from '../types'
 import { DiscoIt } from './disco-it'

@@ -706,6 +706,19 @@ const pt: Dizionario = {
   "toast.ferma": "“{titolo}” parada: aguardando você",
   "toast.nonAperta": "A sessão não abriu: esta sessão não está na tela",
   "comando.aperto": "Painel “chipManager” aberto.",
+  // Orchestrator registry phases and review outcomes (the saved values stay as they are)
+  "fase.pronto": "pronto",
+  "fase.avviato": "iniciado",
+  "fase.rapporto": "relatório",
+  "fase.revisione": "revisão",
+  "fase.fuso": "merge feito",
+  "fase.pubblicato": "publicado",
+  "esito.in-corso": "em andamento",
+  "esito.approvata": "aprovada",
+  "esito.da-correggere": "a corrigir",
+  "tr.parzialeLette": "{lette} issues lidas de {totale} por rodada",
+  "rec.fallitaSessione": "início falhou (informado pela sessão)",
+  "err.strumento": "{tool} indisponível",
   // ‹fine›
 }
 

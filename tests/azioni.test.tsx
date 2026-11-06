@@ -274,14 +274,14 @@ test('cloud: solo mandati senza dati da LAN, e senza il background locale', () =
 test('configurazione effettiva: modello e effort di chi avvia, fork che eredita, «qui» in bypass', () => {
   const chi: Chiamante = { io: 'm', repo: 'o/r', modello: 'claude-sonnet-5-5', effort: 'medium', permessi: 'bypassPermissions' }
   const a = base('a-ef000001', 1, { repo: 'o/r' })
-  expect(violazioniAvvio(a, R, [a], chi).map(m => m.k).join()).toContain('v.modelloSessione')
+  expect(violazioniAvvio(a, R, [a], chi)).toContainEqual({ k: 'v.modelloSessione', p: { attuale: 'Sonnet 5.5', richiesto: 'Opus 5.5' } })
   const fork = { ...a, contesto: 'fork' as const }
-  expect(violazioniAvvio(fork, R, [fork], chi).map(m => m.k).join()).toContain('v.forkModello')
+  expect(violazioniAvvio(fork, R, [fork], chi)).toContainEqual({ k: 'v.forkModello', p: { attuale: 'Sonnet 5.5', richiesto: 'Opus 5.5' } })
   const r4 = base('a-ef000002', 1, { repo: 'o/r', titolo: 'permessi OU', revisore: 'claude' })
   const opus: Chiamante = { ...chi, modello: 'claude-opus-5-5', effort: 'high' }
   expect(violazioniAvvio(r4, R, [r4], opus, true).map(m => m.k).join()).toContain('v.r4QuiBypass')
   expect(violazioniAvvio({ ...a, repo: undefined }, R, [a], opus).map(m => m.k).join()).toContain('v.senzaProgetto')
-  expect(violazioniAvvio({ ...a, repo: 'altro/x' }, R, [a], opus).map(m => m.k).join()).toContain('v.altroProgetto')
+  expect(violazioniAvvio({ ...a, repo: 'altro/x' }, R, [a], opus)).toContainEqual({ k: 'v.altroProgetto', p: { repo: 'altro/x' } })
 })
 
 test('cloud: credenziali in JSON, IPv6 e CF omocodici restano in LAN; niente Codex nel cloud', () => {
@@ -504,7 +504,8 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
     return { value: (r ?? { isAnswered: true, text: 'Riassunto d\'esempio.', usage: { input_tokens: 700, output_tokens: 20, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } }) as never }
   })
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('prompt.submit', (_, e) => ({ text: (e as { text: string }).text }))
+  const inviati: string[] = []
+  on('prompt.submit', (_, e) => (inviati.push((e as { text: string }).text), { text: (e as { text: string }).text }))
   const registrati: { name: string; description: string; inputSchema: unknown; isDeferred?: boolean }[] = []
   on('tool.register', (_, e) => {
     registrati.push(e as never)
@@ -522,7 +523,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
           return []
         }
       })
-  return { disco, chiamate, toast, processi, azione, modello, letti, registrati }
+  return { disco, chiamate, toast, processi, azione, modello, letti, registrati, inviati }
 }
 
 const PANE = (surface: 'desktop' | 'terminal') =>
@@ -724,6 +725,11 @@ test('avvio incerto: a scadenza NON diventa fallita da solo; si annulla a mano; 
   // Ripiego manuale: «presa» una volta sola, e dopo non si annulla.
   await ui.press({ key: `chiedi-${id}` })
   const t = amb.azione()[0]!.tentativo
+  // La procedura per l'agente è in inglese: prima la presa del gettone, stop sul rifiuto, poi la conferma dell'esito.
+  const procedura = amb.inviati.at(-1)!
+  for (const pezzo of ['FIRST call', 'stato "presa"', 'if it refuses', 'do NOT start anything', 'mcp__ccd_session__start_session', 'stato "avviata"', 'stato "fallita"', `tentativo "${t}"`])
+    expect(procedura).toContain(pezzo)
+  expect(procedura).not.toMatch(/PRIMA|chiama|tentativo è stato/)
   expect(amb.azione()[0]).toMatchObject({ stato: 'in-avvio', manuale: true })
   const presa = (args: Record<string, unknown>) =>
     $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id, stato: 'presa', ...args } as never) as Promise<{ deny?: string; result?: unknown }>
@@ -1249,6 +1255,13 @@ test('2.0: CLI usa una sola prenotazione, stesso mandato e consegna non equivale
   amb.disco.set(`X:/orch/azioni/esecuzioni/${a.tentativo}.json`, JSON.stringify({ id, tentativo: a.tentativo, stato: 'consegnata', ramo: `chipmanager/${a.tentativo}` }))
   await clock.advance(20_000)
   expect(amb.azione()[0]!.stato).toBe('consegnata')
+  // Un esito incerto salvato come codice, poi l'esito vero dell'helper: frase, codice e parametri cambiano insieme.
+  amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...amb.azione()[0], stato: 'avviata', erroreCodice: 'rec.esitoCli', errore: 'Uncertain outcome: check the process or the dashboard before cancelling' }))
+  amb.disco.set(`X:/orch/azioni/esecuzioni/${a.tentativo}.json`, JSON.stringify({ id, tentativo: a.tentativo, stato: 'fallita', errore: 'spawn codex ENOENT' }))
+  await clock.advance(20_000)
+  expect(amb.azione()[0]).toMatchObject({ stato: 'fallita', errore: 'spawn codex ENOENT' })
+  expect(amb.azione()[0]!.erroreCodice).toBeUndefined()
+  expect(await u1.find({ type: 'Text', text: /spawn codex ENOENT/ })).toBeDefined()
   await u1.unmount(); await u2.unmount()
 })
 

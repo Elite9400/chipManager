@@ -481,3 +481,32 @@ test('lingue: a 60 colonne nel terminale nessuna riga supera la larghezza e ness
     await ui.unmount()
   }
 })
+
+test('lingue: le fasi del registro nella scheda sono tradotte, mai i valori salvati', async ($, on) => {
+  const avviata = az('a-fase0001', 1, { titolo: 'Sample running chip', brief: 'Sample brief.', stato: 'avviata', issue: 7, sessione: SID, lanciataDa: 'sessione-master',
+    ramoSessione: 'fix/esempio', tentativo: 'az-esempio01', tentatoIl: '2026-11-05T09:00:00Z', avviataIl: '2026-11-05T09:00:10Z' })
+  const amb = ambiente(on, [avviata])
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', progetti: { 'acme/progetto': {} } }))
+  amb.disco.set('X:/orch/registro.json', JSON.stringify({ task: { k: { issue: 7, ramo: 'fix/esempio', stato: 'rapporto', creato: '2026-11-05T09:30:00Z' } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 130))
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: 'mod-a-fase0001' })
+  const tutto = testi(await ui.drawn()).join(' | ')
+  expect(tutto).toContain('report')
+  expect(tutto).not.toMatch(/\b(pronto|avviato|rapporto|fuso|pubblicato)\b/)
+  await ui.unmount()
+})
+
+test('lingue: in Carico una percentuale decimale si scrive con il separatore della lingua (40,5 in italiano)', async ($, on) => {
+  ambiente(on, [], [{ id: 'claude-weekly', fornitore: 'claude', nome: 'Claude piano · settimanale', percentuale: 40.5, unita: '%', fonte: 'esempio', letto: new Date().toISOString() }])
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 90))
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 40,5% usato/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /40\.5%/ })).toBeUndefined()
+  await ui.unmount()
+})

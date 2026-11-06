@@ -382,7 +382,7 @@ const MAX_DETTAGLI = 8
 async function chiamaApp($: Eng, tool: string, args: Record<string, unknown>) {
   conta({ app: 1 })
   const r = await $.mcp.call('ccd_session_mgmt', tool, args)
-  if (r.isError) throw new Error(`${tool} non disponibile`)
+  if (r.isError) throw errore('err.strumento', { tool })
   return JSON.parse(testoMcp(r)) as unknown
 }
 
@@ -578,7 +578,7 @@ async function decidi(
       presa: undefined,
       lanciataDa: chi.io,
       ...salvato('motivoCoda', 'motivo', undefined),
-      errore: undefined,
+      ...salvato('errore', 'errore', undefined),
       lanciatore: opz.qui || opz.manuale ? undefined : a.esecutore === 'freellmapi' ? 'freellmapi' : chi.lanciatore === 'cli' ? 'cli' : undefined,
       risultato: undefined,
     })
@@ -667,15 +667,15 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
     if (blocchi.length) return aggiorna($, a.id, x => x.tentativo === a.tentativo ? { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', msg('err.regoleCambiate')) } : null)
     if (a.lanciatore === 'freellmapi') {
       const risultato = await fonte($, options, 'completa', { politica: r.risorse, testo: `${a.titolo}\n\n${a.brief}`, modello: a.modello }) as { risultato?: unknown }
-      if (typeof risultato.risultato !== 'string' || risultato.risultato.length > 30000) throw new Error('risposta non valida')
+      if (typeof risultato.risultato !== 'string' || risultato.risultato.length > 30000) throw new Error('invalid answer')
       return aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo
         ? { ...transizione(x, 'consegnata', ora()), risultato: risultato.risultato as string, avviataIl: ora(), ...salvato('errore', 'errore', msg('rec.bozzaFree')) } : null)
     }
     const m = mandato(a, r, strumenti($))
     const root = (await $.session.repo())?.root
-    if (!root) throw new Error('radice non disponibile')
+    if (!root) throw new Error('repository root not available')
     const esito = await helper($, ['lancia-cli', await cartella($), a.id, a.tentativo!], JSON.stringify({ root, prompt: `${m.background}\n\n${m.prompt}`, modello: m.model, effort: m.effort, permessi: a.permessi ?? (sensibile(a, r) ? 'acceptEdits' : 'default'), base: a.base }))
-    if (esito.codice !== 0) throw new Error('esito CLI da verificare')
+    if (esito.codice !== 0) throw new Error('CLI outcome to be checked')
     await aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo ? transizione(x, 'avviata', ora()) : null)
   } catch {
     // Nessun retry di inferenza o spawn dopo un timeout: l'effetto può essere già avvenuto.
@@ -731,11 +731,11 @@ async function chiediQui($: Eng, options: Record<string, unknown>, id: string) {
   try {
     await invia(
       $,
-      `[chipManager] Avvia l'azione «${presa.titolo}» (id ${presa.id}). PRIMA chiama \`mcp__chip-manager__aggiorna_azione\` ` +
-        `con id "${presa.id}", tentativo "${presa.tentativo}" e stato "presa": se rifiuta, il tentativo è stato annullato e NON devi ` +
-        `avviare nulla. Se accetta, chiama \`mcp__ccd_session__start_session\` con esattamente ` +
-        `questi argomenti; poi chiama \`mcp__chip-manager__aggiorna_azione\` con id "${presa.id}", tentativo "${presa.tentativo}", ` +
-        `stato "avviata" e sessione = l'id restituito, oppure stato "fallita" se l'avvio non riesce.\n\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\``,
+      `[chipManager] Start the action "${presa.titolo}" (id ${presa.id}). FIRST call \`mcp__chip-manager__aggiorna_azione\` ` +
+        `with id "${presa.id}", tentativo "${presa.tentativo}" and stato "presa": if it refuses, the attempt was cancelled: ` +
+        `do NOT start anything. If it accepts, call \`mcp__ccd_session__start_session\` with exactly ` +
+        `these arguments; then call \`mcp__chip-manager__aggiorna_azione\` with id "${presa.id}", tentativo "${presa.tentativo}", ` +
+        `stato "avviata" and sessione = the returned id, or stato "fallita" if the start fails.\n\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\``,
     )
   } catch (err) {
     await aggiorna($, id, x =>
@@ -888,7 +888,7 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
         if (s?.id === a.id && s.tentativo === a.tentativo && ['avviata', 'consegnata', 'fallita'].includes(s.stato ?? '')) {
           if (a.stato !== s.stato || a.ramoSessione !== s.ramo || a.errore !== s.errore)
             a = (await aggiorna($, a.id, x => x.tentativo === a.tentativo && ['in-avvio', 'avviata'].includes(x.stato)
-              ? { ...transizione(x, s.stato as StatoAzione, ora()), ramoSessione: s.ramo, incerto: false, errore: s.errore } : null)) ?? a
+              ? { ...transizione(x, s.stato as StatoAzione, ora()), ramoSessione: s.ramo, incerto: false, ...salvato('errore', 'errore', s.errore) } : null)) ?? a
         }
       } catch { /* record mancante o rotto: nessun riavvio automatico */ }
       if (a.stato === 'in-avvio') continue
@@ -905,7 +905,7 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
         if (trovata && trovata !== 'errore')
           await aggiorna($, a.id, x =>
             x.stato === 'in-avvio' && x.tentativo === a.tentativo
-              ? { ...transizione(x, 'avviata', ora()), sessione: trovata, incerto: false, manuale: undefined, errore: undefined }
+              ? { ...transizione(x, 'avviata', ora()), sessione: trovata, incerto: false, manuale: undefined, ...salvato('errore', 'errore', undefined) }
               : null,
           ).catch(() => undefined)
         continue
@@ -913,7 +913,7 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
       if (trovata && trovata !== 'errore')
         await aggiorna($, a.id, x =>
           x.stato === 'in-avvio' && x.tentativo === a.tentativo
-            ? { ...transizione(x, 'avviata', ora()), sessione: trovata, incerto: false, errore: undefined }
+            ? { ...transizione(x, 'avviata', ora()), sessione: trovata, incerto: false, ...salvato('errore', 'errore', undefined) }
             : null,
         ).catch(() => undefined)
       // Un elenco senza la sessione non prova che non partirà (la chiamata può essere ancora in corso): l'avvio
@@ -1038,7 +1038,7 @@ async function leggiTraguardi($: Eng) {
   const gh = async (args: string[]) => {
     conta({ processi: 1 })
     const r = await $.process.run(['gh', ...args], { timeoutMs: 20_000 })
-    if (r.exitCode !== 0) throw new Error(r.stderr.trim().split('\n')[0]?.slice(0, 120) || `gh uscito con ${r.exitCode}`)
+    if (r.exitCode !== 0) throw new Error(r.stderr.trim().split('\n')[0]?.slice(0, 120) || `gh exited with ${r.exitCode}`)
     return JSON.parse(r.stdout) as unknown
   }
   const MAX_MS = 30
@@ -1072,7 +1072,7 @@ async function leggiTraguardi($: Eng) {
       milestoneDi,
       letto,
       cursore: inizio + blocco.length,
-      parziale: lista.length >= MAX_MS || tutte.length > MAX_ISSUE ? `lette ${Math.min(tutte.length, MAX_ISSUE)} issue su ${tutte.length} a giro` : undefined,
+      parziale: lista.length >= MAX_MS || tutte.length > MAX_ISSUE ? msg('tr.parzialeLette', { lette: Math.min(tutte.length, MAX_ISSUE), totale: tutte.length }) : undefined,
     }))
   } catch (err) {
     // Tiene l'ultima lettura buona e dice perché questa non è riuscita.
@@ -1623,8 +1623,8 @@ export const register: Register = (on, options) => {
         rifiuto = 'only the session that suggested it can withdraw it (or the owner from the panel)'
         return null
       }
-      if (voluto === 'avviata') return { ...transizione(a, 'avviata', ora()), sessione: sessione as string, incerto: false, errore: undefined }
-      if (voluto === 'fallita') return { ...transizione(a, 'fallita', ora()), incerto: false, errore: 'avvio non riuscito (segnalato dalla sessione)' }
+      if (voluto === 'avviata') return { ...transizione(a, 'avviata', ora()), sessione: sessione as string, incerto: false, ...salvato('errore', 'errore', undefined) }
+      if (voluto === 'fallita') return { ...transizione(a, 'fallita', ora()), incerto: false, ...salvato('errore', 'errore', msg('rec.fallitaSessione')) }
       if (voluto === 'scartata') return { ...transizione(a, 'scartata', ora()), statoPrima: a.stato }
       return transizione(a, voluto, ora())
     }

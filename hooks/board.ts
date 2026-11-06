@@ -137,7 +137,7 @@ function scheda(T: T, a: Azione, d: DatiBoard, lista: readonly Azione[], segno: 
         ? `<p class="tenue">${esc(a.piano)}: ${esc(T.k(piano.errore))}</p>`
         : `<p class="tenue">${esc(a.piano)}${piano.troncato ? ` · ${esc(T('board.troncato'))}` : ''}</p><pre>${esc(piano.testo)}</pre>`
   const fase = vita?.fase
-  const passi = FASI.map(f => (f === fase ? `<strong>● ${esc(f)}</strong>` : esc(f))).join(' › ')
+  const passi = FASI.map(f => (f === fase ? `<strong>● ${esc(T(`fase.${f}`))}</strong>` : esc(T(`fase.${f}`)))).join(' › ')
   // La revisione vale solo per il tentativo corrente.
   const esito = a.revisione && a.revisione.tentativo === a.tentativo ? a.revisione : undefined
   const dip = a.dipende.map(id => lista.find(x => x.id === id)?.titolo ?? id)
@@ -154,7 +154,7 @@ ${a.motivoCoda ? `<p>${esc(T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, 
 <h4>${esc(T('ed.piano'))}</h4>${pianoHtml}
 <h4>${esc(T('board.processo'))}</h4><dl>${voce(T('ed.corsia'), esc(corsiaDi(a, r) ?? T('board.nessuna')))}${voce(T('board.passi'), esc(T('board.passiValore', { esecutore: motore(T, a.esecutore), revisore })))}${voce(T('board.fase'), fase ? passi : esc(T('board.nessuna')))}</dl>
 <h4>${esc(T('tab.chi'))}</h4><dl>${voce(T('ed.esecutore'), esc(motore(T, a.esecutore)))}${voce(T('ed.modello'), esc(nomeModello(modelloDi(a, r))))}${voce(T('ed.effort'), `${esc(effortDi(a, r))} ${barreEffort(effortDi(a, r))}`)}${voce(T('ed.permessi'), esc(a.permessi ?? T('board.comeChiAvvia')))}${voce(T('ed.contesto'), esc(a.contesto ?? 'fresh'))}${voce('Worktree', a.worktree === false ? esc(T('op.condivisa')) : `${esc(T('board.proprio'))}${a.ramo ? ` · ${esc(T('board.ramo', { ramo: a.ramo }))}` : ''}${a.ramoSessione ? ` · ${esc(a.ramoSessione)}` : ''}`)}${voce(T('board.destinazione'), esc(a.destinazione ?? 'local'))}</dl>
-<h4>${esc(T('board.revisione'))}</h4><dl>${voce(T('board.revisorePrevisto'), esc(revisore))}${esito ? `${voce(T('board.esito'), esc(esito.esito))}${voce(T('board.riferitaDa'), esc(esito.riferitaDa))}${voce(T('board.quando'), esc(data(T, esito.quando)))}${esito.nota ? voce(T('board.nota'), esc(esito.nota)) : ''}` : voce(T('board.esito'), esc(T('board.nonRiferito')))}</dl>
+<h4>${esc(T('board.revisione'))}</h4><dl>${voce(T('board.revisorePrevisto'), esc(revisore))}${esito ? `${voce(T('board.esito'), esc(T(`esito.${esito.esito}`)))}${voce(T('board.riferitaDa'), esc(esito.riferitaDa))}${voce(T('board.quando'), esc(data(T, esito.quando)))}${esito.nota ? voce(T('board.nota'), esc(esito.nota)) : ''}` : voce(T('board.esito'), esc(T('board.nonRiferito')))}</dl>
 <h4>${esc(T('board.tempi'))}</h4><dl>${voce(T('board.creata'), esc(data(T, a.creata)))}${voce(T('stato.avviata'), esc(data(T, a.avviataIl)))}${voce(T('board.consegnata'), esc(data(T, a.consegnataIl)))}${voce(T('board.completata'), esc(data(T, a.completataIl)))}</dl>
 <h4>${esc(T('board.legami'))}</h4><dl>${voce('Issue', a.issue ? `#${a.issue}` : esc(T('board.nessuna')))}${voce(T('board.dipendeDa'), dip.length ? esc(dip.join('; ')) : esc(T('board.nulla')))}${voce(T('board.sblocca'), sblocca.length ? esc(sblocca.join('; ')) : esc(T('board.nulla')))}${voce(T('board.sessione'), esc(a.sessione ?? T('board.nessuna')))}</dl>
 <h4>${esc(T('board.mandato'))}</h4><pre>${esc(m.prompt)}</pre>

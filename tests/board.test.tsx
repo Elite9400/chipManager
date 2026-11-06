@@ -187,3 +187,12 @@ test('lingue: la board nella lingua dell\'utente, con `lang` della pagina; cambi
   const ingressi: IngressiBoard = { azioni: lista, vive: {}, regole: R, piani: {}, registro: null, commit: [], traguardi: null, riassunti: {}, oggi: '2026-11-05', modo: 'accesa', versione: '2.4.0', lingua: 'it' }
   expect(improntaBoard({ ...ingressi, lingua: 'de' })).not.toBe(improntaBoard(ingressi))
 })
+
+test('lingue: nella board fasi del registro ed esito della revisione tradotti, mai i valori salvati', () => {
+  const a = az('a-fas00001', 1, { stato: 'avviata', tentativo: 'az-esempio01', revisione: { esito: 'approvata', riferitaDa: 'revisore', quando: ADESSO, tentativo: 'az-esempio01' } })
+  const html = board(dati([a], { lingua: 'en', vive: { 'a-fas00001': { stato: 'in-corso', fase: 'rapporto' } } }))
+  expect(html).toContain('<strong>● report</strong>')
+  expect(html).toContain('<dd>approved</dd>')
+  // Fuori dal mandato (testo per l'agente, con i valori dell'API): solo parole tradotte.
+  expect(html.replace(/<pre>[\s\S]*?<\/pre>/g, '')).not.toMatch(/\b(pronto|avviato|rapporto|fuso|pubblicato|approvata)\b/)
+})
