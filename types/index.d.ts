@@ -291,7 +291,11 @@ export type StatoImpostazioni = {
   bozza?: { fornitore?: Fornitore; tipo?: string }
   regola?: boolean
   gruppo?: 'fornitore' | 'modello' | 'effort'
+  /** F5.9: le modifiche non ancora applicate; solo in memoria della sessione, mai su disco. */
+  pendenti?: Pendenti
 }
+/** La bozza delle Impostazioni: campi del progetto come li scrive `configura`, il loro valore al primo tocco, i controlli toccati, la lingua. */
+export type Pendenti = { campi: Record<string, unknown>; base: Record<string, unknown>; dove: string[]; lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt' }
 
 declare module 'claude-code' {
   interface PluginState {

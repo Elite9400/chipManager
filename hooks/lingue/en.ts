@@ -744,6 +744,18 @@ const en = {
   "legenda.token": "token — the unit of text models count. Limits and context are measured in tokens.",
   "legenda.condivisa": "shared folder — the session works in your checkout, without a worktree. The registry cannot link it: close it yourself.",
   "legenda.cloud": "cloud — a new session in the cloud. It gets only title and brief, never local context, and never on sensitive lanes.",
+  // Settings draft and Apply (F5.9)
+  "imp.nonSalvate": { one: "1 unsaved change", other: "{n} unsaved changes" },
+  "imp.applica": "Apply",
+  "imp.annullaModifiche": "Discard changes",
+  "imp.conflittoTitolo": "Changed elsewhere",
+  "imp.conflitto": "Another session changed {dove} after your edits. Nothing was written.",
+  "imp.riapplica": "Reload and reapply my draft",
+  "imp.scartaBozza": "Discard my draft",
+  "imp.uscitaTitolo": "Unsaved changes",
+  "imp.uscita": { one: "1 change in Settings is not saved yet.", other: "{n} changes in Settings are not saved yet." },
+  "imp.scarta": "Discard",
+  "imp.resta": "Stay",
   // ‹fine›
 } satisfies Record<string, Voce>
 

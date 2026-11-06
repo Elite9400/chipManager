@@ -1,13 +1,15 @@
 // Vista Impostazioni a sezioni (piano grafica, C2): Connessioni, Soglie, Bilanciamento, Progetto, Board, Avanzate.
-// Si vede una sezione alla volta, scelta con chip in cima. Ogni controllo salva da sé: toast «Salvato» se va,
-// l'errore in linea sotto il controllo se non va. I popup (`$.ui.ask`) solo per le procedure guidate; rifiutati,
-// la stessa procedura si fa in linea.
+// Si vede una sezione alla volta, scelta con chip in cima. F5.9: ogni controllo mette la modifica in una bozza della
+// sessione (validata subito, l'errore in linea sotto il controllo); la barra in fondo la applica in una sola scrittura
+// o la annulla. I popup (`$.ui.ask`) solo per le procedure guidate, che scrivono da sé; rifiutati, si fanno in linea.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { Fornitore, Peso, RisorseProgetto, StatoImpostazioni } from '../types'
+import type { Fornitore, Pendenti, Peso, RisorseProgetto, StatoImpostazioni } from '../types'
 import {
   budgetDa,
+  conBozza,
+  conPendente,
   conPosizione,
   conProfilo,
   conSoglia,
@@ -19,15 +21,16 @@ import {
   presetDi,
   PROFILI,
   profiloDi,
+  SEZIONE_DI,
   simula,
   SOGLIE_PRESET,
   TIPI_BUDGET,
 } from './bilanciamento'
 import type { Profilo } from './bilanciamento'
 import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, piuPieno, sogliaDi } from './logica'
-import type { Dati } from './pannello'
-import { Errore, LEGENDA, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
-import type { Chiave, Lingua } from './lingua'
+import type { Ctx, Dati } from './pannello'
+import { eMsg, Errore, LEGENDA, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
+import type { Chiave, Lingua, T } from './lingua'
 import { INSTALLAZIONE, nomeLimiteIn, unitaIn } from './risorse'
 import { GRIGIO, LIVELLO, STATO } from './tema'
 import { componenti } from './ui'
@@ -54,14 +57,70 @@ const SEZIONI: { valore: Sezione; testo: Chiave }[] = [
 ]
 const TIPO = (t: string) => t[0]!.toUpperCase() + t.slice(1)
 
+/** Una bozza senza campi né lingua non c'è. */
+const piena = (p: Pendenti | undefined) => (p && (Object.keys(p.campi).length || p.lingua) ? p : undefined)
+
+/**
+ * F5.9 «Applica»: la bozza in una sola scrittura. Se un'altra sessione ha cambiato un campo toccato, niente è scritto e un
+ * popup chiede «Ricarica e riapplica» (la bozza vince sui valori di adesso) o «Scarta». Vero se la bozza non c'è più.
+ */
+export async function applicaBozza($: EngineInterface, c: Ctx, T: T): Promise<boolean> {
+  const p = (await read($, statoVista)).pendenti
+  if (!p) return true
+  try {
+    const esito = await c.applica(p)
+    if (!esito.cambiati.length) {
+      await update($, statoVista, (s): StatoVista => ({ ...s, pendenti: undefined, errore: undefined }))
+      $.ui.toast(T('salvato'))
+      return true
+    }
+    const dove = [...new Set(esito.cambiati.map(k => T(SEZIONE_DI[k] ?? 'imp.sezione.progetto')))].join(', ')
+    const scelta = await $.ui
+      .ask(T('imp.conflitto', { dove }), { options: [T('imp.riapplica'), T('imp.scartaBozza')], header: T('imp.conflittoTitolo') })
+      .catch(() => undefined)
+    if (scelta === T('imp.riapplica')) {
+      await update($, statoVista, (s): StatoVista => ({ ...s, pendenti: s.pendenti && { ...s.pendenti, base: { ...s.pendenti.base, ...esito.base } } }))
+      return applicaBozza($, c, T)
+    }
+    if (scelta === T('imp.scartaBozza')) await update($, statoVista, (s): StatoVista => ({ ...s, pendenti: undefined, errore: undefined }))
+    return scelta === T('imp.scartaBozza')
+  } catch (err) {
+    const m = msgDi(err)
+    await update($, statoVista, (s): StatoVista => ({ ...s, errore: { dove: 'applica', testo: typeof m === 'string' ? m.slice(0, 300) : m } }))
+    return false
+  }
+}
+
+/** Uscendo dalle Impostazioni con una bozza: Applica / Scarta / Resta. Popup non disponibile: si esce e la bozza resta. */
+export async function lasciaImpostazioni($: EngineInterface, c: Ctx, T: T): Promise<boolean> {
+  const p = piena((await read($, statoVista)).pendenti)
+  if (!p) return true
+  const n = p.dove.length
+  let scelta: string | undefined
+  try {
+    scelta = await $.ui.ask(T('imp.uscita', { n }), { options: [T('imp.applica'), T('imp.scarta'), T('imp.resta')], header: T('imp.uscitaTitolo') })
+  } catch {
+    return true
+  }
+  if (scelta === T('imp.applica')) return applicaBozza($, c, T)
+  if (scelta === T('imp.scarta')) {
+    await update($, statoVista, (s): StatoVista => ({ ...s, pendenti: undefined, errore: undefined }))
+    return true
+  }
+  return false
+}
+
 export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const { T, c, Input, regoleOra, adesso, capacita, sb, configura, nota1, NOME_FORNITORE, MOTORI, motore, ultime, io } = d
   const { Box, Text, Button } = d.el
   const terminale = !d.conVelo
   const u = componenti(d.el, terminale ? 'terminal' : 'desktop', T.lingua)
   const classe = d.classe
-  const r = regoleOra.risorse
   const vista = await read($, statoVista)
+  // I controlli mostrano la bozza sopra le regole lette; una bozza che non passa più la validazione non si mostra.
+  const r0 = regoleOra.risorse
+  const conB = vista.pendenti ? conBozza(r0, vista.pendenti.campi) : r0
+  const r = eMsg(conB) ? r0 : conB
   const cambia = (f: (s: StatoVista) => StatoVista) => update($, statoVista, f)
   const nomeTipo = (x: (typeof TIPI_BUDGET)[number]) => TIPO(T(`budget.${x}`))
 
@@ -76,7 +135,19 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       await cambia(s => ({ ...s, errore: { dove, testo: typeof m === 'string' ? m.slice(0, 300) : m } }))
     }
   }
-  const salva = (dove: string, campi: () => Record<string, unknown>) => () => void esegui(dove, () => configura(campi()))
+  /** F5.9: la modifica va nella bozza, validata come la scriverebbe `configura`; l'errore resta in linea sotto `dove`. */
+  const salva = (dove: string, campi: () => Record<string, unknown>) => () =>
+    void cambia(s => {
+      try {
+        const p = conPendente(s.pendenti, r0, dove, campi())
+        const prova = conBozza(r0, p.campi)
+        if (eMsg(prova)) throw new Errore(prova)
+        return { ...s, pendenti: p, errore: undefined }
+      } catch (err) {
+        const m = msgDi(err)
+        return { ...s, errore: { dove, testo: typeof m === 'string' ? m.slice(0, 300) : m } }
+      }
+    })
   const errore = (dove: string) =>
     vista.errore?.dove === dove ? nota1(`errore-${dove}`, STATO.errore, '▲', T.m(vista.errore.testo)) : null
   const didascalia = (k: string, testo: string) => (
@@ -378,8 +449,16 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
             void esegui('budget', async () => {
               const misura = budgetDa(testo)
               if ('k' in misura) throw new Errore(misura)
-              await configura({ limitiManuali: [...manualiDaScrivere(r.limitiManuali), nuovoBudget(b.fornitore!, b.tipo!, misura, Date.now())] })
-              await cambia(s => ({ ...s, bozza: undefined }))
+              // La procedura guidata scrive da sé, sui limiti letti; un elenco già nella bozza riceve lo stesso budget.
+              const nuovo = nuovoBudget(b.fornitore!, b.tipo!, misura, Date.now())
+              const scritti = [...manualiDaScrivere(r0.limitiManuali), nuovo]
+              await configura({ limitiManuali: scritti })
+              await cambia(s => {
+                const p = s.pendenti
+                if (!p || !('limitiManuali' in p.campi)) return { ...s, bozza: undefined }
+                const campi = { ...p.campi, limitiManuali: [...(p.campi.limitiManuali as unknown[]), nuovo] }
+                return { ...s, bozza: undefined, pendenti: { ...p, campi, base: { ...p.base, limitiManuali: scritti } } }
+              })
             })
           }
         />
@@ -458,7 +537,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       figli: [
         u.GruppoChip({
           chiave: 'board', etichetta: T('boa.etichetta'), modo: 'scelta', valore: r.board.modo, voci: MODI,
-          onCambia: v => void esegui('board', () => c.board(v as RisorseProgetto['board']['modo'], r)),
+          onCambia: v => salva('board', () => ({ board: { modo: v } }))(),
         }),
         didascalia('board-nota', r.board.modo === 'riassunti'
           ? [T('boa.costoRiassunti'), r.soloLocale || !r.fornitori.includes('claude') ? T('boa.fermi') : '', sb.riassunti ? T.k(sb.riassunti) : ''].filter(Boolean).join('. ') + '.'
@@ -530,9 +609,16 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       stato,
       figli: [
         u.GruppoChip({
-          chiave: 'lingua', etichetta: T('imp.lingua.etichetta'), modo: 'scelta', valore: T.lingua,
+          chiave: 'lingua', etichetta: T('imp.lingua.etichetta'), modo: 'scelta', valore: vista.pendenti?.lingua ?? T.lingua,
           voci: LINGUE.map(l => ({ valore: l, testo: NOMI_LINGUE[l] })),
-          onCambia: v => void esegui('lingua', () => c.lingua(v as Lingua), ''),
+          // Nella bozza come il resto; tornare alla lingua di adesso la toglie.
+          onCambia: v =>
+            void cambia(s => {
+              const p = s.pendenti ?? { campi: {}, base: {}, dove: [] }
+              const lingua = v === T.lingua ? undefined : (v as Lingua)
+              const dove = lingua ? [...new Set([...p.dove, 'lingua'])] : p.dove.filter(x => x !== 'lingua')
+              return { ...s, pendenti: piena({ ...p, lingua, dove }), errore: undefined }
+            }),
         }),
         errore('lingua'),
         didascalia('lingua-nota', T('imp.lingua.nota')),
@@ -559,6 +645,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       )),
     })
 
+  const pendenti = piena(vista.pendenti)?.dove.length ?? 0
   const corpo =
     vista.sezione === 'legenda' ? legenda()
       : vista.sezione === 'lingua' ? lingua()
@@ -576,6 +663,14 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         onCambia: v => void cambia(s => ({ ...s, sezione: v as Sezione, errore: undefined })),
       })}
       {corpo}
+      {pendenti > 0 && (
+        <Box key="pendenti" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center" borderStyle="single" borderDimColor paddingX={1}>
+          <Text key="pendenti-n">{T('imp.nonSalvate', { n: pendenti })}</Text>
+          <Button key="applica" variant="primary" hotkey="s" label={T('imp.applica')} onPress={() => void applicaBozza($, c, T)} />
+          <Button key="annulla-modifiche" plain dimColor label={T('imp.annullaModifiche')} onPress={() => void cambia(s => ({ ...s, pendenti: undefined, errore: undefined }))} />
+        </Box>
+      )}
+      {errore('applica')}
     </Box>
   )
 }

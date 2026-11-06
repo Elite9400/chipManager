@@ -742,6 +742,18 @@ const fr: Dizionario = {
   "legenda.token": "token — l'unité de texte que comptent les modèles. Limites et contexte se mesurent en tokens.",
   "legenda.condivisa": "dossier partagé — la session travaille dans votre copie, sans worktree. Le registre ne la relie pas : fermez-la vous-même.",
   "legenda.cloud": "cloud — une nouvelle session dans le cloud. Elle ne reçoit que titre et brief, jamais le contexte local, et jamais sur les voies sensibles.",
+  // Settings draft and Apply (F5.9)
+  "imp.nonSalvate": { one: "1 modification non enregistrée", other: "{n} modifications non enregistrées" },
+  "imp.applica": "Appliquer",
+  "imp.annullaModifiche": "Annuler les modifications",
+  "imp.conflittoTitolo": "Modifié ailleurs",
+  "imp.conflitto": "Une autre session a modifié {dove} après vos changements. Rien n'a été écrit.",
+  "imp.riapplica": "Recharger et réappliquer mon brouillon",
+  "imp.scartaBozza": "Abandonner mon brouillon",
+  "imp.uscitaTitolo": "Modifications non enregistrées",
+  "imp.uscita": { one: "1 modification des Réglages n'est pas encore enregistrée.", other: "{n} modifications des Réglages ne sont pas encore enregistrées." },
+  "imp.scarta": "Abandonner",
+  "imp.resta": "Rester",
   // ‹fine›
 }
 

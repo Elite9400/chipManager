@@ -742,6 +742,18 @@ const de: Dizionario = {
   "legenda.token": "token — die Texteinheit, die Modelle zählen. Limits und Kontext werden in Tokens gemessen.",
   "legenda.condivisa": "geteilter Ordner — die Sitzung arbeitet in deinem Checkout, ohne worktree. Das Register verknüpft sie nicht: Schließ sie selbst.",
   "legenda.cloud": "Cloud — eine neue Sitzung in der Cloud. Sie bekommt nur Titel und Auftrag, nie lokalen Kontext, und nie auf sensiblen Spuren.",
+  // Settings draft and Apply (F5.9)
+  "imp.nonSalvate": { one: "1 ungespeicherte Änderung", other: "{n} ungespeicherte Änderungen" },
+  "imp.applica": "Anwenden",
+  "imp.annullaModifiche": "Änderungen verwerfen",
+  "imp.conflittoTitolo": "Anderswo geändert",
+  "imp.conflitto": "Eine andere Sitzung hat {dove} nach deinen Änderungen geändert. Nichts wurde geschrieben.",
+  "imp.riapplica": "Neu laden und meinen Entwurf erneut anwenden",
+  "imp.scartaBozza": "Meinen Entwurf verwerfen",
+  "imp.uscitaTitolo": "Ungespeicherte Änderungen",
+  "imp.uscita": { one: "1 Änderung in den Einstellungen ist noch nicht gespeichert.", other: "{n} Änderungen in den Einstellungen sind noch nicht gespeichert." },
+  "imp.scarta": "Verwerfen",
+  "imp.resta": "Bleiben",
   // ‹fine›
 }
 

@@ -1,8 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Limite, Motore, Permessi, Peso, PropostaPesi, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
-import { alLavoroDa, contestoPerModello, propostaDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI } from './bilanciamento'
+import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Limite, Motore, Pendenti, Permessi, Peso, PropostaPesi, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
+import { alLavoroDa, cambiatiAltrove, contestoPerModello, propostaDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
 import {
   attive,
   bilancia,
@@ -1434,8 +1434,25 @@ async function riassumi($: Eng) {
 }
 
 /** Cambia il modo della board; spegnendo, l'helper cancella HTML e riassunti (il budget del giorno resta). */
-async function impostaBoard($: Eng, opz: Record<string, unknown>, modo: BoardProgetto['modo'], attese: RisorseProgetto) {
-  await configura($, opz, { board: { modo } }, attese)
+/**
+ * F5.9 «Applica»: la bozza del progetto in una sola scrittura CAS (`configura`), poi la lingua (`configura-utente`, stesso
+ * mutex). Se un campo della bozza è cambiato altrove dopo il primo tocco non si scrive niente: tornano i campi e i valori
+ * di adesso, e il pannello chiede se riapplicare o scartare.
+ */
+async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pendenti) {
+  const ora = (await leggiRegole($)).risorse
+  const cambiati = cambiatiAltrove(p, ora)
+  if (cambiati.length) return { cambiati, base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])) }
+  if (Object.keys(p.campi).length) {
+    await configura($, opz, p.campi, ora)
+    if ('board' in p.campi) await dopoBoard($)
+  }
+  if (p.lingua) await scegliLingua($, p.lingua)
+  return { cambiati: [], base: {} }
+}
+
+/** Dopo un cambio di modo della board: spegnerla davvero o rigenerarla. */
+async function dopoBoard($: Eng) {
   const r = await leggiRegole($)
   improntaScritta = undefined
   if (r.risorse.board.modo === 'spenta') {
@@ -1730,9 +1747,8 @@ export const register: Register = (on, options) => {
       configura: (campi, attese) => configura($, opz, campi, attese),
       decidiPesi: (p, esito) => decidiPesi($, opz, p, esito),
       annullaPesi: p => annullaPesi($, opz, p),
-      board: (modo, attese) => impostaBoard($, opz, modo, attese),
+      applica: p => applicaImpostazioni($, opz, p),
       apriBoard: () => apriBoard($),
-      lingua: l => scegliLingua($, l),
       peso: async (peso: Peso, attese: RisorseProgetto) => {
         const r = await leggiRegole($)
         if (!r.lette) throw errore('v.regoleNonLette')

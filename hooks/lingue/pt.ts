@@ -742,6 +742,18 @@ const pt: Dizionario = {
   "legenda.token": "token — a unidade de texto que os modelos contam. Limites e contexto são medidos em tokens.",
   "legenda.condivisa": "pasta compartilhada — a sessão trabalha na sua cópia, sem worktree. O registro não a vincula: feche você mesmo.",
   "legenda.cloud": "cloud — uma nova sessão na nuvem. Recebe só título e briefing, nunca o contexto local, e nunca em faixas sensíveis.",
+  // Settings draft and Apply (F5.9)
+  "imp.nonSalvate": { one: "1 alteração não salva", other: "{n} alterações não salvas" },
+  "imp.applica": "Aplicar",
+  "imp.annullaModifiche": "Descartar alterações",
+  "imp.conflittoTitolo": "Alterado em outro lugar",
+  "imp.conflitto": "Outra sessão alterou {dove} depois das suas alterações. Nada foi gravado.",
+  "imp.riapplica": "Recarregar e reaplicar meu rascunho",
+  "imp.scartaBozza": "Descartar meu rascunho",
+  "imp.uscitaTitolo": "Alterações não salvas",
+  "imp.uscita": { one: "1 alteração nas Configurações ainda não foi salva.", other: "{n} alterações nas Configurações ainda não foram salvas." },
+  "imp.scarta": "Descartar",
+  "imp.resta": "Ficar",
   // ‹fine›
 }
 

@@ -423,6 +423,7 @@ test('impostazioni: un salvataggio di profilo o pesi passa dall\'helper, che inc
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-bilanciamento-premi' })
   await ui.press({ key: 'profilo-qualita-premi' })
+  await ui.press({ key: 'applica' })
   expect(amb.stdin.at(-1)).toMatchObject({ campi: { profilo: 'qualita' } })
   expect(amb.progettoOra()).toMatchObject({ profilo: 'qualita', pesiRevisione: 1, pesiOrigine: { tipo: 'manuale' } })
   await ui.unmount()

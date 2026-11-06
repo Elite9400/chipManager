@@ -1,9 +1,9 @@
 // Logica pura delle Impostazioni (piano grafica, C2 con §9 righe 4, 5 e 7 e §10): profili di bilanciamento, regolazioni
 // a cinque posizioni, soglie, budget manuali e simulazione della scelta. Niente `$`: i test la provano senza engine.
-import type { Azione, Chiamante, Fornitore, Limite, Peso, PesiProfilo, PropostaPesi, Regolazione, Regole, RisorseProgetto, SessioneProgetto, Soglia } from '../types'
+import type { Azione, Chiamante, Fornitore, Limite, Pendenti, Peso, PesiProfilo, PropostaPesi, Regolazione, Regole, RisorseProgetto, SessioneProgetto, Soglia } from '../types'
 import { ALIAS_UNITA, data, errore, msg, t } from './lingua'
 import type { Chiave, Lingua, Msg } from './lingua'
-import { bilancia, effortDi, modelloDi, nomeModello, pesoValido, profiloDi, violazioniAvvio } from './logica'
+import { bilancia, effortDi, modelloDi, nomeModello, pesoValido, profiloDi, risorseDa, violazioniAvvio } from './logica'
 
 export type Profilo = NonNullable<RisorseProgetto['profilo']>
 
@@ -129,6 +129,35 @@ export const manualiDaScrivere = (limiti: readonly Limite[]) =>
     ...(l.percentuale !== undefined && { percentuale: l.percentuale }),
     ...(l.valore !== undefined && { valore: l.valore }),
   }))
+
+// --- bozza delle Impostazioni (F5.9) -------------------------------------------------------------------
+// Le modifiche restano nella bozza della sessione finché non si preme «Applica»: una sola scrittura CAS. Ogni campo
+// tiene il valore che aveva quando lo si è toccato (`base`), così all'Applica si vede se un'altra sessione l'ha cambiato.
+
+/** Il valore di un campo del progetto nella forma che scrive `configura`. */
+export const valoreConfig = (r: RisorseProgetto, k: string): unknown =>
+  k === 'limitiManuali' ? manualiDaScrivere(r.limitiManuali) : k === 'board' ? { modo: r.board.modo } : (r as Record<string, unknown>)[k]
+
+/** Aggiunge alla bozza i `campi` toccati da un controllo (`dove`); la base di un campo è quella del primo tocco. */
+export function conPendente(p: Pendenti | undefined, r: RisorseProgetto, dove: string, campi: Record<string, unknown>): Pendenti {
+  const base = { ...p?.base }
+  for (const k of Object.keys(campi)) if (!(k in base)) base[k] = valoreConfig(r, k)
+  return { ...p, campi: { ...p?.campi, ...campi }, base, dove: [...new Set([...(p?.dove ?? []), dove])] }
+}
+
+/** Le risorse come le vedrà il config con la bozza applicata; il motivo se la bozza non passa la validazione di oggi. */
+export const conBozza = (r: RisorseProgetto, campi: Record<string, unknown>) =>
+  risorseDa({ ...r, limitiManuali: manualiDaScrivere(r.limitiManuali), ...campi })
+
+/** I campi della bozza che un'altra sessione ha cambiato dopo il primo tocco. */
+export const cambiatiAltrove = (p: Pendenti, r: RisorseProgetto) => Object.keys(p.campi).filter(k => JSON.stringify(p.base[k]) !== JSON.stringify(valoreConfig(r, k)))
+
+/** Dove sta un campo, per dire all'utente che cosa è cambiato. */
+export const SEZIONE_DI: Record<string, Chiave> = {
+  fornitori: 'imp.sezione.connessioni', soglie: 'imp.sezione.soglie', profilo: 'imp.sezione.bilanciamento', pesi: 'imp.sezione.bilanciamento',
+  soloLocale: 'imp.sezione.progetto', milestoneGithub: 'imp.sezione.progetto', limitiManuali: 'imp.sezione.progetto', board: 'imp.sezione.board',
+  freellmapi: 'imp.sezione.avanzate',
+}
 
 // --- simulazione --------------------------------------------------------------------------------------
 

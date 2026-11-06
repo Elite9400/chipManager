@@ -9,7 +9,7 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
 
-import type { Azione, Chiamante, Consumo, Fornitore, Limite, Motore, Peso, PropostaPesi, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, Traguardi, Vista, Vita } from '../types'
+import type { Azione, Chiamante, Consumo, Fornitore, Limite, Motore, Pendenti, Peso, PropostaPesi, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, Traguardi, Vista, Vita } from '../types'
 import { annullabile as pesiAnnullabili, daDecidere, decisaIl, descriviPesi, statoVisto, TESTI_PESI } from './bilanciamento'
 import {
   attive,
@@ -34,7 +34,7 @@ import { RISORSE_VUOTE } from './risorse'
 import { ACCENTO, ALFA_VELO, GRIGIO, STATO } from './tema'
 import { classeDi, componenti } from './ui'
 import { vistaCarico } from './vista-carico'
-import { apriBilanciamento, vistaImpostazioni } from './vista-impostazioni'
+import { apriBilanciamento, lasciaImpostazioni, vistaImpostazioni } from './vista-impostazioni'
 import { vistaLavoro } from './vista-lavoro'
 
 // Copia identica degli atomi di register.tsx (lo scanner li vuole nel file che li usa).
@@ -82,13 +82,12 @@ export type Ctx = {
   configura: (campi: Record<string, unknown>, attese: RisorseProgetto) => Promise<unknown>
   peso: (peso: Peso, attese: RisorseProgetto) => Promise<unknown>
   installa: (passo: number) => Promise<unknown>
-  board: (modo: RisorseProgetto['board']['modo'], attese: RisorseProgetto) => Promise<unknown>
+  /** F5.9: applica la bozza delle Impostazioni; `cambiati` non vuoto = cambiati altrove, niente scritto. */
+  applica: (p: Pendenti) => Promise<{ cambiati: string[]; base: Record<string, unknown> }>
   apriBoard: () => Promise<unknown>
   /** Applica o rifiuta una proposta di pesi alla versione vista; l'helper rifiuta se è cambiata. */
   decidiPesi: (p: PropostaPesi, esito: 'applica' | 'rifiuta') => Promise<unknown>
   annullaPesi: (p: PropostaPesi) => Promise<unknown>
-  /** La lingua dell'interfaccia, per l'utente (tutti i progetti). */
-  lingua: (l: Lingua) => Promise<unknown>
 }
 
 const MOTORI = ['claude', 'codex', 'freellmapi'] as const
@@ -330,6 +329,11 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   ]
   // Le viste come chip di scelta (C1.5, F5.8): il solo nome; la scelta sta nel colore (primario d'accento), le altre attenuate.
   // Non usa `ui.Chip` per tenere il tasto (1 2 3) e la chiave del pulsante (vista-lavoro, …) di sempre.
+  // F5.9: uscendo dalle Impostazioni con una bozza, prima il popup Applica / Scarta / Resta.
+  const vai = async (id: Vista) => {
+    if (vistaOra === 'impostazioni' && id !== 'impostazioni' && !(await lasciaImpostazioni($, c, T))) return
+    await update($, vista, () => id)
+  }
   const schede = (
     <Box key="viste" flexDirection="row" flexWrap="wrap" gap={1}>
       {VISTE.map(v => {
@@ -345,9 +349,9 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
             paddingX={conVelo ? 1 : 0}
           >
             {attiva ? (
-              <Button key={v.chiave} variant="primary" hotkey={v.tasto} label={v.nome} onPress={() => void update($, vista, () => v.id)} />
+              <Button key={v.chiave} variant="primary" hotkey={v.tasto} label={v.nome} onPress={() => void vai(v.id)} />
             ) : (
-              <Button key={v.chiave} plain dimColor hotkey={v.tasto} label={v.nome} onPress={() => void update($, vista, () => v.id)} />
+              <Button key={v.chiave} plain dimColor hotkey={v.tasto} label={v.nome} onPress={() => void vai(v.id)} />
             )}
           </Box>
         )

@@ -1238,6 +1238,7 @@ test('2.0: limiti sempre visibili e impostazioni modificabili su desktop e termi
     await ui.press({ key: 'sezione-bilanciamento-premi' })
     if (!(await ui.find({ key: 'peso-fornitore-codex' }))) await ui.press({ key: 'regola-a-mano' })
     await ui.press({ key: 'peso-fornitore-codex-piu' })
+    await ui.press({ key: 'applica' })
     const progetto = JSON.parse(amb.disco.get('X:/casa/.claude/chipmanager/config.json')!).progetti['acme/progetto']
     expect(progetto.pesi[0]).toMatchObject({ nome: 'codex', percentuale: surface === 'desktop' ? 40 : 100, assoluto: 0 })
     expect(progetto.profilo).toBe('personalizzato')
@@ -1410,8 +1411,10 @@ test('2.0: impostazioni disegnate prima di una modifica concorrente non la sovra
   await ui.press({ key: 'impostazioni' })
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { soloLocale: true } } }))
   await ui.press({ key: 'fornitore-freellmapi-premi' })
+  // F5.9: la modifica è nella bozza; Applica scrive solo il campo toccato e la modifica dell'altro resta.
   expect(JSON.parse(amb.disco.get('X:/casa/.claude/chipmanager/config.json')!).progetti['acme/progetto']).toEqual({ soloLocale: true })
-  expect(await ui.find({ type: 'Text', text: /Impostazioni cambiate altrove/ })).toBeDefined()
+  await ui.press({ key: 'applica' })
+  expect(JSON.parse(amb.disco.get('X:/casa/.claude/chipmanager/config.json')!).progetti['acme/progetto']).toMatchObject({ soloLocale: true, fornitori: expect.arrayContaining(['freellmapi']) })
   await ui.unmount()
 })
 
@@ -1817,6 +1820,7 @@ test('2.4: board accesa: HTML dall\'helper senza gettoni, «Apri board» con arg
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-board-premi' })
   await ui.press({ key: 'board-spenta-premi' })
+  await ui.press({ key: 'applica' })
   expect(JSON.parse(amb.disco.get(CONFIG)!).progetti['acme/progetto'].board).toEqual({ modo: 'spenta', generazione: 2 })
   expect(amb.processi.some(x => x.argv[2] === 'board-spegni' && x.argv[6] === '2')).toBe(true)
   expect(amb.disco.has(INDICE)).toBe(false)

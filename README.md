@@ -46,7 +46,7 @@ model decides how to use them for the project at hand. Everything project-specif
 - **Responsive on desktop and terminal** — titles wrap, actions move below when space runs out, and the layout
   follows the real pane width on every surface.
 - **Settings by section** — Connections, Thresholds, Balancing, Project, Board and Advanced, built from chips and
-  `−`/`+` steppers instead of free numbers; every control saves on its own.
+  `−`/`+` steppers instead of free numbers; changes wait in a draft until you press **Apply** (one write), or **Discard changes**.
 - **Load weights** — pick a profile (Automatic, Saving, Quality, Speed) or tune providers, models and effort on a
   five-step scale; the panel only ever chooses among combinations your rules allow.
 - **FreeLLMAPI, opt-in** — guided Docker install of a pinned version, auto-detection, and usage levels to offload

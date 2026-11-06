@@ -265,7 +265,7 @@ const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
   }) as const
 const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'lingua', 'legenda'] as const
 
-test('lingua: config assente = inglese; la scelta va con configura-utente (CAS) e il pannello cambia subito', async ($, on) => {
+test('lingua: config assente = inglese; la scelta va nella bozza, Applica la scrive con configura-utente (CAS) e il pannello cambia', async ($, on) => {
   const amb = ambiente(on)
   amb.disco.lingua = undefined
   amb.disco.delete(CONFIG)
@@ -277,6 +277,9 @@ test('lingua: config assente = inglese; la scelta va con configura-utente (CAS) 
   expect(await ui.find({ type: 'Text', text: 'Language' })).toBeDefined()
   expect((await ui.find({ key: 'lingua-en-premi' }))?.props).toMatchObject({ label: 'English', variant: 'primary' })
   await ui.press({ key: 'lingua-de-premi' })
+  expect(amb.disco.get(CONFIG)).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: '1 unsaved change' })).toBeDefined()
+  await ui.press({ key: 'applica' })
   expect(JSON.parse(amb.disco.get(CONFIG)!)).toEqual({ lingua: 'de' })
   expect(await ui.find({ type: 'Text', text: 'Sprache' })).toBeDefined()
   expect((await ui.find({ key: 'lingua-de-premi' }))?.props).toMatchObject({ label: 'Deutsch', variant: 'primary' })
@@ -400,29 +403,124 @@ test('legenda: ultima sezione, chiusa all\'apertura; corsie e termini una voce p
   await ui.unmount()
 })
 
-test('impostazioni: ogni controllo salva da sé con il toast; profilo e pesi in una sola configura', async ($, on) => {
+test('F5.9: più modifiche in più sezioni vanno nella bozza; la barra le conta; Applica = una sola scrittura e un toast', async ($, on) => {
   const amb = ambiente(on, { pesi: [MODELLO] })
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: 'impostazioni' })
+  // Bozza vuota: nessuna barra.
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
   await ui.press({ key: 'fornitore-deepseek-premi' })
-  expect(amb.progettoOra().fornitori).toEqual(['claude', 'codex', 'deepseek'])
-  expect(amb.toast).toEqual(['Salvato'])
+  // Il pannello mostra la bozza; il config non cambia ancora.
+  expect((await ui.find({ key: 'fornitore-deepseek-premi' }))?.props.variant).toBe('primary')
+  expect(amb.progettoOra()).toEqual({ pesi: [MODELLO] })
   await ui.press({ key: 'sezione-bilanciamento-premi' })
-  const prima = amb.configure()
   await ui.press({ key: 'profilo-risparmio-premi' })
-  expect(amb.configure() - prima).toBe(1)
-  expect(amb.progettoOra()).toMatchObject({ profilo: 'risparmio', pesi: conProfilo([MODELLO], 'risparmio') })
+  expect((await ui.find({ key: 'profilo-risparmio-premi' }))?.props.variant).toBe('primary')
   // La regolazione a mano passa a Personalizzato; il peso fuori scala si legge intero e resta intatto.
   await ui.press({ key: 'regola-a-mano' })
   await ui.press({ key: 'gruppo-modello-premi' })
   expect(await ui.find({ type: 'Text', text: /personalizzato \(\+37% · \+5\)/ })).toBeDefined()
   await ui.press({ key: 'gruppo-effort-premi' })
   await ui.press({ key: 'peso-effort-low-meno' })
-  expect(amb.progettoOra().profilo).toBe('personalizzato')
+  await ui.press({ key: 'sezione-soglie-premi' })
+  await ui.press({ key: 'soglia-claude-nessuna-premi' })
+  expect(await ui.find({ type: 'Text', text: '4 modifiche non salvate' })).toBeDefined()
+  expect([amb.configure(), amb.toast]).toEqual([0, []])
+  await ui.press({ key: 'applica' })
+  expect(amb.configure()).toBe(1)
+  expect(amb.progettoOra()).toMatchObject({ fornitori: ['claude', 'codex', 'deepseek'], profilo: 'personalizzato', soglie: { claude: null } })
   expect(amb.progettoOra().pesi).toContainEqual(MODELLO)
-  expect(amb.toast).toEqual(['Salvato', 'Salvato', 'Salvato'])
+  expect(amb.toast).toEqual(['Salvato'])
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('F5.9: «Annulla modifiche» lascia il config intatto; tornare alla lingua di adesso toglie la voce; bozza vuota = niente barra', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('terminal') })
+  await ui.press({ key: 'impostazioni' })
+  const prima = amb.disco.get(CONFIG)
+  await ui.press({ key: 'fornitore-deepseek-premi' })
+  await ui.press({ key: 'sezione-lingua-premi' })
+  await ui.press({ key: 'lingua-de-premi' })
+  expect(await ui.find({ type: 'Text', text: '2 modifiche non salvate' })).toBeDefined()
+  await ui.press({ key: 'lingua-it-premi' })
+  expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
+  await ui.press({ key: 'annulla-modifiche' })
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  expect(amb.disco.get(CONFIG)).toBe(prima)
+  expect(amb.configure()).toBe(0)
+  await ui.unmount()
+})
+
+test('F5.9: un campo della bozza cambiato altrove: niente scritto, popup; «Ricarica e riapplica» vince, «Scarta» lascia l\'altro', async ($, on) => {
+  const amb = ambiente(on, { milestoneGithub: false })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-soglie-premi' })
+  // Riapplica: la soglia della bozza vince, il campo cambiato altrove e non toccato resta.
+  await ui.press({ key: 'soglia-claude-nessuna-premi' })
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { milestoneGithub: true, soglie: { claude: { attenzione: 50, critica: 60 } } } } }))
+  amb.popup.risposta = () => 'Ricarica e riapplica la mia bozza'
+  await ui.press({ key: 'applica' })
+  expect(amb.domande.at(-1)).toBe('Un\'altra sessione ha cambiato Soglie dopo le tue modifiche. Non è stato scritto niente.')
+  expect(amb.configure()).toBe(1)
+  expect(amb.progettoOra()).toMatchObject({ milestoneGithub: true, soglie: { claude: null } })
+  await clock.advance(20_000)
+  // Scarta: niente scritto, la bozza se ne va, l'altro valore resta.
+  await ui.press({ key: 'soglia-claude-70/90-premi' })
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { soglie: { claude: { attenzione: 40, critica: 60 } } } } }))
+  amb.popup.risposta = () => 'Scarta la mia bozza'
+  await ui.press({ key: 'applica' })
+  expect(amb.configure()).toBe(1)
+  expect(amb.progettoOra()).toEqual({ soglie: { claude: { attenzione: 40, critica: 60 } } })
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  await clock.advance(20_000)
+  // Un campo cambiato altrove ma non nella bozza non è un conflitto: si scrive il proprio, l'altro resta.
+  await ui.press({ key: 'sezione-connessioni-premi' })
+  await ui.press({ key: 'fornitore-deepseek-premi' })
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { soglie: { claude: { attenzione: 40, critica: 60 } }, milestoneGithub: true } } }))
+  const domande = amb.domande.length
+  await ui.press({ key: 'applica' })
+  expect(amb.domande.length).toBe(domande)
+  expect(amb.progettoOra()).toMatchObject({ milestoneGithub: true, soglie: { claude: { attenzione: 40, critica: 60 } }, fornitori: ['claude', 'codex', 'deepseek'] })
+  await ui.unmount()
+})
+
+test('F5.9: uscendo dalle Impostazioni con una bozza: Resta, Applica, oppure popup chiuso = si esce e la barra la ripropone', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'fornitore-deepseek-premi' })
+  amb.popup.risposta = () => 'Resta'
+  await ui.press({ key: 'vista-lavoro' })
+  expect(amb.domande.at(-1)).toBe('1 modifica delle Impostazioni non è ancora salvata.')
+  expect(await ui.find({ key: 'pagina-connessioni' })).toBeDefined()
+  amb.popup.risposta = () => 'Applica'
+  await ui.press({ key: 'vista-lavoro' })
+  expect(amb.configure()).toBe(1)
+  expect(amb.progettoOra().fornitori).toEqual(['claude', 'codex', 'deepseek'])
+  expect(await ui.find({ key: 'pagina-connessioni' })).toBeUndefined()
+  // Popup chiuso: si esce, la bozza resta e la barra la ripropone al ritorno; senza bozza nessun popup.
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'fornitore-deepseek-premi' })
+  amb.popup.risposta = () => null
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ key: 'pagina-connessioni' })).toBeUndefined()
+  await ui.press({ key: 'impostazioni' })
+  expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
+  await ui.press({ key: 'annulla-modifiche' })
+  const domande = amb.domande.length
+  await ui.press({ key: 'vista-lavoro' })
+  expect(amb.domande.length).toBe(domande)
   await ui.unmount()
 })
 
@@ -436,6 +534,7 @@ test('impostazioni: un errore va in linea sotto il controllo, senza toast; le so
   // Valori personali fuori passo: si mostrano così e + resta sotto la critica.
   expect(await ui.find({ key: 'soglia-claude' })).toBeDefined()
   await ui.press({ key: 'attenzione-claude-piu' })
+  await ui.press({ key: 'applica' })
   expect(amb.progettoOra().soglie).toMatchObject({ claude: { attenzione: 74, critica: 75 } })
   expect(String((await ui.find({ key: 'attenzione-claude-piu' }))?.props.label)).toBe('Aumenta Attenzione da (Claude), al massimo')
   // Un endpoint fuori da questo computer non si salva: la causa e il rimedio in linea.
@@ -444,11 +543,13 @@ test('impostazioni: un errore va in linea sotto il controllo, senza toast; le so
   expect(await ui.find({ type: 'Text', text: /Endpoint solo su questo computer: http:\/\/localhost/ })).toBeDefined()
   expect(amb.progettoOra()).not.toHaveProperty('freellmapi')
   await ui.press({ key: 'sezione-soglie-premi' })
-  // Una modifica concorrente: l'errore sta in linea con il rimedio e non c'è un secondo toast.
-  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { soloLocale: true } } }))
+  // Una modifica concorrente dello stesso campo: niente scritto, il popup lo dice, e non c'è un secondo toast.
   await ui.press({ key: 'soglia-claude-nessuna-premi' })
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { soloLocale: true } } }))
+  amb.popup.risposta = () => 'Scarta la mia bozza'
+  await ui.press({ key: 'applica' })
   expect(amb.progettoOra()).toEqual({ soloLocale: true })
-  expect(await ui.find({ type: 'Text', text: /Impostazioni cambiate altrove: aggiorna/ })).toBeDefined()
+  expect(amb.domande.at(-1)).toMatch(/ha cambiato Soglie/)
   expect(amb.toast).toEqual(['Salvato'])
   await ui.unmount()
 })
@@ -488,6 +589,7 @@ test('impostazioni: popup rifiutato, «Collega…» e «Aggiungi budget…» si 
   await ui.input({ key: 'bozza-valore', text: '20 USD' })
   expect((amb.progettoOra().limitiManuali as unknown[])[2]).toMatchObject({ fornitore: 'deepseek', nome: 'mensile', valore: 20, unita: 'USD' })
   await ui.press({ key: 'budget-manuale-saldo-via' })
+  await ui.press({ key: 'applica' })
   expect((amb.progettoOra().limitiManuali as { id: string }[]).map(l => l.id).some(id => id === 'saldo' || id.startsWith('manuale-'))).toBe(false)
   await ui.unmount()
 })

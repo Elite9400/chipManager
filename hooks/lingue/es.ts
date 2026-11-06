@@ -742,6 +742,18 @@ const es: Dizionario = {
   "legenda.token": "token — la unidad de texto que cuentan los modelos. Los límites y el contexto se miden en tokens.",
   "legenda.condivisa": "carpeta compartida — la sesión trabaja en tu copia, sin worktree. El registro no la enlaza: ciérrala tú.",
   "legenda.cloud": "cloud — una sesión nueva en la nube. Recibe solo título y encargo, nunca el contexto local, y nunca en carriles sensibles.",
+  // Settings draft and Apply (F5.9)
+  "imp.nonSalvate": { one: "1 cambio sin guardar", other: "{n} cambios sin guardar" },
+  "imp.applica": "Aplicar",
+  "imp.annullaModifiche": "Descartar cambios",
+  "imp.conflittoTitolo": "Cambiado en otro lugar",
+  "imp.conflitto": "Otra sesión cambió {dove} después de tus cambios. No se escribió nada.",
+  "imp.riapplica": "Recargar y volver a aplicar mi borrador",
+  "imp.scartaBozza": "Descartar mi borrador",
+  "imp.uscitaTitolo": "Cambios sin guardar",
+  "imp.uscita": { one: "1 cambio de los Ajustes aún no está guardado.", other: "{n} cambios de los Ajustes aún no están guardados." },
+  "imp.scarta": "Descartar",
+  "imp.resta": "Quedarse",
   // ‹fine›
 }
 

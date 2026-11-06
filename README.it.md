@@ -47,7 +47,7 @@ decidere come usarli nel progetto in cui lavora. Tutto ciò che è proprio di un
 - **Responsive su desktop e terminale** — i titoli vanno a capo, le azioni scendono sotto quando manca spazio e
   l'impaginazione segue la larghezza vera del pannello su ogni superficie.
 - **Impostazioni a sezioni** — Connessioni, Soglie, Bilanciamento, Progetto, Board e Avanzate, fatte di chip e di
-  `−`/`+` invece che di numeri liberi; ogni controllo salva da sé.
+  `−`/`+` invece che di numeri liberi; le modifiche restano in una bozza finché non premi **Applica** (una sola scrittura) o **Annulla modifiche**.
 - **Pesi di carico** — scegli un profilo (Automatico, Risparmio, Qualità, Velocità) o regola fornitori, modelli ed
   effort su cinque posizioni; il pannello sceglie sempre e solo fra le combinazioni che le tue regole ammettono.
 - **FreeLLMAPI, su richiesta** — installazione Docker guidata di una versione fissata, rilevamento automatico e
