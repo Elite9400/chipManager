@@ -192,3 +192,33 @@ Quando una chip non indica il modello, nelle corsie **R0–R1**, a parità di pu
 7. **R5 — accolto.** La rilettura forzata vale anche prima del filtro delle code (`register.tsx:995`), così un avvio non aspetta la finestra di cache.
 8. **R1 — accolto.** Si contano gli avvii effettivi di `git` (3–5 per chiamata), non una costante.
 9. **R2 — precisato.** `RANGO` vale solo fra candidati Claude; un candidato Codex non entra nello spareggio per rango e la sua scelta resta quella di oggi (salvo lo spareggio di Risparmio al punto 5). R15 resta rinviato e la issue dirà che serve una migrazione coordinata del mutex, non solo una versione maggiore.
+
+## F5.7 — Percentuali dei piani con una sola convenzione (richiesta del committente, 6 novembre 2026)
+
+**Regola.** Ogni percentuale di un **piano** (finestre Claude 5h/settimanali, Codex primario/secondario, budget manuali espressi in %) si mostra **solo come utilizzo, da 0 a 100**: 0% = niente usato, 100% = esaurito. Mai «rimanente». Soglie di attenzione e critica, colori, barre, sintesi, popup, board, `risorse_agenti` e bilanciamento parlano tutti di utilizzo.
+- Le fonti già normalizzate (`used_percentage`, `utilization`, `used_percent`) restano; ogni fonte che desse un residuo si converte con `100 − residuo` **all'ingresso**, in un solo punto, con test.
+- Ogni etichetta dice «used» (o l'equivalente nelle sei lingue): niente più `{nome} {pct}%` nudo (`sintesi.uso` e simili); la barra si riempie con l'uso.
+- Il budget manuale in % si interpreta come quota **usata**; l'esempio e l'aiuto lo dicono.
+- **Chiamate API e crediti** (costi, saldo, budget in USD/EUR/CNY, richieste, token) restano nella loro unità: soldi come soldi, conteggi come conteggi, senza conversione in percentuale. Se accanto a un importo serve un riferimento al tetto, si scrive «12 USD di 40 USD», non una percentuale.
+- Test: per ciascuna fonte (statusline Claude, `get_usage`, Codex locale, budget manuale %) lo stesso consumo dà la stessa percentuale e la stessa etichetta; un saldo in valuta non diventa mai una percentuale.
+
+## F5.8 — Chip di scelta e schede delle viste: solo colore (richiesta del committente, 6 novembre 2026)
+
+Il committente chiede di togliere dai pulsanti la dicitura «selezionato / non selezionato» a favore del solo colore, sul desktop e, se possibile, nel terminale. **Supera** la regola «segno + parola visibile» di PIANO-grafica e di F5.2 limitatamente alle chip di scelta/filtro (`Chip` con `attiva` in `hooks/ui.tsx`) e alle schede delle viste (`pannello.tsx:348`, `vista.etichetta*`). Gli stati delle azioni (in coda, avviata, errore…) restano glifo + parola come da F5.2.
+
+- **Desktop:** il desktop disegna la `label`, non i figli. La label diventa il solo nome (niente `●/○`, niente «, selected»). La scelta si vede dal colore: la chip attiva tiene bordo e velo d'accento (già oggi) e il testo nell'accento; quella non attiva bordo e testo attenuati. Se il `Button` `plain` non colora la label, si usa `variant="primary"` per la attiva (il desktop disegna il suo pulsante primario) e `plain dimColor` per le altre: si sceglie quello che nella cattura reale distingue meglio.
+- **Terminale:** niente `●/○` né parola; la attiva in accento (`variant="primary"` disegna `[ label ]` in accento, oppure `Text color={ACCENTO}`), le altre `dimColor`. Se nel terminale senza colori (NO_COLOR/monocromo) la distinzione sparisse, si tiene solo lì la parentesi quadra per la attiva: `[Opus]` contro ` Opus `.
+- Le voci `ui.selezionato`, `ui.nonSelezionato`, `vista.etichettaScelta` si rimuovono dai sei dizionari se restano inutilizzate (il controllo di completezza lo segnala).
+- Test: la label della chip attiva e non attiva è lo stesso nome; la attiva ha colore/variante d'accento e l'altra no; resa a 60 colonne invariata o migliore.
+
+## F5.9 — Impostazioni con «Applica» (richiesta del committente, 6 novembre 2026)
+
+Oggi ogni pressione nelle Impostazioni scrive subito il config. Il committente vuole configurare con calma e poi salvare.
+
+- **Bozza.** Le modifiche delle Impostazioni (profilo e pesi, soglie, budget, fornitori, board, lingua) vanno in una bozza della sessione (atomo `$.state`, mai su disco); il pannello mostra i valori della bozza.
+- **Barra in fondo alla vista Impostazioni**, visibile solo con modifiche pendenti: «N modifiche non salvate» · **Applica** (primario) · **Annulla modifiche**. Su desktop e terminale; `Button.hotkey` per Applica dove l'host lo offre.
+- **Applica** scrive tutte le modifiche del progetto in **una sola** scrittura CAS sotto il mutex `configura` (e la lingua con `configura-utente`, stesso mutex), con la whitelist di oggi e `pesiRevisione`/`pesiOrigine` come da F4 (origine `manuale`). Se il CAS trova una versione cambiata da un'altra sessione: nessuna scrittura parziale, popup che dice cosa è cambiato, scelte «Ricarica e riapplica la mia bozza» / «Scarta la mia bozza».
+- **Uscita con bozza aperta** (cambio vista, chiusura del pannello se intercettabile): popup «Applica / Scarta / Resta». Se l'host non permette di intercettare la chiusura, la bozza resta in `$.state` della sessione e la barra la ripropone al ritorno.
+- Le **procedure guidate** che già confermano in popup (collegamento di una connessione, budget manuale da popup) e le **proposte di pesi della master** («Rivedi» → Applica/Rifiuta/Annulla di F4) restano come sono: hanno già la loro conferma.
+- Effetto sulle risorse: N pressioni = 1 scrittura invece di N (coerente con F5.6).
+- Test: più modifiche → una scrittura; Annulla modifiche → config intatto; conflitto CAS → nessuna scrittura parziale e popup; bozza vuota → barra assente; validazioni di oggi applicate alla bozza prima della scrittura, con l'errore accanto al campo.
