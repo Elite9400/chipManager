@@ -159,16 +159,16 @@ test('record: azioni-5 accetta piano, revisione e date; li valida', () => {
   const ok = normalizza({ ...az('a-rec00001', 1), piano: 'docs/p.md', consegnataIl: ADESSO, completataIl: ADESSO,
     revisione: { esito: 'in-corso', riferitaDa: 's', quando: ADESSO, tentativo: 'az-x' } })
   expect(typeof ok).toBe('object')
-  expect(normalizza({ ...az('a-rec00002', 1), piano: '../x.md' })).toBe('piano non valido')
-  expect(normalizza({ ...az('a-rec00003', 1), revisione: { esito: 'verificata', riferitaDa: 's', quando: ADESSO } })).toBe('revisione non valida')
-  expect(normalizza({ ...az('a-rec00004', 1), revisione: { esito: 'approvata', riferitaDa: 's', quando: ADESSO, nota: 'x'.repeat(301) } })).toBe('revisione non valida')
-  expect(normalizza({ ...az('a-rec00005', 1), completataIl: 'ieri' })).toBe('completataIl non è una data')
+  expect(normalizza({ ...az('a-rec00002', 1), piano: '../x.md' })).toEqual({ k: 'rec.campo', p: { campo: 'piano' } })
+  expect(normalizza({ ...az('a-rec00003', 1), revisione: { esito: 'verificata', riferitaDa: 's', quando: ADESSO } })).toEqual({ k: 'rec.campo', p: { campo: 'revisione' } })
+  expect(normalizza({ ...az('a-rec00004', 1), revisione: { esito: 'approvata', riferitaDa: 's', quando: ADESSO, nota: 'x'.repeat(301) } })).toEqual({ k: 'rec.campo', p: { campo: 'revisione' } })
+  expect(normalizza({ ...az('a-rec00005', 1), completataIl: 'ieri' })).toEqual({ k: 'rec.data', p: { campo: 'completataIl' } })
 })
 
 test('impostazioni: board spenta per difetto; modo e generazione validati', () => {
   expect((risorseDa({}) as { board: unknown }).board).toEqual({ modo: 'spenta', generazione: 0 })
   expect((risorseDa({ board: { modo: 'riassunti', generazione: 3 } }) as { board: unknown }).board).toEqual({ modo: 'riassunti', generazione: 3 })
-  expect(typeof risorseDa({ board: { modo: 'pubblica' } })).toBe('string')
-  expect(typeof risorseDa({ board: { modo: 'accesa', generazione: -1 } })).toBe('string')
-  expect(typeof risorseDa({ board: 'accesa' })).toBe('string')
+  expect(risorseDa({ board: { modo: 'pubblica' } })).toEqual({ k: 'cfg.risorse' })
+  expect(risorseDa({ board: { modo: 'accesa', generazione: -1 } })).toEqual({ k: 'cfg.risorse' })
+  expect(risorseDa({ board: 'accesa' })).toEqual({ k: 'cfg.risorse' })
 })

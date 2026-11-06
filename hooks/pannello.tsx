@@ -29,7 +29,7 @@ import {
   velo,
 } from './logica'
 import { traduttore } from './lingua'
-import type { Lingua } from './lingua'
+import type { Lingua, Msg } from './lingua'
 import { RISORSE_VUOTE } from './risorse'
 import { ACCENTO, ALFA_VELO, GRIGIO, STATO } from './tema'
 import { classeDi, componenti } from './ui'
@@ -41,7 +41,7 @@ import { vistaLavoro } from './vista-lavoro'
 const azioni = atom({ plugin: 'chip-manager', key: 'azioni' } as const, [] as Azione[], { shape: 'azioni-5' })
 const aperta = atom({ plugin: 'chip-manager', key: 'aperta' } as const, null as string | null)
 const vive = atom({ plugin: 'chip-manager', key: 'vive' } as const, {} as Record<string, Vita>, { shape: 'vive-2' })
-const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as string | null)
+const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as Msg | string | null)
 const traguardi = atom({ plugin: 'chip-manager', key: 'traguardi' } as const, null as Traguardi | null, { shape: 'traguardi-3' })
 const regole = atom({ plugin: 'chip-manager', key: 'regole' } as const, null as Regole | null, { shape: 'regole-5' })
 const annullabile = atom({ plugin: 'chip-manager', key: 'annullabile' } as const, null as { id: string; titolo: string; altri?: string[] } | null)
@@ -140,6 +140,8 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const boardPronta = regoleOra.risorse.board.modo !== 'spenta' && !!sb.percorso
   const ultime = await read($, ultimeMisure)
   const configura = (campi: Record<string, unknown>) => c.configura(campi, regoleOra.risorse)
+  // Da dove vengono le regole, o perché non si leggono.
+  const fonteRegole = regoleOra.lette ? regoleOra.fonte : regoleOra.motivo ? T('regole.nonLette', { motivo: T.m(regoleOra.motivo) }) : T('regole.nonLetteAncora')
 
   const fai = (fn: () => Promise<unknown>) => () => void c.fai(fn)
   const modifica = (a: Azione, campi: Partial<Azione>) => fai(() => c.salva({ ...a, ...campi }))
@@ -196,8 +198,10 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
     const a = avviate.find(x => (s.motore === 'claude' && x.sessione === s.id) || (s.motore === 'codex' && x.esecutore === 'codex' && !!s.ramo && stati[x.id]?.ramo === s.ramo))
     const fermaOra = a ? ferma(a) : s.stato === 'ferma'
     // Stato non noto: né in corso né ferma, come un dato mancante.
-    if (!a && s.stato === 'ignota') return { ...s, titolo: s.titolo, parola: '—', segno: '○', colore: GRIGIO }
-    return { ...s, azione: a, titolo: a?.titolo ?? s.titolo, parola: fermaOra ? 'Ferma' : 'In corso', segno: fermaOra ? '◐' : '●', colore: fermaOra ? STATO.attesa : STATO.inCorso }
+    // Una sessione senza titolo ne prende uno nella lingua del pannello.
+    const titolo = s.titolo || T(s.motore === 'codex' ? 'sessione.codex' : 'sessione.senzaTitolo')
+    if (!a && s.stato === 'ignota') return { ...s, titolo, parola: '—', segno: '○', colore: GRIGIO }
+    return { ...s, azione: a, titolo: a?.titolo ?? titolo, parola: fermaOra ? 'Ferma' : 'In corso', segno: fermaOra ? '◐' : '●', colore: fermaOra ? STATO.attesa : STATO.inCorso }
   })
   for (const a of avviate)
     if (!righe.some(r => r.azione?.id === a.id)) {
@@ -234,13 +238,13 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const rivedi = (p: PropostaPesi) => async () => {
     let scelta: string
     try {
-      scelta = await $.ui.ask(TESTI_PESI.domanda(p), { options: [TESTI_PESI.applica, TESTI_PESI.rifiuta, TESTI_PESI.apri], header: TESTI_PESI.intestazione })
+      scelta = await $.ui.ask(TESTI_PESI.domanda(p, T.lingua), { options: [T('pesi.applica'), T('pesi.rifiuta'), T('pesi.apri')], header: T('pesi.intestazione') })
     } catch {
       return // popup chiuso o nessuno a cui chiedere: Applica e Rifiuta restano sulla riga
     }
-    if (scelta === TESTI_PESI.applica) await c.fai(() => c.decidiPesi(p, 'applica'))
-    else if (scelta === TESTI_PESI.rifiuta) await c.fai(() => c.decidiPesi(p, 'rifiuta'))
-    else if (scelta === TESTI_PESI.apri) {
+    if (scelta === T('pesi.applica')) await c.fai(() => c.decidiPesi(p, 'applica'))
+    else if (scelta === T('pesi.rifiuta')) await c.fai(() => c.decidiPesi(p, 'rifiuta'))
+    else if (scelta === T('pesi.apri')) {
       await update($, vista, () => 'impostazioni')
       await apriBilanciamento($)
     }
@@ -249,14 +253,14 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const rigaProposta = (dove: string, p: PropostaPesi, conDettaglio = false) => (
     <Box key={`${dove}-${p.id}`} flexDirection="column">
       <Box flexDirection="row" flexWrap="wrap" gap={1} alignItems="center">
-        {nota1(`${dove}-${p.id}-testo`, STATO.attesa, '◐', TESTI_PESI.riga(p))}
-        <Button key={`${dove}-${p.id}-rivedi`} plain label={`${TESTI_PESI.rivedi}${suffisso(p)}`} onPress={() => void rivedi(p)()} />
-        <Button key={`${dove}-${p.id}-applica`} plain label={`${TESTI_PESI.applica}${suffisso(p)}`} onPress={fai(() => c.decidiPesi(p, 'applica'))} />
-        <Button key={`${dove}-${p.id}-rifiuta`} plain dimColor label={`${TESTI_PESI.rifiuta}${suffisso(p)}`} onPress={fai(() => c.decidiPesi(p, 'rifiuta'))} />
+        {nota1(`${dove}-${p.id}-testo`, STATO.attesa, '◐', TESTI_PESI.riga(p, T.lingua))}
+        <Button key={`${dove}-${p.id}-rivedi`} plain label={`${T('pesi.rivedi')}${suffisso(p)}`} onPress={() => void rivedi(p)()} />
+        <Button key={`${dove}-${p.id}-applica`} plain label={`${T('pesi.applica')}${suffisso(p)}`} onPress={fai(() => c.decidiPesi(p, 'applica'))} />
+        <Button key={`${dove}-${p.id}-rifiuta`} plain dimColor label={`${T('pesi.rifiuta')}${suffisso(p)}`} onPress={fai(() => c.decidiPesi(p, 'rifiuta'))} />
       </Box>
       {conDettaglio && (
         <Text key={`${dove}-${p.id}-dettaglio`} size="caption" dimColor wrap="wrap">
-          {`${descriviPesi(p.partenza)} → ${descriviPesi(p.risultato)}. Motivo: ${p.motivo}`}
+          {T('pesi.dettaglio', { prima: descriviPesi(p.partenza, T.lingua), dopo: descriviPesi(p.risultato, T.lingua), motivo: p.motivo })}
         </Text>
       )}
     </Box>
@@ -266,9 +270,9 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const daAnnullare = tutteProposte.find(p => pesiAnnullabili(p, regoleOra.risorse))
   const vocePesi = (dove: string, p: PropostaPesi) => (
     <Box key={`${dove}-${p.id}`} flexDirection="row" flexWrap="wrap" gap={1} alignItems="center">
-      <Text size="caption" wrap="wrap">{TESTI_PESI.registro(p, adesso)}</Text>
+      <Text size="caption" wrap="wrap">{TESTI_PESI.registro(p, T.lingua, adesso)}</Text>
       {p === daAnnullare && (
-        <Button key={`${dove}-annulla`} plain label={`${TESTI_PESI.annulla} la proposta applicata`} onPress={fai(() => c.annullaPesi(p))} />
+        <Button key={`${dove}-annulla`} plain label={T('pesi.annullaApplicata')} onPress={fai(() => c.annullaPesi(p))} />
       )}
     </Box>
   )
@@ -280,11 +284,11 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
         {daAnnullare && daAnnullare !== ultimaDecisa && vocePesi(`${dove}-registro`, daAnnullare)}
       </Box>
     ) : (
-      <Text key={`${dove}-registro`} size="caption" dimColor>{TESTI_PESI.nessunaDecisione}</Text>
+      <Text key={`${dove}-registro`} size="caption" dimColor>{T('pesi.nessunaDecisione')}</Text>
     )
 
   return {
-    el, T, c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, vistaOra, tutteLeSessioni, regoleOra, testoFiltro,
+    el, T, fonteRegole, c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, vistaOra, tutteLeSessioni, regoleOra, testoFiltro,
     lista, visibili, espansa, motiviAperti, stati, nota, scartata, rotte, tr, adesso, capacita, sb, boardPronta, ultime, configura, fai, modifica,
     completa, apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, attese, titoloSezione, righe,
     alLavoro, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, oraDi, consumoOra,
@@ -297,7 +301,7 @@ export type Dati = Awaited<ReturnType<typeof comuni>>
 export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, colonne = 100) {
   const d = await comuni($, el, surface, c, colonne)
   const { Box, Text, Button } = el
-  const { conVelo, classe, ui, io, ses, vistaOra, regoleOra, nota, scartata, rotte, adesso, sb, boardPronta, fai, nota1,
+  const { T, conVelo, classe, ui, io, ses, vistaOra, regoleOra, nota, scartata, rotte, adesso, sb, boardPronta, fai, nota1,
     proposte, attese, alLavoro, fornitoriInUso, limiti, NOME_FORNITORE, oraDi } = d
 
   // Riga di sintesi: chi lavora, chi aspetta, e il margine più stretto per fornitore (solo misure fresche).
@@ -306,7 +310,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     const nome = NOME_FORNITORE[f]
     // Un solo segno per fornitore visibile: c'era una misura, ora nessuna è più fresca.
     const vecchie = etaVecchie(limiti, f, adesso)
-    if (vecchie !== undefined) return `${nome}: limiti non letti da ${durata(vecchie)}`
+    if (vecchie !== undefined) return `${nome}: limiti non letti da ${durata(vecchie, T.lingua)}`
     // Il margine in percentuale resta sulle quote di piano.
     const l = f === 'claude' || f === 'codex' ? piuPieno(limiti, f, adesso) : undefined
     if (!l) return undefined
@@ -377,13 +381,13 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
         })}
         <Text dimColor wrap="wrap">{sintesi}</Text>
         {boardPronta && <Text key="percorso-board" size="caption" dimColor wrap="truncate-middle">{`Board: ${sb.percorso}`}</Text>}
-        {!regoleOra.lette && nota1('regole', STATO.errore, '▲', `Regole ${regoleOra.fonte}: nessun avvio finché routing.json non si legge.`)}
+        {!regoleOra.lette && nota1('regole', STATO.errore, '▲', `Regole ${d.fonteRegole}: nessun avvio finché routing.json non si legge.`)}
         {rotte.length > 0 &&
           nota1(
             'rotte',
             STATO.attesa,
             '!',
-            `Non si leggono: ${rotte.map(r => `${r.nome} (${r.motivo})`).join('; ')}. Finché non si leggono, il pannello non avvia e non chiude nulla da solo.`,
+            `Non si leggono: ${rotte.map(r => `${r.nome} (${T.m(r.motivo)})`).join('; ')}. Finché non si leggono, il pannello non avvia e non chiude nulla da solo.`,
           )}
       </Box>
       {scartata && (
@@ -395,7 +399,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
       {nota && (
         // Un bordo e non un velo: il rosso del segno sul proprio velo, sul fondo scuro, scende sotto 3:1.
         <Box borderStyle={conVelo ? 'round' : undefined} borderColor={STATO.errore} paddingX={1}>
-          {nota1('nota', STATO.errore, '!', nota)}
+          {nota1('nota', STATO.errore, '!', d.T.m(nota))}
         </Box>
       )}
       {vistaOra === 'carico' ? vistaCarico(d) : vistaOra === 'impostazioni' ? await vistaImpostazioni($, d) : vistaLavoro($, d)}

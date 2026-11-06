@@ -1,6 +1,8 @@
 // Logica pura delle Impostazioni (piano grafica, C2 con §9 righe 4, 5 e 7 e §10): profili di bilanciamento, regolazioni
 // a cinque posizioni, soglie, budget manuali e simulazione della scelta. Niente `$`: i test la provano senza engine.
 import type { Azione, Chiamante, Fornitore, Limite, Peso, PesiProfilo, PropostaPesi, Regolazione, Regole, RisorseProgetto, SessioneProgetto, Soglia } from '../types'
+import { ALIAS_UNITA, data, errore, msg, t } from './lingua'
+import type { Chiave, Lingua, Msg } from './lingua'
 import { bilancia, effortDi, modelloDi, nomeModello, pesoValido, profiloDi, violazioniAvvio } from './logica'
 
 export type Profilo = NonNullable<RisorseProgetto['profilo']>
@@ -9,12 +11,12 @@ export type Profilo = NonNullable<RisorseProgetto['profilo']>
 
 /** Le cinque posizioni di una regolazione: `percentuale` del peso, `assoluto` sempre 0. «Molto meno» non esclude. */
 export const POSIZIONI = [
-  { nome: 'Molto meno (non esclude)', percentuale: -90 },
-  { nome: 'Meno', percentuale: -40 },
-  { nome: 'Normale', percentuale: 0 },
-  { nome: 'Più', percentuale: 40 },
-  { nome: 'Preferisci', percentuale: 100 },
-] as const
+  { nome: 'pos.moltoMeno', percentuale: -90 },
+  { nome: 'pos.meno', percentuale: -40 },
+  { nome: 'pos.normale', percentuale: 0 },
+  { nome: 'pos.piu', percentuale: 40 },
+  { nome: 'pos.preferisci', percentuale: 100 },
+] as const satisfies readonly { nome: Chiave; percentuale: number }[]
 const NORMALE = 2
 
 /** La posizione di un peso, -1 se è fuori dalle cinque (personalizzato: si mostra intero e resta intatto). Assente = Normale. */
@@ -24,12 +26,13 @@ export function posizioneDi(p: Peso | undefined) {
 }
 
 /** Come si legge un peso fuori dalle cinque posizioni: entrambi i componenti, con il segno. */
-export const pesoScritto = (p: Peso) => `personalizzato (${p.percentuale >= 0 ? '+' : ''}${p.percentuale}% · ${p.assoluto >= 0 ? '+' : ''}${p.assoluto})`
+export const pesoScritto = (p: Peso, l: Lingua) =>
+  t(l, 'pos.personalizzato', { valore: `${p.percentuale >= 0 ? '+' : ''}${p.percentuale}% · ${p.assoluto >= 0 ? '+' : ''}${p.assoluto}` })
 
 /** I pesi con la voce `tipo:nome` alla posizione `i`; Normale toglie la voce. Le altre voci restano come sono. */
 export function conPosizione(pesi: readonly Peso[], tipo: Peso['tipo'], nome: string, i: number): Peso[] {
   const pos = POSIZIONI[i]
-  if (!pos) throw new Error('posizione non valida')
+  if (!pos) throw errore('pos.nonValida')
   const altri = pesi.filter(p => p.tipo !== tipo || p.nome !== nome)
   return i === NORMALE ? altri : [...altri, { tipo, nome, percentuale: pos.percentuale, assoluto: 0 }]
 }
@@ -42,27 +45,27 @@ const peso = (tipo: Peso['tipo'], nome: string, i: number): Peso => ({ tipo, nom
  * Insiemi fissi di pesi su motori ed effort, mai sui modelli: l'ordine di routing.json non dice nulla sulle capacità.
  * Automatico = nessuna preferenza fissa, decide il margine dei limiti. Personalizzato non ha pesi propri.
  */
-export const PROFILI: readonly { id: Profilo; nome: string; descrizione: string; pesi?: readonly Peso[] }[] = [
-  { id: 'automatico', nome: 'Automatico', descrizione: 'Nessuna preferenza fissa: decide il margine dei limiti.', pesi: [] },
+export const PROFILI: readonly { id: Profilo; nome: Chiave; descrizione: Chiave; pesi?: readonly Peso[] }[] = [
+  { id: 'automatico', nome: 'profilo.automatico', descrizione: 'profilo.automatico.descrizione', pesi: [] },
   {
-    id: 'risparmio', nome: 'Risparmio', descrizione: 'Preferisce Codex ed effort bassi.',
+    id: 'risparmio', nome: 'profilo.risparmio', descrizione: 'profilo.risparmio.descrizione',
     pesi: [peso('fornitore', 'codex', 3), peso('effort', 'low', 3), peso('effort', 'high', 1), peso('effort', 'xhigh', 0)],
   },
   {
-    id: 'qualita', nome: 'Qualità', descrizione: 'Preferisce effort alti.',
+    id: 'qualita', nome: 'profilo.qualita', descrizione: 'profilo.qualita.descrizione',
     pesi: [peso('effort', 'xhigh', 4), peso('effort', 'high', 3), peso('effort', 'medium', 1), peso('effort', 'low', 0)],
   },
   {
-    id: 'velocita', nome: 'Velocità', descrizione: 'Preferisce effort bassi, per risposte rapide.',
+    id: 'velocita', nome: 'profilo.velocita', descrizione: 'profilo.velocita.descrizione',
     pesi: [peso('effort', 'low', 4), peso('effort', 'medium', 3), peso('effort', 'high', 1), peso('effort', 'xhigh', 0)],
   },
-  { id: 'personalizzato', nome: 'Personalizzato', descrizione: 'Si attiva da solo appena tocchi una regolazione.' },
+  { id: 'personalizzato', nome: 'profilo.personalizzato', descrizione: 'profilo.personalizzato.descrizione' },
 ]
 
 /** I pesi dopo la scelta di un profilo: quelli di motori ed effort diventano i suoi, quelli dei modelli restano intatti. */
 export function conProfilo(pesi: readonly Peso[], profilo: Profilo): Peso[] {
   const p = PROFILI.find(x => x.id === profilo)
-  if (!p) throw new Error('profilo non valido')
+  if (!p) throw errore('profilo.nonValido')
   if (!p.pesi) return [...pesi]
   return [...pesi.filter(x => x.tipo === 'modello'), ...p.pesi]
 }
@@ -72,11 +75,11 @@ export { profiloDi }
 
 // --- soglie -------------------------------------------------------------------------------------------
 
-export const SOGLIE_PRESET: readonly { valore: string; testo: string; soglia: Soglia | null }[] = [
-  { valore: '60/80', testo: '60/80', soglia: { attenzione: 60, critica: 80 } },
-  { valore: '70/90', testo: '70/90 (predefinita)', soglia: { attenzione: 70, critica: 90 } },
-  { valore: '80/95', testo: '80/95', soglia: { attenzione: 80, critica: 95 } },
-  { valore: 'nessuna', testo: 'Nessuna', soglia: null },
+export const SOGLIE_PRESET: readonly { valore: string; testo: Chiave; soglia: Soglia | null }[] = [
+  { valore: '60/80', testo: 'soglia.6080', soglia: { attenzione: 60, critica: 80 } },
+  { valore: '70/90', testo: 'soglia.7090', soglia: { attenzione: 70, critica: 90 } },
+  { valore: '80/95', testo: 'soglia.8095', soglia: { attenzione: 80, critica: 95 } },
+  { valore: 'nessuna', testo: 'soglia.nessuna', soglia: null },
 ]
 
 /** Il preset di una soglia, '' se è personale (resta così com'è). */
@@ -86,25 +89,31 @@ export const presetDi = (s: Soglia | null) =>
 /** Le soglie con quella di `f` cambiata. Vale lo stesso vincolo della lettura: numeri finiti da 1 a 100, attenzione sotto la critica. */
 export function conSoglia(soglie: RisorseProgetto['soglie'], f: Fornitore, s: Soglia | null): RisorseProgetto['soglie'] {
   const ok = (n: number) => typeof n === 'number' && Number.isFinite(n) && n >= 1 && n <= 100
-  if (s && (!ok(s.attenzione) || !ok(s.critica))) throw new Error('Le soglie vanno da 1 a 100')
-  if (s && s.attenzione >= s.critica) throw new Error(`Attenzione (${s.attenzione}%) deve stare sotto la critica (${s.critica}%)`)
+  if (s && (!ok(s.attenzione) || !ok(s.critica))) throw errore('soglia.fuoriScala')
+  if (s && s.attenzione >= s.critica) throw errore('soglia.ordine', { attenzione: s.attenzione, critica: s.critica })
   return { ...soglie, [f]: s }
 }
 
 // --- budget manuali -----------------------------------------------------------------------------------
 
+/** I tipi di budget: identificatori salvati nel config (il nome del limite), mostrati con la chiave `budget.<tipo>`. */
 export const TIPI_BUDGET = ['giornaliero', 'settimanale', 'mensile'] as const
-const UNITA: Record<string, NonNullable<Limite['unita']>> = { usd: 'USD', eur: 'EUR', cny: 'CNY', richieste: 'richieste', token: 'token' }
+/** Il nome di un limite: un tipo di budget si traduce, ogni altro nome (dei fornitori) resta com'è. */
+export const nomeLimite = (nome: string, l: Lingua) => ((TIPI_BUDGET as readonly string[]).includes(nome) ? t(l, `budget.${nome as (typeof TIPI_BUDGET)[number]}`) : nome)
 
-/** «40» o «40%» = quota; «12 USD», «500 richieste», «1000 token» = valore. Restituisce il motivo se non si legge. */
-export function budgetDa(testo: string): Pick<Limite, 'percentuale' | 'valore' | 'unita'> | string {
-  const m = testo.trim().replace(',', '.').match(/^(\d+(?:\.\d+)?)\s*(%|[a-z]+)?$/i)
-  if (!m) return 'Scrivi un numero con l\'unità: 40%, 12 USD, 500 richieste'
+/**
+ * «40» o «40%» = quota; «12 USD», «500 richieste», «1000 token» = valore. Le unità si scrivono in una qualunque delle
+ * sei lingue (`ALIAS_UNITA`) e si salvano sempre con lo stesso nome. Restituisce il motivo se non si legge.
+ */
+export function budgetDa(testo: string): Pick<Limite, 'percentuale' | 'valore' | 'unita'> | Msg {
+  const m = testo.trim().replace(',', '.').match(/^(\d+(?:\.\d+)?)\s*(%|\p{L}+)?$/iu)
+  if (!m) return msg('budget.formato')
   const n = Number(m[1])
   const u = (m[2] ?? '%').toLowerCase()
-  if (u === '%') return n <= 100 ? { percentuale: n, unita: '%' } : 'Una percentuale va da 0 a 100'
-  if (!UNITA[u]) return `Unità sconosciuta «${m[2]}»: %, USD, EUR, CNY, richieste o token`
-  return n <= 1e12 ? { valore: n, unita: UNITA[u] } : 'Valore troppo grande'
+  if (u === '%') return n <= 100 ? { percentuale: n, unita: '%' } : msg('budget.percentuale')
+  const unita = ALIAS_UNITA[u]
+  if (!unita) return msg('budget.unita', { unita: m[2] ?? '' })
+  return n <= 1e12 ? { valore: n, unita } : msg('budget.grande')
 }
 
 /** Il budget manuale nuovo, nella forma del config. `adesso` in ms. */
@@ -142,51 +151,36 @@ export function simula(r: Regole, limiti: readonly Limite[], lista: readonly Azi
 // argomenti, risultato atteso, lettura del file dell'helper, testi e dati per `risorse_agenti`.
 
 const MOTORI_NOMI: Record<string, string> = { claude: 'Claude', codex: 'Codex', freellmapi: 'FreeLLMAPI' }
-const nomeProfilo = (p: PesiProfilo['profilo']) => PROFILI.find(x => x.id === p)?.nome ?? 'nessun profilo'
+const nomeProfilo = (p: PesiProfilo['profilo'], l: Lingua) => t(l, PROFILI.find(x => x.id === p)?.nome ?? 'profilo.nessuno')
 const testoVoce = (tipo: Peso['tipo'], nome: string) => (tipo === 'fornitore' ? MOTORI_NOMI[nome] ?? nome : tipo === 'modello' ? nomeModello(nome) : `effort ${nome}`)
 const idBreve = (id: string) => id.replace(/^local_/, '').slice(0, 8)
 
-/** I testi delle proposte di pesi, raccolti qui (il multilingua li sposterà nei dizionari). */
+/** I testi composti delle proposte di pesi, nella lingua `l`; le parole semplici sono chiavi `pesi.*` del dizionario. */
 export const TESTI_PESI = {
-  intestazione: 'Pesi',
-  rivedi: 'Rivedi',
-  applica: 'Applica',
-  rifiuta: 'Rifiuta',
-  apri: 'Apri le impostazioni',
-  annulla: 'Annulla',
-  chi: (p: PropostaPesi) => `«${p.proponente.titolo || 'sessione senza titolo'}» (${idBreve(p.proponente.id)})`,
-  riga: (p: PropostaPesi) => `Proposta di pesi da ${TESTI_PESI.chi(p)}: ${riassuntoProposta(p)}`,
-  domanda: (p: PropostaPesi) =>
-    `La sessione ${TESTI_PESI.chi(p)} propone:\n\n${descriviPesi(p.partenza)}\n→ ${descriviPesi(p.risultato)}\n\nMotivo: ${p.motivo}\n\nApplico?`,
+  chi: (p: PropostaPesi, l: Lingua) => t(l, 'pesi.chi', { titolo: p.proponente.titolo || t(l, 'sessione.senzaTitolo'), id: idBreve(p.proponente.id) }),
+  riga: (p: PropostaPesi, l: Lingua) => t(l, 'pesi.riga', { chi: TESTI_PESI.chi(p, l), chiede: riassuntoProposta(p, l) }),
+  domanda: (p: PropostaPesi, l: Lingua) =>
+    t(l, 'pesi.domanda', { chi: TESTI_PESI.chi(p, l), prima: descriviPesi(p.partenza, l), dopo: descriviPesi(p.risultato, l), motivo: p.motivo }),
+  /** Per l'agente che ha proposto: in inglese. */
   registrata: (id: string, scadute: readonly string[]) =>
-    `Proposta registrata (id ${id}): la decide il committente dal pannello.` +
-    (scadute.length ? ` Scadute per far posto (più di 3 in attesa): ${scadute.join(', ')}.` : ''),
-  applicata: 'Pesi applicati',
-  rifiutata: 'Proposta rifiutata',
-  annullata: 'Pesi ripristinati',
-  registro: (p: PropostaPesi, adesso = Date.now()) => {
-    const quando = (iso: string) => new Date(iso).toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-    const stato = statoVisto(p, adesso)
-    const parola = { attesa: 'In attesa', applicata: 'Applicata', rifiutata: 'Rifiutata', scaduta: 'Scaduta', annullata: 'Annullata' }[stato]
-    return `${parola} il ${quando(new Date(decisaIl(p, adesso)).toISOString())}, proposta da ${TESTI_PESI.chi(p)}: ${riassuntoProposta(p)}`
-  },
-  nessunaDecisione: 'Nessuna proposta di pesi decisa.',
-  titoloRegistro: 'Ultima proposta di pesi',
-  titoloInAttesa: 'Proposte di pesi da decidere',
+    `Proposal recorded (id ${id}): the owner decides it from the panel.` +
+    (scadute.length ? ` Expired to make room (more than 3 pending): ${scadute.join(', ')}.` : ''),
+  registro: (p: PropostaPesi, l: Lingua, adesso = Date.now()) =>
+    t(l, 'pesi.registro', { esito: t(l, `pesi.stato.${statoVisto(p, adesso)}`), quando: data(l, decisaIl(p, adesso)), chi: TESTI_PESI.chi(p, l), chiede: riassuntoProposta(p, l) }),
 } as const
 
 /** Profilo e pesi a parole: «Risparmio · Codex Più · effort xhigh Molto meno (non esclude)». */
-export function descriviPesi(s: PesiProfilo) {
+export function descriviPesi(s: PesiProfilo, l: Lingua) {
   const pesi = s.pesi.map(p => {
     const i = posizioneDi(p)
-    return `${testoVoce(p.tipo, p.nome)} ${i < 0 ? pesoScritto(p) : POSIZIONI[i]!.nome}`
+    return `${testoVoce(p.tipo, p.nome)} ${i < 0 ? pesoScritto(p, l) : t(l, POSIZIONI[i]!.nome)}`
   })
-  return [nomeProfilo(s.profilo), ...(pesi.length ? pesi : ['nessun peso'])].join(' · ')
+  return [nomeProfilo(s.profilo, l), ...(pesi.length ? pesi : [t(l, 'pesi.nessunPeso')])].join(' · ')
 }
 
 /** Che cosa chiede una proposta, in breve: il profilo e le regolazioni. */
-export const riassuntoProposta = (p: Pick<PropostaPesi, 'profilo' | 'regolazioni'>) =>
-  [...(p.profilo ? [nomeProfilo(p.profilo)] : []), ...(p.regolazioni ?? []).map(x => `${testoVoce(x.tipo, x.nome)} ${POSIZIONI[x.posizione]?.nome ?? '?'}`)].join(' · ')
+export const riassuntoProposta = (p: Pick<PropostaPesi, 'profilo' | 'regolazioni'>, l: Lingua) =>
+  [...(p.profilo ? [nomeProfilo(p.profilo, l)] : []), ...(p.regolazioni ?? []).map(x => `${testoVoce(x.tipo, x.nome)} ${POSIZIONI[x.posizione] ? t(l, POSIZIONI[x.posizione]!.nome) : '?'}`)].join(' · ')
 
 const SCADENZA_PROPOSTA = 24 * 3_600_000
 /** In attesa e non ancora scaduta (l'helper la segna scaduta alla prossima operazione). */
@@ -331,7 +325,7 @@ export const proposteBrevi = (lista: readonly PropostaPesi[], adesso: number) =>
   lista.slice(0, 3).map(p => {
     // Lo stato visto di una proposta di pesi, non di un'azione.
     const stato = statoVisto(p, adesso)
-    return { id: p.id, stato, quando: p.quando, da: p.proponente.titolo || idBreve(p.proponente.id), chiede: riassuntoProposta(p), ...(p.decisione && { decisa: p.decisione.quando }) }
+    return { id: p.id, stato, quando: p.quando, da: p.proponente.titolo || idBreve(p.proponente.id), chiede: riassuntoProposta(p, 'en'), ...(p.decisione && { decisa: p.decisione.quando }) }
   })
 
 export const TETTO_RISORSE = 4_000

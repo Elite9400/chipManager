@@ -1,19 +1,23 @@
 // Lingue dell'interfaccia: completezza dei dizionari, segnaposto, plurali, date e numeri propri (niente Intl).
 import { expect, test } from 'claude-code/testing'
 
-import { data, DIZIONARI, formaPlurale, LINGUE, linguaDa, numero, ora, t, testo } from '../hooks/lingua'
+import { data, DIZIONARI, formaPlurale, LINGUE, letto, linguaDa, msg, numero, ora, salvato, t, testo } from '../hooks/lingua'
 import type { Chiave } from '../hooks/lingua'
 
 const segnaposto = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort().join(',')
 const forme = (v: unknown) => (typeof v === 'string' ? [v] : Object.values(v as Record<string, string>))
+// Le lingue complete; le altre, finché il commit delle traduzioni non le completa, hanno un sottoinsieme delle chiavi.
+const COMPLETE: string[] = ['en', 'it']
 
 test('ogni chiave dell\'inglese esiste in ogni lingua, dello stesso tipo e con gli stessi segnaposto', () => {
   const chiavi = Object.keys(DIZIONARI.en) as Chiave[]
   for (const l of LINGUE) {
-    expect(Object.keys(DIZIONARI[l]).sort()).toEqual([...chiavi].sort())
+    if (COMPLETE.includes(l)) expect(Object.keys(DIZIONARI[l]).sort()).toEqual([...chiavi].sort())
+    else expect(Object.keys(DIZIONARI[l]).filter(k => !chiavi.includes(k as Chiave))).toEqual([])
     for (const k of chiavi) {
-      const fonte = DIZIONARI.en[k]
+      const fonte = DIZIONARI.en[k]!
       const v = DIZIONARI[l][k]
+      if (v === undefined) continue
       expect(`${l}:${k}:${typeof v}`).toBe(`${l}:${k}:${typeof fonte}`)
       // Nei plurali la forma `one` può dire «una» invece di {n}: lì {n} è facoltativo, gli altri segnaposto no.
       const senzaN = (s: string) => (typeof fonte === 'string' ? segnaposto(s) : segnaposto(s.replace(/\{n\}/g, '')))
@@ -38,6 +42,19 @@ test('t: segnaposto per nome, ripiego sull\'inglese, chiave sconosciuta restitui
   expect(t('it', 'nessuna.chiave' as Chiave)).toBe('nessuna.chiave')
   expect(testo('de', 'frase di un record vecchio')).toBe('frase di un record vecchio')
   expect(testo('it', { k: 'data.formato', p: { giorno: 1, mese: 'gen', ora: '09:05' } })).toBe('1 gen, 09:05')
+})
+
+test('messaggi salvati: frase inglese più codice; un record vecchio con la sola frase si mostra com\'è', () => {
+  const m = msg('coda.paralleli', { n: 2 })
+  const campi = salvato('motivoCoda', 'motivo', m)
+  expect(campi).toEqual({ motivoCoda: 'limit of 2 parallel sessions', motivoCodice: 'coda.paralleli', motivoParametri: { n: 2 } })
+  expect(testo('it', letto(campi.motivoCodice, campi.motivoParametri, campi.motivoCoda))).toBe('limite di 2 sessioni in parallelo')
+  expect(testo('it', letto(undefined, undefined, 'corsia Codex occupata'))).toBe('corsia Codex occupata')
+  // Un codice che questa versione non conosce: la frase salvata.
+  expect(testo('it', letto('codice.futuro', {}, 'a later sentence'))).toBe('a later sentence')
+  expect(salvato('errore', 'errore', undefined)).toEqual({ errore: undefined, erroreCodice: undefined, erroreParametri: undefined })
+  // Parametri annidati: ogni messaggio nella lingua della frase.
+  expect(t('it', 'err.nonParte', { motivi: [msg('v.r4Bypass'), 'testo esterno'] })).toBe('Non parte: corsia sensibile (R4): niente bypass dei permessi; testo esterno')
 })
 
 test('date e ore senza Intl: mese dal dizionario, 12 ore solo in inglese, fuso locale', () => {

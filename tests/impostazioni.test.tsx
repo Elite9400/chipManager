@@ -17,6 +17,7 @@ import {
   simula,
 } from '../hooks/bilanciamento'
 import { bilancia, regoleDa, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
+import { LINGUE, t } from '../hooks/lingua'
 import type { Azione, Chiamante, Peso } from '../types'
 import { DiscoIt } from './disco-it'
 
@@ -48,13 +49,13 @@ const MODELLO: Peso = { tipo: 'modello', nome: 'gpt-6-astra', percentuale: 37, a
 
 test('posizioni: cinque valori fissi, assoluto 0; fuori scala si mostra intero e resta intatto', () => {
   expect(POSIZIONI.map(p => p.percentuale)).toEqual([-90, -40, 0, 40, 100])
-  expect(POSIZIONI[0].nome).toBe('Molto meno (non esclude)')
+  expect(POSIZIONI[0].nome).toBe('pos.moltoMeno')
   expect(posizioneDi(undefined)).toBe(2)
   expect(posizioneDi({ tipo: 'effort', nome: 'low', percentuale: 40, assoluto: 0 })).toBe(3)
   expect(posizioneDi({ tipo: 'effort', nome: 'low', percentuale: 40, assoluto: 1 })).toBe(-1)
   expect(posizioneDi(MODELLO)).toBe(-1)
-  expect(pesoScritto(MODELLO)).toBe('personalizzato (+37% · +5)')
-  expect(pesoScritto({ ...MODELLO, percentuale: -10, assoluto: -3 })).toBe('personalizzato (-10% · -3)')
+  expect(pesoScritto(MODELLO, 'it')).toBe('personalizzato (+37% · +5)')
+  expect(pesoScritto({ ...MODELLO, percentuale: -10, assoluto: -3 }, 'en')).toBe('custom (-10% · -3)')
   // Toccare un'altra voce non converte quella fuori scala; Normale toglie la voce.
   const pesi = conPosizione([MODELLO], 'fornitore', 'codex', 4)
   expect(pesi).toEqual([MODELLO, { tipo: 'fornitore', nome: 'codex', percentuale: 100, assoluto: 0 }])
@@ -123,8 +124,8 @@ test('simulazione: è la scelta di bilancia sulla stessa proposta e passa la gua
 test('simulazione senza candidati validi: solo rete locale non propone Claude e dice i motivi', () => {
   const esito = simula({ ...R, risorse: { ...RISORSE_DEFAULT, soloLocale: true } }, [], [], CHI)
   expect(esito.scelta).toBeUndefined()
-  expect(esito.motivi!.join(' ')).toContain('solo rete locale')
-  expect(simula(R, [], [], null).motivi!.join(' ')).toContain('quale sessione')
+  expect(esito.motivi!.map(m => m.k)).toContain('v.soloLocale')
+  expect(simula(R, [], [], null).motivi!.map(m => m.k)).toContain('v.chiIgnoto')
 })
 
 test('soglie: preset riconosciuti, valori personali e null intatti, attenzione sempre sotto la critica', () => {
@@ -149,17 +150,23 @@ test('budget manuali: valore con unità, nuovo nella forma del config, riscrittu
   expect(budgetDa('40')).toEqual({ percentuale: 40, unita: '%' })
   expect(budgetDa(' 12,5 usd ')).toEqual({ valore: 12.5, unita: 'USD' })
   expect(budgetDa('500 richieste')).toEqual({ valore: 500, unita: 'richieste' })
-  for (const rotto of ['140%', 'tanti', '12 lire', '']) expect(typeof budgetDa(rotto)).toBe('string')
+  for (const rotto of ['140%', 'tanti', '12 lire', '']) expect(budgetDa(rotto)).toHaveProperty('k')
+  // Le unità in ogni lingua finiscono nello stesso valore salvato; l'esempio della procedura guidata passa il parser.
+  for (const l of LINGUE) {
+    const esempi = t(l, 'budget.esempio').split(', ').map(budgetDa)
+    expect([l, esempi]).toEqual([l, [{ percentuale: 40, unita: '%' }, { valore: 12, unita: 'USD' }, { valore: 500, unita: 'richieste' }]])
+  }
+  for (const u of ['requests', 'Solicitudes', 'requêtes', 'Anfragen', 'requisições', 'richiesta', 'Tokens']) expect(budgetDa(`3 ${u}`)).not.toHaveProperty('k')
   const adesso = Date.parse('2026-11-05T12:00:00Z')
   const nuovo = nuovoBudget('claude', 'settimanale', { percentuale: 40, unita: '%' }, adesso)
   expect(nuovo).toEqual({ id: `claude-settimanale-${adesso.toString(36)}`, fornitore: 'claude', nome: 'settimanale', letto: '2026-11-05T12:00:00.000Z', percentuale: 40, unita: '%' })
   const letti = risorseDa({ limitiManuali: [nuovo, { id: 'saldo', fornitore: 'deepseek', nome: 'saldo mensile', letto: '2026-11-01T00:00:00Z', valore: 12, unita: 'USD' }] })
-  if (typeof letti === 'string') throw new Error(letti)
+  if ('k' in letti) throw new Error(letti.k)
   expect(letti.limitiManuali.map(l => l.id)).toEqual([`manuale-${nuovo.id}`, 'manuale-saldo'])
   const riscritti = manualiDaScrivere(letti.limitiManuali)
   expect(riscritti[1]).toEqual({ id: 'saldo', fornitore: 'deepseek', nome: 'saldo mensile', letto: '2026-11-01T00:00:00Z', valore: 12, unita: 'USD' })
   const riletti = risorseDa({ limitiManuali: riscritti })
-  expect(typeof riletti !== 'string' && riletti.limitiManuali).toEqual(letti.limitiManuali)
+  expect(!('k' in riletti) && riletti.limitiManuali).toEqual(letti.limitiManuali)
 })
 
 // --- il pannello contro un engine finto -------------------------------------------------------------------

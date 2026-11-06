@@ -1,7 +1,8 @@
 // Español. Chiavi e segnaposto come in en.ts; termini comuni in glossario.md.
-import type { Dizionario } from './en'
+import type { Parziale } from './en'
 
-const es: Dizionario = {
+// Parziale finché il commit delle traduzioni non la completa: le chiavi assenti ripiegano sull'inglese.
+const es: Parziale = {
   'data.mesi': 'ene|feb|mar|abr|may|jun|jul|ago|sept|oct|nov|dic',
   'data.formato': '{giorno} {mese}, {ora}',
   // Errors shared by the panel
@@ -13,6 +14,23 @@ const es: Dizionario = {
   "imp.lingua.descrizione": "El idioma del panel y de la board, para todos tus proyectos.",
   "imp.lingua.etichetta": "Idioma de la interfaz",
   "imp.lingua.nota": "El inglés y el italiano están escritos a mano; los demás idiomas son traducciones automáticas. Se agradecen las correcciones.",
+  // Start rules (why a chip cannot start as it is)
+  // Why a chip waits in the queue
+  // Start: confirmations and errors
+
+  // Local configuration (config.json)
+  // Plan file of a chip
+  // Records on disk
+  // Permission modes
+  // Durations and this session's usage
+  // Sessions without a title
+
+
+  // Balancing: positions, profiles, thresholds, budgets
+  "budget.esempio": "40%, 12 USD, 500 solicitudes",
+  // Weights proposals
+  // Provider limits: names, read errors, proxy states
+  // Helper answers on weights proposals
   // ‹fine›
 }
 

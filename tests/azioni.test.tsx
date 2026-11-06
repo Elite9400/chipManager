@@ -58,6 +58,7 @@ import {
 } from '../hooks/logica'
 import type { Azione, Chiamante, Limite } from '../types'
 import { DiscoIt } from './disco-it'
+import { chiaveOTesto } from '../hooks/lingua'
 import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
 import { hash, testoRiassunto } from '../hooks/board'
 import { GRIGIO, LIVELLO, STATO } from '../hooks/tema'
@@ -135,8 +136,8 @@ test('dipendenze: si sbloccano solo esistenti e completate; scartate e inesisten
   expect(dipendenzeChiuse(b, [a, b])).toBe(false)
   expect(dipendenzeChiuse(b, [{ ...a, stato: 'consegnata' }, b])).toBe(false)
   expect(dipendenzeChiuse(b, [{ ...a, stato: 'completata' }, b])).toBe(true)
-  expect(dipendenze(b, [b]).problemi.join()).toContain('non esiste')
-  expect(dipendenze(b, [{ ...a, stato: 'scartata' }, b]).problemi.join()).toContain('scartata')
+  expect(dipendenze(b, [b]).problemi.map(m => m.k).join()).toContain('v.dipendenzaAssente')
+  expect(dipendenze(b, [{ ...a, stato: 'scartata' }, b]).problemi.map(m => m.k).join()).toContain('v.dipendenzaScartata')
 })
 
 test('sposta: scambia con la vicina e rinumera solo chi cambia', () => {
@@ -184,20 +185,20 @@ test('regole: da routing.json, senza max, corsia Codex; illeggibili = nessun avv
   expect(R.corsiaCodex.rivistoDa.R3).toBe('claude-opus-5-5')
   expect(effortPer(R, 'claude-fable-5-1')).toEqual(['low', 'medium', 'high', 'xhigh'])
   expect(regoleDa({ modelli_ammessi: 'rotto' }, 'x').lette).toBe(false)
-  expect(violazioni(base('a-ok000001', 1), REGOLE_DEFAULT).join()).toContain('routing.json non letto')
+  expect(violazioni(base('a-ok000001', 1), REGOLE_DEFAULT).map(m => m.k).join()).toContain('v.regoleNonLette')
 })
 
 test('violazioni: matrice dei revisori, R4 non aggirabile con sensibile:false, cloud e corsie di Codex', () => {
   expect(violazioni(base('a-ok000001', 1), R)).toEqual([])
-  expect(violazioni(base('a-haiku001', 1, { modello: 'claude-haiku-5-5' }), R).join()).toContain('non ammette Codex')
+  expect(violazioni(base('a-haiku001', 1, { modello: 'claude-haiku-5-5' }), R).map(m => m.k).join()).toContain('v.revisoreNonAmmesso')
   const r4 = base('a-r4000001', 1, { titolo: 'Fix login MFA', sensibile: false, esecutore: 'codex', revisore: 'nessuno', permessi: 'bypassPermissions' })
   expect(sensibile(r4, R)).toBe(true)
-  const v = violazioni(r4, R).join(' | ')
-  for (const atteso of ['l\'autore resta Claude', 'revisione è obbligatoria', 'bypass', 'Codex esegue solo le corsie']) expect(v).toContain(atteso)
+  const v = violazioni(r4, R).map(m => m.k).join()
+  for (const atteso of ['v.r4Autore', 'v.r4Revisione', 'v.r4Bypass', 'v.codexCorsie']) expect(v).toContain(atteso)
   const haikuR4 = base('a-r4000002', 1, { titolo: 'permessi OU', modello: 'claude-haiku-5-5', effort: 'low', revisore: 'claude' })
-  expect(violazioni(haikuR4, R).join()).toContain('autore Opus o Fable')
-  expect(violazioni(base('a-r4000003', 1, { corsia: 'R4', destinazione: 'cloud' }), R).join()).toContain('mai nel cloud')
-  expect(violazioni(base('a-cf000001', 1, { destinazione: 'cloud', contesto: 'fork' }), R).join()).toContain('sessione nuova')
+  expect(violazioni(haikuR4, R).map(m => m.k).join()).toContain('v.r4Modello')
+  expect(violazioni(base('a-r4000003', 1, { corsia: 'R4', destinazione: 'cloud' }), R).map(m => m.k).join()).toContain('v.r4Cloud')
+  expect(violazioni(base('a-cf000001', 1, { destinazione: 'cloud', contesto: 'fork' }), R).map(m => m.k).join()).toContain('v.cloudFork')
 })
 
 test('pianifica: dipendenze fuse, corsia unica di Codex (anche tenuta da una revisione), limite, blocchi', () => {
@@ -212,14 +213,14 @@ test('pianifica: dipendenze fuse, corsia unica di Codex (anche tenuta da una rev
   const p = pianifica(lista, lista, R, 3)
   expect(p.avvia.map(a => a.id)).toEqual(['a-uno00001', 'a-tre00001', 'a-cin00001'])
   expect(p.coda.map(c => [c.a.id, c.motivo])).toEqual([
-    ['a-due00001', 'corsia Codex occupata'],
-    ['a-qua00001', 'aspetta che le dipendenze siano fuse'],
+    ['a-due00001', { k: 'coda.codex' }],
+    ['a-qua00001', { k: 'coda.dipendenze' }],
   ])
   expect(p.bloccate.map(b => b.a.id)).toEqual(['a-sei00001'])
   // La corsia tenuta da fuori (una revisione Codex in corso) blocca anche la prima.
-  expect(pianifica([lista[0]!], lista, R, 3, true).coda[0]?.motivo).toBe('corsia Codex occupata')
+  expect(pianifica([lista[0]!], lista, R, 3, true).coda[0]?.motivo).toEqual({ k: 'coda.codex' })
   const occupate = [1, 2, 3].map(n => base(`a-run0000${n}`, 10 + n, { stato: 'avviata' }))
-  expect(pianifica([lista[2]!], [...occupate, lista[2]!], R, 3).coda[0]?.motivo).toBe('limite di 3 sessioni in parallelo')
+  expect(pianifica([lista[2]!], [...occupate, lista[2]!], R, 3).coda[0]?.motivo).toEqual({ k: 'coda.paralleli', p: { n: 3 } })
 })
 
 test('registro: il task di QUESTA azione serve il ramo; record validati, migrazioni', () => {
@@ -236,12 +237,12 @@ test('registro: il task di QUESTA azione serve il ramo; record validati, migrazi
   expect(faseDiAzione(reg, { issue: 235, avviataIl: '2026-09-01', ramoSessione: 'fix/a' })).toBe('fuso')
   expect(faseDiAzione(reg, { issue: 235, avviataIl: '2026-10-02', ramoSessione: 'fix/a' })).toBeUndefined()
   expect((normalizza({ ...base('a-avv00001', 1), stato: 'avviata' }) as Azione).stato).toBe('fallita')
-  expect(normalizza({ ...base('a-dat00001', 1), avviataIl: 'ieri' })).toBe('avviataIl non è una data')
+  expect(normalizza({ ...base('a-dat00001', 1), avviataIl: 'ieri' })).toEqual({ k: 'rec.data', p: { campo: 'avviataIl' } })
   const vecchia = { ...base('a-vec00001', 1) } as Partial<Azione>
   delete vecchia.versione
   expect((normalizza(vecchia) as Azione).versione).toBe(0)
-  expect(normalizza({ id: '../x', titolo: 't', brief: 'b', stato: 'proposta' })).toBe('id non valido')
-  expect(normalizza({ ...base('a-noesec01', 1), esecutore: undefined })).toBe('esecutore o revisore non validi')
+  expect(normalizza({ id: '../x', titolo: 't', brief: 'b', stato: 'proposta' })).toEqual({ k: 'rec.campo', p: { campo: 'id' } })
+  expect(normalizza({ ...base('a-noesec01', 1), esecutore: undefined })).toEqual({ k: 'rec.campo', p: { campo: 'esecutore/revisore' } })
 })
 
 test('stima d\'arrivo, durate, modello sopra quello di chi avvia', () => {
@@ -258,14 +259,14 @@ test('sensibilità dal background; effort di corsia_codex come minimo; routing p
   const bg = base('a-bg000001', 1, { background: 'Intervieni su auth e anagrafica', esecutore: 'codex', revisore: 'nessuno' })
   expect(sensibile(bg, R)).toBe(true)
   expect(violazioni(bg, R).length).toBeGreaterThan(0)
-  expect(violazioni(base('a-cx000001', 1, { esecutore: 'codex', revisore: 'claude', corsia: 'R3', effort: 'low' }), R).join()).toContain('almeno effort xhigh')
+  expect(violazioni(base('a-cx000001', 1, { esecutore: 'codex', revisore: 'claude', corsia: 'R3', effort: 'low' }), R).map(m => m.k).join()).toContain('v.codexEffort')
   expect(regoleDa({ modelli_ammessi: ROUTING.modelli_ammessi, effort_ammessi: ROUTING.effort_ammessi }, 'x').lette).toBe(false)
 })
 
 test('cloud: solo mandati senza dati da LAN, e senza il background locale', () => {
   expect(datiLocali('Correggi il layout della tabella')).toBe(false)
   for (const s of ['RSSMRA80A01H501U', 'mario@esempio.it', '10.0.0.12', 'DB_PASSWORD=x', 'leggi .env', 'storage/upload']) expect(datiLocali(s)).toBe(true)
-  expect(violazioni(base('a-cl000001', 1, { destinazione: 'cloud', brief: 'vedi log: 192.168.1.4' }), R).join()).toContain('niente cloud')
+  expect(violazioni(base('a-cl000001', 1, { destinazione: 'cloud', brief: 'vedi log: 192.168.1.4' }), R).map(m => m.k).join()).toContain('v.cloudDati')
   const m = mandato(base('a-cl000002', 1, { destinazione: 'cloud', background: 'x'.repeat(100) + ' segreto locale' }), R)
   expect(m.background).not.toContain('segreto locale')
 })
@@ -273,28 +274,28 @@ test('cloud: solo mandati senza dati da LAN, e senza il background locale', () =
 test('configurazione effettiva: modello e effort di chi avvia, fork che eredita, «qui» in bypass', () => {
   const chi: Chiamante = { io: 'm', repo: 'o/r', modello: 'claude-sonnet-5-5', effort: 'medium', permessi: 'bypassPermissions' }
   const a = base('a-ef000001', 1, { repo: 'o/r' })
-  expect(violazioniAvvio(a, R, [a], chi).join()).toContain('non avvia Opus 5.5 da qui')
+  expect(violazioniAvvio(a, R, [a], chi).map(m => m.k).join()).toContain('v.modelloSessione')
   const fork = { ...a, contesto: 'fork' as const }
-  expect(violazioniAvvio(fork, R, [fork], chi).join()).toContain('il fork gira con Sonnet 5.5')
+  expect(violazioniAvvio(fork, R, [fork], chi).map(m => m.k).join()).toContain('v.forkModello')
   const r4 = base('a-ef000002', 1, { repo: 'o/r', titolo: 'permessi OU', revisore: 'claude' })
   const opus: Chiamante = { ...chi, modello: 'claude-opus-5-5', effort: 'high' }
-  expect(violazioniAvvio(r4, R, [r4], opus, true).join()).toContain('in bypass')
-  expect(violazioniAvvio({ ...a, repo: undefined }, R, [a], opus).join()).toContain('senza progetto')
-  expect(violazioniAvvio({ ...a, repo: 'altro/x' }, R, [a], opus).join()).toContain('altro/x')
+  expect(violazioniAvvio(r4, R, [r4], opus, true).map(m => m.k).join()).toContain('v.r4QuiBypass')
+  expect(violazioniAvvio({ ...a, repo: undefined }, R, [a], opus).map(m => m.k).join()).toContain('v.senzaProgetto')
+  expect(violazioniAvvio({ ...a, repo: 'altro/x' }, R, [a], opus).map(m => m.k).join()).toContain('v.altroProgetto')
 })
 
 test('cloud: credenziali in JSON, IPv6 e CF omocodici restano in LAN; niente Codex nel cloud', () => {
   for (const s of ['{"api_key":"valore-fittizio"}', 'token: abc', 'fe80::1ff:fe23:4567:890a', 'RSSMRALPAMNH501U', 'Authorization: Bearer abcdefghijklmnop'])
     expect(datiLocali(s)).toBe(true)
-  expect(violazioni(base('a-cl000003', 1, { destinazione: 'cloud' }), R).join()).toContain('nel cloud niente Codex')
+  expect(violazioni(base('a-cl000003', 1, { destinazione: 'cloud' }), R).map(m => m.k).join()).toContain('v.cloudCodex')
 })
 
 test('metadati di chi avvia sconosciuti: le guardie che ne dipendono bloccano', () => {
   const r4 = base('a-md000001', 1, { repo: 'o/r', titolo: 'permessi OU', revisore: 'claude', permessi: 'acceptEdits' })
   const ignoto: Chiamante = { io: 'm', repo: 'o/r', modello: 'claude-opus-5-5' }
-  const v = violazioniAvvio(r4, R, [r4], ignoto, true).join()
-  expect(v).toContain('modalità permessi')
-  expect(v).toContain('effort')
+  const v = violazioniAvvio(r4, R, [r4], ignoto, true).map(m => m.k).join()
+  expect(v).toContain('v.permessiIgnoti')
+  expect(v).toContain('v.effortIgnoto')
 })
 
 test('registro: con il ramo noto si accetta solo il task di quel ramo', () => {
@@ -309,19 +310,19 @@ test('cloud: chiavi prefissate e mandati troppo lunghi per essere letti per inte
   expect(datiLocali('{"DB_PASSWORD":"segreto-fittizio"}')).toBe(true)
   expect(datiLocali('GITHUB_TOKEN=abc')).toBe(true)
   const lungo = base('a-lg000001', 1, { destinazione: 'cloud', revisore: 'claude', brief: 'x '.repeat(1000) })
-  expect(violazioni(lungo, R).join()).toContain('1500 caratteri')
+  expect(violazioni(lungo, R).map(m => m.k).join()).toContain('v.cloudTesto')
   // La riga dei revisori serve anche per un autore Codex.
   const revisori = { ...R.revisori }
   delete revisori['gpt-6.1-sol']
-  expect(violazioni(base('a-sx000001', 1, { esecutore: 'codex', revisore: 'claude', corsia: 'R2' }), { ...R, revisori }).join()).toContain('riga dei revisori')
+  expect(violazioni(base('a-sx000001', 1, { esecutore: 'codex', revisore: 'claude', corsia: 'R2' }), { ...R, revisori }).map(m => m.k).join()).toContain('v.rigaRevisori')
 })
 
 test('codex senza corsia, o routing senza la regola: bloccato', () => {
-  expect(violazioni(base('a-cs000001', 1, { esecutore: 'codex', revisore: 'claude' }), R).join()).toContain('Codex vuole una corsia')
+  expect(violazioni(base('a-cs000001', 1, { esecutore: 'codex', revisore: 'claude' }), R).map(m => m.k).join()).toContain('v.codexCorsia')
   const senza = regoleDa({ ...ROUTING, corsia_codex: { ...ROUTING.corsia_codex, effort: {} } }, 'x')
   expect(senza.lette).toBe(false)
   const r = { ...R, revisori: {} }
-  expect(violazioni(base('a-mx000001', 1, { revisore: 'claude' }), r).join()).toContain('riga dei revisori')
+  expect(violazioni(base('a-mx000001', 1, { revisore: 'claude' }), r).map(m => m.k).join()).toContain('v.rigaRevisori')
 })
 
 // --- il pannello contro un engine finto --------------------------------------------------------------
@@ -901,9 +902,7 @@ test('giro: una lettura fallita fra due «ferma» non ripete l\'avviso', async (
 
 test('progetto della sessione ignoto: nessun avvio', () => {
   const a = base('a-pr000001', 1, { repo: 'o/r' })
-  expect(violazioniAvvio(a, R, [a], { io: 'm', repo: null, modello: 'claude-opus-5-5', effort: 'high', permessi: 'auto' }).join()).toContain(
-    'non so in quale progetto',
-  )
+  expect(violazioniAvvio(a, R, [a], { io: 'm', repo: null, modello: 'claude-opus-5-5', effort: 'high', permessi: 'auto' }).map(m => m.k).join()).toContain('v.progettoIgnoto')
 })
 
 test('giro: «Aggiorna» insieme al timer non avvisa due volte', async ($, on) => {
@@ -974,8 +973,8 @@ test('fork accodato: riparte solo dalla sessione la cui conversazione va copiata
   const chiA: Chiamante = { io: 'master-A', repo: 'o/r', modello: 'claude-opus-5-5', effort: 'high', permessi: 'auto' }
   const chiB: Chiamante = { ...chiA, io: 'master-B' }
   const q = base('a-fk000001', 1, { repo: 'o/r', contesto: 'fork', stato: 'accodata', origineFork: 'master-A', modello: 'claude-opus-5-5' })
-  expect(violazioniAvvio(q, R, [q], chiB).join()).toContain('fork della conversazione di un\'altra sessione')
-  expect(violazioniAvvio(q, R, [q], chiA).join()).not.toContain('fork della conversazione')
+  expect(violazioniAvvio(q, R, [q], chiB).map(m => m.k).join()).toContain('v.forkAltrui')
+  expect(violazioniAvvio(q, R, [q], chiA).map(m => m.k).join()).not.toContain('v.forkAltrui')
 })
 
 test('elenco incompleto: nessuna chiusura automatica (A/B con task duplicato, B illeggibile, C dipende da A)', async ($, on) => {
@@ -1020,7 +1019,7 @@ test('fork scelto dall\'editor su un\'azione in coda: registra l\'origine; senza
   // Un fork in coda senza origine (scritto altrove) è bloccato per tutti.
   const senza = base('a-fk000002', 1, { repo: 'o/r', contesto: 'fork', stato: 'accodata' })
   const chi: Chiamante = { io: 'x', repo: 'o/r', modello: 'claude-opus-5-5', effort: 'high', permessi: 'auto' }
-  expect(violazioniAvvio(senza, R, [senza], chi).join()).toContain('senza conversazione d\'origine')
+  expect(violazioniAvvio(senza, R, [senza], chi).map(m => m.k).join()).toContain('v.forkSenzaOrigine')
 })
 
 test('configurazione locale: assente = generica; sezione del progetto; forme non valide = motivo', () => {
@@ -1029,11 +1028,11 @@ test('configurazione locale: assente = generica; sezione del progetto; forme non
   const cfg = { progetti: { 'acme/progetto': { routing: 'cfg/routing.json', sensibili: ['magazzino'], background: 'Progetto Acme.' } } }
   expect(progettoDa(cfg, 'acme/progetto')).toMatchObject({ routing: 'cfg/routing.json', sensibili: ['magazzino'], background: 'Progetto Acme.' })
   expect(progettoDa(cfg, 'altro/repo')).toMatchObject({ sensibili: [] })
-  for (const rotta of [[], { progetti: [] }, { progetti: { 'acme/progetto': 'x' } }]) expect(typeof progettoDa(rotta, 'acme/progetto')).toBe('string')
+  for (const rotta of [[], { progetti: [] }, { progetti: { 'acme/progetto': 'x' } }]) expect(progettoDa(rotta, 'acme/progetto')).toHaveProperty('k')
   for (const routing of ['/etc/x.json', 'C:/x.json', '../fuori.json', 'a/../../b.json', ''])
-    expect(progettoDa({ progetti: { 'acme/progetto': { routing } } }, 'acme/progetto')).toContain('relativo')
-  expect(progettoDa({ progetti: { 'acme/progetto': { sensibili: ['(rotta'] } } }, 'acme/progetto')).toContain('non valido')
-  expect(progettoDa({ progetti: { 'acme/progetto': { sensibili: 'x' } } }, 'acme/progetto')).toContain('elenco')
+    expect(progettoDa({ progetti: { 'acme/progetto': { routing } } }, 'acme/progetto')).toEqual({ k: 'cfg.routing' })
+  expect(progettoDa({ progetti: { 'acme/progetto': { sensibili: ['(rotta'] } } }, 'acme/progetto')).toMatchObject({ k: 'cfg.termine' })
+  expect(progettoDa({ progetti: { 'acme/progetto': { sensibili: 'x' } } }, 'acme/progetto')).toEqual({ k: 'cfg.sensibili' })
 })
 
 test('configurazione nel pannello: routing e termini del progetto valgono; una rotta blocca ogni avvio', async ($, on) => {
@@ -1073,7 +1072,7 @@ const LIMITE: Limite = { id: 'claude', fornitore: 'claude', nome: 'piano', perce
 test('2.0: politica default, opt-in isolato per progetto e configurazione fail-closed', () => {
   expect(progettoDa(null, 'acme/progetto')).toMatchObject({ risorse: { fornitori: ['claude', 'codex'], soloLocale: false, pesi: [] } })
   for (const p of [{ fornitori: ['inventato'] }, { soloLocale: 'si' }, { pesi: [{ tipo: 'effort', nome: 'low', percentuale: Infinity, assoluto: 1 }] }, { freellmapi: { livello: 'R5' } }, { freellmapi: { livello: 'R1', endpoint: 'http://example.org/v1' } }, { freellmapi: { livello: 'R1', endpoint: 'http://localhost:3001/v1?segreto=x' } }])
-    expect(typeof progettoDa({ progetti: { 'acme/progetto': p } }, 'acme/progetto')).toBe('string')
+    expect(progettoDa({ progetti: { 'acme/progetto': p } }, 'acme/progetto')).toHaveProperty('k')
   const config = { progetti: { 'altro/repo': { fornitori: ['freellmapi'] } } }
   expect(progettoDa(config, 'acme/progetto')).toMatchObject({ risorse: { fornitori: ['claude', 'codex'] } })
 })
@@ -1081,15 +1080,15 @@ test('2.0: politica default, opt-in isolato per progetto e configurazione fail-c
 test('2.0: terzi vietati su R4/R5, dati locali e oltre il livello; vale anche sul revisore', () => {
   const a = base('a-free0001', 1, { repo: AUTORE.repo!, esecutore: 'freellmapi', revisore: 'claude', modello: 'testo-compatto', effort: 'low', corsia: 'R1' })
   expect(violazioni(a, RF)).toEqual([])
-  expect(violazioni(a, { ...RF, risorse: RISORSE_DEFAULT }).join()).toContain('non abilitato')
+  expect(violazioni(a, { ...RF, risorse: RISORSE_DEFAULT }).map(m => m.k).join()).toContain('v.fornitoreNonAbilitato')
   for (const corsia of ['R2', 'R4', 'R5'] as const) expect(violazioni({ ...a, corsia }, RF).length).toBeGreaterThan(0)
   expect(violazioni({ ...a, corsia: 'R2' }, { ...RF, risorse: { ...RF.risorse, freellmapi: { ...RF.risorse.freellmapi, livello: 'R2' } } })).toEqual([])
   for (const brief of ['RSSMRA80A01H501U', 'nome@example.org', '10.2.3.4', 'storage/x', 'leggi .env'])
-    expect(violazioni({ ...a, brief }, RF).join()).toContain('dati da tenere in LAN')
+    expect(violazioni({ ...a, brief }, RF).map(m => m.k).join()).toContain('v.datiLan')
   expect(violazioni({ ...a, background: 'Leggi .env' }, RF).length).toBeGreaterThan(0)
   expect(violazioni(a, { ...RF, background: 'Leggi .env' }).length).toBeGreaterThan(0)
-  expect(violazioni(base('a-r400001', 1, { corsia: 'R4' }), R).join()).toContain('revisore resta Claude')
-  expect(violazioni(base('a-norev01', 1), { ...R, risorse: { ...RISORSE_DEFAULT, fornitori: ['claude'] } }).join()).toContain('revisore codex non abilitato')
+  expect(violazioni(base('a-r400001', 1, { corsia: 'R4' }), R).map(m => m.k).join()).toContain('v.r4Revisore')
+  expect(violazioni(base('a-norev01', 1), { ...R, risorse: { ...RISORSE_DEFAULT, fornitori: ['claude'] } }).map(m => m.k).join()).toContain('v.revisoreNonAbilitato')
 })
 
 test('2.0: pesi e margini scelgono soltanto combinazioni ammesse; scelte esplicite intatte', () => {
@@ -1139,8 +1138,13 @@ test('2.0: fonti sconosciute, vecchie, future e manuali non fingono margini fres
   expect(finestre[2]).toMatchObject({ nome: 'Claude uso extra · tetto 4.00 EUR', percentuale: 25 })
   expect(limiteFresco(finestre[0]!)).toBe(true)
   expect(usoDesktop(piano({ windows: [], extraUsage: { enabled: false, percentUsed: 0 } }), letto)).toEqual([])
-  expect(usoDesktop({ plan: { status: 'not_applicable' } }, letto)[0]).toMatchObject({ id: 'claude', errore: 'limiti di piano non applicabili qui' })
-  expect(usoDesktop({ plan: { status: 'unavailable', note: 'riprova tra poco' } }, letto)[0]!.errore).toBe('limiti di piano non leggibili ora: riprova tra poco')
+  expect(usoDesktop({ plan: { status: 'not_applicable' } }, letto)[0]).toMatchObject({ id: 'claude', errore: 'lim.pianoNonApplicabile' })
+  const nonLeggibile = usoDesktop({ plan: { status: 'unavailable', note: 'riprova tra poco' } }, letto)[0]!.errore
+  expect(nonLeggibile).toBe('lim.pianoNonLeggibile: riprova tra poco')
+  // Il codice si traduce, la nota dell'app resta com'è; un testo che non è un codice si mostra intero.
+  expect(chiaveOTesto('it', nonLeggibile)).toBe('limiti di piano non leggibili ora: riprova tra poco')
+  expect(chiaveOTesto('en', nonLeggibile)).toBe('plan limits cannot be read now: riprova tra poco')
+  expect(chiaveOTesto('en', 'HTTP 502: gateway')).toBe('HTTP 502: gateway')
   expect(() => risorseLette({ limiti: [...finestre, ...usoDesktop({ plan: { status: 'unavailable' } }, letto)], proxy: 'x', chiavi: { anthropic: false, deepseek: false, freellmapi: false } })).not.toThrow()
   const vecchio = { ...LIMITE, letto: '2000-01-01T00:00:00Z' }
   expect(limiteFresco(vecchio)).toBe(false)
@@ -1437,7 +1441,7 @@ test('2.2: cartella dei dati per progetto; la globale resta per compatibilità; 
   expect(lungo('uno').length).toBeLessThan(200)
   expect(checkoutDi('C:\\Lavori\\Progetto\\.claude\\worktrees\\fix-a')).toBe('C:/Lavori/Progetto')
   for (const cartella of ['relativa/x', 3, '', '../su'])
-    expect(typeof progettoDa({ progetti: { 'acme/progetto': { cartella } } }, 'acme/progetto')).toBe('string')
+    expect(progettoDa({ progetti: { 'acme/progetto': { cartella } } }, 'acme/progetto')).toHaveProperty('k')
   expect(typeof progettoDa({ progetti: { 'acme/progetto': { cartella: '~/orch' } } }, 'acme/progetto')).toBe('object')
 })
 
@@ -1458,7 +1462,7 @@ test('2.2: sessioni del progetto: worktree inclusi, altri progetti, archiviate e
   ]
   expect(sessioniClaude(lista, radice, adesso).map(s => [s.id, s.titolo, s.stato])).toEqual([
     [id(1), 'Guida', 'in-corso'],
-    [id(5), 'Sessione senza titolo', 'ferma'],
+    [id(5), '', 'ferma'],
   ])
   expect(sessioniClaude({ non: 'un elenco' }, radice, adesso)).toEqual([])
   expect(dettagliSessione({ model: 'claude-sonnet-5-5', effort: 'medium', branch: 'docs', segreto: 'x' })).toEqual({ modello: 'claude-sonnet-5-5', effort: 'medium', ramo: 'docs' })
@@ -1612,7 +1616,7 @@ test('2.3: soglie per fornitore: predefinite 70/90, nessuna, personali; forme no
   expect(progettoDa(null, 'acme/progetto')).toMatchObject({ risorse: { soglie: { claude: { attenzione: 70, critica: 90 }, codex: { attenzione: 70, critica: 90 } } } })
   expect(r({ codex: null, claude: { attenzione: 60, critica: 80 } })).toMatchObject({ risorse: { soglie: { claude: { attenzione: 60, critica: 80 }, codex: null, deepseek: { attenzione: 70, critica: 90 } } } })
   for (const rotta of [{ claude: { attenzione: 90, critica: 90 } }, { claude: { attenzione: 0, critica: 50 } }, { claude: { attenzione: 50, critica: 101 } }, { altro: null }, { claude: '70/90' }, []])
-    expect(typeof r(rotta)).toBe('string')
+    expect(r(rotta)).toHaveProperty('k')
   const s = { attenzione: 60, critica: 80 }
   expect([livelloDi(59, s), livelloDi(60, s), livelloDi(80, s), livelloDi(99, null)]).toEqual(['ok', 'attenzione', 'critica', 'ok'])
   expect(coloreLimite({ ...LIMITE, percentuale: 85 }, Date.now(), s)).toBe(LIVELLO.critica)
@@ -1759,7 +1763,7 @@ test('2.4: board accesa: HTML dall\'helper senza gettoni, «Apri board» con arg
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Fix ricerca', brief: 'Correggi il dedup.', piano: 'docs/PIANO.md' } as never)
   const rifiutato = await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'X', brief: 'Y', piano: '../fuori.md' } as never)
-  expect(String((rifiutato as { deny?: unknown }).deny)).toContain('piano')
+  expect(String((rifiutato as { deny?: unknown }).deny)).toContain('plan')
   const id = amb.azione()[0]!.id
   expect(amb.azione()[0]!.piano).toBe('docs/PIANO.md')
   const ui = await $.ui.mount({ ...PANE('desktop') })
@@ -2330,8 +2334,9 @@ test('banco D7: a schermo con lavoro in corso, raccolta a 3,2 processi/min e dat
 
 test('consumo: riga grigia della sessione; lo stato Codex ignoto non è in corso e si segna', () => {
   const c = { processi: 7, app: 1, byte: 3 * 1_048_576, byteLimiti: 1_048_576, salti: 2, da: 0 }
-  expect(rigaConsumo(c, 10 * 60_000)).toBe("Questa sessione, ultimi 10 minuti: 7 processi · 1 chiamata all'app · 3,0 MB letti dall'helper Codex (1,0 MB per i limiti) · 2 salti d'arretrato")
-  expect(rigaConsumo({ ...c, byteLimiti: 0, salti: 1, processi: 1 }, 3 * 60_000)).toBe("Questa sessione, ultimi 3 min: 1 processo · 1 chiamata all'app · 3,0 MB letti dall'helper Codex · 1 salto d'arretrato")
+  expect(rigaConsumo(c, 10 * 60_000)).toBe('This session, last 10 minutes: 7 processes · 1 call to the app · 3.0 MB read by the Codex helper (1.0 MB for the limits) · 2 backlog skips')
+  expect(rigaConsumo(c, 10 * 60_000, 'it')).toBe("Questa sessione, ultimi 10 minuti: 7 processi · 1 chiamata all'app · 3,0 MB letti dall'helper Codex (1,0 MB per i limiti) · 2 salti d'arretrato")
+  expect(rigaConsumo({ ...c, byteLimiti: 0, salti: 1, processi: 1 }, 3 * 60_000, 'it')).toBe("Questa sessione, ultimi 3 min: 1 processo · 1 chiamata all'app · 3,0 MB letti dall'helper Codex · 1 salto d'arretrato")
   const adesso = Date.parse('2026-11-05T12:00:00Z')
   const s = (stato: string, inCorso: boolean) => sessioniCodex([{ id: 'esempio-0001', cwd: 'X:/repo', attivita: '2026-11-05T11:59:00Z', stato, inCorso }], radiceProgetto('X:/repo'), adesso)[0]!
   expect(s('ignoto', false).stato).toBe('ignota')

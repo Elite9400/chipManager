@@ -306,14 +306,15 @@ async function osserva(p, chiavi, deps = {}) {
   const get = deps.richiesta ?? richiesta
   const letto = new Date().toISOString()
   const limiti = []
-  let proxy = 'non abilitato'
+  // Errori e stati del proxy sono codici del dizionario del pannello (che li traduce), non frasi.
+  let proxy = 'proxy.nonAbilitato'
   const abilita = f => !p.soloLocale && p.fornitori.includes(f)
   const sonda = async (id, f, nome, fonte, fn) => {
-    if (!p.fornitori.includes(f)) { limiti.push(assente(id, f, nome, fonte, 'fornitore non abilitato')); return }
+    if (!p.fornitori.includes(f)) { limiti.push(assente(id, f, nome, fonte, 'lim.fornitoreNonAbilitato')); return }
     try {
       const l = await fn()
-      limiti.push(...(l.length ? l : [assente(id, f, nome, fonte, 'formato non disponibile')]))
-    } catch { limiti.push(assente(id, f, nome, fonte, 'fonte non disponibile')) }
+      limiti.push(...(l.length ? l : [assente(id, f, nome, fonte, 'lim.formato')]))
+    } catch { limiti.push(assente(id, f, nome, fonte, 'lim.fonte')) }
   }
   await sonda('claude', 'claude', 'Claude piano', 'snapshot status line', async () => {
     const s = JSON.parse(fs.readFileSync(path.join(home, '.claude', 'chipmanager', 'statusline.json'), 'utf8'))
@@ -329,19 +330,19 @@ async function osserva(p, chiavi, deps = {}) {
     await sonda('claude-api', 'claude', 'Claude API', 'Anthropic Admin · cost_report', async () => costoClaude(await get(
       `https://api.anthropic.com/v1/organizations/cost_report?starting_at=${letto.slice(0, 7)}-01T00%3A00%3A00Z&limit=31`,
       { headers: { 'x-api-key': chiavi.anthropic, 'anthropic-version': '2023-06-01' } }), letto))
-  } else limiti.push(assente('claude-api', 'claude', 'Claude API', 'Anthropic Admin', abilita('claude') ? 'chiave admin mancante' : 'rete non abilitata'))
+  } else limiti.push(assente('claude-api', 'claude', 'Claude API', 'Anthropic Admin', abilita('claude') ? 'lim.chiaveAdmin' : 'lim.rete'))
   if (abilita('deepseek') && chiavi.deepseek) {
     await sonda('deepseek', 'deepseek', 'DeepSeek saldo', 'GET /user/balance', async () => saldoDeepseek(await get('https://api.deepseek.com/user/balance', { headers: { Authorization: `Bearer ${chiavi.deepseek}` } }), letto))
-  } else limiti.push(assente('deepseek', 'deepseek', 'DeepSeek saldo', 'GET /user/balance', abilita('deepseek') ? 'chiave mancante' : 'rete non abilitata'))
+  } else limiti.push(assente('deepseek', 'deepseek', 'DeepSeek saldo', 'GET /user/balance', abilita('deepseek') ? 'lim.chiave' : 'lim.rete'))
   if (abilita('freellmapi')) {
     try {
       await get(p.freellmapi.endpoint.replace(/\/v1$/, '/api/ping'))
-      proxy = 'rilevato su loopback; accesso API da verificare'
+      proxy = 'proxy.rilevato'
       if (chiavi.freellmapi) {
         const l = usoFree(await get(`${p.freellmapi.endpoint}/usage`, { headers: { Authorization: `Bearer ${chiavi.freellmapi}` } }), letto)
-        if (l.length) { limiti.push(...l); proxy = 'rilevato; API autenticata' }
+        if (l.length) { limiti.push(...l); proxy = 'proxy.autenticato' }
       }
-    } catch { proxy = 'non raggiungibile o API non disponibile' }
+    } catch { proxy = 'proxy.irraggiungibile' }
   }
   if (!limiti.some(l => l.fornitore === 'freellmapi')) limiti.push(assente('freellmapi', 'freellmapi', 'FreeLLMAPI', 'GET /v1/usage', proxy))
   return { limiti, proxy, chiavi: { anthropic: !!chiavi.anthropic, deepseek: !!chiavi.deepseek, freellmapi: !!chiavi.freellmapi }, diagnostica }

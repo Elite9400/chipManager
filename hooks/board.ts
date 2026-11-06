@@ -15,6 +15,7 @@ import {
   mandato,
 } from './logica'
 import type { Strumenti } from './logica'
+import { testo } from './lingua'
 
 export type Commit = { sha: string; data: string; oggetto: string }
 export type Piano = { testo: string; troncato?: boolean } | { errore: string }
@@ -143,7 +144,7 @@ function scheda(a: Azione, d: DatiBoard, lista: readonly Azione[], segno: keyof 
 <div class="corpo">
 ${riassunto ? `<h4>Riassunto</h4><p>${esc(riassunto)}</p>` : ''}
 ${a.stato === 'fallita' && a.errore ? `<h4>Errore</h4><p class="errore">✕ ${esc(a.errore)}</p>` : ''}
-${blocchi.length ? `<h4>Blocchi</h4><ul>${blocchi.map(b => `<li>▲ ${esc(b)}</li>`).join('')}</ul>` : ''}
+${blocchi.length ? `<h4>Blocchi</h4><ul>${blocchi.map(b => `<li>▲ ${esc(testo('it', b))}</li>`).join('')}</ul>` : ''}
 ${a.motivoCoda ? `<p>In coda: ${esc(a.motivoCoda)}</p>` : ''}
 <h4>Piano</h4>${pianoHtml}
 <h4>Processo</h4><dl>${voce('Corsia', esc(corsiaDi(a, r) ?? 'nessuna'))}${voce('Passi', `esecuzione (${esc(motore(a.esecutore))}) → revisione (${esc(revisore)}) → fusione`)}${voce('Fase del registro', fase ? passi : 'nessuna')}</dl>
@@ -198,7 +199,7 @@ export function board(d: DatiBoard): string {
 ${d.impronta ? `<meta name="chipmanager-impronta" content="${esc(d.impronta)}">` : ''}
 <title>Board · ${esc(d.progetto)}</title><style>${CSS}</style></head><body>
 <header><h1>${esc(d.progetto)}</h1>
-<p class="tenue">Generata il ${esc(data(d.generata))} · chipManager ${esc(d.versione)} · regole da ${esc(d.regole.fonte)}</p>
+<p class="tenue">Generata il ${esc(data(d.generata))} · chipManager ${esc(d.versione)} · regole da ${esc(d.regole.fonte || 'non lette')}</p>
 <p>${inCorso.filter(a => a.stato === 'avviata').length} al lavoro · ${attesa.length} ${attesa.length === 1 ? 'aspetta' : 'aspettano'} te · ${lista.filter(a => a.stato === 'proposta').length} da avviare</p></header>
 <main>
 ${gruppo('Aspettano te', 'attesa', attesa, 'Niente aspetta te.')}

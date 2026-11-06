@@ -54,8 +54,8 @@ import {
 import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
 import { board, hash, improntaBoard, testoRiassunto } from './board'
 import type { Piano as PianoBoard } from './board'
-import { linguaDa, t } from './lingua'
-import type { Lingua } from './lingua'
+import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salvato, t, testo } from './lingua'
+import type { Lingua, Msg } from './lingua'
 import { disegna } from './pannello'
 import { fonte, INSTALLAZIONE, osservaRisorse, RISORSE_VUOTE } from './risorse'
 
@@ -64,11 +64,11 @@ import { fonte, INSTALLAZIONE, osservaRisorse, RISORSE_VUOTE } from './risorse'
 const azioni = atom({ plugin: 'chip-manager', key: 'azioni' } as const, [] as Azione[], { shape: 'azioni-5' })
 const aperta = atom({ plugin: 'chip-manager', key: 'aperta' } as const, null as string | null)
 const vive = atom({ plugin: 'chip-manager', key: 'vive' } as const, {} as Record<string, Vita>, { shape: 'vive-2' })
-const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as string | null)
+const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as Msg | string | null)
 const traguardi = atom({ plugin: 'chip-manager', key: 'traguardi' } as const, null as Traguardi | null, { shape: 'traguardi-3' })
 const regole = atom({ plugin: 'chip-manager', key: 'regole' } as const, null as Regole | null, { shape: 'regole-5' })
 const annullabile = atom({ plugin: 'chip-manager', key: 'annullabile' } as const, null as { id: string; titolo: string; altri?: string[] } | null)
-const illeggibili = atom({ plugin: 'chip-manager', key: 'illeggibili' } as const, [] as { nome: string; motivo: string }[], {
+const illeggibili = atom({ plugin: 'chip-manager', key: 'illeggibili' } as const, [] as { nome: string; motivo: Msg | string }[], {
   shape: 'illeggibili-2',
 })
 const contesto = atom({ plugin: 'chip-manager', key: 'contesto' } as const, null as Chiamante | null, { shape: 'chiamante-1' })
@@ -106,7 +106,7 @@ async function leggiConfig($: Eng): Promise<unknown> {
   try {
     return JSON.parse((await $.fs.read(f)) as string)
   } catch {
-    throw new Error('config.json illeggibile')
+    throw errore('cfg.illeggibile')
   }
 }
 
@@ -211,7 +211,7 @@ async function leggiTutte($: Eng, fresca = false): Promise<Letti> {
   if (tutto) ultimaCompleta = adesso
   const dir = await cartella($)
   const voci = (await $.fs.exists(dir)) ? await $.fs.list(dir) : []
-  const rotte: { nome: string; motivo: string }[] = []
+  const rotte: { nome: string; motivo: Msg | string }[] = []
   const visti = new Set<string>()
   const lette = await Promise.all(
     voci
@@ -224,14 +224,15 @@ async function leggiTutte($: Eng, fresca = false): Promise<Letti> {
         if (!tutto && prima && prima.mtimeMs === v.mtimeMs && prima.size === v.size) return prima.a
         try {
           const a = normalizza(JSON.parse((await $.fs.read(f)) as string))
-          if (typeof a === 'string') throw new Error(a)
+          if (eMsg(a)) throw new Errore(a)
           letture.set(f, { mtimeMs: v.mtimeMs, size: v.size, a })
           return a
         } catch (err) {
           letture.delete(f)
           // Un record illeggibile NON è un record assente: si mostra (nome e motivo), una dipendenza che
           // punta a lui resta bloccata, e le decisioni automatiche si fermano (`carica({ completa })`).
-          rotte.push({ nome: v.name, motivo: String((err as Error)?.message ?? err).slice(0, 80) })
+          const m = msgDi(err)
+          rotte.push({ nome: v.name, motivo: typeof m === 'string' ? m.slice(0, 80) : m })
           return undefined
         }
       }),
@@ -248,7 +249,7 @@ async function leggiTutte($: Eng, fresca = false): Promise<Letti> {
   return lista
 }
 
-type Letti = Azione[] & { nomi?: string[]; rotte?: { nome: string; motivo: string }[] }
+type Letti = Azione[] & { nomi?: string[]; rotte?: { nome: string; motivo: Msg | string }[] }
 
 /** Scrittura singola con compare-and-swap atomico. `nuova` = il file non deve esistere. */
 async function salva($: Eng, a: Azione, opz: { nuova?: boolean } = {}) {
@@ -340,9 +341,9 @@ async function leggiRegole($: Eng) {
   let progetto: ReturnType<typeof progettoDa> | undefined
   try {
     progetto = progettoDa(await leggiConfig($), repoGithub(sr?.remote) ?? (root ? checkoutDi(root) : null))
-    if (typeof progetto === 'string') throw new Error(progetto)
+    if (eMsg(progetto)) throw new Errore(progetto)
     const f = root ? `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/${progetto.routing}` : undefined
-    if (!f || !(await $.fs.exists(f))) throw new Error('routing.json assente')
+    if (!f || !(await $.fs.exists(f))) throw errore('regole.routingAssente')
     const json = JSON.parse((await $.fs.read(f)) as string) as { versione?: unknown }
     r = {
       ...regoleDa(json, `routing.json${json.versione !== undefined ? ` v${String(json.versione)}` : ''}`),
@@ -353,7 +354,8 @@ async function leggiRegole($: Eng) {
   } catch (err) {
     // Fail-closed: si disegna con i valori di ripiego, ma `lette: false` blocca ogni avvio. La politica del progetto
     // (board compresa) resta quella del config valido: un routing illeggibile non la allenta e non spegne la board.
-    r = { ...REGOLE_DEFAULT, fonte: `non letto (${String((err as Error)?.message ?? err).slice(0, 60)})`, ...(progetto && typeof progetto !== 'string' ? { risorse: progetto.risorse } : {}) }
+    const m = msgDi(err)
+    r = { ...REGOLE_DEFAULT, motivo: typeof m === 'string' ? m.slice(0, 60) : m, ...(progetto && !eMsg(progetto) ? { risorse: progetto.risorse } : {}) }
   }
   await update($, regole, () => r)
   return r
@@ -456,9 +458,9 @@ async function decidiPesi($: Eng, opz: Record<string, unknown>, p: PropostaPesi,
   const chiave = `d-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`
   const x = await helper($, ['pesi-decidi', await fileConfig($), chi.repo, p.id, String(p.versione), esito, chiave])
   await leggiProposte($)
-  if (x.codice !== 0) throw new Error(`Proposta di pesi: ${x.testo || 'decisione non registrata'}`)
+  if (x.codice !== 0) throw errore('err.pesiDecisione', { motivo: daTesto(x.testo) ?? msg('err.decisioneNonRegistrata') })
   await aggiornaRisorse($, opz)
-  $.ui.toast(esito === 'applica' ? TESTI_PESI.applicata : TESTI_PESI.rifiutata)
+  $.ui.toast(t(await read($, lingua), esito === 'applica' ? 'pesi.applicata' : 'pesi.rifiutata'))
 }
 
 async function annullaPesi($: Eng, opz: Record<string, unknown>, p: PropostaPesi) {
@@ -467,9 +469,9 @@ async function annullaPesi($: Eng, opz: Record<string, unknown>, p: PropostaPesi
   const chiave = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`
   const x = await helper($, ['pesi-annulla', await fileConfig($), chi.repo, p.id, chiave])
   await leggiProposte($)
-  if (x.codice !== 0) throw new Error(`Annulla: ${x.testo || 'non riuscito'}`)
+  if (x.codice !== 0) throw errore('err.pesiAnnulla', { motivo: daTesto(x.testo) ?? msg('err.nonRiuscito') })
   await aggiornaRisorse($, opz)
-  $.ui.toast(TESTI_PESI.annullata)
+  $.ui.toast(t(await read($, lingua), 'pesi.annullata'))
 }
 
 // --- azioni senza progetto (scritte da una versione precedente) --------------------------------------------
@@ -511,7 +513,7 @@ async function chiediSenzaProgetto($: Eng) {
 
 // --- avvio --------------------------------------------------------------------------------------------
 
-type Decisione = { avvia?: Azione; coda?: string; blocchi?: string[]; nulla?: Azione }
+type Decisione = { avvia?: Azione; coda?: Msg; blocchi?: Msg[]; nulla?: Azione }
 
 /**
  * Decide e prenota. Rilegge record, regole e configurazione di chi avvia; decide con `pianifica` e le
@@ -529,29 +531,29 @@ async function decidi(
     const a = tutte.find(x => x.id === id)
     const ammessi = opz.qui ? ['proposta'] : ['proposta', 'accodata', 'fallita']
     if (!a || !ammessi.includes(a.stato)) return { nulla: a }
-    if (opz.approvata !== undefined && a.versione !== opz.approvata)
-      throw new Error(`«${a.titolo}» è cambiata dopo la conferma: rivedila e riavviala`)
-    if (a.esecutore === 'freellmapi' && opz.terzoApprovato !== a.versione) return { blocchi: ['FreeLLMAPI: serve conferma del testo di questa versione'] }
+    if (opz.approvata !== undefined && a.versione !== opz.approvata) throw errore('err.cambiataDopoConferma', { titolo: a.titolo })
+    if (a.esecutore === 'freellmapi' && opz.terzoApprovato !== a.versione) return { blocchi: [msg('v.freeConferma')] }
     // Il cloud parte solo con il consenso dato al testo di QUESTA versione (letto per intero nella
     // conferma); un'azione diventata cloud dopo la conferma, o chiesta a mano, non parte.
     if (a.destinazione === 'cloud' && !opz.qui) {
-      if (opz.manuale) return { blocchi: ['il ripiego manuale non vale per il cloud: usa «Riprova», che chiede la conferma del testo'] }
-      if (opz.cloudApprovato !== a.versione) return { blocchi: ['va al cloud: serve la tua conferma del testo di questa versione (premi di nuovo Avvia)'] }
+      if (opz.manuale) return { blocchi: [msg('v.cloudManuale')] }
+      if (opz.cloudApprovato !== a.versione) return { blocchi: [msg('v.cloudConferma')] }
     }
     const lista = delProgetto(tutte, chi)
     const blocchi = violazioniAvvio(a, r, tutte, chi, opz.qui)
-    if (opz.manuale && (chi.lanciatore !== 'desktop' || a.esecutore === 'freellmapi')) blocchi.push('ripiego manuale disponibile solo per sessioni desktop Claude/Codex')
+    if (opz.manuale && (chi.lanciatore !== 'desktop' || a.esecutore === 'freellmapi')) blocchi.push(msg('v.manualeDesktop'))
     if (blocchi.length) return { blocchi }
     // «qui» non occupa un posto di sessione nuova, ma la corsia Codex sì.
     const piano = await conCorsia($, codex => pianifica([a], lista, r, opz.qui ? Number.MAX_SAFE_INTEGER : maxParalleli(options), codex, x => violazioniAvvio(x, r, tutte, chi, opz.qui)))
     if (piano.bloccate.length) return { blocchi: piano.bloccate[0]!.motivi }
     if (piano.coda.length) {
       const motivo = piano.coda[0]!.motivo
-      if (opz.qui) throw new Error(`«${a.titolo}» non parte adesso: ${motivo}`)
-      if (a.stato === 'accodata' && a.motivoCoda === motivo) return { coda: motivo }
+      if (opz.qui) throw errore('err.nonParteAdesso', { titolo: a.titolo, motivo })
+      // Stesso motivo già salvato (la frase inglese del codice): nessuna scrittura.
+      if (a.stato === 'accodata' && a.motivoCoda === t('en', motivo.k, motivo.p)) return { coda: motivo }
       const origineFork = a.contesto === 'fork' ? (a.origineFork ?? chi.io) : undefined
       const origineNome = a.contesto === 'fork' ? (a.origineNome ?? (origineFork === chi.io ? chi.titolo : undefined)) : undefined
-      if (await prenota($, tutte, { ...a, ...transizione(a, 'accodata', ora()), motivoCoda: motivo, origineFork, origineNome })) return { coda: motivo }
+      if (await prenota($, tutte, { ...a, ...transizione(a, 'accodata', ora()), ...salvato('motivoCoda', 'motivo', motivo), origineFork, origineNome })) return { coda: motivo }
       continue
     }
     const presa = await prenota($, tutte, {
@@ -571,7 +573,7 @@ async function decidi(
       manuale: opz.manuale ? true : undefined,
       presa: undefined,
       lanciataDa: chi.io,
-      motivoCoda: undefined,
+      ...salvato('motivoCoda', 'motivo', undefined),
       errore: undefined,
       lanciatore: opz.qui || opz.manuale ? undefined : a.esecutore === 'freellmapi' ? 'freellmapi' : chi.lanciatore === 'cli' ? 'cli' : undefined,
       risultato: undefined,
@@ -603,21 +605,21 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
   const prima = tutte.find(x => x.id === id)
   if (prima?.esecutore === 'freellmapi' && ['proposta', 'accodata', 'fallita'].includes(prima.stato)) {
     const v = violazioni(prima, await leggiRegole($), tutte)
-    if (v.length) throw new Error(`Non parte: ${v.join('; ')}`)
-    if (approvata !== undefined && prima.versione !== approvata) throw new Error('azione cambiata: rivedila prima di inviare')
+    if (v.length) throw errore('err.nonParte', { motivi: v })
+    if (approvata !== undefined && prima.versione !== approvata) throw errore('err.cambiataPrimaInvio')
     if (await $.ui.ask(`FreeLLMAPI inoltra questo testo ai fornitori configurati nel proxy. Nessun file o strumento sarà disponibile.\n\n${prima.titolo}\n\n${prima.brief}\n\nInvio il testo?`, { options: ['Invia testo', 'Annulla'], header: 'FreeLLMAPI' }) !== 'Invia testo') return
     approvata = prima.versione
   }
   if (prima?.destinazione === 'cloud' && ['proposta', 'accodata', 'fallita'].includes(prima.stato)) {
-    if (approvata !== undefined && prima.versione !== approvata) throw new Error(`«${prima.titolo}» è cambiata dopo la conferma: rivedila e riavviala`)
+    if (approvata !== undefined && prima.versione !== approvata) throw errore('err.cambiataDopoConferma', { titolo: prima.titolo })
     // Prima le regole (lunghezza, dati locali, Codex…): non si chiede conferma di un testo che non partirebbe.
     const v = violazioni(prima, await leggiRegole($), tutte)
-    if (v.length) throw new Error(`Non parte: ${v.join('; ')}`)
+    if (v.length) throw errore('err.nonParte', { motivi: v })
     if (!(await confermaCloud($, prima))) return
     approvata = prima.versione
   }
   const d = await decidi($, options, id, { approvata, cloudApprovato: prima?.destinazione === 'cloud' ? prima.versione : undefined, terzoApprovato: prima?.esecutore === 'freellmapi' ? prima.versione : undefined })
-  if (d.blocchi) throw new Error(`Non parte: ${d.blocchi.join('; ')}`)
+  if (d.blocchi) throw errore('err.nonParte', { motivi: d.blocchi })
   if (!d.avvia) return
   const presa = d.avvia
   if (presa.lanciatore === 'cli' || presa.lanciatore === 'freellmapi') return avviaAlternativa($, options, presa)
@@ -659,7 +661,7 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
   try {
     const r = await leggiRegole($)
     const blocchi = violazioni(a, r, await carica($, { completa: true }))
-    if (blocchi.length) return aggiorna($, a.id, x => x.tentativo === a.tentativo ? { ...transizione(x, 'fallita', ora()), errore: 'regole cambiate prima dell’invio' } : null)
+    if (blocchi.length) return aggiorna($, a.id, x => x.tentativo === a.tentativo ? { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', msg('err.regoleCambiate')) } : null)
     if (a.lanciatore === 'freellmapi') {
       const risultato = await fonte($, options, 'completa', { politica: r.risorse, testo: `${a.titolo}\n\n${a.brief}`, modello: a.modello }) as { risultato?: unknown }
       if (typeof risultato.risultato !== 'string' || risultato.risultato.length > 30000) throw new Error('risposta non valida')
@@ -704,7 +706,7 @@ async function invia($: Eng, testo: string) {
 /** «Fallo qui»: stessi controlli dell'avvio sulla configurazione EFFETTIVA di questa sessione. */
 async function faiQui($: Eng, options: Record<string, unknown>, id: string) {
   const d = await decidi($, options, id, { qui: true })
-  if (d.blocchi) throw new Error(`Non si fa qui: ${d.blocchi.join('; ')}`)
+  if (d.blocchi) throw errore('err.nonQui', { motivi: d.blocchi })
   if (!d.avvia) return
   const presa = d.avvia
   try {
@@ -719,7 +721,7 @@ async function faiQui($: Eng, options: Record<string, unknown>, id: string) {
 /** Ripiego manuale, solo da «fallita»: il modello di questa sessione chiama start_session con il gettone. */
 async function chiediQui($: Eng, options: Record<string, unknown>, id: string) {
   const d = await decidi($, options, id, { manuale: true })
-  if (d.blocchi) throw new Error(`Non parte: ${d.blocchi.join('; ')}`)
+  if (d.blocchi) throw errore('err.nonParte', { motivi: d.blocchi })
   if (!d.avvia) return
   const presa = d.avvia
   const args = parametriAvvio(presa, (await read($, regole)) ?? REGOLE_DEFAULT, strumenti($))
@@ -759,12 +761,14 @@ async function avviaProssima($: Eng, options: Record<string, unknown>, attesa?: 
   const { piano } = await pianoProposte($, options)
   const a = piano.avvia[0]
   if (!a) {
-    const motivi = [...new Set([...piano.coda.map(x => x.motivo), ...(piano.bloccate.length ? [`${piano.bloccate.length} bloccate dalle regole`] : [])])]
-    throw new Error(motivi.length ? `Nessuna parte adesso: ${motivi.join(' · ')}` : 'Niente da avviare')
+    const motivi = [...piano.coda.map(x => x.motivo), ...(piano.bloccate.length ? [msg('err.bloccateRegole', { n: piano.bloccate.length })] : [])]
+    const unici = motivi.filter((m, i) => motivi.findIndex(x => JSON.stringify(x) === JSON.stringify(m)) === i)
+    throw unici.length ? errore('err.nessunaParte', { motivi: unici }) : errore('err.nienteDaAvviare')
   }
   if (attesa && a.id !== attesa) {
     const ferma = piano.coda.find(x => x.a.id === attesa)
-    $.ui.toast(`Parte «${a.titolo}»${ferma ? `; «${ferma.a.titolo}» aspetta: ${ferma.motivo}` : ''}`)
+    const l = await read($, lingua)
+    $.ui.toast(ferma ? t(l, 'toast.parteAltra', { titolo: a.titolo, attesa: ferma.a.titolo, motivo: ferma.motivo }) : t(l, 'toast.parte', { titolo: a.titolo }))
   }
   await avvia($, options, a.id, a.versione)
 }
@@ -773,7 +777,7 @@ async function avviaProssima($: Eng, options: Record<string, unknown>, attesa?: 
 async function avviaTutte($: Eng, options: Record<string, unknown>) {
   const { piano, r, max } = await pianoProposte($, options)
   if (!piano.avvia.length && !piano.coda.length) {
-    if (piano.bloccate.length) throw new Error(`Nessuna può partire: ${piano.bloccate.length} bloccate dalle regole`)
+    if (piano.bloccate.length) throw errore('err.nessunaPuo', { n: piano.bloccate.length })
     return
   }
   const claude = piano.avvia.filter(a => a.esecutore === 'claude').length
@@ -1087,7 +1091,8 @@ async function fai($: Eng, fn: () => Promise<unknown>) {
     await update($, avviso, () => null)
   } catch (err) {
     if (err instanceof Conflitto) await carica($, { fresca: true })
-    await update($, avviso, () => String((err as Error)?.message ?? err).slice(0, 300))
+    const m = msgDi(err)
+    await update($, avviso, () => (typeof m === 'string' ? m.slice(0, 300) : m))
   }
 }
 
@@ -1140,7 +1145,7 @@ function valida(e: Record<string, unknown>, r: Regole, esistenti: readonly Azion
   if (e.base !== undefined && (typeof e.base !== 'string' || !BASE_RE.test(e.base))) return 'base: nome di un ramo locale'
   if (e.piano !== undefined) {
     const no = pianoValido(e.piano)
-    if (no) return no
+    if (no) return t('en', no.k, no.p)
   }
   return {
     piano: e.piano as string | undefined,
@@ -1209,11 +1214,11 @@ async function configura($: Eng, opz: Record<string, unknown>, campi: Record<str
     const atteso = await $.fs.exists(f) ? await $.fs.read(f) as string : null
     const config = atteso === null ? {} : JSON.parse(atteso) as { progetti?: Record<string, unknown> }
     const precedente = progettoDa(config, chi.repo)
-    if (typeof precedente === 'string') throw new Error(precedente)
+    if (eMsg(precedente)) throw new Errore(precedente)
     if (JSON.stringify(precedente.risorse) !== JSON.stringify(attese)) throw new Error('Impostazioni cambiate altrove: aggiorna prima di modificarle')
     const nuovo = { ...config, progetti: { ...config.progetti, [chi.repo]: { ...(config.progetti?.[chi.repo] as object ?? {}), ...campi } } }
     const p = progettoDa(nuovo, chi.repo)
-    if (typeof p === 'string') throw new Error(p)
+    if (eMsg(p)) throw new Errore(p)
     const esito = await helper($, ['configura', f], JSON.stringify({ atteso, repo: chi.repo, campi }))
     if (esito.codice !== 0) throw new Error('Configurazione cambiata altrove o non scrivibile: ricarica e riprova')
     await aggiornaRisorse($, opz)
@@ -1518,7 +1523,7 @@ export const register: Register = (on, options) => {
     return {
       result:
         `Azione ${a.id} nel pannello (posizione ${a.ordine}, ${a.esecutore} → revisione ${a.revisore}).` +
-        (blocchi.length ? ` Attenzione, così non può partire: ${blocchi.join('; ')}.` : ''),
+        (blocchi.length ? ` Attenzione, così non può partire: ${testo('en', msg('err.nonParte', { motivi: blocchi }))}.` : ''),
     }
   })
 
@@ -1530,7 +1535,7 @@ export const register: Register = (on, options) => {
     // Solo ciò che il pannello mostra: delle chiavi si dice se ci sono, mai il valore. Profilo e soglie stanno in `politica`.
     return {
       result: rispostaRisorse({
-        regole: { lette: r.lette, fonte: r.fonte, modelli: r.modelli, effort: r.effort, corsieCodex: r.corsiaCodex.corsie },
+        regole: { lette: r.lette, fonte: r.lette ? r.fonte : `not read (${testo('en', r.motivo)})`, modelli: r.modelli, effort: r.effort, corsieCodex: r.corsiaCodex.corsie },
         politica: r.risorse,
         limiti: ris.limiti,
         freellmapi: ris.proxy,
@@ -1545,7 +1550,7 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: 'mcp__chip-manager__proponi_pesi' }, async ($, e) => {
     const [r, chi] = await Promise.all([leggiRegole($), chiSonoIo($)])
     if (!chi.repo) return { deny: 'proponi_pesi: questa sessione non è in un repository' }
-    if (!r.lette) return { deny: `proponi_pesi: regole ${r.fonte}: senza routing.json le voci non si controllano` }
+    if (!r.lette) return { deny: `proponi_pesi: regole non lette (${testo('en', r.motivo)}): senza routing.json le voci non si controllano` }
     // `tool` e `tool_use_id` sono del motore, non argomenti: ogni altro campo estraneo si rifiuta.
     const { tool: _tool, tool_use_id: _id, ...args } = e as unknown as Record<string, unknown>
     const v = propostaDa(args, r)
@@ -1555,7 +1560,7 @@ export const register: Register = (on, options) => {
       repo: chi.repo, proponente: { id: chi.io, titolo: chi.titolo ?? '' }, motivo: v.motivo, profilo: v.profilo, regolazioni: v.regolazioni,
       partenza: { profilo: r.risorse.profilo ?? null, pesi: r.risorse.pesi }, revisione: r.risorse.pesiRevisione ?? 0, risultato: v.risultato,
     }))
-    if (esito.codice !== 0) return { deny: `proponi_pesi: ${esito.testo || 'proposta non registrata'}` }
+    if (esito.codice !== 0) return { deny: `proponi_pesi: ${chiaveOTesto('en', esito.testo) || 'proposal not recorded'}` }
     const { id, scadute } = JSON.parse(esito.testo) as { id: string; scadute: string[] }
     await leggiProposte($)
     void $.ui.open({ id: PANE, title: TITOLO })

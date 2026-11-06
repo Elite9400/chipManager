@@ -1021,7 +1021,7 @@ test('F4 pesi: chiave di decisione idempotente; altra chiave o versione vecchia 
   assert.deepStrictEqual([ritento.codice, JSON.parse(ritento.testo).stato, a.leggi().pesiRevisione], [0, 'applicata', 1])
   // Una risposta tardiva (popup aperto sulla versione 0) con un'altra chiave: rifiutata.
   const tardiva = await decidi(a, id, 0, 'rifiuta', 'd-chiave0002')
-  assert.deepStrictEqual([tardiva.codice, tardiva.testo], [4, 'la proposta è cambiata, rivedi'])
+  assert.deepStrictEqual([tardiva.codice, tardiva.testo], [4, 'helper.cambiata'])
   assert.strictEqual(a.voci()[0].stato, 'applicata')
 })
 
@@ -1034,7 +1034,7 @@ test('F4 pesi: proposta nuova mentre un\'altra è in revisione: entrambe visibil
   assert.strictEqual((await decidi(a, p1, 0, 'rifiuta', 'd-rifiuto001')).codice, 0)
   assert.strictEqual((await decidi(a, p2, 0, 'applica', 'd-applica001')).codice, 0)
   // La terza partiva dalla configurazione di prima: non si applica sopra quella nuova.
-  assert.deepStrictEqual(await decidi(a, p3, 0, 'applica', 'd-applica002'), { codice: 4, testo: 'la configurazione è cambiata dalla proposta: rivedi' })
+  assert.deepStrictEqual(await decidi(a, p3, 0, 'applica', 'd-applica002'), { codice: 4, testo: 'helper.primaDellaProposta' })
   assert.deepStrictEqual([a.voci().map(v => v.stato), a.leggi().profilo], [['rifiutata', 'applicata', 'attesa'], 'qualita'])
 })
 
@@ -1093,7 +1093,7 @@ test('F4 pesi: Annulla ripristina la partenza; dopo una modifica manuale (anche 
   for (const campi of [{ profilo: 'qualita', pesi: [] }, { profilo: 'risparmio', pesi: [EFFORT_LOW] }])
     assert.strictEqual(await configura(a.config, { atteso: a.testo(), repo: REPO_PESI, campi }), 0)
   const prima = a.testo()
-  assert.deepStrictEqual(await pesiAnnulla(a.config, REPO_PESI, p2, 'u-tardivo001'), [4, 'la configurazione è cambiata dopo l\'applicazione'])
+  assert.deepStrictEqual(await pesiAnnulla(a.config, REPO_PESI, p2, 'u-tardivo001'), [4, 'helper.dopoApplicazione'])
   assert.deepStrictEqual([a.testo(), a.voci()[1].stato], [prima, 'applicata'])
 })
 
@@ -1107,7 +1107,7 @@ test('F4 pesi: un campo diverso da profilo o pesi è rifiutato, anche in un file
   assert.strictEqual(fs.existsSync(a.proposte), false)
   const { id } = await proponi(a)
   a.scriviVoci(voci => { voci[0].risultato.fornitori = ['codex'] })
-  assert.deepStrictEqual(await decidi(a, id, 0, 'applica', 'd-manomess01'), { codice: 4, testo: 'proposta non valida: solo profilo e pesi' })
+  assert.deepStrictEqual(await decidi(a, id, 0, 'applica', 'd-manomess01'), { codice: 4, testo: 'helper.campi' })
   assert.strictEqual(a.testo(), prima)
 })
 
@@ -1115,7 +1115,7 @@ test('F4 pesi: dopo 24 ore scade; oltre 3 in attesa la più vecchia scade e lo d
   const a = ambientePesi()
   const { id } = await proponi(a)
   a.scriviVoci(voci => { voci[0].quando = new Date(Date.now() - 25 * 3_600_000).toISOString() })
-  assert.deepStrictEqual(await decidi(a, id, 0, 'applica', 'd-scaduta001'), { codice: 4, testo: 'la proposta è scaduta' })
+  assert.deepStrictEqual(await decidi(a, id, 0, 'applica', 'd-scaduta001'), { codice: 4, testo: 'helper.scaduta' })
   assert.strictEqual(a.voci()[0].stato, 'scaduta')
   const ids = []
   for (let i = 0; i < 12; i++) {

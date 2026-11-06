@@ -1,8 +1,37 @@
 import type { EngineInterface } from 'claude-code'
 import type { Limite, Regole, Risorse } from '../types'
+import { nomeLimite } from './bilanciamento'
+import { t } from './lingua'
+import type { Chiave, Lingua } from './lingua'
 import { conta, diagnosticaHelper, FORNITORI } from './logica'
 
-export const RISORSE_VUOTE: Risorse = { limiti: [], proxy: 'non verificato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } }
+/** I limiti con un nome fisso, per id: il nome si traduce; quello salvato serve solo ai record vecchi e agli agenti. */
+const NOMI_FISSI: Record<string, Chiave> = {
+  'claude-five_hour': 'lim.claude5h', 'claude-seven_day': 'lim.claude7g', 'codex-primary': 'lim.codexPrimaria', 'codex-secondary': 'lim.codexSecondaria',
+  claude: 'lim.claudePiano', codex: 'lim.codexPiano',
+}
+
+/** Il nome di un limite nella lingua del pannello: per id dove il nome è fisso; le etichette dell'app restano com'erano. */
+export function nomeLimiteIn(l: Pick<Limite, 'id' | 'nome' | 'manuale' | 'valore'>, lingua: Lingua): string {
+  if (l.manuale) return nomeLimite(l.nome, lingua)
+  const fisso = NOMI_FISSI[l.id]
+  if (fisso) return t(lingua, fisso)
+  if (l.id === 'claude-api') return t(lingua, l.valore !== undefined ? 'lim.claudeApiMese' : 'lim.claudeApi')
+  if (l.id === 'freellmapi') return t(lingua, l.valore !== undefined ? 'lim.freeMese' : 'lim.free')
+  if (l.id === 'deepseek' || l.id.startsWith('deepseek-')) return t(lingua, 'lim.deepseek')
+  if (l.id === 'claude-extra') {
+    const tetto = l.nome.match(/ · (?:tetto|cap) (\S+ [A-Z]{3})$/)?.[1]
+    return tetto ? t(lingua, 'lim.claudeExtraTetto', { tetto }) : t(lingua, 'lim.claudeExtra')
+  }
+  // Una finestra del piano con l'etichetta dell'app: si traduce solo il prefisso.
+  const etichetta = l.nome.match(/^Claude (?:piano|plan) · (.+)$/)?.[1]
+  return l.id.startsWith('claude-') && etichetta ? `${t(lingua, 'lim.claudePiano')} · ${etichetta}` : l.nome
+}
+
+/** L'unità di un valore: «richieste» si traduce, valute, token e % no. */
+export const unitaIn = (u: Limite['unita'], lingua: Lingua) => (u === 'richieste' ? t(lingua, 'unita.richieste') : u ?? '')
+
+export const RISORSE_VUOTE: Risorse = { limiti: [], proxy: 'proxy.nonVerificato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } }
 export const FREE_COMMIT = 'fb07845faf7cf986ea9f3692e055076035dd8739'
 const immagine = `chipmanager-freellmapi:${FREE_COMMIT.slice(0, 12)}`
 export const INSTALLAZIONE = [
@@ -69,7 +98,8 @@ export function usoDesktop(json: unknown, letto: string): Limite[] {
   const piano = j.plan as Record<string, unknown> | undefined
   if (piano && typeof piano === 'object') {
     if (piano.status !== 'ok') {
-      const motivo = piano.status === 'not_applicable' ? 'limiti di piano non applicabili qui' : 'limiti di piano non leggibili ora'
+      // Codici del dizionario (il pannello li traduce); la nota dell'app resta com'è dopo i due punti.
+      const motivo = piano.status === 'not_applicable' ? 'lim.pianoNonApplicabile' : 'lim.pianoNonLeggibile'
       const nota = etichetta(piano.note)
       return [{ id: 'claude', fornitore: 'claude', nome: 'Claude piano', fonte, errore: nota ? `${motivo}: ${nota}` : motivo }]
     }
@@ -110,10 +140,10 @@ export function pianoVuoto(json: unknown): boolean {
 }
 
 export async function osservaRisorse($: EngineInterface, options: Record<string, unknown>, r: Regole): Promise<Risorse> {
-  if (!r.lette) return { ...RISORSE_VUOTE, proxy: 'regole non leggibili: sonde disabilitate' }
+  if (!r.lette) return { ...RISORSE_VUOTE, proxy: 'proxy.regole' }
   let risultato: Risorse
   try { risultato = risorseLette(await fonte($, options, 'limiti', r.risorse)) }
-  catch { risultato = { ...RISORSE_VUOTE, proxy: 'helper non disponibile', chiavi: { anthropic: !!options.anthropicAdminKey, deepseek: !!options.deepseekKey, freellmapi: !!options.freellmapiKey } } }
+  catch { risultato = { ...RISORSE_VUOTE, proxy: 'proxy.helper', chiavi: { anthropic: !!options.anthropicAdminKey, deepseek: !!options.deepseekKey, freellmapi: !!options.freellmapiKey } } }
   if (r.risorse.fornitori.includes('claude') && !r.risorse.soloLocale) {
     try {
       const disponibile = (await $.tool.list()).some(t => t.name === 'mcp__ccd_session_mgmt__get_usage')

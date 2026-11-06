@@ -150,10 +150,11 @@ test('proposte dal file: solo questo progetto, voci di forma sconosciuta saltate
 
 test('riassunto, popup e Annulla: testi raccolti; annullabile solo con la stessa revisione e origine', () => {
   const p = proposteDa({ voci: [{ ...VOCE, regolazioni: [{ tipo: 'fornitore', nome: 'codex', posizione: 3 }, { tipo: 'effort', nome: 'xhigh', posizione: 1 }] }] }, 'esempio/demo')[0]!
-  expect(riassuntoProposta(p)).toBe('Risparmio · Codex Più · effort xhigh Meno')
-  expect(TESTI_PESI.riga(p)).toBe('Proposta di pesi da «Master» (01234567): Risparmio · Codex Più · effort xhigh Meno')
-  expect(TESTI_PESI.domanda(p)).toContain('nessun profilo · nessun peso\n→ Risparmio · nessun peso')
-  expect(descriviPesi({ profilo: 'personalizzato', pesi: [MODELLO, { tipo: 'effort', nome: 'low', percentuale: 40, assoluto: 0 }] })).toContain('effort low Più')
+  expect(riassuntoProposta(p, 'it')).toBe('Risparmio · Codex Più · effort xhigh Meno')
+  expect(TESTI_PESI.riga(p, 'en')).toBe('Weights proposal from “Master” (01234567): Saving · Codex More · effort xhigh Less')
+  expect(TESTI_PESI.riga(p, 'it')).toBe('Proposta di pesi da «Master» (01234567): Risparmio · Codex Più · effort xhigh Meno')
+  expect(TESTI_PESI.domanda(p, 'it')).toContain('nessun profilo · nessun peso\n→ Risparmio · nessun peso')
+  expect(descriviPesi({ profilo: 'personalizzato', pesi: [MODELLO, { tipo: 'effort', nome: 'low', percentuale: 40, assoluto: 0 }] }, 'it')).toContain('effort low Più')
   const applicata = { ...p, stato: 'applicata' as const, decisione: { id: 'd-esempio01', esito: 'applica' as const, quando: ORA, revisione: 4 } }
   expect(annullabile(applicata, { ...RISORSE_DEFAULT, pesiRevisione: 4, pesiOrigine: { tipo: 'proposta', id: 'd-esempio01' } })).toBe(true)
   expect(annullabile(applicata, { ...RISORSE_DEFAULT, pesiRevisione: 5, pesiOrigine: { tipo: 'proposta', id: 'd-esempio01' } })).toBe(false)
@@ -279,11 +280,11 @@ function ambiente(on: On, progetto: Record<string, unknown> = { fornitori: ['cla
     }
     if (cmd === 'pesi-decidi' || cmd === 'pesi-annulla') {
       const v = P.voci.find(x => x.id === a[2])
-      if (!v) return fine(4, 'proposta non trovata')
+      if (!v) return fine(4, 'helper.nonTrovata')
       const prog = progettoDi()
       const R = (prog.pesiRevisione as number) ?? 0
       if (cmd === 'pesi-decidi') {
-        if (v.stato !== 'attesa' || String(v.versione) !== a[3]) return fine(4, 'la proposta è cambiata, rivedi')
+        if (v.stato !== 'attesa' || String(v.versione) !== a[3]) return fine(4, 'helper.cambiata')
         if (a[4] === 'applica') {
           const r = v.risultato as { profilo: string; pesi: unknown[] }
           Object.assign(prog, { profilo: r.profilo, pesi: r.pesi, pesiRevisione: R + 1, pesiOrigine: { tipo: 'proposta', id: a[5], voce: v.id, versione: v.versione } })
@@ -291,7 +292,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = { fornitori: ['cla
         } else Object.assign(v, { stato: 'rifiutata', decisione: { id: a[5], esito: 'rifiuta', quando: new Date().toISOString() } })
       } else {
         const d = v.decisione as { id: string; revisione: number }
-        if (v.stato !== 'applicata' || R !== d.revisione || (prog.pesiOrigine as { id?: string })?.id !== d.id) return fine(4, 'la configurazione è cambiata dopo l\'applicazione')
+        if (v.stato !== 'applicata' || R !== d.revisione || (prog.pesiOrigine as { id?: string })?.id !== d.id) return fine(4, 'helper.dopoApplicazione')
         const s = v.partenza as { profilo: string | null; pesi: unknown[] }
         Object.assign(prog, { pesi: s.pesi, pesiRevisione: R + 1, pesiOrigine: { tipo: 'annullamento', id: a[3] } })
         if (s.profilo) prog.profilo = s.profilo
@@ -342,7 +343,7 @@ test('proponi_pesi: il proponente è questa sessione; la proposta compare in Lav
   expect(JSON.stringify(rifiuto)).toContain('campi non ammessi')
   expect(amb.comandi('pesi-proponi')).toHaveLength(0)
   const r = await $.tool.call({ tool: 'mcp__chip-manager__proponi_pesi', motivo: 'Claude settimanale al 78%', profilo: 'risparmio' } as never)
-  expect(JSON.stringify(r)).toContain('Proposta registrata (id p-esempio01): la decide il committente')
+  expect(JSON.stringify(r)).toContain('Proposal recorded (id p-esempio01): the owner decides it')
   expect(amb.stdin[0]).toMatchObject({
     repo: 'esempio/demo', proponente: { id: 'local_sessione-esempio', titolo: 'Master' }, partenza: { profilo: null, pesi: [] }, revisione: 0,
     risultato: { profilo: 'risparmio', pesi: conProfilo([], 'risparmio') },
@@ -430,7 +431,7 @@ test('risorse_agenti: al lavoro, contesto con copertura e proposte; profilo e so
   expect(r.result.length).toBeLessThanOrEqual(TETTO_RISORSE)
   const d = JSON.parse(r.result) as Record<string, unknown>
   expect(Object.keys(d)).toEqual(expect.arrayContaining(['politica', 'limiti', 'alLavoro', 'contesto', 'proposte']))
-  expect(d.proposte).toEqual([expect.objectContaining({ id: 'p-esempio01', stato: 'attesa', da: 'Master', chiede: 'Risparmio' })])
+  expect(d.proposte).toEqual([expect.objectContaining({ id: 'p-esempio01', stato: 'attesa', da: 'Master', chiede: 'Saving' })])
   expect(d).not.toHaveProperty('profilo')
   expect(d).not.toHaveProperty('soglie')
   expect(Object.keys(d.politica as object)).toContain('soglie')
@@ -460,7 +461,7 @@ test('P2 scadenza: oltre 24 ore una proposta ancora «attesa» nel file compare 
   const p = proposteDa({ voci: [VOCE] }, 'esempio/demo')[0]!
   const dopo = Date.parse(ORA) + 25 * 3_600_000
   expect([statoVisto(p, dopo), statoVisto(p, Date.parse(ORA) + 3_600_000)]).toEqual(['scaduta', 'attesa'])
-  expect(TESTI_PESI.registro(p, dopo)).toMatch(/^Scaduta il /)
+  expect(TESTI_PESI.registro(p, 'it', dopo)).toMatch(/^Scaduta il /)
   expect(decisaIl(p, dopo)).toBe(Date.parse(ORA) + 24 * 3_600_000)
   expect(proposteBrevi([p], dopo)[0]!.stato).toBe('scaduta')
 })

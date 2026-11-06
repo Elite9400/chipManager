@@ -136,8 +136,11 @@ export type Azione = {
   stato: StatoAzione
   /** Stato prima dello scarto, per «Annulla». */
   statoPrima?: StatoAzione
-  /** Perché è in coda: dipendenze, corsia Codex, limite di parallelismo. */
+  /** Perché è in coda: dipendenze, corsia Codex, limite di parallelismo. La frase in inglese (i record vecchi: com'era). */
   motivoCoda?: string
+  /** Lo stesso motivo come codice del dizionario e parametri: il pannello lo traduce. */
+  motivoCodice?: string
+  motivoParametri?: Record<string, unknown>
   /**
    * Fork accodato: la sessione la cui conversazione va copiata. Solo lei lo fa ripartire (un altro pannello
    * copierebbe la SUA conversazione).
@@ -177,7 +180,11 @@ export type Azione = {
   avviataIl?: string
   creata: string
   aggiornata: string
+  /** L'errore dell'ultimo tentativo: frase inglese o diagnostica esterna (i record vecchi: com'era). */
   errore?: string
+  /** Lo stesso errore come codice e parametri, se è un messaggio proprio della mod. */
+  erroreCodice?: string
+  erroreParametri?: Record<string, unknown>
   /** Esecuzione CLI/proxy: il gettone identifica il record privato nell'helper. */
   lanciatore?: 'cli' | 'freellmapi'
   /** Risultato testuale del proxy, mai eseguito; da approvare e rivedere localmente. */
@@ -202,6 +209,9 @@ export type Vita = {
 }
 
 /** Le regole di routing.json che il pannello applica. */
+/** Un messaggio della mod come codice del dizionario e parametri (si traduce), oppure testo esterno mostrato com'è. */
+export type Messaggio = { k: string; p?: Record<string, unknown> } | string
+
 export type Regole = {
   /** false: routing.json non letto → nessun avvio (mai regole allentate in silenzio). */
   lette: boolean
@@ -216,7 +226,10 @@ export type Regole = {
   sensibili: string[]
   /** Contesto fisso del mandato locale per questo progetto (il cloud riceve sempre quello generico). */
   background: string
+  /** Da dove vengono le regole lette («routing.json v3»); vuota se non lette. */
   fonte: string
+  /** Perché le regole non si leggono: codice del dizionario o testo esterno. */
+  motivo?: Messaggio
   risorse: RisorseProgetto
 }
 
@@ -272,7 +285,7 @@ export type StatoBoard = { percorso?: string; motivo?: string; riassunti?: strin
 /** La vista Impostazioni: sezione aperta, ultimo errore in linea e procedure guidate fatte in linea (popup rifiutato). */
 export type StatoImpostazioni = {
   sezione: 'connessioni' | 'soglie' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate' | 'lingua'
-  errore?: { dove: string; testo: string }
+  errore?: { dove: string; testo: Messaggio }
   guida?: Fornitore
   bozza?: { fornitore?: Fornitore; tipo?: string }
   regola?: boolean
@@ -285,14 +298,15 @@ declare module 'claude-code' {
       azioni: Shaped<Azione[]>
       aperta: string | null
       vive: Shaped<Record<string, Vita>>
-      avviso: string | null
+      /** L'ultimo errore di un pulsante: codice del dizionario (si traduce) o testo esterno. */
+      avviso: Messaggio | null
       traguardi: Shaped<Traguardi | null>
       regole: Shaped<Regole | null>
       /** Ultimo scarto annullabile; `altri` quando lo scarto era di più azioni insieme. */
       annullabile: { id: string; titolo: string; altri?: string[] } | null
       filtro: string
       /** File di azioni che esistono ma non si leggono (nome e motivo). */
-      illeggibili: Shaped<{ nome: string; motivo: string }[]>
+      illeggibili: Shaped<{ nome: string; motivo: Messaggio }[]>
       /** Questa sessione: id del transcript, progetto, modello, effort e modalità permessi effettivi. */
       contesto: Shaped<Chiamante | null>
       risorse: Shaped<Risorse>

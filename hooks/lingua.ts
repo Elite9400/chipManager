@@ -11,18 +11,44 @@ import pt from './lingue/pt'
 export type { Chiave } from './lingue/en'
 export type Lingua = 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
 export const LINGUE: readonly Lingua[] = ['en', 'it', 'es', 'fr', 'de', 'pt']
-export const DIZIONARI: Record<Lingua, Record<Chiave, Voce>> = { en, it, es, fr, de, pt }
+export const DIZIONARI: Record<Lingua, Partial<Record<Chiave, Voce>>> = { en, it, es, fr, de, pt }
 /** Ogni lingua col suo nome, uguale in tutte le interfacce: chi non capisce la lingua attuale ritrova la sua. */
 export const NOMI_LINGUE: Record<Lingua, string> = { en: 'English', it: 'Italiano', es: 'Español', fr: 'Français', de: 'Deutsch', pt: 'Português (Brasil)' }
 
 /** Il valore salvato, se è un codice ammesso; altrimenti l'inglese (anche config assente o rotto). */
 export const linguaDa = (v: unknown): Lingua => (LINGUE as readonly unknown[]).includes(v) ? (v as Lingua) : 'en'
 
-export type Parametri = Record<string, string | number>
+/** Un parametro: un dato già scritto, oppure un messaggio (o un elenco) tradotto nella stessa lingua della frase. */
+export type Valore = string | number | Msg | readonly (Msg | string)[]
+export type Parametri = { [nome: string]: Valore }
 /** Un messaggio come codice e parametri: lo salva chi lo produce, lo traduce chi lo mostra. */
 export type Msg = { k: Chiave; p?: Parametri }
 export const msg = (k: Chiave, p?: Parametri): Msg => (p ? { k, p } : { k })
 export const eMsg = (x: unknown): x is Msg => !!x && typeof x === 'object' && typeof (x as Msg).k === 'string' && (x as Msg).k in en
+
+/** Un errore proprio della mod: il messaggio in inglese (log e agenti), il codice per chi lo mostra tradotto. */
+export class Errore extends Error {
+  constructor(readonly msg: Msg) {
+    super(t('en', msg.k, msg.p))
+  }
+}
+export const errore = (k: Chiave, p?: Parametri) => new Errore(msg(k, p))
+/** Il messaggio di un errore: il codice se è proprio, altrimenti il testo (diagnostica esterna, mostrata com'è). */
+export const msgDi = (err: unknown): Msg | string => (err instanceof Errore ? err.msg : String((err as Error)?.message ?? err))
+
+/**
+ * Un messaggio da salvare in un record: la frase inglese nel campo di sempre (chi legge con una versione vecchia, gli
+ * agenti) più codice e parametri, che il pannello traduce. Una diagnostica esterna resta solo testo.
+ */
+export function salvato<F extends string, B extends string>(campo: F, base: B, m: Msg | string | undefined, max = 300) {
+  const frase = m === undefined ? undefined : (typeof m === 'string' ? m : t('en', m.k, m.p)).slice(0, max)
+  const codice = m !== undefined && typeof m !== 'string' ? m : undefined
+  return { [campo]: frase, [`${base}Codice`]: codice?.k, [`${base}Parametri`]: codice?.p } as
+    Record<F, string | undefined> & Record<`${B}Codice`, Chiave | undefined> & Record<`${B}Parametri`, Parametri | undefined>
+}
+/** Il messaggio di un record: il codice se c'è e si conosce, altrimenti la frase salvata (record vecchi). */
+export const letto = (codice: unknown, parametri: unknown, frase: string | undefined): Msg | string | undefined =>
+  typeof codice === 'string' && codice in en ? { k: codice as Chiave, p: (parametri ?? undefined) as Parametri | undefined } : frase
 
 /** `one` o `other`. Francese e portoghese (Brasile): 0 e 1 sono `one`; le altre lingue: solo 1. */
 export const formaPlurale = (l: Lingua, n: number): keyof Forme =>
@@ -33,11 +59,29 @@ export function t(l: Lingua, k: Chiave, p: Parametri = {}): string {
   const v: Voce | undefined = DIZIONARI[l]?.[k] ?? en[k]
   if (v === undefined) return k
   const s = typeof v === 'string' ? v : v[formaPlurale(l, Number(p.n ?? 0))]
-  return s.replace(/\{(\w+)\}/g, (m, nome: string) => (nome in p ? String(p[nome]) : m))
+  return s.replace(/\{(\w+)\}/g, (m, nome: string) => (nome in p ? valore(l, p[nome]) : m))
 }
 
+/** Un parametro scritto: i messaggi annidati nella stessa lingua, gli elenchi separati da «; ». */
+function valore(l: Lingua, v: unknown): string {
+  if (Array.isArray(v)) return v.map(x => valore(l, x)).join('; ')
+  if (v && typeof v === 'object' && typeof (v as Msg).k === 'string') return t(l, (v as Msg).k, (v as Msg).p)
+  return String(v)
+}
+
+/** Un codice del dizionario («codice» o «codice: dettaglio») tradotto; ogni altro testo (diagnostica esterna) com'è. */
+export function chiaveOTesto(l: Lingua, s: string | undefined): string {
+  if (!s) return ''
+  const [k, ...resto] = s.split(': ')
+  return k && k in en ? [t(l, k as Chiave), ...resto].join(': ') : s
+}
+
+/** Un testo dell'helper come messaggio: un codice del dizionario diventa codice, ogni altro testo resta testo; vuoto = undefined. */
+export const daTesto = (s: string | undefined): Msg | string | undefined => (!s ? undefined : s in en ? { k: s as Chiave } : s)
+
 /** Un messaggio salvato: codice → frase tradotta; una stringa di un record vecchio si mostra com'è. */
-export const testo = (l: Lingua, x: Msg | string | undefined): string => (x === undefined ? '' : typeof x === 'string' ? x : t(l, x.k, x.p))
+export const testo = (l: Lingua, x: Msg | string | { k: string; p?: Record<string, unknown> } | null | undefined): string =>
+  !x ? '' : typeof x === 'string' ? x : t(l, x.k as Chiave, x.p as Parametri | undefined)
 
 const due = (n: number) => String(n).padStart(2, '0')
 
@@ -65,12 +109,25 @@ export function numero(l: Lingua, n: number, decimali?: number): string {
   return `${n < 0 ? '-' : ''}${gruppi}${frazione ? `${l === 'en' ? '.' : ','}${frazione}` : ''}`
 }
 
+/**
+ * Le unità dei budget come si scrivono nelle sei lingue (minuscole), con il nome con cui si salvano nel config: una sola
+ * tabella, così l'esempio della procedura guidata in ogni lingua passa lo stesso parser.
+ */
+export const ALIAS_UNITA: Record<string, 'USD' | 'EUR' | 'CNY' | 'richieste' | 'token'> = {
+  usd: 'USD', eur: 'EUR', cny: 'CNY', token: 'token', tokens: 'token',
+  requests: 'richieste', request: 'richieste', richieste: 'richieste', richiesta: 'richieste',
+  solicitudes: 'richieste', solicitud: 'richieste', 'requêtes': 'richieste', 'requête': 'richieste',
+  anfragen: 'richieste', anfrage: 'richieste', 'requisições': 'richieste', 'requisição': 'richieste',
+}
+
 /** Traduttore legato a una lingua: quello che ricevono le viste. */
 export function traduttore(l: Lingua) {
   const T = (k: Chiave, p?: Parametri) => t(l, k, p)
   return Object.assign(T, {
     lingua: l,
-    m: (x: Msg | string | undefined) => testo(l, x),
+    m: (x: Parameters<typeof testo>[1]) => testo(l, x),
+    /** Un testo che può essere un codice del dizionario («codice» o «codice: dettaglio»): tradotto se lo è, altrimenti com'è. */
+    k: (s: string | undefined) => chiaveOTesto(l, s),
     data: (q: Date | string | number) => data(l, q),
     ora: (q: Date | string | number) => ora(l, q),
     numero: (n: number, decimali?: number) => numero(l, n, decimali),

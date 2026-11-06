@@ -786,19 +786,20 @@ const ID_ANNULLAMENTO = /^u-[a-z0-9]{6,40}$/
 // sessioni (CHIPMANAGER_DIR, «cartella»). Così decisione, recupero e `configura` leggono sempre lo stesso file.
 const fileProposteDi = file => path.join(path.dirname(file), 'proposte-pesi.json')
 // I testi che arrivano al committente, raccolti qui.
+// Codici del dizionario della mod (hooks/lingue): il pannello li traduce, gli agenti li ricevono in inglese.
 const TESTI_PESI = {
-  argomenti: 'argomenti non validi',
-  campi: 'proposta non valida: solo profilo e pesi',
-  illeggibile: 'proposte-pesi.json illeggibile: non lo tocco',
-  configIlleggibile: 'config.json illeggibile: non lo tocco',
-  nonTrovata: 'proposta non trovata',
-  cambiata: 'la proposta è cambiata, rivedi',
-  scaduta: 'la proposta è scaduta',
-  primaDellaProposta: 'la configurazione è cambiata dalla proposta: rivedi',
-  dopoApplicazione: 'la configurazione è cambiata dopo l\'applicazione',
-  nonApplicata: 'la proposta non è applicata',
-  scadutaDopo: 'scaduta dopo 24 ore senza decisione',
-  sostituita: `scaduta: più di ${MAX_ATTESA} proposte in attesa`,
+  argomenti: 'helper.argomenti',
+  campi: 'helper.campi',
+  illeggibile: 'helper.proposteIlleggibili',
+  configIlleggibile: 'helper.configIlleggibile',
+  nonTrovata: 'helper.nonTrovata',
+  cambiata: 'helper.cambiata',
+  scaduta: 'helper.scaduta',
+  primaDellaProposta: 'helper.primaDellaProposta',
+  dopoApplicazione: 'helper.dopoApplicazione',
+  nonApplicata: 'helper.nonApplicata',
+  scadutaDopo: 'helper.scadutaDopo',
+  sostituita: 'helper.sostituita',
 }
 
 const oggetto = x => !!x && typeof x === 'object' && !Array.isArray(x)

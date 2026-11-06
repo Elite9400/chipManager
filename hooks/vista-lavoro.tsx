@@ -29,6 +29,8 @@ import {
   velo,
   violazioniAvvio,
 } from './logica'
+import { letto, salvato } from './lingua'
+import type { Msg } from './lingua'
 import type { Dati } from './pannello'
 import { GRIGIO, MOTORE, STATO } from './tema'
 
@@ -44,7 +46,7 @@ const corto = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…
 
 // `$` resta un argomento: lo scanner non lo vuole dentro un oggetto.
 export function vistaLavoro($: EngineInterface, d: Dati) {
-  const { c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, tutteLeSessioni, regoleOra,
+  const { T, c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, tutteLeSessioni, regoleOra,
     testoFiltro, lista, visibili, espansa, motiviAperti, stati, tr, adesso, capacita, boardPronta, fai, modifica, completa,
     apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, titoloSezione, righe,
     alLavoro, cella, MOTORI, motore, oraDi } = d
@@ -168,7 +170,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
               'Permessi',
               a.permessi ?? 'eredita',
               PERMESSI.filter(p => !sensibile(a, regoleOra) || p.value !== 'bypassPermissions').map(p =>
-                p.value === 'eredita' && sensibile(a, regoleOra) ? { value: 'eredita', label: 'Accetta modifiche (predefinito sulle sensibili)' } : p,
+                p.value === 'eredita' && sensibile(a, regoleOra) ? { value: 'eredita', label: 'Accetta modifiche (predefinito sulle sensibili)' } : { ...p, label: T(p.label) },
               ),
               v => ({ permessi: v === 'eredita' ? undefined : (v as Permessi) }),
             ),
@@ -260,7 +262,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
           : `worktree${a.ramo ? ` ${a.ramo}` : ''}${a.base ? ` da ${a.base}` : ''}`,
       a.destinazione === 'cloud'
         ? undefined
-        : (a.permessi ? PERMESSI.find(p => p.value === a.permessi)?.label : sensibile(a, regoleOra) ? 'Accetta modifiche' : 'Come questa sessione')?.toLowerCase(),
+        : T(a.permessi ? `permessi.${a.permessi}` as const : sensibile(a, regoleOra) ? 'permessi.acceptEdits' : 'permessi.eredita').toLowerCase(),
       a.sveglia ? 'mi risveglia' : undefined,
     ]
       .filter(Boolean)
@@ -402,7 +404,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
             {`Sblocca ${sblocca} ${sblocca === 1 ? 'azione' : 'azioni'}`}
           </Text>
         )}
-        {a.stato === 'accodata' && a.motivoCoda && nota1(`coda-${a.id}`, STATO.coda, '◔', `In coda: ${a.motivoCoda}`)}
+        {a.stato === 'accodata' && a.motivoCoda && nota1(`coda-${a.id}`, STATO.coda, '◔', `In coda: ${T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda))}`)}
         {a.contesto === 'fork' && a.origineFork && (
           <Text size="caption" dimColor>
             {a.origineFork === io?.io
@@ -415,8 +417,8 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         {(a.stato === 'avviata' || a.stato === 'consegnata') && (
           <Text size="caption" dimColor tabular wrap="wrap">
             {[
-              a.avviataIl ? `da ${durata(adesso - Date.parse(a.avviataIl))}` : undefined,
-              vita?.ultimaAttivita ? `ultima attività ${durata(adesso - Date.parse(vita.ultimaAttivita))} fa` : undefined,
+              a.avviataIl ? `da ${durata(adesso - Date.parse(a.avviataIl), T.lingua)}` : undefined,
+              vita?.ultimaAttivita ? `ultima attività ${durata(adesso - Date.parse(vita.ultimaAttivita), T.lingua)} fa` : undefined,
               vita?.ramo,
               a.sessione && !mia ? 'aprila dalla barra laterale' : undefined,
             ]
@@ -424,7 +426,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
               .join(' · ') || ' '}
           </Text>
         )}
-        {a.errore && nota1(`err-${a.id}`, STATO.attesa, '!', a.errore)}
+        {a.errore && nota1(`err-${a.id}`, STATO.attesa, '!', T.m(letto(a.erroreCodice, a.erroreParametri, a.errore)))}
         {a.risultato && <Box flexDirection="column" borderStyle="single" paddingX={1}><Text weight="semibold">Bozza FreeLLMAPI da rivedere</Text><Text>{a.risultato}</Text></Box>}
         <Box flexDirection="row" gap={1} flexWrap="wrap" justifyContent="space-between" alignItems="center">
           <Box flexDirection="row" gap={1} flexWrap="wrap">
@@ -452,7 +454,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
                 key={`annulla-${a.id}`}
                 variant="secondary"
                 label={`Togli dalla coda ${breve(a)}`}
-                onPress={modifica(a, { ...transizione(a, 'proposta', new Date(adesso).toISOString()), motivoCoda: undefined })}
+                onPress={modifica(a, { ...transizione(a, 'proposta', new Date(adesso).toISOString()), ...salvato('motivoCoda', 'motivo', undefined) })}
               >
                 Togli dalla coda
               </Button>
@@ -497,13 +499,13 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     )
   }
   /** L'elenco completo dei motivi per cui una chip non parte. */
-  function motivi(a: Azione, blocchi: string[], titolo: string) {
+  function motivi(a: Azione, blocchi: Msg[], titolo: string) {
     return (
       // Senza velo: il rosso del segno sul proprio velo, sul fondo scuro, scende sotto 3:1.
       <Box key={`motivi-${a.id}`} flexDirection="column" paddingX={1}>
         {nota1(`bt-${a.id}`, STATO.errore, '▲', titolo)}
         {blocchi.map((b, i) => (
-          <Text key={`bl-${a.id}-${i}`} size="caption" wrap="wrap">{`· ${b}`}</Text>
+          <Text key={`bl-${a.id}-${i}`} size="caption" wrap="wrap">{`· ${T.m(b)}`}</Text>
         ))}
       </Box>
     )
@@ -552,7 +554,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       ),
       tentativoAnnullabile(a) && <Button key={`annullaT-${a.id}`} plain label={`Annulla il tentativo ${breve(a)}`} onPress={fai(() => c.annullaTentativo(a))}>Annulla il tentativo</Button>,
       a.stato === 'accodata' && (
-        <Button key={`annulla-${a.id}`} plain label={`Togli dalla coda ${breve(a)}`} onPress={modifica(a, { ...transizione(a, 'proposta', new Date(adesso).toISOString()), motivoCoda: undefined })}>
+        <Button key={`annulla-${a.id}`} plain label={`Togli dalla coda ${breve(a)}`} onPress={modifica(a, { ...transizione(a, 'proposta', new Date(adesso).toISOString()), ...salvato('motivoCoda', 'motivo', undefined) })}>
           Togli dalla coda
         </Button>
       ),
@@ -586,9 +588,9 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
             {corto(brief, Math.max(40, 2 * (colonne - 8)))}
           </Text>
         )}
-        {a.stato === 'accodata' && a.motivoCoda && nota1(`coda-${a.id}`, STATO.coda, '◔', `In coda: ${a.motivoCoda}`)}
-        {a.errore && nota1(`err-${a.id}`, STATO.attesa, '!', a.errore)}
-        {bloccata && nota1(`blocco-${a.id}`, STATO.errore, '▲', `Non può partire: ${blocchi[0]}${blocchi.length > 1 ? ` (+${blocchi.length - 1})` : ''}`)}
+        {a.stato === 'accodata' && a.motivoCoda && nota1(`coda-${a.id}`, STATO.coda, '◔', `In coda: ${T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda))}`)}
+        {a.errore && nota1(`err-${a.id}`, STATO.attesa, '!', T.m(letto(a.erroreCodice, a.erroreParametri, a.errore)))}
+        {bloccata && nota1(`blocco-${a.id}`, STATO.errore, '▲', `Non può partire: ${T.m(blocchi[0])}${blocchi.length > 1 ? ` (+${blocchi.length - 1})` : ''}`)}
         <Box key={`azioni-${a.id}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
           {pulsanti as never}
         </Box>
@@ -602,7 +604,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
   const quando = (iso?: string) => {
     if (!iso) return '—'
     const ms = adesso - Date.parse(iso)
-    return ms < 60_000 ? 'adesso' : durata(ms)
+    return ms < 60_000 ? 'adesso' : durata(ms, T.lingua)
   }
   // «Al lavoro adesso» (C1.3): la tabella solo su `larga`; sotto, due righe per sessione (tre su `stretta`, col ramo).
   const COL = { lavoro: '30%', chi: '11%', modello: '14%', effort: '16%', stato: '11%', contesto: '9%', attivita: '9%' }
@@ -723,7 +725,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
   const prossima = piano?.avvia[0]
   const nessunaParte =
     piano && !prossima
-      ? [...new Set([...piano.coda.map(x => x.motivo), ...(piano.bloccate.length ? [`${piano.bloccate.length} ${piano.bloccate.length === 1 ? 'bloccata' : 'bloccate'} dalle regole`] : [])])]
+      ? [...new Set([...piano.coda.map(x => T.m(x.motivo)), ...(piano.bloccate.length ? [`${piano.bloccate.length} ${piano.bloccate.length === 1 ? 'bloccata' : 'bloccate'} dalle regole`] : [])])]
       : []
 
   /** Barra di avanzamento: due Box in proporzione sul desktop, celle █ sul terminale. */
@@ -886,7 +888,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         ) : (
           daAvviare.map(schedaCompatta)
         )}
-        {proposte > 0 && <Text size="caption" dimColor>{`al massimo ${c.max} in parallelo · regole da ${regoleOra.fonte}`}</Text>}
+        {proposte > 0 && <Text size="caption" dimColor>{`al massimo ${c.max} in parallelo · regole da ${d.fonteRegole}`}</Text>}
       </Box>
 
       {daFondere.length > 0 && (

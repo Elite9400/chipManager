@@ -1,5 +1,7 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
 import type { Azione, BoardProgetto, Chiamante, Consumo, Corsia, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo, Vita } from '../types'
+import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
+import type { Lingua, Msg } from './lingua'
 import { GRIGIO, LIVELLO, STATO } from './tema'
 
 // --- regole (routing.json) ---------------------------------------------------------------------
@@ -33,7 +35,7 @@ export const REGOLE_DEFAULT: Regole = {
   corsiaCodex: { corsie: ['R1', 'R2', 'R3'], effort: {}, rivistoDa: {} },
   sensibili: [],
   background: BACKGROUND_GENERICO,
-  fonte: 'non letto',
+  fonte: '',
   risorse: RISORSE_DEFAULT,
 }
 export const EFFORT = REGOLE_DEFAULT.effort
@@ -100,33 +102,33 @@ const PROGETTO_PREDEFINITO: Progetto = { routing: ROUTING_PREDEFINITO, sensibili
  * `config` = il JSON della configurazione (`null` se il file non c'è). Restituisce la sezione del progetto o il
  * motivo per cui la configurazione non vale: chi chiama tratta il motivo come regole non lette (nessun avvio).
  */
-export function progettoDa(config: unknown, repo: string | null): Progetto | string {
+export function progettoDa(config: unknown, repo: string | null): Progetto | Msg {
   if (config === null || config === undefined) return PROGETTO_PREDEFINITO
   const oggetto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-  if (!oggetto(config)) return 'config.json non è un oggetto'
+  if (!oggetto(config)) return msg('cfg.nonOggetto')
   const progetti = config.progetti ?? {}
-  if (!oggetto(progetti)) return 'config.json: «progetti» non è un oggetto'
+  if (!oggetto(progetti)) return msg('cfg.progetti')
   const p = repo ? progetti[repo] : undefined
   if (p === undefined) return PROGETTO_PREDEFINITO
-  if (!oggetto(p)) return `config.json: il progetto ${repo} non è un oggetto`
+  if (!oggetto(p)) return msg('cfg.progetto', { repo: repo ?? '' })
   const { routing, sensibili, background } = p
   if (routing !== undefined && (typeof routing !== 'string' || !routing || /^([a-z]:)?[\\/]/i.test(routing) || /(^|[\\/])\.\.([\\/]|$)/.test(routing)))
-    return 'config.json: «routing» è un percorso relativo alla radice del repo'
+    return msg('cfg.routing')
   if (sensibili !== undefined && (!Array.isArray(sensibili) || !sensibili.every(t => typeof t === 'string' && t.length > 0 && t.length <= 200)))
-    return 'config.json: «sensibili» è un elenco di espressioni (stringhe non vuote)'
+    return msg('cfg.sensibili')
   for (const t of (sensibili ?? []) as string[]) {
     try {
       new RegExp(t, 'i')
     } catch {
-      return `config.json: termine sensibile non valido: ${t.slice(0, 40)}`
+      return msg('cfg.termine', { termine: t.slice(0, 40) })
     }
   }
   if (p.cartella !== undefined && (typeof p.cartella !== 'string' || p.cartella.length > 400 || !/^(~(?=[\\/]|$)|[a-z]:[\\/]|[\\/])/i.test(p.cartella)))
-    return 'config.json: «cartella» è un percorso assoluto o che inizia con ~'
+    return msg('cfg.cartella')
   if (background !== undefined && (typeof background !== 'string' || background.length > 2000))
-    return 'config.json: «background» è un testo di al massimo 2000 caratteri'
+    return msg('cfg.background')
   const risorse = risorseDa(p)
-  if (typeof risorse === 'string') return risorse
+  if (eMsg(risorse)) return risorse
   return {
     routing: (routing as string | undefined) ?? ROUTING_PREDEFINITO,
     sensibili: (sensibili as string[] | undefined) ?? [],
@@ -149,8 +151,8 @@ export function pesoValido(p: unknown): p is Peso {
 }
 
 /** Copia solo campi conosciuti: un config non può portare credenziali dentro lo stato. */
-export function risorseDa(p: Record<string, unknown>): RisorseProgetto | string {
-  const errore = 'config.json: politica fornitori, pesi o limiti non validi'
+export function risorseDa(p: Record<string, unknown>): RisorseProgetto | Msg {
+  const errore = msg('cfg.risorse')
   const fornitori = p.fornitori ?? RISORSE_DEFAULT.fornitori
   if (!Array.isArray(fornitori) || !fornitori.every(f => FORNITORI.includes(f))) return errore
   if (p.soloLocale !== undefined && typeof p.soloLocale !== 'boolean') return errore
@@ -400,12 +402,12 @@ const AUTORI_R4 = ['claude-opus-5-5', 'claude-fable-5-1']
 
 /** Stato delle dipendenze: si sblocca SOLO con dipendenze esistenti e completate (fuse). */
 export function dipendenze(a: Azione, lista: readonly Azione[]) {
-  const problemi: string[] = []
+  const problemi: Msg[] = []
   let aperte = 0
   for (const id of a.dipende) {
     const d = lista.find(x => x.id === id)
-    if (!d) problemi.push(`la dipendenza ${id} non esiste (o non si legge)`)
-    else if (d.stato === 'scartata') problemi.push(`la dipendenza «${d.titolo}» è stata scartata`)
+    if (!d) problemi.push(msg('v.dipendenzaAssente', { id }))
+    else if (d.stato === 'scartata') problemi.push(msg('v.dipendenzaScartata', { titolo: d.titolo }))
     else if (d.stato !== 'completata') aperte += 1
   }
   return { chiuse: problemi.length === 0 && aperte === 0, problemi }
@@ -427,67 +429,67 @@ export function revisoreConcreto(a: Azione, regole: Regole): string | undefined 
 }
 
 /** Perché un'azione non può partire così com'è: vuoto = può partire. */
-export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] = []): string[] {
-  const v: string[] = []
-  if (!regole.lette) v.push('routing.json non letto o incompleto: nessun avvio finché le regole non si leggono')
+export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] = []): Msg[] {
+  const v: Msg[] = []
+  if (!regole.lette) v.push(msg('v.regoleNonLette'))
   const modello = modelloDi(a, regole)
   const effort = effortDi(a, regole)
   const corsia = corsiaDi(a, regole)
   const politica = regole.risorse
-  if (politica.soloLocale) v.push('progetto solo rete locale: nessuna inferenza esterna, anche tramite CLI o proxy locale')
-  if (!politica.fornitori.includes(a.esecutore)) v.push(`fornitore ${a.esecutore} non abilitato per il progetto`)
-  if (a.revisore !== 'nessuno' && !politica.fornitori.includes(a.revisore)) v.push(`revisore ${a.revisore} non abilitato per il progetto`)
-  if (!regole.modelli[a.esecutore].length) v.push(`nessun modello ammesso per ${a.esecutore}`)
+  if (politica.soloLocale) v.push(msg('v.soloLocale'))
+  if (!politica.fornitori.includes(a.esecutore)) v.push(msg('v.fornitoreNonAbilitato', { fornitore: a.esecutore }))
+  if (a.revisore !== 'nessuno' && !politica.fornitori.includes(a.revisore)) v.push(msg('v.revisoreNonAbilitato', { revisore: a.revisore }))
+  if (!regole.modelli[a.esecutore].length) v.push(msg('v.nessunModello', { esecutore: a.esecutore }))
   if (a.esecutore === 'freellmapi') {
     if (!corsia || !['R0', 'R1', ...(politica.freellmapi.livello === 'R2' ? ['R2'] : [])].includes(corsia) || politica.freellmapi.livello === 'niente')
-      v.push('FreeLLMAPI: corsia fuori dal livello abilitato per il progetto')
-    if (datiLocali(`${a.titolo}\n${a.brief}\n${a.background ?? ''}\n${regole.background}`)) v.push('dati da tenere in LAN: niente fornitori terzi')
-    if (a.contesto === 'fork' || a.destinazione === 'cloud' || a.worktree === false) v.push('FreeLLMAPI: solo mandato testuale isolato, niente fork o cartella condivisa')
-    if (a.titolo.length + a.brief.length > CLOUD_MAX) v.push(`FreeLLMAPI: testo da confermare entro ${CLOUD_MAX} caratteri`)
-    if (a.revisore !== 'claude') v.push('FreeLLMAPI: consegna testuale da rivedere con Claude')
-    if (effort !== 'low') v.push('FreeLLMAPI: effort low (nessun parametro di ragionamento non verificato)')
+      v.push(msg('v.freeCorsia'))
+    if (datiLocali(`${a.titolo}\n${a.brief}\n${a.background ?? ''}\n${regole.background}`)) v.push(msg('v.datiLan'))
+    if (a.contesto === 'fork' || a.destinazione === 'cloud' || a.worktree === false) v.push(msg('v.freeIsolato'))
+    if (a.titolo.length + a.brief.length > CLOUD_MAX) v.push(msg('v.freeTesto', { max: CLOUD_MAX }))
+    if (a.revisore !== 'claude') v.push(msg('v.freeRevisione'))
+    if (effort !== 'low') v.push(msg('v.freeEffort'))
   }
-  if (a.modello && a.modello !== modello) v.push(`il modello ${a.modello} non è fra quelli ammessi per ${a.esecutore}`)
-  if (a.effort && a.effort !== effort) v.push(`effort ${a.effort} oltre il tetto di ${nomeModello(modello)}`)
+  if (a.modello && a.modello !== modello) v.push(msg('v.modelloNonAmmesso', { modello: a.modello, esecutore: a.esecutore }))
+  if (a.effort && a.effort !== effort) v.push(msg('v.effortOltre', { effort: a.effort, modello: nomeModello(modello) }))
   // Il revisore che il mandato nominerà deve stare nella matrice dell'autore e non essere l'autore.
   const rev = revisoreConcreto(a, regole)
   const ammessi = regole.revisori[modello]
   if (a.revisore !== 'nessuno' && !ammessi)
-    v.push(`routing.json non ha la riga dei revisori per ${nomeModello(modello)}: nessun avvio senza la regola`)
+    v.push(msg('v.rigaRevisori', { modello: nomeModello(modello) }))
   if (a.revisore !== 'nessuno') {
-    if (!rev) v.push(`routing.json non indica un revisore Claude per ${nomeModello(modello)}`)
-    else if (rev === modello) v.push(`il revisore sarebbe lo stesso modello dell'autore (${nomeModello(modello)})`)
+    if (!rev) v.push(msg('v.revisoreClaude', { modello: nomeModello(modello) }))
+    else if (rev === modello) v.push(msg('v.revisoreUguale', { modello: nomeModello(modello) }))
     else if (ammessi && !ammessi.includes(rev))
-      v.push(`routing.json non ammette ${rev === 'motore:codex' ? 'Codex' : nomeModello(rev)} come revisore di ${nomeModello(modello)}`)
+      v.push(msg('v.revisoreNonAmmesso', { revisore: rev === 'motore:codex' ? 'Codex' : nomeModello(rev), modello: nomeModello(modello) }))
   }
   if (a.destinazione === 'cloud') {
-    if (a.contesto === 'fork') v.push('il cloud parte solo da una sessione nuova, non da un fork')
+    if (a.contesto === 'fork') v.push(msg('v.cloudFork'))
     if (a.esecutore === 'codex' || a.revisore === 'codex')
-      v.push('nel cloud niente Codex: la corsia unica della macchina e il suo helper esistono solo su questo computer')
+      v.push(msg('v.cloudCodex'))
     // Al cloud va solo titolo + mandato (il contesto locale resta qui): niente dati che la policy tiene in LAN.
-    if (datiLocali(`${a.titolo}\n${a.brief}`)) v.push('il mandato contiene dati da tenere in LAN (CF, email, IP, chiavi, .env, storage): niente cloud')
+    if (datiLocali(`${a.titolo}\n${a.brief}`)) v.push(msg('v.cloudDati'))
     if (a.titolo.length + a.brief.length > CLOUD_MAX)
-      v.push(`per il cloud titolo e mandato stanno in ${CLOUD_MAX} caratteri, così li leggi per intero prima dell'invio`)
+      v.push(msg('v.cloudTesto', { max: CLOUD_MAX }))
   }
   if (a.esecutore === 'codex') {
-    if (!corsia) v.push(`Codex vuole una corsia (${regole.corsiaCodex.corsie.join(', ')}): da lei dipendono effort e revisore`)
+    if (!corsia) v.push(msg('v.codexCorsia', { corsie: regole.corsiaCodex.corsie.join(', ') }))
     else if (!regole.corsiaCodex.effort[corsia] || !regole.corsiaCodex.rivistoDa[corsia])
-      v.push(`routing.json non definisce effort o revisore di corsia_codex per ${corsia}: nessun avvio senza la regola`)
+      v.push(msg('v.codexRegola', { corsia }))
     if (corsia && !regole.corsiaCodex.corsie.includes(corsia))
-      v.push(`Codex esegue solo le corsie ${regole.corsiaCodex.corsie.join(', ')} (questa è ${corsia})`)
+      v.push(msg('v.codexCorsie', { corsie: regole.corsiaCodex.corsie.join(', '), corsia }))
     // L'effort di corsia_codex è un minimo, non un suggerimento.
     const prescritto = regole.corsiaCodex.effort[corsia ?? '']
     if (prescritto && regole.effort.indexOf(effort) < regole.effort.indexOf(prescritto))
-      v.push(`corsia_codex vuole almeno effort ${prescritto} su ${corsia}`)
+      v.push(msg('v.codexEffort', { effort: prescritto, corsia: corsia ?? '' }))
   }
   if (sensibile(a, regole)) {
-    if (a.esecutore !== 'claude') v.push('corsia sensibile (R4): l\'autore resta Claude')
-    if (a.revisore === 'nessuno') v.push('corsia sensibile (R4): la revisione è obbligatoria')
-    if (a.revisore === 'codex') v.push('corsia sensibile (R4): anche il revisore resta Claude')
-    if (a.permessi === 'bypassPermissions') v.push('corsia sensibile (R4): niente bypass dei permessi')
-    if (a.destinazione === 'cloud') v.push('corsia sensibile (R4): resta su questo computer, mai nel cloud')
-    if (a.esecutore === 'claude' && !AUTORI_R4.includes(modello)) v.push(`corsia sensibile (R4): autore Opus o Fable, non ${nomeModello(modello)}`)
-    if (regole.effort.indexOf(effort) < regole.effort.indexOf('high')) v.push('corsia sensibile (R4): effort almeno high')
+    if (a.esecutore !== 'claude') v.push(msg('v.r4Autore'))
+    if (a.revisore === 'nessuno') v.push(msg('v.r4Revisione'))
+    if (a.revisore === 'codex') v.push(msg('v.r4Revisore'))
+    if (a.permessi === 'bypassPermissions') v.push(msg('v.r4Bypass'))
+    if (a.destinazione === 'cloud') v.push(msg('v.r4Cloud'))
+    if (a.esecutore === 'claude' && !AUTORI_R4.includes(modello)) v.push(msg('v.r4Modello', { modello: nomeModello(modello) }))
+    if (regole.effort.indexOf(effort) < regole.effort.indexOf('high')) v.push(msg('v.r4Effort'))
   }
   v.push(...dipendenze(a, lista).problemi)
   return v
@@ -498,24 +500,24 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
  * o un effort sopra quelli di chi avvia, il fork eredita modello ed effort, e «Fallo qui» gira con i
  * permessi di questa sessione. Senza progetto o di un altro progetto non si avvia.
  */
-export function violazioniAvvio(a: Azione, regole: Regole, lista: readonly Azione[], chi: Chiamante | null, qui = false): string[] {
+export function violazioniAvvio(a: Azione, regole: Regole, lista: readonly Azione[], chi: Chiamante | null, qui = false): Msg[] {
   const v = violazioni(a, regole, lista)
-  if (!chi) return [...v, 'non so ancora quale sessione sta avviando: riprova fra un attimo']
+  if (!chi) return [...v, msg('v.chiIgnoto')]
   if (a.contesto === 'fork' && a.stato === 'accodata' && !a.origineFork && !qui)
-    v.push('fork in coda senza conversazione d\'origine: riscegli «Fork di questa conversazione» dalla sessione giusta')
+    v.push(msg('v.forkSenzaOrigine'))
   if (a.contesto === 'fork' && a.origineFork && a.origineFork !== chi.io && !qui)
-    v.push('è un fork della conversazione di un\'altra sessione: riparte solo da lì (o passala a «sessione nuova»)')
-  if (!a.repo) v.push('azione senza progetto (versione precedente): associala a questo progetto prima di avviarla')
-  else if (!chi.repo) v.push('non so in quale progetto gira questa sessione: avvio bloccato')
-  else if (a.repo !== chi.repo) v.push(`è del progetto ${a.repo}: avviala da lì`)
+    v.push(msg('v.forkAltrui'))
+  if (!a.repo) v.push(msg('v.senzaProgetto'))
+  else if (!chi.repo) v.push(msg('v.progettoIgnoto'))
+  else if (a.repo !== chi.repo) v.push(msg('v.altroProgetto', { repo: a.repo }))
   if (a.esecutore === 'freellmapi') {
-    if (qui) v.push('FreeLLMAPI non si esegue nella conversazione corrente')
+    if (qui) v.push(msg('v.freeQui'))
     return v
   }
-  if (!qui && chi.lanciatore === 'ignoto') v.push('capacità di avvio non verificata: nessun fallback dopo un errore desktop')
+  if (!qui && chi.lanciatore === 'ignoto') v.push(msg('v.lanciatoreIgnoto'))
   if (!qui && chi.lanciatore === 'cli') {
-    if (a.contesto === 'fork' || a.destinazione === 'cloud' || a.worktree === false) v.push('CLI: serve sessione nuova locale in worktree proprio')
-    if (a.permessi === 'bypassPermissions' || a.permessi === 'auto') v.push('CLI: scegli default, acceptEdits o plan; nessun bypass non interattivo')
+    if (a.contesto === 'fork' || a.destinazione === 'cloud' || a.worktree === false) v.push(msg('v.cliWorktree'))
+    if (a.permessi === 'bypassPermissions' || a.permessi === 'auto') v.push(msg('v.cliPermessi'))
     return v
   }
   const cloud = a.destinazione === 'cloud' && !qui
@@ -527,27 +529,27 @@ export function violazioniAvvio(a: Azione, regole: Regole, lista: readonly Azion
   if (chi.modello) {
     if (eredita) {
       if (rangoModello(chi.modello) !== rangoModello(richiesto))
-        v.push(`${qui ? 'qui' : 'il fork'} gira con ${nomeModello(chi.modello)}, non con ${nomeModello(richiesto)}`)
+        v.push(msg(qui ? 'v.quiModello' : 'v.forkModello', { attuale: nomeModello(chi.modello), richiesto: nomeModello(richiesto) }))
       // Le regole valgono sulla configurazione effettiva, non su quella scritta nell'azione.
       if (sensibile(a, regole) && rangoModello(chi.modello) < rangoModello('opus'))
-        v.push(`corsia sensibile (R4): ${qui ? 'questa sessione' : 'il fork'} usa ${nomeModello(chi.modello)}, serve Opus o Fable`)
+        v.push(msg(qui ? 'v.r4QuiModello' : 'v.r4ForkModello', { modello: nomeModello(chi.modello) }))
     } else if (rangoModello(richiesto) > rangoModello(chi.modello))
-      v.push(`questa sessione usa ${nomeModello(chi.modello)}: l'app non avvia ${nomeModello(richiesto)} da qui`)
+      v.push(msg('v.modelloSessione', { attuale: nomeModello(chi.modello), richiesto: nomeModello(richiesto) }))
   }
   // Sconosciuto non vuol dire compatibile: dove la guardia dipende da un metadato che manca, si blocca.
-  if (!chi.modello && (eredita || a.esecutore === 'claude')) v.push('non so con che modello gira questa sessione: avvio bloccato')
-  if (!chi.effort && (eredita || sensibile(a, regole))) v.push('non so con che effort gira questa sessione: avvio bloccato')
-  if (qui && !chi.permessi) v.push('non so in che modalità permessi gira questa sessione: «Fallo qui» bloccato')
+  if (!chi.modello && (eredita || a.esecutore === 'claude')) v.push(msg('v.modelloIgnoto'))
+  if (!chi.effort && (eredita || sensibile(a, regole))) v.push(msg('v.effortIgnoto'))
+  if (qui && !chi.permessi) v.push(msg('v.permessiIgnoti'))
   const eChi = chi.effort ? regole.effort.indexOf(chi.effort) : -1
   if (eChi >= 0) {
     const eVoluto = regole.effort.indexOf(a.esecutore === 'codex' ? 'medium' : effort)
-    if (eredita && a.esecutore === 'claude' && eChi !== eVoluto) v.push(`${qui ? 'qui' : 'il fork'} gira con effort ${chi.effort}, non ${effort}`)
-    else if (!eredita && eVoluto > eChi) v.push(`questa sessione è a effort ${chi.effort}: l'app non avvia ${effort} da qui`)
+    if (eredita && a.esecutore === 'claude' && eChi !== eVoluto) v.push(msg(qui ? 'v.quiEffort' : 'v.forkEffort', { attuale: chi.effort ?? '', voluto: effort }))
+    else if (!eredita && eVoluto > eChi) v.push(msg('v.effortSessione', { attuale: chi.effort ?? '', voluto: effort }))
   }
   if (qui) {
-    if (sensibile(a, regole) && chi.permessi === 'bypassPermissions') v.push('corsia sensibile (R4): questa sessione è in bypass dei permessi')
+    if (sensibile(a, regole) && chi.permessi === 'bypassPermissions') v.push(msg('v.r4QuiBypass'))
     if (a.permessi && chi.permessi && a.permessi !== chi.permessi)
-      v.push(`questa sessione è in «${chi.permessi}», l'azione chiede «${a.permessi}»`)
+      v.push(msg('v.permessiDiversi', { attuale: chi.permessi, voluto: a.permessi }))
   }
   return v
 }
@@ -568,8 +570,8 @@ export const attive = (lista: readonly Azione[]) =>
 
 export type Piano = {
   avvia: Azione[]
-  coda: { a: Azione; motivo: string }[]
-  bloccate: { a: Azione; motivi: string[] }[]
+  coda: { a: Azione; motivo: Msg }[]
+  bloccate: { a: Azione; motivi: Msg[] }[]
 }
 
 /**
@@ -584,7 +586,7 @@ export function pianifica(
   regole: Regole,
   maxParalleli: number,
   codexOccupato = false,
-  extra: (a: Azione) => string[] = () => [],
+  extra: (a: Azione) => Msg[] = () => [],
   limiti: readonly Limite[] = [],
 ): Piano {
   const piano: Piano = { avvia: [], coda: [], bloccate: [] }
@@ -599,9 +601,9 @@ export function pianifica(
   for (const a of ordinate) {
     const motivi = [...violazioni(a, regole, lista), ...extra(a)]
     if (motivi.length) piano.bloccate.push({ a, motivi })
-    else if (!dipendenzeChiuse(a, lista)) piano.coda.push({ a, motivo: 'aspetta che le dipendenze siano fuse' })
-    else if (a.esecutore === 'codex' && codex) piano.coda.push({ a, motivo: 'corsia Codex occupata' })
-    else if (occupate >= maxParalleli) piano.coda.push({ a, motivo: `limite di ${maxParalleli} sessioni in parallelo` })
+    else if (!dipendenzeChiuse(a, lista)) piano.coda.push({ a, motivo: msg('coda.dipendenze') })
+    else if (a.esecutore === 'codex' && codex) piano.coda.push({ a, motivo: msg('coda.codex') })
+    else if (occupate >= maxParalleli) piano.coda.push({ a, motivo: msg('coda.paralleli', { n: maxParalleli }) })
     else {
       piano.avvia.push(a)
       occupate += 1
@@ -660,11 +662,11 @@ export function aspettaTe(a: Azione, vive: Record<string, Vita>, io: string | un
  * Percorso del piano al confine: relativo alla radice del repo, `.md` o `.txt`, niente `..`, assoluti, prefissi
  * `\\?\`, `\\.\` o UNC, niente `:` (lettere di unità e flussi NTFS). Il resto (link, junction) lo controlla l'helper.
  */
-export function pianoValido(v: unknown): string | undefined {
-  if (typeof v !== 'string' || !v || v.length > 300) return 'piano: percorso fino a 300 caratteri'
+export function pianoValido(v: unknown): Msg | undefined {
+  if (typeof v !== 'string' || !v || v.length > 300) return msg('piano.lungo')
   if (/[\x00-\x1f:*?"<>|]/.test(v) || /^[\\/]/.test(v) || /(^|[\\/])\.\.([\\/]|$)/.test(v))
-    return 'piano: percorso relativo alla radice del repo, senza «..», «:» o prefissi speciali'
-  if (!/\.(md|txt)$/i.test(v)) return 'piano: solo file .md o .txt'
+    return msg('piano.relativo')
+  if (!/\.(md|txt)$/i.test(v)) return msg('piano.tipo')
   return undefined
 }
 
@@ -677,56 +679,60 @@ export const SESSIONE_RE = /^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const STATI: readonly StatoAzione[] = ['proposta', 'accodata', 'in-avvio', 'avviata', 'consegnata', 'fallita', 'completata', 'scartata']
 
 /** Un record letto da disco → Azione, o il motivo per cui non lo è. Mai un cast cieco. */
-export function normalizza(x: unknown): Azione | string {
+export function normalizza(x: unknown): Azione | Msg {
   const a = (x ?? {}) as Record<string, unknown>
   const str = (k: string, max: number) => a[k] === undefined || (typeof a[k] === 'string' && (a[k] as string).length <= max)
   const tra = <T>(k: string, ammessi: readonly T[]) => a[k] === undefined || ammessi.includes(a[k] as T)
   const bool = (k: string) => a[k] === undefined || typeof a[k] === 'boolean'
-  if (typeof a.id !== 'string' || !ID_RE.test(a.id)) return 'id non valido'
-  if (typeof a.titolo !== 'string' || !a.titolo || typeof a.brief !== 'string' || !a.brief) return 'titolo o mandato mancante'
-  if (!STATI.includes(a.stato as StatoAzione) || !tra('statoPrima', STATI)) return 'stato non valido'
+  if (typeof a.id !== 'string' || !ID_RE.test(a.id)) return msg('rec.campo', { campo: 'id' })
+  if (typeof a.titolo !== 'string' || !a.titolo || typeof a.brief !== 'string' || !a.brief) return msg('rec.titolo')
+  if (!STATI.includes(a.stato as StatoAzione) || !tra('statoPrima', STATI)) return msg('rec.campo', { campo: 'stato' })
   if (!['claude', 'codex', 'freellmapi'].includes(a.esecutore as string) || !['claude', 'codex', 'nessuno'].includes(a.revisore as string))
-    return 'esecutore o revisore non validi'
-  if (!Number.isFinite(a.ordine)) return 'ordine non valido'
+    return msg('rec.campo', { campo: 'esecutore/revisore' })
+  if (!Number.isFinite(a.ordine)) return msg('rec.campo', { campo: 'ordine' })
   if (a.dipende !== undefined && !(Array.isArray(a.dipende) && a.dipende.every(d => typeof d === 'string' && ID_RE.test(d))))
-    return 'dipendenze non valide'
-  if (a.issue !== undefined && !(Number.isInteger(a.issue) && (a.issue as number) > 0)) return 'issue non valida'
-  if (a.sessione !== undefined && !(typeof a.sessione === 'string' && SESSIONE_RE.test(a.sessione))) return 'sessione non valida'
-  if (!tra('corsia', CORSIE) || !tra('contesto', ['fresh', 'fork']) || !tra('destinazione', ['local', 'cloud'])) return 'opzioni non valide'
-  if (!tra('permessi', ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'])) return 'permessi non validi'
-  if (!tra('lanciatore', ['cli', 'freellmapi']) || !str('risultato', 30000)) return 'esecuzione non valida'
-  if (!bool('worktree') || !bool('sveglia') || !bool('sensibile') || !bool('qui') || !bool('incerto') || !bool('manuale') || !bool('presa')) return 'opzioni non valide'
-  if (a.ramo !== undefined && !(typeof a.ramo === 'string' && RAMO_RE.test(a.ramo))) return 'ramo non valido'
-  if (a.base !== undefined && !(typeof a.base === 'string' && BASE_RE.test(a.base))) return 'ramo base non valido'
+    return msg('rec.campo', { campo: 'dipende' })
+  if (a.issue !== undefined && !(Number.isInteger(a.issue) && (a.issue as number) > 0)) return msg('rec.campo', { campo: 'issue' })
+  if (a.sessione !== undefined && !(typeof a.sessione === 'string' && SESSIONE_RE.test(a.sessione))) return msg('rec.campo', { campo: 'sessione' })
+  if (!tra('corsia', CORSIE) || !tra('contesto', ['fresh', 'fork']) || !tra('destinazione', ['local', 'cloud'])) return msg('rec.campo', { campo: 'opzioni' })
+  if (!tra('permessi', ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'])) return msg('rec.campo', { campo: 'permessi' })
+  if (!tra('lanciatore', ['cli', 'freellmapi']) || !str('risultato', 30000)) return msg('rec.campo', { campo: 'esecuzione' })
+  if (!bool('worktree') || !bool('sveglia') || !bool('sensibile') || !bool('qui') || !bool('incerto') || !bool('manuale') || !bool('presa')) return msg('rec.campo', { campo: 'opzioni' })
+  if (a.ramo !== undefined && !(typeof a.ramo === 'string' && RAMO_RE.test(a.ramo))) return msg('rec.campo', { campo: 'ramo' })
+  if (a.base !== undefined && !(typeof a.base === 'string' && BASE_RE.test(a.base))) return msg('rec.campo', { campo: 'base' })
   for (const k of ['background', 'modello', 'effort', 'repo', 'proponente', 'motivoCoda', 'lanciataDa', 'tentativo', 'tentatoIl', 'avvioScade', 'avviataIl', 'errore', 'ramoSessione', 'taskId', 'origineFork', 'origineNome'])
-    if (!str(k, 20000)) return `${k} non valido`
-  if (a.piano !== undefined && pianoValido(a.piano)) return 'piano non valido'
+    if (!str(k, 20000)) return msg('rec.campo', { campo: k })
+  // Codici dei messaggi salvati: una stringa e un oggetto semplice; un codice sconosciuto mostra la frase salvata.
+  for (const k of ['motivoCodice', 'erroreCodice']) if (!str(k, 100)) return msg('rec.campo', { campo: k })
+  for (const k of ['motivoParametri', 'erroreParametri'])
+    if (a[k] !== undefined && (!a[k] || typeof a[k] !== 'object' || Array.isArray(a[k]) || JSON.stringify(a[k]).length > 20000)) return msg('rec.campo', { campo: k })
+  if (a.piano !== undefined && pianoValido(a.piano)) return msg('rec.campo', { campo: 'piano' })
   if (a.revisione !== undefined) {
     const r = a.revisione as Record<string, unknown>
     if (!r || typeof r !== 'object' || !['in-corso', 'approvata', 'da-correggere'].includes(r.esito as string) ||
         typeof r.riferitaDa !== 'string' || r.riferitaDa.length > 200 || typeof r.quando !== 'string' || Number.isNaN(Date.parse(r.quando)) ||
         (r.nota !== undefined && (typeof r.nota !== 'string' || r.nota.length > 300)) ||
-        (r.tentativo !== undefined && typeof r.tentativo !== 'string')) return 'revisione non valida'
+        (r.tentativo !== undefined && typeof r.tentativo !== 'string')) return msg('rec.campo', { campo: 'revisione' })
   }
-  if (typeof a.creata !== 'string' || typeof a.aggiornata !== 'string') return 'date mancanti'
+  if (typeof a.creata !== 'string' || typeof a.aggiornata !== 'string') return msg('rec.date')
   for (const k of ['tentatoIl', 'avvioScade', 'avviataIl', 'creata', 'consegnataIl', 'completataIl'])
-    if (a[k] !== undefined && Number.isNaN(Date.parse(a[k] as string))) return `${k} non è una data`
+    if (a[k] !== undefined && Number.isNaN(Date.parse(a[k] as string))) return msg('rec.data', { campo: k })
   // Migrazioni esplicite. Le azioni della 0.1 non hanno `versione`. Uno stato che non regge i suoi
   // invarianti (avviata senza sessione, avvio senza gettone o scadenza) non occupa un posto in silenzio:
   // diventa «fallita» con il motivo, e il committente verifica prima di riprovare.
   let stato = a.stato as StatoAzione
-  let errore = a.errore as string | undefined
+  let corretto: Msg | undefined
   if (stato === 'avviata' && !a.qui && !a.sessione && !(a.lanciatore && typeof a.tentativo === 'string' && /^az-[a-z0-9]{6,20}$/.test(a.tentativo))) {
     stato = 'fallita'
-    errore = 'record incoerente: avviata senza sessione. Verifica nella barra laterale prima di riprovare'
+    corretto = msg('rec.avviataSenzaSessione')
   } else if (stato === 'in-avvio' && (!a.tentativo || !a.avvioScade)) {
     stato = 'fallita'
-    errore = 'avvio senza gettone o senza scadenza. Verifica nella barra laterale prima di riprovare'
+    corretto = msg('rec.avvioSenzaGettone')
   }
   return {
     ...(a as unknown as Azione),
     stato,
-    errore,
+    ...(corretto && salvato('errore', 'errore', corretto)),
     versione: Number.isInteger(a.versione) ? (a.versione as number) : 0,
     dipende: (a.dipende as string[]) ?? [],
   }
@@ -909,12 +915,12 @@ export const faseChiusa = (fase: string | undefined) => fase === 'fuso' || fase 
 // --- etichette e colori ----------------------------------------------------------------------------
 
 export const PERMESSI = [
-  { value: 'eredita', label: 'Come questa sessione' },
-  { value: 'default', label: 'Chiedi ogni volta' },
-  { value: 'acceptEdits', label: 'Accetta modifiche' },
-  { value: 'plan', label: 'Piano' },
-  { value: 'auto', label: 'Auto' },
-  { value: 'bypassPermissions', label: 'Bypass permessi' },
+  { value: 'eredita', label: 'permessi.eredita' },
+  { value: 'default', label: 'permessi.default' },
+  { value: 'acceptEdits', label: 'permessi.acceptEdits' },
+  { value: 'plan', label: 'permessi.plan' },
+  { value: 'auto', label: 'permessi.auto' },
+  { value: 'bypassPermissions', label: 'permessi.bypassPermissions' },
 ] as const
 
 const NOMI: Record<string, string> = {
@@ -950,12 +956,12 @@ export const barreEffort = (effort: string) => {
 }
 
 /** «12 min», «1 h 05 min», «3 g»: durate brevi da leggere a colpo d'occhio. */
-export function durata(ms: number) {
+export function durata(ms: number, l: Lingua = 'en') {
   const min = Math.max(0, Math.floor(ms / 60_000))
   if (min < 60) return `${min} min`
   const h = Math.floor(min / 60)
   if (h < 48) return `${h} h ${String(min % 60).padStart(2, '0')} min`
-  return `${Math.floor(h / 24)} g`
+  return t(l, 'durata.giorni', { n: Math.floor(h / 24) })
 }
 
 // --- milestone ---------------------------------------------------------------------------------------
@@ -1065,7 +1071,7 @@ export function sessioniClaude(json: unknown, radice: string, adesso: number): S
     const attivita = istante(s.lastActivityAt)
     const inCorso = s.isRunning === true
     if (!inCorso && (!attivita || adesso - Date.parse(attivita) > GIORNO)) return []
-    return [{ id: s.sessionId, motore: 'claude' as const, titolo: testoBreve(s.title, 80) ?? 'Sessione senza titolo', ramo: testoBreve(s.branch, 80),
+    return [{ id: s.sessionId, motore: 'claude' as const, titolo: testoBreve(s.title, 80) ?? '', ramo: testoBreve(s.branch, 80),
       stato: inCorso ? ('in-corso' as const) : ('ferma' as const), attivita }]
   })
 }
@@ -1095,7 +1101,7 @@ export function sessioniCodex(json: unknown, radice: string, adesso: number): Se
     const token = typeof s.token === 'number' && Number.isFinite(s.token) && s.token >= 0 ? s.token : undefined
     const finestra = typeof s.finestra === 'number' && Number.isFinite(s.finestra) && s.finestra > 0 ? s.finestra : undefined
     const ramo = testoBreve(s.ramo, 80)
-    return [{ id: `codex-${s.id}`, motore: 'codex' as const, titolo: ramo ? `Codex · ${ramo}` : 'Sessione Codex', ramo,
+    return [{ id: `codex-${s.id}`, motore: 'codex' as const, titolo: ramo ? `Codex · ${ramo}` : '', ramo,
       modello: testoBreve(s.modello, 60), effort: testoBreve(s.effort, 20), stato: s.inCorso === true ? ('in-corso' as const) : s.stato === 'ignoto' ? ('ignota' as const) : ('ferma' as const),
       contesto: token !== undefined && finestra ? Math.min(100, Math.round((token / finestra) * 100)) : undefined, token, attivita,
       // L'istante della misura è quello dell'evento token_count, non l'ultima attività (un'attività senza token non rinfresca).
@@ -1163,14 +1169,14 @@ export const conta = (delta: Partial<Omit<Consumo, 'da'>>) => void (secchi = con
 export const sommaConsumo = () => sommaSecchi(secchi, Date.now(), AVVIO)
 
 /** La riga grigia della vista Carico: solo i numeri di QUESTA sessione, e lo dice. */
-export function rigaConsumo(c: Consumo, adesso: number): string {
+export function rigaConsumo(c: Consumo, adesso: number, l: Lingua = 'en'): string {
   const min = Math.max(1, Math.round((adesso - c.da) / 60_000))
-  const mb = (n: number) => `${(n / 1_048_576).toFixed(1).replace('.', ',')} MB`
+  const mb = (n: number) => `${scriviNumero(l, n / 1_048_576, 1)} MB`
   return [
-    `Questa sessione, ${min >= FINESTRA_MIN ? 'ultimi 10 minuti' : `ultimi ${min} min`}: ${c.processi} ${c.processi === 1 ? 'processo' : 'processi'}`,
-    `${c.app} ${c.app === 1 ? 'chiamata' : 'chiamate'} all'app`,
-    `${mb(c.byte)} letti dall'helper Codex${c.byteLimiti ? ` (${mb(c.byteLimiti)} per i limiti)` : ''}`,
-    `${c.salti} ${c.salti === 1 ? 'salto' : 'salti'} d'arretrato`,
+    t(l, min >= FINESTRA_MIN ? 'consumo.dieci' : 'consumo.minuti', { n: min, processi: t(l, 'consumo.processi', { n: c.processi }) }),
+    t(l, 'consumo.app', { n: c.app }),
+    t(l, c.byteLimiti ? 'consumo.byteLimiti' : 'consumo.byte', { mb: mb(c.byte), limiti: mb(c.byteLimiti) }),
+    t(l, 'consumo.salti', { n: c.salti }),
   ].join(' · ')
 }
 

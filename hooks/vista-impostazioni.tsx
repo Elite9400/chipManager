@@ -26,9 +26,9 @@ import {
 import type { Profilo } from './bilanciamento'
 import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, piuPieno, sogliaDi } from './logica'
 import type { Dati } from './pannello'
-import { LINGUE, NOMI_LINGUE } from './lingua'
+import { Errore, LINGUE, msgDi, NOMI_LINGUE } from './lingua'
 import type { Lingua } from './lingua'
-import { INSTALLAZIONE } from './risorse'
+import { INSTALLAZIONE, nomeLimiteIn, unitaIn } from './risorse'
 import { GRIGIO, LIVELLO, STATO } from './tema'
 import { componenti } from './ui'
 
@@ -62,6 +62,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const r = regoleOra.risorse
   const vista = await read($, statoVista)
   const cambia = (f: (s: StatoVista) => StatoVista) => update($, statoVista, f)
+  const nomeTipo = (x: (typeof TIPI_BUDGET)[number]) => TIPO(T(`budget.${x}`))
 
   /** Esegue, poi toast se va (senza `conferma`, nessun toast) e errore in linea sotto `dove` se non va. */
   const esegui = async (dove: string, fn: () => Promise<unknown>, conferma = 'Salvato') => {
@@ -70,12 +71,13 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       await cambia(s => ({ ...s, errore: undefined }))
       if (conferma) $.ui.toast(conferma)
     } catch (err) {
-      await cambia(s => ({ ...s, errore: { dove, testo: String((err as Error)?.message ?? err).slice(0, 300) } }))
+      const m = msgDi(err)
+      await cambia(s => ({ ...s, errore: { dove, testo: typeof m === 'string' ? m.slice(0, 300) : m } }))
     }
   }
   const salva = (dove: string, campi: () => Record<string, unknown>) => () => void esegui(dove, () => configura(campi()))
   const errore = (dove: string) =>
-    vista.errore?.dove === dove ? nota1(`errore-${dove}`, STATO.errore, '▲', `${vista.errore.testo}`) : null
+    vista.errore?.dove === dove ? nota1(`errore-${dove}`, STATO.errore, '▲', T.m(vista.errore.testo)) : null
   const didascalia = (k: string, testo: string) => (
     <Text key={k} size="caption" dimColor wrap="wrap">
       {testo}
@@ -129,14 +131,14 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     if (!r.fornitori.includes(f)) return u.Chip({ chiave: `stato-chip-${f}`, testo: 'Vietato per questo progetto', segno: '✕', colore: GRIGIO })
     const l = ultima(f)
     if (!l) return u.Chip({ chiave: `stato-chip-${f}`, testo: 'Da collegare', segno: '○', colore: STATO.coda })
-    return u.Chip({ chiave: `stato-chip-${f}`, testo: `Collegato · ${l.fonte} · ${durata(Math.max(0, adesso - Date.parse(l.letto!)))} fa`, segno: '●', colore: STATO.inCorso })
+    return u.Chip({ chiave: `stato-chip-${f}`, testo: `Collegato · ${l.fonte} · ${durata(Math.max(0, adesso - Date.parse(l.letto!)), T.lingua)} fa`, segno: '●', colore: STATO.inCorso })
   }
   // La diagnosi delle sonde (le viste operative la tacciono): solo per gli ammessi, come nella 2.3.1.
   const diagnosi = (f: Fornitore) => {
     const righe = capacita.limiti.filter(l => l.fornitore === f && !l.manuale)
-      .map(l => (l.errore ? `${l.nome} · ${l.errore}` : `${l.nome} · letto ${durata(Math.max(0, adesso - Date.parse(l.letto!)))} fa`))
-    if (f === 'freellmapi') righe.push(`proxy ${capacita.proxy} · chiave ${capacita.chiavi.freellmapi ? 'impostata' : 'mancante'}`)
-    return `${NOME_FORNITORE[f]}: ${righe.join(' · ') || (capacita.proxy === 'helper non disponibile' ? 'helper non disponibile' : 'nessuna lettura')}`
+      .map(l => (l.errore ? `${nomeLimiteIn(l, T.lingua)} · ${T.k(l.errore)}` : `${nomeLimiteIn(l, T.lingua)} · letto ${durata(Math.max(0, adesso - Date.parse(l.letto!)), T.lingua)} fa`))
+    if (f === 'freellmapi') righe.push(`proxy ${T.k(capacita.proxy)} · chiave ${capacita.chiavi.freellmapi ? 'impostata' : 'mancante'}`)
+    return `${NOME_FORNITORE[f]}: ${righe.join(' · ') || (capacita.proxy === 'proxy.helper' ? T.k(capacita.proxy) : 'nessuna lettura')}`
   }
   const chiave = (f: Fornitore) =>
     f === 'claude' ? `Chiave Admin Anthropic ${capacita.chiavi.anthropic ? 'impostata' : 'mancante'}` : f === 'deepseek' ? `Chiave ${capacita.chiavi.deepseek ? 'impostata' : 'mancante'}` : undefined
@@ -218,7 +220,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         <Text weight="medium">{nome}</Text>
         {u.GruppoChip({
           chiave: `soglia-${f}`, etichetta: presetDi(s) ? 'Preset' : 'Preset (adesso una soglia personale)', modo: 'scelta', valore: presetDi(s),
-          voci: SOGLIE_PRESET, contesto: nome, onCambia: v => scrivi(SOGLIE_PRESET.find(p => p.valore === v)!.soglia),
+          voci: SOGLIE_PRESET.map(p => ({ valore: p.valore, testo: T(p.testo) })), contesto: nome, onCambia: v => scrivi(SOGLIE_PRESET.find(p => p.valore === v)!.soglia),
         })}
         {s &&
           u.Gamma({
@@ -255,7 +257,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     if (esito.motivi)
       return [
         nota1('simulazione', STATO.attesa, '▲', 'Simulazione: nessuna combinazione avviabile con queste regole.'),
-        ...esito.motivi.map((m, i) => didascalia(`simulazione-motivo-${i}`, `· ${m}`)),
+        ...esito.motivi.map((m, i) => didascalia(`simulazione-motivo-${i}`, `· ${T.m(m)}`)),
       ]
     const a = esito.scelta!
     return [
@@ -278,7 +280,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       <Box key={`regolazione-${tipo}-${v.nome}`} flexDirection="column">
         {u.Gamma({
           chiave: dove, etichetta: v.testo, valore: i < 0 ? null : i, min: 0, max: POSIZIONI.length - 1, passo: 1,
-          formato: n => (n === null ? pesoScritto(p as Peso) : POSIZIONI[n]!.nome), onCambia: scrivi,
+          formato: n => (n === null ? pesoScritto(p as Peso, T.lingua) : T(POSIZIONI[n]!.nome)), onCambia: scrivi,
         })}
         {i < 0 && <Button key={`${dove}-normale`} plain label={`Riporta ${v.testo} a Normale`} onPress={() => scrivi(2)} />}
         {errore(dove)}
@@ -286,7 +288,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     )
   }
   const bilanciamento = () => {
-    const stato = `Profilo ${PROFILI.find(p => p.id === profilo)!.nome}`
+    const stato = `Profilo ${T(PROFILI.find(p => p.id === profilo)!.nome)}`
     return u.Sezione({
       chiave: 'pagina-bilanciamento',
       titolo: 'Bilanciamento',
@@ -297,11 +299,11 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           ? [<Box key="bil-proposte" flexDirection="column" gap={1}>{d.proposteAperte.map(p => d.rigaProposta('bil-pesi', p, true))}</Box>]
           : []),
         u.GruppoChip({
-          chiave: 'profilo', etichetta: 'Profilo', modo: 'scelta', valore: profilo, voci: PROFILI.map(p => ({ valore: p.id, testo: p.nome })),
+          chiave: 'profilo', etichetta: 'Profilo', modo: 'scelta', valore: profilo, voci: PROFILI.map(p => ({ valore: p.id, testo: T(p.nome) })),
           onCambia: v => salva('profilo', () => ({ profilo: v, pesi: conProfilo(r.pesi, v as Profilo) }))(),
         }),
         <Box key="profili-descrizione" flexDirection="column">
-          {PROFILI.map(p => didascalia(`profilo-${p.id}-descrizione`, `${p.nome}: ${p.descrizione}`))}
+          {PROFILI.map(p => didascalia(`profilo-${p.id}-descrizione`, `${T(p.nome)}: ${T(p.descrizione)}`))}
         </Box>,
         didascalia('profili-nota', 'I profili toccano solo motori ed effort; i modelli si regolano a mano.'),
         errore('profilo'),
@@ -338,7 +340,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     return { config, cartella: cartellaDati(letto, io?.repo ?? null, casa) ?? 'non valida: vedi «cartella» nel config' }
   }
   const budgetScritto = (l: RisorseProgetto['limitiManuali'][number]) =>
-    `${NOME_FORNITORE[l.fornitore]} · ${l.nome} · ${l.percentuale !== undefined ? `${l.percentuale}%` : `${l.valore} ${l.unita}`}`
+    `${NOME_FORNITORE[l.fornitore]} · ${nomeLimiteIn(l, T.lingua)} · ${l.percentuale !== undefined ? `${l.percentuale}%` : `${T.numero(l.valore ?? 0)} ${unitaIn(l.unita, T.lingua)}`}`
   const aggiungiBudget = async () => {
     const nomi = ammessi.map(f => NOME_FORNITORE[f])
     const bozza: NonNullable<StatoVista['bozza']> = {}
@@ -348,8 +350,8 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       // Una risposta libera («Altro») che non è un fornitore: il resto si sceglie in linea.
       if (!f) throw new Error('fornitore da scegliere in linea')
       bozza.fornitore = f
-      const t = await $.ui.ask(`Che budget è per ${NOME_FORNITORE[f]}?`, { options: TIPI_BUDGET.map(TIPO), header: 'Budget' })
-      bozza.tipo = TIPI_BUDGET.find(x => TIPO(x) === t)
+      const t = await $.ui.ask(`Che budget è per ${NOME_FORNITORE[f]}?`, { options: TIPI_BUDGET.map(nomeTipo), header: 'Budget' })
+      bozza.tipo = TIPI_BUDGET.find(x => nomeTipo(x) === t)
     } catch (err) {
       if (!ammessi.length) return void (await cambia(s => ({ ...s, errore: { dove: 'budget', testo: String((err as Error).message) } })))
       // Popup rifiutato: i passi mancanti si scelgono in linea.
@@ -364,7 +366,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       })}
       {u.GruppoChip({
         chiave: 'bozza-tipo', etichetta: 'Tipo', modo: 'scelta', valore: b.tipo ?? '',
-        voci: TIPI_BUDGET.map(t => ({ valore: t, testo: TIPO(t) })), onCambia: v => void cambia(s => ({ ...s, bozza: { ...s.bozza, tipo: v } })),
+        voci: TIPI_BUDGET.map(t => ({ valore: t, testo: nomeTipo(t) })), onCambia: v => void cambia(s => ({ ...s, bozza: { ...s.bozza, tipo: v } })),
       })}
       {Input && b.fornitore && b.tipo && (
         <Input
@@ -373,7 +375,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           onSubmit={testo =>
             void esegui('budget', async () => {
               const misura = budgetDa(testo)
-              if (typeof misura === 'string') throw new Error(misura)
+              if ('k' in misura) throw new Errore(misura)
               await configura({ limitiManuali: [...manualiDaScrivere(r.limitiManuali), nuovoBudget(b.fornitore!, b.tipo!, misura, Date.now())] })
               await cambia(s => ({ ...s, bozza: undefined }))
             })
@@ -517,12 +519,13 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
 
   // --- Lingua ------------------------------------------------------------------------------------------
   // Dell'utente, non del progetto: ogni lingua col suo nome, così chi non capisce quella attuale ritrova la sua.
-  const lingua = () =>
-    u.Sezione({
+  const lingua = () => {
+    const stato = NOMI_LINGUE[T.lingua]
+    return u.Sezione({
       chiave: 'pagina-lingua',
       titolo: T('imp.sezione.lingua'),
       descrizione: T('imp.lingua.descrizione'),
-      stato: NOMI_LINGUE[T.lingua],
+      stato,
       figli: [
         u.GruppoChip({
           chiave: 'lingua', etichetta: T('imp.lingua.etichetta'), modo: 'scelta', valore: T.lingua,
@@ -533,6 +536,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         didascalia('lingua-nota', T('imp.lingua.nota')),
       ],
     })
+  }
 
   const corpo =
     vista.sezione === 'lingua' ? lingua()

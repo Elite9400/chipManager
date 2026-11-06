@@ -15,10 +15,11 @@ import {
   velo,
 } from './logica'
 import type { Dati } from './pannello'
+import { nomeLimiteIn, unitaIn } from './risorse'
 import { ACCENTO, GRIGIO, STATO } from './tema'
 
 export function vistaCarico(d: Dati) {
-  const { conVelo, classe, tutte, regoleOra, lista, adesso, capacita, nota1, titoloSezione,
+  const { T, conVelo, classe, tutte, regoleOra, lista, adesso, capacita, nota1, titoloSezione,
     righe, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, consumoOra } = d
   const { Box, Text } = d.el
 
@@ -65,24 +66,24 @@ export function vistaCarico(d: Dati) {
     const n = l.percentuale
     const colore = coloreLimite(l, adesso, soglia)
     const livello = n !== undefined && (fresco || l.manuale) ? livelloDi(n, soglia) : undefined
-    const valore = n !== undefined ? `${n}% usato` : l.valore !== undefined ? `${l.valore.toLocaleString('it-IT')} ${l.unita ?? ''}` : 'non disponibile'
+    const valore = n !== undefined ? `${n}% usato` : l.valore !== undefined ? `${T.numero(l.valore)} ${unitaIn(l.unita, T.lingua)}` : 'non disponibile'
     // Un valore inserito a mano non invecchia come una misura: dice solo quando è stato scritto.
     const eta = !l.letto
       ? 'mai letto'
       : l.manuale
-        ? `inserito ${durata(Math.max(0, adesso - Date.parse(l.letto)))} fa`
-        : `${durata(Math.max(0, adesso - Date.parse(l.letto)))} fa${fresco ? '' : ' · vecchio, non conta nelle scelte'}`
+        ? `inserito ${durata(Math.max(0, adesso - Date.parse(l.letto)), T.lingua)} fa`
+        : `${durata(Math.max(0, adesso - Date.parse(l.letto)), T.lingua)} fa${fresco ? '' : ' · vecchio, non conta nelle scelte'}`
     const reset = l.reset
-      ? new Date(l.reset).toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+      ? T.data(l.reset)
       : undefined
     return (
       <Box key={`limite-${l.id}`} flexDirection="column">
         <Text dimColor={grigio}>
           {n === undefined ? <Text color={colore}>{'○ '}</Text> : livello && livello !== 'ok' ? <Text color={colore}>{'▲ '}</Text> : ''}
-          {`${l.nome}: ${valore}${l.manuale ? ' · manuale' : ''}${livello === 'critica' ? ' · oltre la soglia critica' : livello === 'attenzione' ? ' · sopra la soglia di attenzione' : ''}${l.manuale && livello && livello !== 'ok' ? ' (dichiarato: non cambia le scelte)' : ''}`}
+          {`${nomeLimiteIn(l, T.lingua)}: ${valore}${l.manuale ? ' · manuale' : ''}${livello === 'critica' ? ' · oltre la soglia critica' : livello === 'attenzione' ? ' · sopra la soglia di attenzione' : ''}${l.manuale && livello && livello !== 'ok' ? ' (dichiarato: non cambia le scelte)' : ''}`}
         </Text>
         {barra && barraPct(`barra-${l.id}`, n!, colore)}
-        <Text dimColor size="caption">{`${l.fonte} · ${eta}${l.errore ? ` · ${l.errore}` : ''}${reset ? ` · reset ${reset}` : ''}`}</Text>
+        <Text dimColor size="caption">{`${l.fonte} · ${eta}${l.errore ? ` · ${T.k(l.errore)}` : ''}${reset ? ` · reset ${reset}` : ''}`}</Text>
       </Box>
     )
   }
@@ -101,7 +102,7 @@ export function vistaCarico(d: Dati) {
         </Box>
       ))}
       {fornitoriInUso.length > 0 && <Text size="caption" dimColor>Saldi e budget non sono quote di piano. Un dato vecchio resta grigio e non entra nelle scelte.</Text>}
-      {capacita.proxy === 'helper non disponibile' && <Text dimColor>{`Limiti non letti: ${capacita.proxy}`}</Text>}
+      {capacita.proxy === 'proxy.helper' && <Text dimColor>{`Limiti non letti: ${T.k(capacita.proxy)}`}</Text>}
     </Box>
   )
 
@@ -252,7 +253,7 @@ export function vistaCarico(d: Dati) {
       {controlloLimiti}
       {token}
       {pesiInUso}
-      {consumoOra.da > 0 && <Text key="consumo" size="caption" dimColor>{rigaConsumo(consumoOra, adesso)}</Text>}
+      {consumoOra.da > 0 && <Text key="consumo" size="caption" dimColor>{rigaConsumo(consumoOra, adesso, T.lingua)}</Text>}
     </Box>
   )
   return carico
