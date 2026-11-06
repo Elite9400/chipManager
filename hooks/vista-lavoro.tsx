@@ -20,6 +20,11 @@ import {
   FASI,
   idAuditor,
   modelloDi,
+  motivoAuditor,
+  piuPieno,
+  profiloDi,
+  puoCambiare,
+  revisoreConcreto,
   nomeModello,
   percentuale,
   pianifica,
@@ -37,6 +42,8 @@ import {
 import { letto, msg, msgDi, salvato } from './lingua'
 import type { Msg } from './lingua'
 import type { Dati } from './pannello'
+import { diversoDa, presetChi, PRESET_CHI, PROFILI } from './bilanciamento'
+import type { PresetChi } from './bilanciamento'
 import { GRIGIO, MOTORE, STATO } from './tema'
 
 // Copia identica degli atomi di register.tsx (lo scanner li vuole nel file che li usa).
@@ -44,6 +51,10 @@ const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as 
 const filtro = atom({ plugin: 'chip-manager', key: 'filtro' } as const, '')
 const tutteSessioni = atom({ plugin: 'chip-manager', key: 'tutteSessioni' } as const, false)
 const selezionate = atom({ plugin: 'chip-manager', key: 'selezionate' } as const, [] as string[], { shape: 'selezionate-1' })
+const anteprimaChi = atom({ plugin: 'chip-manager', key: 'anteprimaChi' } as const, null as { id: string; preset: PresetChi } | null, { shape: 'anteprima-chi-1' })
+const dettagliChi = atom({ plugin: 'chip-manager', key: 'dettagliChi' } as const, null as string | null)
+const PRESET_TESTO: Record<PresetChi, 'chi.consigliato' | 'chi.economico' | 'chi.qualita'> = { consigliato: 'chi.consigliato', economico: 'chi.economico', qualita: 'chi.qualita' }
+const ALIAS_AUDITOR = ['sonnet', 'opus', 'fable']
 
 const REVISORI = ['claude', 'codex', 'nessuno'] as const
 const DESTINAZIONI_UI: readonly Destinazione[] = ['local', 'cloud', 'api-claude']
@@ -89,6 +100,145 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     </Box>
   )
 
+  /** F7.4: chi lavora in stile developer. Larga: una riga; stretta: esecutore · modello · effort, poi auditor · revisore · corsia. */
+  const riepilogo = (a: Azione, k: string, motivo?: string) => {
+    const modello = modelloDi(a, regoleOra)
+    const eff = effortDi(a, regoleOra)
+    const rev = revisoreConcreto(a, regoleOra)
+    const riga1 = [motore(a.esecutore), a.esecutore === 'claude' || modello ? nomeModello(modello) : '', `${barreEffort(eff)} ${eff}`].filter(Boolean).join(' · ')
+    const riga2 = [
+      a.auditor ? T('chi.auditor', { auditor: nomeModello(idAuditor(a.auditor) ?? a.auditor) }) : T('chi.senzaAuditor'),
+      a.revisore === 'nessuno' ? T('chi.senzaRev') : T('chi.rev', { revisore: rev === 'motore:codex' ? 'Codex' : rev ? nomeModello(rev) : motore(a.revisore) }),
+      corsiaDi(a, regoleOra) ?? T('ed.corsiaNessuna'),
+    ].join(' · ')
+    return (
+      <Box key={k} flexDirection="column">
+        {classe === 'stretta' ? [
+          <Text key={`${k}-1`} mono wrap="wrap">{riga1}</Text>,
+          <Text key={`${k}-2`} mono wrap="wrap">{riga2}</Text>,
+        ] : <Text key={`${k}-1`} mono wrap="wrap">{`${riga1} · ${riga2}`}</Text>}
+        {motivo ? <Text key={`${k}-motivo`} size="caption" dimColor wrap="wrap">{motivo}</Text> : null}
+      </Box>
+    )
+  }
+  /** Il motivo della scelta consigliata: corsia, profilo e, se letto, il piano Claude più pieno. */
+  const motivoConsigliato = (a: Azione) => {
+    const nome = PROFILI.find(p => p.id === profiloDi(regoleOra.risorse))?.nome
+    const pct = piuPieno(d.limiti, 'claude', adesso)?.percentuale
+    return [T('chi.motivo', { corsia: corsiaDi(a, regoleOra) ?? '—', profilo: nome ? T(nome) : '—' }), pct !== undefined ? T('chi.motivoPiano', { pct: Math.round(pct) }) : ''].filter(Boolean).join(' · ')
+  }
+  /** Con un nuovo esecutore o modello l'auditor si ricontrolla: se non è più una coppia valida torna a «nessuno», e lo si dice. */
+  const conAuditorValido = (a: Azione, campi: Partial<Azione>): Partial<Azione> => {
+    const n = { ...a, ...campi }
+    if (!n.auditor || (n.esecutore === 'claude' && !motivoAuditor(modelloDi(n, regoleOra), n.auditor))) return campi
+    $.ui.toast(T('au.tolto', { auditor: n.auditor }))
+    return { ...campi, auditor: undefined, senzaAuditor: undefined }
+  }
+  /**
+   * F7.4 «Chi lavora»: il riepilogo sempre visibile; i preset (Consigliato, Economico, Qualità) con l'anteprima prima di
+   * applicarli; «modificato» con «Ripristina consigliato»; i «Dettagli», chiusi per default, con ogni scelta e il suo motivo.
+   */
+  const chiLavora = (a: Azione, modello: string) => {
+    const ant = d.anteprimaChiOra?.id === a.id ? d.anteprimaChiOra.preset : undefined
+    const cons = io ? presetChi(a, 'consigliato', regoleOra, d.limiti, tutte, io) : undefined
+    const prev = io && ant ? presetChi(a, ant, regoleOra, d.limiti, tutte, io) : undefined
+    const aperti = d.dettagliChiOra === a.id
+    const corsia = corsiaDi(a, regoleOra)
+    const auditorNo = a.esecutore === 'claude' ? ALIAS_AUDITOR.map(x => ({ x, motivo: motivoAuditor(modello, x) })) : []
+    return (
+      <Box key={`g-mot-${a.id}`} flexDirection="column" gap={1}>
+        <Text size="caption" weight="medium" dimColor>{T('ed.chiLavora')}</Text>
+        {riepilogo(prev ? { ...a, ...prev.campi } : a, `chi-riepilogo-${a.id}`, prev ? T('chi.anteprima') : motivoConsigliato(a))}
+        {cons && !prev && diversoDa(a, cons.campi, regoleOra) && (
+          <Box key={`chi-modificato-${a.id}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
+            {nota1(`chi-modificato-${a.id}-testo`, STATO.attesa, '◆', T('chi.modificato'))}
+            <Button key={`chi-ripristina-${a.id}`} plain label={`${T('chi.ripristina')} ${breve(a)}`} onPress={modifica(a, { ...cons.campi, senzaAuditor: undefined })}>{T('chi.ripristina')}</Button>
+          </Box>
+        )}
+        {cons && ui.GruppoChip({
+          chiave: `preset-${a.id}`, etichetta: T('chi.preset'), modo: 'scelta', valore: ant ?? '',
+          voci: PRESET_CHI.map(p => ({ valore: p, testo: T(PRESET_TESTO[p]) })),
+          onCambia: v => void update($, anteprimaChi, () => ({ id: a.id, preset: v as PresetChi })),
+        })}
+        {prev && (
+          <Box key={`chi-anteprima-${a.id}`} flexDirection="column">
+            {prev.auditorTolto ? <Text key={`chi-tolto-${a.id}`} size="caption" dimColor wrap="wrap">{T('au.tolto', { auditor: prev.auditorTolto })}</Text> : null}
+            {prev.campi.auditor && !a.auditor ? <Text key={`chi-costo-${a.id}`} size="caption" dimColor wrap="wrap">{T('chi.costoAuditor')}</Text> : null}
+            <Box key={`chi-anteprima-${a.id}-pulsanti`} flexDirection="row" flexWrap="wrap" columnGap={1}>
+              <Button key={`preset-applica-${a.id}`} variant="secondary" label={`${T('chi.applica')} ${breve(a)}`}
+                onPress={fai(async () => {
+                  await c.salva({ ...a, ...prev.campi, senzaAuditor: undefined })
+                  await update($, anteprimaChi, () => null)
+                })}>
+                {T('chi.applica')}
+              </Button>
+              <Button key={`preset-annulla-${a.id}`} plain dimColor label={`${T('comune.annulla')} ${breve(a)}`} onPress={() => void update($, anteprimaChi, () => null)}>{T('comune.annulla')}</Button>
+            </Box>
+          </Box>
+        )}
+        <Button key={`chi-dettagli-${a.id}`} plain label={`${T(aperti ? 'chi.chiudiDettagli' : 'chi.dettagli')} ${breve(a)}`} onPress={() => void update($, dettagliChi, x => (x === a.id ? null : a.id))}>
+          {T(aperti ? 'chi.chiudiDettagli' : 'chi.dettagli')}
+        </Button>
+        {aperti && gruppo(`g-chi-dettagli-${a.id}`, T('chi.dettagli'), [
+          scelta(a, 'esec', T('ed.esecutore'), a.esecutore, MOTORI.filter(m => regoleOra.risorse.fornitori.includes(m)).map(m => ({ value: m, label: motore(m) })), v =>
+            conAuditorValido(a, { esecutore: v as Motore, modello: undefined, effort: undefined })),
+          scelta(a, 'mod', T('ed.modello'), modello, regoleOra.modelli[a.esecutore].map(m => ({ value: m, label: nomeModello(m) })), v => conAuditorValido(a, { modello: v })),
+          scelta(a, 'eff', T('ed.effort'), effortDi(a, regoleOra), effortPer(regoleOra, modello).map(m => ({ value: m, label: `${barreEffort(m)}  ${m}` })), v => ({ effort: v })),
+          // L'auditor: solo le coppie della tabella; le altre si vedono sotto con il motivo.
+          a.esecutore === 'claude' && scelta(a, 'aud', T('chi.auditorScelta'), a.auditor ?? 'nessuno', [
+            { value: 'nessuno', label: T('chi.senzaAuditor') },
+            ...auditorNo.filter(x => !x.motivo).map(x => ({ value: x.x, label: nomeModello(idAuditor(x.x)!) })),
+            ...(a.auditor && !ALIAS_AUDITOR.includes(a.auditor) ? [{ value: a.auditor, label: nomeModello(a.auditor) }] : []),
+          ], v => ({ auditor: v === 'nessuno' ? undefined : v, senzaAuditor: undefined })),
+          ...auditorNo.filter(x => x.motivo).map(x => (
+            <Text key={`aud-no-${x.x}-${a.id}`} size="caption" dimColor wrap="wrap">{T.m(x.motivo!)}</Text>
+          )),
+          scelta(a, 'rev', T('ed.revisore'), a.revisore, REVISORI.map(m => ({ value: m, label: motore(m) })), v => ({ revisore: v as Revisore })),
+          scelta(
+            a,
+            'cor',
+            T('ed.corsia'),
+            corsia ?? 'nessuna',
+            [{ value: 'nessuna', label: T('ed.corsiaNessuna') }, ...CORSIE.map(k => ({ value: k, label: k }))].filter(
+              // Su un'azione sensibile le corsie sotto R4 non si possono scegliere: non spariscono le regole.
+              o => !sensibile({ ...a, corsia: undefined }, regoleOra) || o.value === 'R4' || o.value === 'R5',
+            ),
+            v => ({ corsia: v === 'nessuna' ? undefined : (v as Corsia) }),
+          ),
+          corsia ? <Text key={`cor-legenda-${a.id}`} size="caption" dimColor wrap="wrap">{T(`legenda.${corsia.toLowerCase() as 'r0'}`)}</Text> : null,
+        ])}
+      </Box>
+    )
+  }
+  /** F7.4: lo stesso blocco in sola lettura per una sessione al lavoro, con «Cambia» (F7.2) dove l'app lo permette. */
+  const chiLavoraSola = (a: Azione) => {
+    const modello = modelloDi(a, regoleOra)
+    const cambio = a.cambio
+    return (
+      <Box key={`chi-sola-${a.id}`} flexDirection="column">
+        {riepilogo(a, `chi-sola-riepilogo-${a.id}`)}
+        {(puoCambiare(a, io, 'modello') || puoCambiare(a, io, 'effort')) && (
+          <Box key={`cambia-${a.id}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
+            {puoCambiare(a, io, 'modello') && Select && (
+              <Select key={`cambia-mod-${a.id}`} label={T('cambia.modello')} value={modello} options={regoleOra.modelli.claude.map(m => ({ value: m, label: nomeModello(m) }))}
+                onSelect={v => void fai(() => c.cambiaSessione(a, 'modello', v))()} />
+            )}
+            {puoCambiare(a, io, 'effort') && Select && (
+              <Select key={`cambia-eff-${a.id}`} label={T('cambia.effort')} value={effortDi(a, regoleOra)} options={effortPer(regoleOra, modello).map(m => ({ value: m, label: `${barreEffort(m)}  ${m}` }))}
+                onSelect={v => void fai(() => c.cambiaSessione(a, 'effort', v))()} />
+            )}
+          </Box>
+        )}
+        {cambio?.esito === 'incerto' && (
+          <Box key={`cambio-${a.id}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
+            {nota1(`cambio-${a.id}-testo`, STATO.attesa, '?', T('cambia.esitoIncerto', { valore: cambio.campo === 'modello' ? nomeModello(cambio.valore) : cambio.valore }))}
+            <Button key={`cambia-ricontrolla-${a.id}`} plain label={`${T('ese.ricontrolla')} ${breve(a)}`} onPress={fai(() => c.ricontrollaCambio(a))}>{T('ese.ricontrolla')}</Button>
+          </Box>
+        )}
+      </Box>
+    )
+  }
+
   const editor = (a: Azione) => {
     const modello = modelloDi(a, regoleOra)
     return (
@@ -101,38 +251,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         borderStyle={conVelo ? undefined : 'single'}
         borderDimColor
       >
-        {gruppo(`g-mot-${a.id}`, T('ed.chiLavora'), [
-          scelta(a, 'esec', T('ed.esecutore'), a.esecutore, MOTORI.filter(m => regoleOra.risorse.fornitori.includes(m)).map(m => ({ value: m, label: motore(m) })), v => ({
-            esecutore: v as Motore,
-            modello: undefined,
-            effort: undefined,
-          })),
-          scelta(a, 'mod', T('ed.modello'), modello, regoleOra.modelli[a.esecutore].map(m => ({ value: m, label: nomeModello(m) })), v => ({
-            modello: v,
-          })),
-          scelta(
-            a,
-            'eff',
-            T('ed.effort'),
-            effortDi(a, regoleOra),
-            effortPer(regoleOra, modello).map(m => ({ value: m, label: `${barreEffort(m)}  ${m}` })),
-            v => ({ effort: v }),
-          ),
-          scelta(a, 'rev', T('ed.revisore'), a.revisore, REVISORI.map(m => ({ value: m, label: motore(m) })), v => ({
-            revisore: v as Revisore,
-          })),
-          scelta(
-            a,
-            'cor',
-            T('ed.corsia'),
-            corsiaDi(a, regoleOra) ?? 'nessuna',
-            [{ value: 'nessuna', label: T('ed.corsiaNessuna') }, ...CORSIE.map(k => ({ value: k, label: k }))].filter(
-              // Su un'azione sensibile le corsie sotto R4 non si possono scegliere: non spariscono le regole.
-              o => !sensibile({ ...a, corsia: undefined }, regoleOra) || o.value === 'R4' || o.value === 'R5',
-            ),
-            v => ({ corsia: v === 'nessuna' ? undefined : (v as Corsia) }),
-          ),
-        ])}
+        {chiLavora(a, modello)}
         {gruppo(`g-ses-${a.id}`, T('ed.comeParte'), [
           // F6.1: le destinazioni ammesse si scelgono; le altre si mostrano sotto, ciascuna con il suo motivo.
           scelta(
@@ -408,6 +527,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         {infoLavoro(a)}
         {consiglioRiga(a)}
         {auditorRiga(a)}
+        {a.stato === 'avviata' && chiLavoraSola(a)}
         <Text dimColor size="caption" wrap="wrap">
           {opzioni(a)}
         </Text>
@@ -737,6 +857,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         {infoLavoro(a)}
         {consiglioRiga(a)}
         {auditorRiga(a)}
+        {a.stato === 'avviata' && chiLavoraSola(a)}
         {brief && (
           <Text size="caption" dimColor wrap="wrap">
             {corto(brief, Math.max(40, 2 * (colonne - 8)))}

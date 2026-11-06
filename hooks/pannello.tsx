@@ -63,6 +63,8 @@ const spesaApi = atom({ plugin: 'chip-manager', key: 'spesaApi' } as const, null
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: 0 } as Consumo, { shape: 'consumo-2' })
 const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
 const lingua = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
+const anteprimaChi = atom({ plugin: 'chip-manager', key: 'anteprimaChi' } as const, null as { id: string; preset: 'consigliato' | 'economico' | 'qualita' } | null, { shape: 'anteprima-chi-1' })
+const dettagliChi = atom({ plugin: 'chip-manager', key: 'dettagliChi' } as const, null as string | null)
 const statoImpostazioni = atom({ plugin: 'chip-manager', key: 'impostazioni' } as const, { sezione: 'connessioni' } as StatoImpostazioni, { shape: 'impostazioni-1' })
 
 type Eng = EngineInterface
@@ -87,6 +89,9 @@ export type Ctx = {
   configura: (campi: Record<string, unknown>, attese: RisorseProgetto) => Promise<unknown>
   peso: (peso: Peso, attese: RisorseProgetto) => Promise<unknown>
   installa: (passo: number) => Promise<unknown>
+  /** F7.2: «Cambia» modello o effort di una sessione al lavoro (con conferma) e «Ricontrolla» di un esito incerto. */
+  cambiaSessione: (a: Azione, campo: 'modello' | 'effort', valore: string) => Promise<unknown>
+  ricontrollaCambio: (a: Azione) => Promise<unknown>
   /** F6.7: il controllo ✓/✗ della sezione Esecuzione, i login a un clic, il menu /config. */
   controllaEsecuzione: () => Promise<unknown>
   accedi: (tipo: TipoAccesso) => Promise<unknown>
@@ -144,6 +149,8 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const espansa = apertaOra?.startsWith('perche:') ? null : apertaOra
   const scelte = await read($, selezionate)
   const lockApiOra = await read($, lockApi)
+  const anteprimaChiOra = await read($, anteprimaChi)
+  const dettagliChiOra = await read($, dettagliChi)
   // F7.1: una proposta di impostazioni nella bozza, o in coda: la vista Lavoro lo dice e porta alle Impostazioni.
   const imp = await read($, statoImpostazioni)
   const propostaImp = imp.proposta && imp.pendenti?.dove.some(x => x.startsWith('proposta:')) ? imp.proposta.da
@@ -319,7 +326,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
     lista, visibili, espansa, motiviAperti, scelte, lockApiOra, spesaApiOra, stati, nota, scartata, rotte, tr, adesso, capacita, sb, boardPronta, ultime, configura, fai, modifica,
     completa, apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, attese, titoloSezione, righe,
     alLavoro, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, oraDi: T.ora, consumoOra,
-    proposteAperte, rigaProposta, registroPesi, propostaImp, rivediImpostazioni,
+    proposteAperte, rigaProposta, registroPesi, propostaImp, rivediImpostazioni, anteprimaChiOra, dettagliChiOra,
   }
 }
 

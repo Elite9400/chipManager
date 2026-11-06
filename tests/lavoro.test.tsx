@@ -641,3 +641,40 @@ test('lingue: in Carico una percentuale decimale si scrive con il separatore del
   expect(await ui.find({ type: 'Text', text: /40\.5%/ })).toBeUndefined()
   await ui.unmount()
 })
+
+test('F7.4 lingue: «Chi lavora» con preset in anteprima, Dettagli aperti e id lunghi sta in 60 colonne, nel terminale e sul desktop, in ogni lingua', async ($, on) => {
+  const a = az('a-chi60001', 1, { revisore: 'claude', corsia: 'R3', auditor: 'fable', titolo: 'Chip con auditor' })
+  const lungo = az('a-chi60002', 2, { revisore: 'codex', corsia: 'R2', modello: 'claude-opus-4-8-anteprima-lunghissima-0001', auditor: 'claude-opus-4-8-anteprima-lunghissima-0001' })
+  const amb = ambiente(on, [a, lungo])
+  mock.clock(on)
+  const pausa = () => new Promise<void>(ok => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(ok, 5))
+  for (const surface of ['terminal', 'desktop'] as const)
+    for (const lingua of ['en', 'it', 'es', 'fr', 'de', 'pt']) {
+      amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua, progetti: { 'acme/progetto': {} } }))
+      await $.session.start({ cwd: '/', surface, isInteractive: true })
+      const ui = await $.ui.mount(PANE(surface, 60))
+      await ui.press({ key: 'vista-lavoro' })
+      await ui.press({ key: 'ricarica' })
+      // Una chip aperta alla volta: ognuna con «Dettagli» aperti; la prima anche con un preset in anteprima.
+      for (const x of [a, lungo]) {
+        if (!(await ui.find({ key: `chi-dettagli-${x.id}` }))) await ui.press({ key: `mod-${x.id}` })
+        if (!(await ui.find({ key: `esec-${x.id}` }))) await ui.press({ key: `chi-dettagli-${x.id}` })
+        if (x === a) {
+          await ui.press({ key: `preset-${a.id}-economico-premi` })
+          for (let i = 0; i < 50 && !(await ui.find({ key: `preset-applica-${a.id}` })); i++) await pausa()
+        }
+        const albero = await ui.drawn()
+        const troppo: string[] = []
+        minima(albero, troppo, 58)
+        if (troppo.length) throw new Error(`${surface} ${lingua} ${x.id}: ${troppo.slice(0, 4).join(' | ')}`)
+        const etichette = pulsanti(albero).map(b => b.label ?? '')
+        const doppie = etichette.filter((e, i) => e && etichette.indexOf(e) !== i)
+        if (doppie.length) throw new Error(`${surface} ${lingua} ${x.id}: etichette ripetute ${doppie.join(' | ')}`)
+        // Le azioni restano raggiungibili.
+        for (const k of [...(x === a ? [`preset-applica-${a.id}`] : []), `chi-dettagli-${x.id}`, `esec-${x.id}`]) if (!(await ui.find({ key: k }))) throw new Error(`${surface} ${lingua}: manca ${k}`)
+        if (x === a) await ui.press({ key: `preset-annulla-${a.id}` })
+        await ui.press({ key: `mod-${x.id}` })
+      }
+      await ui.unmount()
+    }
+})

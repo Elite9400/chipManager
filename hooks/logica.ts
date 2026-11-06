@@ -792,6 +792,12 @@ export function motivoAuditor(esegue: string, auditor: string): Msg | undefined 
   if (!riga || !riga[1].some(r => nellaRegola(r, id))) return msg('au.coppia', { auditor: nomeModello(id), modello: nomeModello(esegue) })
   return undefined
 }
+/** Solo una sessione desktop avviata da questa, con esecutore Claude, ancora al lavoro, e se l'app espone lo strumento. */
+export function puoCambiare(a: Azione, chi: Chiamante | null, campo: 'modello' | 'effort') {
+  return !!chi && chi.lanciatore === 'desktop' && !!chi.cambia?.includes(campo) && a.stato === 'avviata' && !!a.sessione && !a.lanciatore && !a.qui &&
+    a.esecutore === 'claude' && (a.destinazione ?? 'local') === 'local' && a.lanciataDa === chi.io
+}
+
 /** Come si applica l'auditor richiesto: con `--advisor` (api-claude), a mano con /advisor (sessioni), o spento per l'avvio. */
 export function statoAuditor(a: Azione): 'applicato' | 'manuale' | 'senza' | undefined {
   if (!a.auditor) return undefined

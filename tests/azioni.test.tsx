@@ -7,6 +7,7 @@ import {
   motivoAuditor,
   rangoModello,
   statoAuditor,
+  modelloDi,
   CADENZA_INIZIALE,
   rigaConsumo,
   modalitaDi,
@@ -71,7 +72,7 @@ import {
   violazioniAvvio,
 } from '../hooks/logica'
 import type { Azione, Chiamante, Consumo, Limite, Regole } from '../types'
-import { TETTO_RISORSE } from '../hooks/bilanciamento'
+import { diversoDa, presetChi, TETTO_RISORSE } from '../hooks/bilanciamento'
 import type { Consiglio } from '../hooks/logica'
 import { DiscoIt } from './disco-it'
 import { chiaveOTesto } from '../hooks/lingua'
@@ -3094,5 +3095,186 @@ test('F7.3 esito: advisor non disponibile dal supervisore; «Riavvia senza audit
   expect(JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!)).toMatchObject({ senzaAuditor: true, auditor: 'fable' })
   expect(ingressi.at(-1)).toMatchObject({ senzaAdvisor: true })
   expect(ingressi.at(-1)).not.toHaveProperty('advisor')
+  await ui.unmount()
+})
+
+// --- F7.2: «Cambia» modello o effort di una sessione al lavoro --------------------------------------------------------
+
+const STRUMENTI_CAMBIO = ['mcp__ccd_session_mgmt__set_session_model', 'mcp__ccd_session_mgmt__set_session_effort']
+const alLavoro = (id: string, extra: Partial<Azione> = {}) => base(id, 1, {
+  repo: AUTORE.repo!, revisore: 'nessuno', stato: 'avviata', sessione: SID, tentativo: `az-${id.slice(2)}`, lanciataDa: 'sessione-master',
+  avviataIl: '2026-11-06T10:00:00Z', modello: 'claude-opus-5-5', effort: 'high', ...extra,
+})
+const finche = async (fatto: () => boolean, giri = 400) => {
+  const dorme = (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout
+  for (let i = 0; i < giri && !fatto(); i++) await new Promise<void>(ok => dorme(ok, 5))
+}
+/** Risponde ai popup di «Cambia»; `prima` gira prima della risposta (per cambiare il mondo durante la conferma). */
+const rispondiCambia = (on: Parameters<TestBody>[1], risposta: string | null, prima?: () => void) =>
+  on('tool.call', { tool: 'AskUserQuestion' }, (_, e) => {
+    prima?.()
+    return risposta === null ? { deny: 'chiuso' } : { result: { questions: e.questions, answers: { [e.questions[0]!.question]: risposta } } }
+  })
+
+for (const [nome, strumenti, mod, eff] of [['senza strumenti', [], false, false], ['solo il modello', ['mcp__ccd_session_mgmt__set_session_model'], true, false]] as const)
+  test(`F7.2 «Cambia» (${nome}): compare solo il cambio il cui strumento l'app espone; mai su una sessione avviata da un'altra`, async ($, on) => {
+    const a = alLavoro('a-cmb00001')
+    const altrui = alLavoro('a-cmb00002', { lanciataDa: 'altra-sessione', ordine: 2 })
+    const amb = ambiente(on, { strumenti: [...strumenti] })
+    for (const x of [a, altrui]) amb.disco.set(`X:/orch/azioni/${x.id}.json`, JSON.stringify(x))
+    mock.clock(on)
+    await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE('desktop') })
+    await ui.press({ key: 'ricarica' })
+    expect([!!(await ui.find({ key: `cambia-mod-${a.id}` })), !!(await ui.find({ key: `cambia-eff-${a.id}` }))]).toEqual([mod, eff])
+    expect(await ui.find({ key: `cambia-mod-${altrui.id}` })).toBeUndefined()
+    await ui.unmount()
+  })
+
+test('F7.2 «Cambia»: conferma rifiutata o obsoleta non chiama niente; un cambio sotto i minimi di corsia o che cambierebbe il revisore è rifiutato', async ($, on) => {
+  const amb = ambiente(on, { strumenti: STRUMENTI_CAMBIO })
+  // Una riga dei revisori anche per Sonnet: il revisore Claude di Opus è Fable, quello di Sonnet è Opus.
+  amb.disco.set('X:/repo/.claude/routing.json', JSON.stringify({ ...ROUTING, revisione: { ...ROUTING.revisione,
+    revisori_ammessi_per_autore: { ...ROUTING.revisione.revisori_ammessi_per_autore, 'claude-sonnet-5-5': ['claude-opus-5-5', 'motore:codex'] } } }))
+  const a = alLavoro('a-cmb00003')
+  const r4 = alLavoro('a-cmb00004', { ordine: 2, corsia: 'R4', tentativo: 'az-cmb00004' })
+  const rev = alLavoro('a-cmb00005', { ordine: 3, revisore: 'claude', tentativo: 'az-cmb00005' })
+  for (const x of [a, r4, rev]) amb.disco.set(`X:/orch/azioni/${x.id}.json`, JSON.stringify(x))
+  let risposta: string | null = null
+  let prima: (() => void) | undefined
+  let domande = 0
+  on('tool.call', { tool: 'AskUserQuestion' }, (_, e) => {
+    domande++
+    prima?.()
+    return risposta === null ? { deny: 'chiuso' } : { result: { questions: e.questions, answers: { [e.questions[0]!.question]: risposta } } }
+  })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  const set = () => amb.chiamate.filter(c => /^set_session_/.test(c.tool))
+  /** Aspetta la domanda numero `n`, poi l'avviso del pannello che corrisponde a `re` (o un attimo, senza `re`). */
+  const dopo = async (n: number, re?: RegExp) => {
+    await finche(() => domande >= n)
+    for (let i = 0; i < 400; i++) {
+      if (re ? await ui.find({ type: 'Text', text: re }) : i >= 20) break
+      await finche(() => false, 1)
+    }
+  }
+  // Popup chiuso: niente.
+  await ui.select({ key: `cambia-eff-${a.id}`, value: 'xhigh' })
+  await dopo(1)
+  expect(set()).toEqual([])
+  // R4: l'effort non scende sotto high.
+  risposta = 'Cambia'
+  await ui.select({ key: `cambia-eff-${r4.id}`, value: 'low' })
+  await dopo(2, /effort/i)
+  expect(set()).toEqual([])
+  // Opus → Sonnet cambierebbe il revisore Claude del mandato (Fable → Opus): rifiutato.
+  await ui.select({ key: `cambia-mod-${rev.id}`, value: 'claude-sonnet-5-5' })
+  await dopo(3, /cambierebbe il revisore già indicato nel mandato/)
+  expect(set()).toEqual([])
+  expect(await ui.find({ type: 'Text', text: /cambierebbe il revisore già indicato nel mandato/ })).toBeDefined()
+  // Confermato, ma intanto la sessione ha consegnato: la conferma è obsoleta.
+  prima = () => amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify({ ...a, versione: 2, stato: 'consegnata' }))
+  await ui.select({ key: `cambia-eff-${a.id}`, value: 'xhigh' })
+  await dopo(4, /la sessione è finita o ha un tentativo nuovo/)
+  expect(set()).toEqual([])
+  expect(await ui.find({ type: 'Text', text: /la sessione è finita o ha un tentativo nuovo/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('F7.2 «Cambia»: errore MCP = incerto, annotato, nessun nuovo tentativo; «Ricontrolla» trova il successo remoto; un cambio verificato si annota', async ($, on) => {
+  let modelloRemoto = 'claude-opus-5-5'
+  const amb = ambiente(on, {
+    strumenti: STRUMENTI_CAMBIO,
+    mcp: (_s, tool, args) => {
+      const x = args as { session_id?: string; model?: string; effort?: string }
+      if (tool === 'set_session_model') return { isError: true, content: [{ type: 'text', text: 'timeout' }] }
+      if (tool === 'set_session_effort') return { isError: false, content: [{ type: 'text', text: 'ok' }] }
+      if (tool === 'get_session' && x.session_id === SID) return { isError: false, content: [{ type: 'text', text: JSON.stringify({ model: modelloRemoto, effort: 'xhigh' }) }] }
+      return undefined
+    },
+  })
+  const a = alLavoro('a-cmb00006')
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+  rispondiCambia(on, 'Cambia')
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  const record = () => JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione
+  await ui.select({ key: `cambia-mod-${a.id}`, value: 'claude-sonnet-5-5' })
+  await finche(() => !!record().cambio)
+  expect(record()).toMatchObject({ modello: 'claude-opus-5-5', cambio: { campo: 'modello', valore: 'claude-sonnet-5-5', esito: 'incerto' } })
+  expect(amb.chiamate.filter(c => c.tool === 'set_session_model')).toHaveLength(1)
+  expect(await ui.find({ type: 'Text', text: /cambio a Sonnet 5\.5: esito incerto/ })).toBeDefined()
+  // Il cambio era arrivato davvero: «Ricontrolla» rilegge la sessione, non ritenta.
+  modelloRemoto = 'claude-sonnet-5-5'
+  await ui.press({ key: `cambia-ricontrolla-${a.id}` })
+  await finche(() => record().cambio?.esito === 'fatto')
+  expect(record()).toMatchObject({ modello: 'claude-sonnet-5-5', cambio: { esito: 'fatto' } })
+  expect(amb.chiamate.filter(c => c.tool === 'set_session_model')).toHaveLength(1)
+  // L'effort: chiamata riuscita e verificata con get_session.
+  await ui.select({ key: `cambia-eff-${a.id}`, value: 'xhigh' })
+  await finche(() => record().cambio?.campo === 'effort')
+  expect(record()).toMatchObject({ effort: 'xhigh', cambio: { campo: 'effort', valore: 'xhigh', esito: 'fatto' } })
+  await ui.unmount()
+})
+
+// --- F7.4: «Chi lavora» --------------------------------------------------------------------------------------------
+
+test('F7.4 preset: deterministici; Economico mai un auditor in più; Qualità lo aggiunge sulle corsie alte; l\'auditor scelto resta se valido', () => {
+  const a = base('a-pre00001', 1, { repo: AUTORE.repo!, revisore: 'claude', corsia: 'R3' })
+  for (const p of ['consigliato', 'economico', 'qualita'] as const) expect(presetChi(a, p, R, [], [a], AUTORE)).toEqual(presetChi(a, p, R, [], [a], AUTORE))
+  const eco = presetChi(a, 'economico', R, [], [a], AUTORE)
+  expect(eco.campi.auditor).toBeUndefined()
+  const qual = presetChi(a, 'qualita', R, [], [a], AUTORE)
+  if (qual.campi.esecutore === 'claude') expect(qual.campi.auditor).toBeDefined()
+  // Un auditor scelto a mano resta con ogni preset, Economico compreso, se fa ancora coppia.
+  const conFable = { ...a, auditor: 'fable' }
+  for (const p of ['consigliato', 'economico', 'qualita'] as const) {
+    const x = presetChi(conFable, p, R, [], [conFable], AUTORE)
+    expect([p, x.campi.esecutore !== 'claude' || x.campi.auditor === 'fable']).toEqual([p, true])
+  }
+  // Corsia, revisore e destinazione non si toccano.
+  expect(Object.keys(eco.campi).sort()).toEqual(['auditor', 'effort', 'esecutore', 'modello'])
+  expect(diversoDa(a, eco.campi, R)).toBe(diversoDa(a, eco.campi, R))
+})
+
+test('F7.4 editor: anteprima del preset prima di applicarla; «modificato» e «Ripristina consigliato»; Dettagli chiusi, auditor solo in coppie valide e tolto al cambio d\'esecutore', async ($, on) => {
+  const amb = ambiente(on)
+  const a = base('a-chi00001', 1, { repo: AUTORE.repo!, revisore: 'claude', corsia: 'R3', modello: 'claude-haiku-5-5', effort: 'low' })
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: `mod-${a.id}` })
+  const record = () => JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione
+  expect(await ui.find({ type: 'Text', text: /modificato a mano$/ })).toBeDefined()
+  // Dettagli chiusi per default: nessuna scelta di esecutore visibile.
+  expect(await ui.find({ key: `esec-${a.id}` })).toBeUndefined()
+  // Anteprima: il riepilogo cambia, il record no.
+  await ui.press({ key: `preset-${a.id}-qualita-premi` })
+  expect(await ui.find({ type: 'Text', text: 'anteprima: non si salva niente finché non premi Applica' })).toBeDefined()
+  expect(record().versione).toBe(a.versione)
+  await ui.press({ key: `preset-annulla-${a.id}` })
+  expect(await ui.find({ key: `preset-applica-${a.id}` })).toBeUndefined()
+  // Ripristina consigliato: una scrittura, poi niente «modificato».
+  await ui.press({ key: `chi-ripristina-${a.id}` })
+  await finche(() => record().versione > a.versione)
+  expect(await ui.find({ type: 'Text', text: /modificato a mano$/ })).toBeUndefined()
+  // Dettagli: l'auditor offre solo coppie valide; le altre col motivo. Al cambio d'esecutore l'auditor va via, e lo si dice.
+  await ui.press({ key: `chi-dettagli-${a.id}` })
+  const opzioni = ((await ui.find({ key: `aud-${a.id}` }))?.props as { options?: { value: string }[] } | undefined)?.options?.map(o => o.value) ?? []
+  const modello = modelloDi(record(), R)
+  for (const x of ['sonnet', 'opus', 'fable']) expect([x, opzioni.includes(x)]).toEqual([x, !motivoAuditor(modello, x)])
+  await ui.select({ key: `aud-${a.id}`, value: opzioni.find(x => x !== 'nessuno')! })
+  await finche(() => !!record().auditor)
+  await ui.select({ key: `esec-${a.id}`, value: 'codex' })
+  await finche(() => record().esecutore === 'codex')
+  expect(record().auditor).toBeUndefined()
+  expect(amb.toast.some(t => /^auditor .* tolto: non fa coppia con il nuovo modello$/.test(t))).toBe(true)
   await ui.unmount()
 })

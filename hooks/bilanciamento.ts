@@ -3,7 +3,7 @@
 import type { Azione, Chiamante, Fornitore, Limite, Pendenti, Peso, PesiProfilo, PropostaImpostazioni, PropostaPesi, Regolazione, Regole, RisorseProgetto, SessioneProgetto, Soglia } from '../types'
 import { ALIAS_UNITA, data, eMsg, errore, LINGUE, msg, t } from './lingua'
 import type { Chiave, Lingua, Msg } from './lingua'
-import { bilancia, effortDi, FORNITORI, modelloDi, nomeModello, pesoValido, profiloDi, risorseDa, TETTO_API_PREDEFINITO, violazioniAvvio } from './logica'
+import { bilancia, corsiaDi, effortDi, FORNITORI, idAuditor, modelloDi, motivoAuditor, nomeModello, pesoValido, profiloDi, rangoModello, risorseDa, TETTO_API_PREDEFINITO, violazioniAvvio } from './logica'
 
 export type Profilo = NonNullable<RisorseProgetto['profilo']>
 
@@ -286,6 +286,37 @@ export const impostazioniCorrenti = (r: RisorseProgetto, lingua: Lingua) => ({
   profilo: profiloDi(r), soglie: r.soglie, board: r.board.modo, consigliere: r.consigliere ?? 'spento',
   apiClaude: r.apiClaude ?? null, lingua,
 })
+
+// --- «Chi lavora»: preset (F7.4) ---------------------------------------------------------------------------------
+
+export type PresetChi = 'consigliato' | 'economico' | 'qualita'
+export const PRESET_CHI: readonly PresetChi[] = ['consigliato', 'economico', 'qualita']
+const CAMPI_CHI = ['esecutore', 'modello', 'effort', 'auditor'] as const
+
+/**
+ * Esecutore, modello, effort e auditor di un preset. Consigliato è `bilancia` con il profilo del progetto; Economico usa il
+ * profilo Risparmio (lo spareggio R2: a parità il Claude di rango più basso) e non aggiunge mai un auditor; Qualità usa il
+ * profilo Qualità e può aggiungerne uno sulle corsie alte. Corsia, revisore e destinazione restano quelli della chip;
+ * l'auditor scelto resta, e torna a «nessuno» solo se con il nuovo modello non è più una coppia valida (`auditorTolto`).
+ */
+export function presetChi(a: Azione, preset: PresetChi, r: Regole, limiti: readonly Limite[], lista: readonly Azione[], chi: Chiamante) {
+  const profilo = preset === 'economico' ? 'risparmio' : preset === 'qualita' ? 'qualita' : undefined
+  const rp: Regole = profilo ? { ...r, risorse: { ...r.risorse, profilo, pesi: conProfilo(r.risorse.pesi, profilo) } } : r
+  const s = bilancia({ ...a, auditor: undefined, senzaAuditor: undefined }, { revisore: a.revisore }, rp, limiti, lista, chi)
+  const modello = s.esecutore === 'claude' ? modelloDi(s, r) : undefined
+  let auditor = s.esecutore === 'claude' && a.auditor && modello && !motivoAuditor(modello, a.auditor) ? a.auditor : undefined
+  const auditorTolto = a.auditor && !auditor ? a.auditor : undefined
+  // Qualità: sulle corsie alte un auditor di rango più alto del modello che esegue, se la tabella lo ammette.
+  const alta = ['R3', 'R4', 'R5'].includes(corsiaDi(a, r) ?? '')
+  if (preset === 'qualita' && !auditor && !a.auditor && alta && modello)
+    auditor = ['opus', 'fable'].find(x => !motivoAuditor(modello, x) && rangoModello(idAuditor(x)!) > rangoModello(modello))
+  const campi: Pick<Azione, 'esecutore' | 'modello' | 'effort' | 'auditor'> = { esecutore: s.esecutore, modello: s.modello, effort: s.effort, auditor }
+  return { campi, ...(auditorTolto && { auditorTolto }) }
+}
+
+/** La chip differisce dal preset in esecutore, modello, effort o auditor? */
+export const diversoDa = (a: Azione, campi: Partial<Azione>, r: Regole) =>
+  CAMPI_CHI.some(k => (k === 'modello' ? modelloDi(a, r) !== modelloDi({ ...a, ...campi }, r) : k === 'effort' ? effortDi(a, r) !== effortDi({ ...a, ...campi }, r) : (a[k] ?? undefined) !== (campi[k] ?? undefined)))
 
 // --- simulazione --------------------------------------------------------------------------------------
 

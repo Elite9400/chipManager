@@ -196,6 +196,8 @@ export type Azione = {
   lanciatore?: 'cli' | 'freellmapi' | 'api-claude'
   /** F6.2: costo stimato in USD dell'esecuzione a crediti API (`total_cost_usd`); null = ignoto (conta il tetto). */
   costoApi?: number | null
+  /** F7.2: l'ultimo «Cambia» su una sessione al lavoro: che cosa, verso quale valore, con quale esito (incerto = da ricontrollare). */
+  cambio?: { campo: 'modello' | 'effort'; valore: string; esito: 'fatto' | 'incerto'; quando: string }
   /** F7.3: l'auditor (advisor) richiesto: alias `sonnet`, `opus`, `fable` o un id completo; assente = nessuno. */
   auditor?: string
   /** F7.3: gli avvii `api-claude` spengono l'advisor (`CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` sul solo figlio). */
@@ -216,7 +218,11 @@ export type Azione = {
 }
 
 /** La sessione che avvia: start_session non concede modello, effort o permessi sopra i suoi. */
-export type Chiamante = { io: string; repo: string | null; modello: string; effort?: string; permessi?: string; ramo?: string; titolo?: string; lanciatore?: 'desktop' | 'cli' | 'ignoto' }
+export type Chiamante = {
+  io: string; repo: string | null; modello: string; effort?: string; permessi?: string; ramo?: string; titolo?: string; lanciatore?: 'desktop' | 'cli' | 'ignoto'
+  /** F7.2: quali cambi l'app espone a questa sessione (set_session_model, set_session_effort), letti a runtime. */
+  cambia?: ('modello' | 'effort')[]
+}
 
 /** Quello che il pannello sa, dal vivo, di una sessione avviata. */
 export type Vita = {
@@ -383,6 +389,10 @@ declare module 'claude-code' {
       aperta: string | null
       /** F6.1: le chip scelte per «Dove…» su più chip insieme (id). */
       selezionate: Shaped<string[]>
+      /** F7.4: l'anteprima di un preset di «Chi lavora» (chip e preset), prima di applicarlo. */
+      anteprimaChi: Shaped<{ id: string; preset: 'consigliato' | 'economico' | 'qualita' } | null>
+      /** F7.4: la chip con i «Dettagli» di «Chi lavora» aperti (chiusi per default). */
+      dettagliChi: string | null
       /** F6.2: il lock della corsia API della macchina, se resta tenuto (null = libero). */
       lockApi: Shaped<LockApi | null>
       /** F6.7: lo stato della sezione Esecuzione (controllo ✓/✗, login in corso, procedura guidata). */

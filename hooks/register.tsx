@@ -29,6 +29,7 @@ import {
   controlloDa,
   ADVISOR,
   idAuditor,
+  puoCambiare,
   passiMancanti,
   chiaviApiVietate,
   consigliaDove,
@@ -61,6 +62,10 @@ import {
   TRANSIZIONI,
   transizione,
   violazioni,
+  revisoreConcreto,
+  modelloDi,
+  effortDi,
+  nomeModello,
   violazioniAvvio,
 } from './logica'
 import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
@@ -349,6 +354,8 @@ async function chiSonoIo($: Eng, opz: { cache?: boolean } = {}): Promise<Chiaman
   // Capacità ignota (elenco non letto): non si tenta un effetto per scoprirla.
   const nomi = await nomiStrumenti($, !opz.cache)
   if (nomi) c.lanciatore = nomi.has('mcp__ccd_session__start_session') ? 'desktop' : 'cli'
+  // F7.2: «Cambia» c'è solo se l'app espone gli strumenti a questa sessione, oggi.
+  if (nomi) c.cambia = (['modello', 'effort'] as const).filter(k => nomi.has(`mcp__ccd_session_mgmt__set_session_${k === 'modello' ? 'model' : 'effort'}`))
   try {
     conta({ app: 1 })
     const s = JSON.parse(testoMcp(await $.mcp.call('ccd_session_mgmt', 'get_session', { session_id: 'self' }))) as {
@@ -1178,6 +1185,69 @@ async function ricontrolla($: Eng, tipo: TipoAccesso, fino: number, id: number) 
 /** «Inserisci la chiave»: l'host non apre /config su una riga data, quindi si apre il menu e il pannello dice il percorso. */
 async function apriConfig($: Eng) {
   await $.command.run({ command: 'config' }).catch(() => undefined)
+}
+
+// --- F7.2: «Cambia» modello o effort di una sessione al lavoro --------------------------------------------------------
+
+/** La sessione riletta con get_session dice il valore voluto? */
+async function verificaCambio($: Eng, sessione: string, campo: 'modello' | 'effort', valore: string) {
+  try {
+    const s = (await chiamaApp($, 'get_session', { session_id: sessione })) as { model?: unknown; effort?: unknown }
+    return (campo === 'modello' ? s.model : s.effort) === valore
+  } catch {
+    return false
+  }
+}
+
+/**
+ * «Cambia»: conferma obbligatoria (l'host non chiede nulla per una chiamata della mod), poi si ricontrollano chip,
+ * tentativo, sessione e regole; un cambio che cambierebbe il revisore del mandato già consegnato si rifiuta. Dopo la
+ * chiamata si rilegge la sessione: verificato = fatto, altrimenti «incerto» con «Ricontrolla», mai un secondo tentativo.
+ */
+async function cambiaSessione($: Eng, id: string, campo: 'modello' | 'effort', valore: string) {
+  const T = await lingue($)
+  const a0 = (await carica($)).find(x => x.id === id)
+  if (!a0 || !puoCambiare(a0, await chiSonoIo($), campo)) throw errore('cambia.nonDisponibile')
+  const r0 = await leggiRegole($)
+  const prima = campo === 'modello' ? modelloDi(a0, r0) : effortDi(a0, r0)
+  if (prima === valore) return
+  const si = T('cambia.si')
+  const nome = (x: string) => (campo === 'modello' ? nomeModello(x) : x)
+  const scelta = await $.ui
+    .ask(T(campo === 'modello' ? 'cambia.domandaModello' : 'cambia.domandaEffort', { titolo: a0.titolo, da: nome(prima), a: nome(valore) }), { options: [si, T('comune.annulla')], header: T('cambia.titolo') })
+    .catch(() => '')
+  if (scelta !== si) return
+  // Dopo la conferma: la chip, il tentativo e la sessione sono ancora quelli? E le regole di adesso?
+  const r = await leggiRegole($)
+  if (!r.lette) throw errore('v.regoleNonLette')
+  const a = (await carica($, { fresca: true })).find(x => x.id === id)
+  if (!a || a.stato !== 'avviata' || a.tentativo !== a0.tentativo || a.sessione !== a0.sessione || !puoCambiare(a, await chiSonoIo($), campo)) throw errore('cambia.obsoleta')
+  const nuova: Azione = { ...a, [campo]: valore }
+  const chiavi = (l: Msg[]) => l.map(m => JSON.stringify(m))
+  const nuove = violazioni(nuova, r).filter(m => !chiavi(violazioni(a, r)).includes(JSON.stringify(m)))
+  if (nuove.length) throw new Errore(nuove[0]!)
+  if (revisoreConcreto(nuova, r) !== revisoreConcreto(a, r)) throw errore('cambia.revisore')
+  let esito: 'fatto' | 'incerto' = 'incerto'
+  try {
+    conta({ app: 1 })
+    const args = campo === 'modello' ? { session_id: a.sessione!, model: valore } : { session_id: a.sessione!, effort: valore }
+    const risposta = await Promise.race([$.mcp.call('ccd_session_mgmt', campo === 'modello' ? 'set_session_model' : 'set_session_effort', args), $.clock.sleep(20_000).then(() => null)])
+    if (risposta && !risposta.isError && (await verificaCambio($, a.sessione!, campo, valore))) esito = 'fatto'
+  } catch {
+    esito = 'incerto'
+  }
+  await aggiorna($, id, x => (x.tentativo === a.tentativo && x.stato === 'avviata' ? { ...(esito === 'fatto' && { [campo]: valore }), cambio: { campo, valore, esito, quando: ora() } } : null))
+  $.ui.toast(T(esito === 'fatto' ? 'cambia.fatto' : 'cambia.incerto'))
+}
+
+/** «Ricontrolla» un cambio incerto: solo get_session, mai un nuovo set. */
+async function ricontrollaCambio($: Eng, id: string) {
+  const a = (await carica($)).find(x => x.id === id)
+  const c = a?.cambio
+  if (!a || !c || c.esito !== 'incerto' || !a.sessione) return
+  const fatto = await verificaCambio($, a.sessione, c.campo, c.valore)
+  if (fatto) await aggiorna($, id, x => (x.tentativo === a.tentativo && x.cambio?.quando === c.quando ? { [c.campo]: c.valore, cambio: { ...c, esito: 'fatto' as const } } : null))
+  $.ui.toast((await lingue($))(fatto ? 'cambia.fatto' : 'cambia.ancoraIncerto'))
 }
 
 /** F6.4: la spesa del mese a crediti API, solo se l'API è configurata (la vista Carico la mostra contro il budget). */
@@ -2171,6 +2241,8 @@ export const register: Register = (on, options) => {
       liberaApi: () => decidiLockApi($, 'libera'),
       terminaApi: () => decidiLockApi($, 'termina'),
       controllaEsecuzione: () => controllaEsecuzione($),
+      cambiaSessione: (a, campo, valore) => cambiaSessione($, a.id, campo, valore),
+      ricontrollaCambio: a => ricontrollaCambio($, a.id),
       accedi: tipo => accedi($, tipo),
       apriConfig: () => apriConfig($),
       installa: async passo => {
