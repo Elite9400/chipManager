@@ -683,7 +683,8 @@ test('giro: ferma = toast una volta; archiviata NON è fusa; il task del registr
   sessione = { ...sessione, isArchived: true }
   await clock.advance(20_000)
   expect(amb.azione()[0]!.stato).toBe('consegnata')
-  expect(amb.azione()[0]!.errore).toContain('archiviata senza fusione')
+  // Nel record la frase in inglese e il codice, che il pannello traduce.
+  expect(amb.azione()[0]).toMatchObject({ erroreCodice: 'rec.archiviata', errore: expect.stringContaining('archived without a recorded merge') })
   // Senza issue il task del ramo non si associa: chiude il committente (un ramo ospita più lavori).
   amb.disco.set('X:/orch/registro.json', JSON.stringify({ task: { vecchio: { issue: 1, ramo: 'claude/x', stato: 'fuso', creato: '2026-01-01' }, t1: { issue: 1, ramo: 'claude/x', stato: 'fuso', creato: '2999-01-01' } } }))
   await clock.advance(20_000)

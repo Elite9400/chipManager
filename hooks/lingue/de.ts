@@ -50,6 +50,10 @@ const de: Parziale = {
 
   // Project board (HTML page)
   // Helper answers on board, plans and git
+  // Errors shown in the panel notice
+  // Errors saved on a chip
+  // Session notes, popups and toasts
+
   // ‹fine›
 }
 

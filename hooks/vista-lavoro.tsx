@@ -854,14 +854,14 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
           )}
         </Box>
         {righe.length === 0 ? (
-          <Text dimColor>{ses.nota ? T('ses.nessunaLetta', { nota: T.k(ses.nota) }) : T('ses.nessuna')}</Text>
+          <Text dimColor>{ses.nota ? T('ses.nessunaLetta', { nota: ses.nota.split(' · ').map(T.k).join(' · ') }) : T('ses.nessuna')}</Text>
         ) : (
           <Box flexDirection="column" gap={1}>
             {classe === 'larga' && intestazione}
             {mostrate.flatMap(rigaSessione)}
           </Box>
         )}
-        {righe.length > 0 && ses.nota && <Text size="caption" dimColor>{T('ses.parziale', { nota: T.k(ses.nota) })}</Text>}
+        {righe.length > 0 && ses.nota && <Text size="caption" dimColor>{T('ses.parziale', { nota: ses.nota.split(' · ').map(T.k).join(' · ') })}</Text>}
       </Box>
 
       <Box key="sez-avvio" flexDirection="column" gap={1}>

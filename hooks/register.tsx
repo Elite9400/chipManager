@@ -54,10 +54,10 @@ import {
 import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
 import { board, chiaveRiassunto, hash, improntaBoard, testoRiassunto } from './board'
 import type { Piano as PianoBoard } from './board'
-import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salvato, t, testo } from './lingua'
+import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salvato, t, testo, traduttore } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { disegna } from './pannello'
-import { fonte, INSTALLAZIONE, osservaRisorse, RISORSE_VUOTE } from './risorse'
+import { fonte, INSTALLAZIONE, nomeLimiteIn, osservaRisorse, RISORSE_VUOTE } from './risorse'
 
 // Lo scanner dello stato vuole l'atomo scritto nel file che lo usa: register e pannello ne tengono
 // una copia identica (stesso plugin, chiave e shape), che indirizza lo stesso valore.
@@ -87,7 +87,8 @@ const AVVIO_MS = 3 * 60_000
 
 type Eng = EngineInterface
 
-class Conflitto extends Error {}
+/** Un record cambiato altrove: il pannello ricarica e mostra il messaggio tradotto. */
+class Conflitto extends Errore {}
 
 // Gettoni dei tentativi la cui chiamata a start_session è ancora in corso in questo processo.
 const inVolo = new Set<string>()
@@ -109,6 +110,9 @@ async function leggiConfig($: Eng): Promise<unknown> {
     throw errore('cfg.illeggibile')
   }
 }
+
+/** Il traduttore della lingua scelta: per popup, toast e notifiche fuori dalle viste. */
+const lingue = async ($: Eng) => traduttore(await read($, lingua))
 
 /** La lingua dell'utente dal config (assente, rotto o non ammessa = inglese); ridisegna solo se cambia. */
 async function leggiLingua($: Eng) {
@@ -150,7 +154,7 @@ async function baseOrch($: Eng) {
   if (env) return env.replace(/\\/g, '/')
   // Configurazione illeggibile o cartella non valida: niente ripiego su un'altra cartella, si ferma tutto.
   const dir = cartellaDati(await leggiConfig($), (await progettoSessione($)).repo, await casa($))
-  if (!dir) throw new Error('config.json: «cartella» non è un percorso assoluto o che inizia con ~')
+  if (!dir) throw errore('cfg.cartella')
   return dir
 }
 const cartella = async ($: Eng) => `${await baseOrch($)}/azioni`
@@ -192,7 +196,7 @@ async function carica($: Eng, opz: { completa?: boolean; fresca?: boolean } = {}
   if (!opz.completa || !lista.rotte?.length) return lista
   const ancora = await leggiTutte($, opz.fresca)
   if (ancora.rotte?.length)
-    throw new Error(`${ancora.rotte.length} ${ancora.rotte.length === 1 ? 'azione non si legge' : 'azioni non si leggono'} (${ancora.rotte.map(r => r.nome).join(', ')}): nessuna decisione automatica finché non si leggono tutte`)
+    throw errore('err.rotte', { n: ancora.rotte.length, file: ancora.rotte.map(r => r.nome).join(', ') })
   return ancora
 }
 
@@ -255,9 +259,9 @@ type Letti = Azione[] & { nomi?: string[]; rotte?: { nome: string; motivo: Msg |
 async function salva($: Eng, a: Azione, opz: { nuova?: boolean } = {}) {
   const nuova = { ...a, versione: a.versione + 1, aggiornata: ora() }
   const r = await helper($, ['cas', `${await cartella($)}/${a.id}.json`, opz.nuova ? 'nuovo' : String(a.versione)], JSON.stringify(nuova))
-  if (r.codice === 4) throw new Conflitto(`«${a.titolo}» è stata cambiata altrove: ricaricata, riprova`)
-  if (r.codice === 3) throw new Error('Un\'altra sessione sta scrivendo le azioni: riprova fra un attimo')
-  if (r.codice !== 0) throw new Error(`Scrittura non riuscita: ${(r.errore || r.testo).slice(0, 160)}`)
+  if (r.codice === 4) throw new Conflitto(msg('err.cambiataAltrove', { titolo: a.titolo }))
+  if (r.codice === 3) throw errore('err.altraScrive')
+  if (r.codice !== 0) throw errore('err.scrittura', { dettaglio: chiaveOTesto('en', r.errore || r.testo).slice(0, 160) })
   await update($, azioni, l => (l.some(x => x.id === a.id) ? l.map(x => (x.id === a.id ? nuova : x)) : [...l, nuova]))
   return nuova
 }
@@ -273,8 +277,8 @@ async function prenota($: Eng, letti: Letti, a: Azione) {
   const nuova = { ...a, versione: a.versione + 1, aggiornata: ora() }
   const r = await helper($, ['prenota', await cartella($)], JSON.stringify({ elenco: letti.nomi, attese, scrivi: { [`${a.id}.json`]: nuova } }))
   if (r.codice === 4) return undefined
-  if (r.codice === 3) throw new Error('Un\'altra sessione sta scrivendo le azioni: riprova fra un attimo')
-  if (r.codice !== 0) throw new Error(`Prenotazione non riuscita: ${(r.errore || r.testo).slice(0, 160)}`)
+  if (r.codice === 3) throw errore('err.altraScrive')
+  if (r.codice !== 0) throw errore('err.prenotazione', { dettaglio: chiaveOTesto('en', r.errore || r.testo).slice(0, 160) })
   await update($, azioni, l => l.map(x => (x.id === a.id ? nuova : x)))
   return nuova
 }
@@ -293,7 +297,7 @@ async function aggiorna($: Eng, id: string, fn: (a: Azione) => Partial<Azione> |
       if (!(err instanceof Conflitto)) throw err
     }
   }
-  throw new Error('Troppi aggiornamenti concorrenti: riprova')
+  throw errore('err.concorrenti')
 }
 
 // --- chi avvia e con quali regole ----------------------------------------------------------------------
@@ -388,7 +392,7 @@ async function chiamaApp($: Eng, tool: string, args: Record<string, unknown>) {
  */
 async function leggiSessioni($: Eng) {
   const { root } = await progettoSessione($)
-  if (!root) return void (await update($, sessioni, () => ({ lista: [], nota: 'questa sessione non è in un repository' })))
+  if (!root) return void (await update($, sessioni, () => ({ lista: [], nota: 'ses.notaRepo' })))
   const [chi, r] = [(await read($, contesto)) ?? (await chiSonoIo($)), (await read($, regole)) ?? (await leggiRegole($))]
   const radice = radiceProgetto(root)
   const adesso = Date.now()
@@ -399,7 +403,7 @@ async function leggiSessioni($: Eng) {
     try {
       claude = sessioniClaude(await chiamaApp($, 'list_sessions', { limit: 50 }), radice, adesso)
     } catch {
-      note.push('sessioni Claude non lette')
+      note.push('ses.claudeNonLette')
     }
   }
   const io: SessioneProgetto = { id: 'self', motore: 'claude', titolo: chi.titolo ?? '', ramo: chi.ramo, modello: chi.modello || undefined, effort: chi.effort, stato: 'in-corso', qui: true }
@@ -433,7 +437,7 @@ async function leggiSessioni($: Eng) {
     try {
       codex = sessioniCodex(((await fonte($, {}, 'sessioni', {})) as { sessioni?: unknown } | null)?.sessioni, radice, adesso)
     } catch {
-      note.push('sessioni Codex non lette')
+      note.push('ses.codexNonLette')
     }
   }
   await update($, sessioni, () => ({ lista: [io, ...claude, ...codex], letto: new Date(adesso).toISOString(), nota: note.join(' · ') || undefined }))
@@ -454,7 +458,7 @@ async function leggiProposte($: Eng) {
 /** Applica o rifiuta una proposta alla versione vista: la chiave della decisione nasce qui, alla pressione. */
 async function decidiPesi($: Eng, opz: Record<string, unknown>, p: PropostaPesi, esito: 'applica' | 'rifiuta') {
   const chi = await chiSonoIo($)
-  if (!chi.repo) throw new Error('progetto non noto')
+  if (!chi.repo) throw errore('err.progettoIgnoto')
   const chiave = `d-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`
   const x = await helper($, ['pesi-decidi', await fileConfig($), chi.repo, p.id, String(p.versione), esito, chiave])
   await leggiProposte($)
@@ -465,7 +469,7 @@ async function decidiPesi($: Eng, opz: Record<string, unknown>, p: PropostaPesi,
 
 async function annullaPesi($: Eng, opz: Record<string, unknown>, p: PropostaPesi) {
   const chi = await chiSonoIo($)
-  if (!chi.repo) throw new Error('progetto non noto')
+  if (!chi.repo) throw errore('err.progettoIgnoto')
   const chiave = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`
   const x = await helper($, ['pesi-annulla', await fileConfig($), chi.repo, p.id, chiave])
   await leggiProposte($)
@@ -481,16 +485,17 @@ let chiestoSenzaProgetto = false
 /** Le assegna al progetto della sessione o le scarta (scarto annullabile: lo stato precedente resta nel record). */
 async function sistemaSenzaProgetto($: Eng, come: 'assegna' | 'scarta') {
   const chi = await chiSonoIo($)
-  if (!chi.repo) throw new Error('questa sessione non è in un repository')
+  if (!chi.repo) throw errore('err.nonRepo')
   const orfane = attive(await carica($)).filter(a => !a.repo)
   const scartabili = orfane.filter(a => ['proposta', 'accodata', 'fallita'].includes(a.stato))
   if (come === 'assegna') for (const a of orfane) await salva($, { ...a, repo: chi.repo })
   else {
     for (const a of scartabili) await salva($, { ...a, ...transizione(a, 'scartata', ora()), statoPrima: a.stato })
     const [prima, ...altri] = scartabili
+    const T = await lingue($)
     if (prima)
-      await update($, annullabile, () => ({ id: prima.id, titolo: altri.length ? `${scartabili.length} azioni senza progetto` : prima.titolo, altri: altri.map(a => a.id) }))
-    if (scartabili.length < orfane.length) $.ui.toast('Le azioni già avviate senza progetto non si scartano: assegnale per seguirle')
+      await update($, annullabile, () => ({ id: prima.id, titolo: altri.length ? T('senza.scartate', { n: scartabili.length }) : prima.titolo, altri: altri.map(a => a.id) }))
+    if (scartabili.length < orfane.length) $.ui.toast(T('senza.avviate'))
   }
 }
 
@@ -501,14 +506,13 @@ async function chiediSenzaProgetto($: Eng) {
   const n = attive(await read($, azioni)).filter(a => !a.repo).length
   if (!n || !chi.repo) return
   chiestoSenzaProgetto = true
+  const T = await lingue($)
+  const assegna = T('senza.assegnaA', { repo: chi.repo })
   const scelta = await $.ui
-    .ask(`${n === 1 ? 'Un\'azione salvata' : `${n} azioni salvate`} da una versione precedente ${n === 1 ? 'non ha' : 'non hanno'} un progetto e non si vede più. Che cosa ne faccio?`, {
-      header: 'Senza progetto',
-      options: [`Assegna a ${chi.repo}`, 'Scarta', 'Decido dopo'],
-    })
-    .catch(() => 'Decido dopo')
-  if (scelta === `Assegna a ${chi.repo}`) await fai($, () => sistemaSenzaProgetto($, 'assegna'))
-  else if (scelta === 'Scarta') await fai($, () => sistemaSenzaProgetto($, 'scarta'))
+    .ask(T('senza.domanda', { n }), { header: T('senza.titolo'), options: [assegna, T('az.scarta'), T('senza.dopo')] })
+    .catch(() => '')
+  if (scelta === assegna) await fai($, () => sistemaSenzaProgetto($, 'assegna'))
+  else if (scelta === T('az.scarta')) await fai($, () => sistemaSenzaProgetto($, 'scarta'))
 }
 
 // --- avvio --------------------------------------------------------------------------------------------
@@ -580,7 +584,7 @@ async function decidi(
     })
     if (presa) return { avvia: presa }
   }
-  throw new Error('Troppe modifiche concorrenti alle azioni: riprova')
+  throw errore('err.concorrenti')
 }
 
 /**
@@ -590,13 +594,11 @@ async function decidi(
 async function confermaCloud($: Eng, a: Azione) {
   // Il testo intero, mai tagliato: le regole limitano titolo + mandato a CLOUD_MAX caratteri.
   const testo = `${a.titolo}\n\n${a.brief}`
+  const T = await lingue($)
   const ok = await $.ui
-    .ask(`Questo testo andrà al cloud, senza contesto locale. Contiene dati da tenere in LAN?\n\n${testo}\n\nLo invio?`, {
-      options: ['Invia al cloud', 'Annulla'],
-      header: 'Cloud',
-    })
-    .catch(() => 'Annulla')
-  return ok === 'Invia al cloud'
+    .ask(T('pop.cloud', { testo }), { options: [T('pop.inviaCloud'), T('comune.annulla')], header: 'Cloud' })
+    .catch(() => '')
+  return ok === T('pop.inviaCloud')
 }
 
 /** Avvia (o accoda) un'azione e chiama l'app fuori dalla sezione critica. */
@@ -607,7 +609,8 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
     const v = violazioni(prima, await leggiRegole($), tutte)
     if (v.length) throw errore('err.nonParte', { motivi: v })
     if (approvata !== undefined && prima.versione !== approvata) throw errore('err.cambiataPrimaInvio')
-    if (await $.ui.ask(`FreeLLMAPI inoltra questo testo ai fornitori configurati nel proxy. Nessun file o strumento sarà disponibile.\n\n${prima.titolo}\n\n${prima.brief}\n\nInvio il testo?`, { options: ['Invia testo', 'Annulla'], header: 'FreeLLMAPI' }) !== 'Invia testo') return
+    const T = await lingue($)
+    if (await $.ui.ask(T('pop.free', { titolo: prima.titolo, brief: prima.brief }), { options: [T('pop.inviaTesto'), T('comune.annulla')], header: 'FreeLLMAPI' }) !== T('pop.inviaTesto')) return
     approvata = prima.versione
   }
   if (prima?.destinazione === 'cloud' && ['proposta', 'accodata', 'fallita'].includes(prima.stato)) {
@@ -636,7 +639,7 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
       // il giro la cerca per gettone (`name`); solo il committente può annullarlo.
       return await aggiorna($, id, x =>
         x.stato === 'in-avvio' && x.tentativo === presa.tentativo
-          ? { incerto: true, errore: `esito incerto (${String((err as Error)?.message ?? err).slice(0, 80)}): cerco la sessione` }
+          ? { incerto: true, ...salvato('errore', 'errore', msg('rec.esitoIncerto', { dettaglio: String((err as Error)?.message ?? err).slice(0, 80) })) }
           : null,
       )
     }
@@ -645,9 +648,9 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
     const salvata = await aggiorna($, id, x => {
       // Solo la risposta del tentativo corrente può chiudere l'avvio.
       if (x.stato !== 'in-avvio' || x.tentativo !== presa.tentativo) return null
-      if (sessione) return { ...transizione(x, 'avviata', ora()), sessione, incerto: false, errore: undefined }
-      if (risposta.isError) return { ...transizione(x, 'fallita', ora()), errore: (testo || 'avvio rifiutato').slice(0, 200) }
-      return { incerto: true, errore: 'l\'app non ha restituito l\'id: cerco la sessione' }
+      if (sessione) return { ...transizione(x, 'avviata', ora()), sessione, incerto: false, ...salvato('errore', 'errore', undefined) }
+      if (risposta.isError) return { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', testo ? testo.slice(0, 200) : msg('rec.avvioRifiutato')) }
+      return { incerto: true, ...salvato('errore', 'errore', msg('rec.senzaId')) }
     })
     if (sessione && salvata?.sessione === sessione) await associaSubito($, salvata).catch(() => undefined)
     return salvata
@@ -666,7 +669,7 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
       const risultato = await fonte($, options, 'completa', { politica: r.risorse, testo: `${a.titolo}\n\n${a.brief}`, modello: a.modello }) as { risultato?: unknown }
       if (typeof risultato.risultato !== 'string' || risultato.risultato.length > 30000) throw new Error('risposta non valida')
       return aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo
-        ? { ...transizione(x, 'consegnata', ora()), risultato: risultato.risultato as string, avviataIl: ora(), errore: 'Bozza FreeLLMAPI: revisione Claude e approvazione umana necessarie prima dell’uso' } : null)
+        ? { ...transizione(x, 'consegnata', ora()), risultato: risultato.risultato as string, avviataIl: ora(), ...salvato('errore', 'errore', msg('rec.bozzaFree')) } : null)
     }
     const m = mandato(a, r, strumenti($))
     const root = (await $.session.repo())?.root
@@ -677,7 +680,7 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
   } catch {
     // Nessun retry di inferenza o spawn dopo un timeout: l'effetto può essere già avvenuto.
     await aggiorna($, a.id, x => x.tentativo === a.tentativo && x.stato === 'in-avvio'
-      ? { incerto: true, errore: 'Esito incerto: verifica il processo o il dashboard prima di annullare' } : null)
+      ? { incerto: true, ...salvato('errore', 'errore', msg('rec.esitoCli')) } : null)
   } finally { inVolo.delete(a.tentativo!) }
 }
 
@@ -700,7 +703,7 @@ async function associaSubito($: Eng, a: Azione) {
 /** Il prompt passa da `prompt.submit`, che può rispondere `{ drop }` senza eccezione: si controlla. */
 async function invia($: Eng, testo: string) {
   const r = (await $.prompt.submit({ text: testo })) as { drop?: unknown } | undefined
-  if (r && typeof r === 'object' && 'drop' in r) throw new Error(`prompt rifiutato${r.drop ? `: ${String(r.drop).slice(0, 120)}` : ''}`)
+  if (r && typeof r === 'object' && 'drop' in r) throw errore('err.promptRifiutato', { dettaglio: r.drop ? String(r.drop).slice(0, 120) : '—' })
 }
 
 /** «Fallo qui»: stessi controlli dell'avvio sulla configurazione EFFETTIVA di questa sessione. */
@@ -713,7 +716,7 @@ async function faiQui($: Eng, options: Record<string, unknown>, id: string) {
     await invia($, mandato(presa, (await read($, regole)) ?? REGOLE_DEFAULT, strumenti($)).prompt)
   } catch (err) {
     await aggiorna($, id, x =>
-      x.tentativo === presa.tentativo ? { ...transizione(x, 'fallita', ora()), qui: undefined, errore: String((err as Error)?.message ?? err).slice(0, 160) } : null,
+      x.tentativo === presa.tentativo ? { ...transizione(x, 'fallita', ora()), qui: undefined, ...salvato('errore', 'errore', msgDi(err), 160) } : null,
     )
   }
 }
@@ -736,7 +739,7 @@ async function chiediQui($: Eng, options: Record<string, unknown>, id: string) {
     )
   } catch (err) {
     await aggiorna($, id, x =>
-      x.tentativo === presa.tentativo ? { ...transizione(x, 'fallita', ora()), incerto: false, errore: String((err as Error)?.message ?? err).slice(0, 160) } : null,
+      x.tentativo === presa.tentativo ? { ...transizione(x, 'fallita', ora()), incerto: false, ...salvato('errore', 'errore', msgDi(err), 160) } : null,
     )
   }
 }
@@ -784,12 +787,13 @@ async function avviaTutte($: Eng, options: Record<string, unknown>) {
   const codexAvviati = piano.avvia.filter(a => a.esecutore === 'codex').length
   const free = piano.avvia.filter(a => a.esecutore === 'freellmapi').length
   const cloud = piano.avvia.filter(a => a.destinazione === 'cloud').length
+  const T = await lingue($)
   const parti = [
-    `Avvio ${piano.avvia.length} ${piano.avvia.length === 1 ? 'sessione' : 'sessioni'}` +
-      (piano.avvia.length ? ` (${claude} Claude, ${codexAvviati} Codex${free ? `, ${free} FreeLLMAPI` : ''}${cloud ? `, ${cloud} nel cloud` : ''})` : ''),
-    piano.coda.length ? `${piano.coda.length} in coda` : '',
-    piano.bloccate.length ? `${piano.bloccate.length} bloccate` : '',
-    `massimo ${max} in parallelo`,
+    T('pop.avvio', { n: piano.avvia.length }) +
+      (piano.avvia.length ? ` (${claude} Claude, ${codexAvviati} Codex${free ? `, ${free} FreeLLMAPI` : ''}${cloud ? `, ${T('pop.nelCloud', { n: cloud })}` : ''})` : ''),
+    piano.coda.length ? T('pop.inCoda', { n: piano.coda.length }) : '',
+    piano.bloccate.length ? T('pop.bloccate', { n: piano.bloccate.length }) : '',
+    T('pop.massimo', { n: max }),
   ].filter(Boolean)
   // Un fornitore oltre la soglia critica non blocca, ma lo dice la domanda e il pulsante cambia nome.
   const limiti = (await read($, risorse)).limiti
@@ -797,20 +801,18 @@ async function avviaTutte($: Eng, options: Record<string, unknown>) {
   const oltre = [...new Set([...piano.avvia, ...piano.coda.map(c => c.a)].map(a => a.esecutore))].flatMap(f => {
     const l = piuPieno(limiti, f)
     const s = sogliaDi(r.risorse, f)
-    return l && s && livelloDi(l.percentuale!, s) === 'critica' ? [`${l.nome} al ${l.percentuale}% (critica da ${s.critica}%)`] : []
+    return l && s && livelloDi(l.percentuale!, s) === 'critica' ? [T('pop.limiteCritico', { nome: nomeLimiteIn(l, T.lingua), pct: l.percentuale!, critica: s.critica })] : []
   })
-  const si = oltre.length ? 'Avvia comunque' : 'Avvia'
+  const si = T(oltre.length ? 'pop.avviaComunque' : 'pop.avvia')
+  const domanda = [oltre.length ? T('pop.oltre', { limiti: oltre.join('; ') }) : '', T('pop.procedo', { parti: parti.join(' · ') }), cloud ? T('pop.cloudPrima') : ''].filter(Boolean).join(' ')
   const scelta = await $.ui
-    .ask(`${oltre.length ? `Oltre la soglia critica: ${oltre.join('; ')}. ` : ''}${parti.join(' · ')}. Procedo?${cloud ? ' Per ogni invio al cloud ti mostro il testo prima.' : ''}`, {
-      options: [si, 'Annulla'],
-      header: oltre.length ? 'Soglia critica' : 'Avvio',
-    })
-    .catch(() => 'Annulla') // chiusa senza scelta: non parte niente
+    .ask(domanda, { options: [si, T('comune.annulla')], header: T(oltre.length ? 'pop.sogliaCritica' : 'pop.titoloAvvio') })
+    .catch(() => '') // chiusa senza scelta: non parte niente
   if (scelta !== si) return
-  const errori: string[] = []
+  const errori: (Msg | string)[] = []
   for (const a of [...piano.avvia, ...piano.coda.map(c => c.a)])
-    await avvia($, options, a.id, a.versione).catch(err => errori.push(String((err as Error)?.message ?? err)))
-  if (errori.length) throw new Error(errori.join(' · ').slice(0, 300))
+    await avvia($, options, a.id, a.versione).catch(err => errori.push(msgDi(err)))
+  if (errori.length) throw errore('err.elenco', { motivi: errori })
 }
 
 // --- sorveglianza -------------------------------------------------------------------------------------
@@ -919,7 +921,7 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
       else if (scaduto && !a.incerto)
         await aggiorna($, a.id, x =>
           x.stato === 'in-avvio' && x.tentativo === a.tentativo
-            ? { incerto: true, errore: 'nessuna risposta in 3 minuti: controlla la barra laterale; se non c\'è, puoi annullare il tentativo' }
+            ? { incerto: true, ...salvato('errore', 'errore', msg('rec.nessunaRisposta')) }
             : null,
         ).catch(() => undefined)
       continue
@@ -961,7 +963,7 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
       if (s.isArchived) {
         if (a.stato === 'avviata')
           await aggiorna($, a.id, x =>
-            x.stato === 'avviata' ? { ...transizione(x, 'consegnata', ora()), errore: 'sessione archiviata senza fusione registrata: conferma tu se è chiusa' } : null,
+            x.stato === 'avviata' ? { ...transizione(x, 'consegnata', ora()), ...salvato('errore', 'errore', msg('rec.archiviata')) } : null,
           ).catch(() => undefined)
         continue
       }
@@ -971,9 +973,9 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
       const recente = !!a.avviataIl && Date.now() - Date.parse(a.avviataIl) < 15 * 60_000
       const appenaFerma = prima[a.id] ? prima[a.id]!.stato === 'in-corso' : recente
       if (a.stato === 'avviata' && v.stato === 'ferma' && appenaFerma && a.lanciataDa === chi.io) {
-        const msg = `«${a.titolo}» si è fermata: aspetta te`
-        $.ui.toast(msg, { timeoutMs: 8000 })
-        void $.ui.notify(msg, { title: TITOLO }).catch(() => undefined)
+        const avviso = t(await read($, lingua), 'toast.ferma', { titolo: a.titolo })
+        $.ui.toast(avviso, { timeoutMs: 8000 })
+        void $.ui.notify(avviso, { title: TITOLO }).catch(() => undefined)
       }
     } catch {
       // Stato non leggibile in questo giro: resta l'ultima osservazione, e si riprova al prossimo.
@@ -1209,18 +1211,18 @@ async function aggiornaRisorse($: Eng, opz: Record<string, unknown>) {
 
 async function configura($: Eng, opz: Record<string, unknown>, campi: Record<string, unknown>, attese: RisorseProgetto) {
     const chi = await chiSonoIo($)
-    if (!chi.repo) throw new Error('progetto non noto')
+    if (!chi.repo) throw errore('err.progettoIgnoto')
     const f = await fileConfig($)
     const atteso = await $.fs.exists(f) ? await $.fs.read(f) as string : null
     const config = atteso === null ? {} : JSON.parse(atteso) as { progetti?: Record<string, unknown> }
     const precedente = progettoDa(config, chi.repo)
     if (eMsg(precedente)) throw new Errore(precedente)
-    if (JSON.stringify(precedente.risorse) !== JSON.stringify(attese)) throw new Error('Impostazioni cambiate altrove: aggiorna prima di modificarle')
+    if (JSON.stringify(precedente.risorse) !== JSON.stringify(attese)) throw errore('err.impostazioniCambiate')
     const nuovo = { ...config, progetti: { ...config.progetti, [chi.repo]: { ...(config.progetti?.[chi.repo] as object ?? {}), ...campi } } }
     const p = progettoDa(nuovo, chi.repo)
     if (eMsg(p)) throw new Errore(p)
     const esito = await helper($, ['configura', f], JSON.stringify({ atteso, repo: chi.repo, campi }))
-    if (esito.codice !== 0) throw new Error('Configurazione cambiata altrove o non scrivibile: ricarica e riprova')
+    if (esito.codice !== 0) throw errore('errore.configCambiata')
     await aggiornaRisorse($, opz)
 }
 
@@ -1379,7 +1381,7 @@ async function impostaBoard($: Eng, opz: Record<string, unknown>, modo: BoardPro
     const chi = (await read($, contesto)) ?? (await chiSonoIo($))
     const esito = await helper($, ['board-spegni', await fileConfig($), await baseOrch($), chi.repo ?? '', String(r.risorse.board.generazione)])
     await update($, statoBoard, () => ({}))
-    if (esito.codice !== 0) throw new Error(`Board spenta, ma i file non si cancellano: ${(esito.testo || esito.errore).slice(0, 160)}`)
+    if (esito.codice !== 0) throw errore('err.boardSpenta', { dettaglio: daTesto(esito.testo || esito.errore) ?? '—' })
   } else {
     await update($, statoBoard, s => ({ ...s, riassunti: undefined }))
     await cicloBoard($)
@@ -1389,7 +1391,7 @@ async function impostaBoard($: Eng, opz: Record<string, unknown>, modo: BoardPro
 /** Apre il file con l'apriprogramma del sistema: argv fisso, nessuna shell, solo il file della board. */
 async function apriBoard($: Eng) {
   const percorso = percorsoBoard((await read($, statoBoard)).percorso ?? '')
-  if (!percorso || !(await $.fs.exists(percorso))) throw new Error('La board non c\'è ancora: aspetta la prossima generazione')
+  if (!percorso || !(await $.fs.exists(percorso))) throw errore('err.boardNonCe')
   // explorer.exe esce con 1 anche quando apre: l'esito non si legge dal codice.
   conta({ processi: 1 })
   if ((await $.env.get('OS')) === 'Windows_NT') return void (await $.process.run(['explorer.exe', percorso.replace(/\//g, '\\')], { timeoutMs: 10_000 }))
@@ -1398,7 +1400,7 @@ async function apriBoard($: Eng) {
     const r = await $.process.run([apri, percorso], { timeoutMs: 10_000 }).catch(() => undefined)
     if (r?.exitCode === 0) return
   }
-  throw new Error(`Non riesco ad aprirla: apri a mano ${percorso}`)
+  throw errore('err.boardApri', { percorso })
 }
 
 export const register: Register = (on, options) => {
@@ -1498,7 +1500,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'chipmanager' }, async $ => {
     await carica($)
     await $.ui.open({ id: PANE, title: TITOLO, focus: true })
-    return { text: 'Pannello «chipManager» aperto.' }
+    return { text: (await lingue($))('comando.aperto') }
   })
 
   on('tool.call', { tool: 'mcp__chip-manager__suggerisci_azione' }, async ($, e) => {
@@ -1671,20 +1673,21 @@ export const register: Register = (on, options) => {
       lingua: l => scegliLingua($, l),
       peso: async (peso: Peso, attese: RisorseProgetto) => {
         const r = await leggiRegole($)
-        if (!r.lette) throw new Error('regole non lette')
+        if (!r.lette) throw errore('v.regoleNonLette')
         await configura($, opz, { pesi: [...r.risorse.pesi.filter(p => p.tipo !== peso.tipo || p.nome !== peso.nome), peso] }, attese)
       },
       installa: async passo => {
         let r = await leggiRegole($)
-        if (!r.lette || r.risorse.soloLocale || !r.risorse.fornitori.includes('freellmapi')) throw new Error('Abilita FreeLLMAPI per questo progetto prima di installare')
+        if (!r.lette || r.risorse.soloLocale || !r.risorse.fornitori.includes('freellmapi')) throw errore('err.abilitaFree')
         const comando = INSTALLAZIONE[passo]
-        if (!comando) throw new Error('passo non valido')
-        if (await $.ui.ask(`Eseguo questo comando? Può scaricare ed eseguire codice FreeLLMAPI e creare un volume Docker locale.\n\n${comando.join(' ')}\n\nNessun privilegio elevato viene richiesto.`, { options: ['Esegui comando', 'Annulla'], header: 'Installazione' }) !== 'Esegui comando') return
+        if (!comando) throw errore('err.passo')
+        const T = await lingue($)
+        if (await $.ui.ask(T('pop.installa', { comando: comando.join(' ') }), { options: [T('pop.esegui'), T('comune.annulla')], header: T('pop.installazione') }) !== T('pop.esegui')) return
         r = await leggiRegole($)
-        if (!r.lette || r.risorse.soloLocale || !r.risorse.fornitori.includes('freellmapi')) throw new Error('politica cambiata durante la conferma')
+        if (!r.lette || r.risorse.soloLocale || !r.risorse.fornitori.includes('freellmapi')) throw errore('err.politicaCambiata')
         conta({ processi: 1 })
         const esito = await $.process.run(comando, { timeoutMs: 600_000 })
-        if (esito.exitCode !== 0) throw new Error('Comando Docker non riuscito; verifica Docker e il container chipmanager-freellmapi. Nessuna risorsa esistente viene rimossa')
+        if (esito.exitCode !== 0) throw errore('err.docker')
         await aggiornaRisorse($, opz)
       },
       riordina: async (id, verso) => {
@@ -1693,25 +1696,25 @@ export const register: Register = (on, options) => {
       },
       senzaProgetto: come => sistemaSenzaProgetto($, come),
       annullaTentativo: async a => {
-        if (a.lanciatore === 'cli') throw new Error('CLI: verifica il record del processo; un avvio incerto non autorizza un secondo processo')
+        if (a.lanciatore === 'cli') throw errore('err.cliIncerto')
         const io = (await read($, contesto))?.io ?? (await $.session.id())
-        if (a.lanciataDa !== io) throw new Error('Lo può annullare solo la sessione che ha chiesto l\'avvio: lì si sa se la chiamata è ancora in corso')
-        if (inVolo.has(a.tentativo ?? '')) throw new Error('La chiamata di avvio è ancora in corso: aspetta la risposta')
-        let motivo: string | undefined
+        if (a.lanciataDa !== io) throw errore('err.annullaAltrui')
+        if (inVolo.has(a.tentativo ?? '')) throw errore('err.inVolo')
+        let motivo: Msg | undefined
         await aggiorna($, a.id, x => {
           if (x.stato !== 'in-avvio' || x.tentativo !== a.tentativo) return null
-          if (x.presa) motivo = 'la sessione ha già preso il gettone e sta avviando: non si annulla più'
-          else if (!x.manuale && (x.avvioScade ?? '') >= ora()) motivo = 'aspetta la scadenza del tentativo prima di annullarlo'
+          if (x.presa) motivo = msg('err.giaPreso')
+          else if (!x.manuale && (x.avvioScade ?? '') >= ora()) motivo = msg('err.aspettaScadenza')
           return motivo
             ? null
             : {
                 ...transizione(x, 'fallita', ora()),
                 incerto: false,
                 manuale: undefined,
-                errore: 'tentativo annullato: se la sessione parte comunque, controllala nella barra laterale prima di riprovare',
+                ...salvato('errore', 'errore', msg('rec.tentativoAnnullato')),
               }
         })
-        if (motivo) throw new Error(motivo)
+        if (motivo) throw new Errore(motivo)
       },
       scarta: async a => {
         await salva($, { ...a, ...transizione(a, 'scartata', ora()), statoPrima: a.stato })
@@ -1726,9 +1729,9 @@ export const register: Register = (on, options) => {
         conta({ app: 1 })
         const r = await $.mcp.call('ccd_window', 'open_session_in', { session_id: sessione, target: 'split' })
         const t = testoMcp(r)
-        if (r.isError) throw new Error(t.slice(0, 200) || 'la sessione non si apre da qui: aprila dalla barra laterale')
+        if (r.isError) throw t ? new Error(t.slice(0, 200)) : errore('err.nonSiApre')
         // L'app risponde anche quando non cambia nulla (questa sessione non è a schermo): lo si dice.
-        if (/nothing|no-op|not on screen|changes nothing/i.test(t)) $.ui.toast('La sessione non si è aperta: questa sessione non è a schermo')
+        if (/nothing|no-op|not on screen|changes nothing/i.test(t)) $.ui.toast((await lingue($))('toast.nonAperta'))
       },
     }, e.props.bodyColumns)
   })
