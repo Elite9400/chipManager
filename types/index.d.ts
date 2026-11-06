@@ -27,6 +27,8 @@ export type RisorseProgetto = {
   soglie: Record<Fornitore, Soglia | null>
   /** Board di progetto in HTML: `generazione` cresce a ogni cambio di `modo` (lo incrementa l'helper sotto il lock del config). */
   board: BoardProgetto
+  /** Profilo di bilanciamento scelto nelle Impostazioni: tocca solo i pesi di motori ed effort. Assente = nessuna scelta. */
+  profilo?: 'automatico' | 'risparmio' | 'qualita' | 'velocita' | 'personalizzato'
 }
 export type BoardProgetto = { modo: 'spenta' | 'accesa' | 'riassunti'; generazione: number }
 /** Esito di revisione riferito da una sessione: la board scrive «riferita da», mai «verificata». */
@@ -240,6 +242,15 @@ export type Consumo = { processi: number; app: number; byte: number; byteLimiti:
 export type Vista = 'lavoro' | 'carico' | 'impostazioni'
 /** Ciò che il pannello sa della board: il file scritto dall'helper, perché non si scrive, stato dei riassunti. */
 export type StatoBoard = { percorso?: string; motivo?: string; riassunti?: string }
+/** La vista Impostazioni: sezione aperta, ultimo errore in linea e procedure guidate fatte in linea (popup rifiutato). */
+export type StatoImpostazioni = {
+  sezione: 'connessioni' | 'soglie' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate'
+  errore?: { dove: string; testo: string }
+  guida?: Fornitore
+  bozza?: { fornitore?: Fornitore; tipo?: string }
+  regola?: boolean
+  gruppo?: 'fornitore' | 'modello' | 'effort'
+}
 
 declare module 'claude-code' {
   interface PluginState {
@@ -266,6 +277,7 @@ declare module 'claude-code' {
       tutteSessioni: boolean
       board: Shaped<StatoBoard>
       consumo: Shaped<Consumo>
+      impostazioni: Shaped<StatoImpostazioni>
     }
   }
 }
