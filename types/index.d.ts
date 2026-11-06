@@ -298,14 +298,16 @@ export type StatoImpostazioni = {
 }
 /**
  * La bozza delle Impostazioni: campi del progetto come li scrive `configura`, il loro valore al primo tocco, i controlli
- * toccati con i campi di ciascuno (`lingua` per la lingua), la lingua scelta e quella di partenza (al primo tocco).
+ * toccati con i campi di ciascuno (`lingua` per la lingua), la lingua pendente (diversa da quella salvata quando la si è
+ * scelta), l'ultima lingua scelta e quante volte la si è scelta (per riconoscere una scelta fatta mentre Applica scrive).
  */
 export type Pendenti = {
   campi: Record<string, unknown>
   base: Record<string, unknown>
   dove: Record<string, string[]>
   lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
-  linguaBase?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
+  scelta?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
+  tocchi?: number
 }
 
 declare module 'claude-code' {

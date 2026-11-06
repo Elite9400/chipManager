@@ -94,7 +94,9 @@ export type Ctx = {
 export type EsitoApplica = {
   cambiati: string[]
   base: Record<string, unknown>
-  scritti: { campi: Record<string, unknown>; lingua?: Lingua }
+  scritti: { campi: Record<string, unknown> }
+  /** La lingua salvata adesso, riletta dopo la scrittura. */
+  lingua: Lingua
   errore?: Msg
 }
 

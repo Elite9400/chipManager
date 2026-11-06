@@ -152,8 +152,10 @@ export const piena = (p: Pendenti | undefined) => (p && (Object.keys(p.campi).le
 /**
  * Dopo «Applica» (rilievo 1): toglie dalla bozza solo ciò che è stato scritto, con il valore scritto. Una modifica arrivata
  * mentre si scriveva resta; se tocca un campo appena scritto, la sua base diventa il valore scritto (non è un conflitto).
+ * La lingua si confronta con quella salvata adesso (`linguaOra`, riletta): se è stata scelta di nuovo mentre si scriveva
+ * (`tocchiPrima` diverso) vale l'ultima scelta; pendente solo se diversa da `linguaOra`.
  */
-export function dopoApplica(p: Pendenti | undefined, scritti: { campi: Record<string, unknown>; lingua?: Pendenti['lingua'] }): Pendenti | undefined {
+export function dopoApplica(p: Pendenti | undefined, scritti: { campi: Record<string, unknown> }, tocchiPrima: number | undefined, linguaOra: Pendenti['lingua']): Pendenti | undefined {
   if (!p) return undefined
   const campi = { ...p.campi }
   const base = { ...p.base }
@@ -164,12 +166,11 @@ export function dopoApplica(p: Pendenti | undefined, scritti: { campi: Record<st
       delete base[k]
     } else base[k] = v
   }
-  // La lingua scritta esce solo se è ancora la scelta in bozza; se intanto la scelta è cambiata (anche tornando alla
-  // lingua di partenza), resta pendente l'ultima scelta.
-  const lingua = scritti.lingua === undefined ? p.lingua : p.lingua === scritti.lingua ? undefined : (p.lingua ?? p.linguaBase)
+  const voluta = (p.tocchi ?? 0) !== (tocchiPrima ?? 0) ? p.scelta : p.lingua
+  const lingua = voluta && voluta !== linguaOra ? voluta : undefined
   const dove = Object.fromEntries(Object.entries(p.dove).filter(([, ks]) => ks.some(k => (k === 'lingua' ? !!lingua : k in campi))))
   const conLingua = lingua ? { ...dove, lingua: ['lingua'] } : dove
-  return piena({ campi, base, dove: conLingua, ...(lingua && { lingua, linguaBase: scritti.lingua ?? p.linguaBase }) })
+  return piena({ campi, base, dove: conLingua, ...(lingua && { lingua, scelta: lingua }), ...(p.tocchi !== undefined && { tocchi: p.tocchi }) })
 }
 
 /** Le risorse come le vedrà il config con la bozza applicata; il motivo se la bozza non passa la validazione di oggi. */

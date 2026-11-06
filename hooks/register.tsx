@@ -1444,8 +1444,8 @@ async function riassumi($: Eng) {
  * di adesso, e il pannello chiede se riapplicare o scartare.
  */
 async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pendenti): Promise<EsitoApplica> {
-  const conflitto = (ora: RisorseProgetto, cambiati: string[]): EsitoApplica =>
-    ({ cambiati, base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])), scritti: { campi: {} } })
+  const conflitto = async (ora: RisorseProgetto, cambiati: string[]): Promise<EsitoApplica> =>
+    ({ cambiati, base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])), scritti: { campi: {} }, lingua: await leggiLingua($) })
   let ora = (await leggiRegole($)).risorse
   if (cambiatiAltrove(p, ora).length) return conflitto(ora, cambiatiAltrove(p, ora))
   const scritti: EsitoApplica['scritti'] = { campi: {} }
@@ -1463,17 +1463,17 @@ async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pend
     scritti.campi = p.campi
     if ('board' in p.campi) await dopoBoard($)
   }
-  if (p.lingua) {
+  // La lingua si scrive solo se diversa da quella salvata adesso (riletta: un altro pannello può averla cambiata).
+  if (p.lingua && p.lingua !== (await leggiLingua($))) {
     try {
       await scegliLingua($, p.lingua)
     } catch (err) {
       // Rilievo 4: il progetto è già scritto; lo si dice, e in bozza resta solo la lingua.
       if (!Object.keys(scritti.campi).length) throw err
-      return { cambiati: [], base: {}, scritti, errore: msg('imp.linguaNonSalvata', { motivo: msgDi(err) }) }
+      return { cambiati: [], base: {}, scritti, lingua: await leggiLingua($), errore: msg('imp.linguaNonSalvata', { motivo: msgDi(err) }) }
     }
-    scritti.lingua = p.lingua
   }
-  return { cambiati: [], base: {}, scritti }
+  return { cambiati: [], base: {}, scritti, lingua: await leggiLingua($) }
 }
 
 /** Dopo un cambio di modo della board: spegnerla davvero o rigenerarla. */

@@ -40,6 +40,8 @@ import { componenti } from './ui'
 type StatoVista = StatoImpostazioni
 type Sezione = StatoVista['sezione']
 type Gruppo = NonNullable<StatoVista['gruppo']>
+/** La lingua salvata dell'utente, come la tiene il pannello (riletta al battito e dopo ogni scrittura). */
+const linguaSalvata = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
 const statoVista = atom({ plugin: 'chip-manager', key: 'impostazioni' } as const, { sezione: 'connessioni' } as StatoVista, { shape: 'impostazioni-1' })
 
 /** «Apri le impostazioni» di una proposta di pesi: la sezione Bilanciamento, dove la proposta resta in evidenza. */
@@ -71,7 +73,7 @@ export async function applicaBozza($: EngineInterface, c: Ctx, T: T): Promise<bo
     if (!esito.cambiati.length) {
       // Si toglie solo ciò che è stato scritto: una modifica fatta intanto resta in bozza.
       await update($, statoVista, (s): StatoVista => ({
-        ...s, pendenti: dopoApplica(s.pendenti, esito.scritti), errore: esito.errore && { dove: 'applica', testo: esito.errore },
+        ...s, pendenti: dopoApplica(s.pendenti, esito.scritti, p.tocchi, esito.lingua), errore: esito.errore && { dove: 'applica', testo: esito.errore },
       }))
       if (!esito.errore) $.ui.toast(T('salvato'))
       return !piena((await read($, statoVista)).pendenti)
@@ -614,16 +616,19 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         u.GruppoChip({
           chiave: 'lingua', etichetta: T('imp.lingua.etichetta'), modo: 'scelta', valore: vista.pendenti?.lingua ?? T.lingua,
           voci: LINGUE.map(l => ({ valore: l, testo: NOMI_LINGUE[l] })),
-          // Nella bozza come il resto; tornare alla lingua di adesso la toglie.
+          // Nella bozza come il resto. Pendente solo se diversa dalla lingua salvata quando la scelta arriva (riletta, non
+          // quella del disegno); l'ultima scelta e il numero di scelte servono se intanto Applica sta scrivendo.
           onCambia: v =>
-            void cambia(s => {
-              const p = s.pendenti ?? { campi: {}, base: {}, dove: {} }
-              // La lingua di partenza resta nota anche se la scelta torna lì: serve se intanto Applica ne scrive un'altra.
-              const lingua = v === T.lingua ? undefined : (v as Lingua)
-              const { lingua: _, ...altri } = p.dove
-              const dove = lingua ? { ...altri, lingua: ['lingua'] } : altri
-              return { ...s, pendenti: { ...p, lingua, linguaBase: p.linguaBase ?? T.lingua, dove }, errore: undefined }
-            }),
+            void (async () => {
+              const salvata = await read($, linguaSalvata)
+              await cambia(s => {
+                const p = s.pendenti ?? { campi: {}, base: {}, dove: {} }
+                const lingua = v === salvata ? undefined : (v as Lingua)
+                const { lingua: _, ...altri } = p.dove
+                const dove = lingua ? { ...altri, lingua: ['lingua'] } : altri
+                return { ...s, pendenti: { ...p, lingua, scelta: v as Lingua, tocchi: (p.tocchi ?? 0) + 1, dove }, errore: undefined }
+              })
+            })(),
         }),
         errore('lingua'),
         didascalia('lingua-nota', T('imp.lingua.nota')),

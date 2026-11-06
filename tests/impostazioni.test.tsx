@@ -650,6 +650,34 @@ test('giro 2, rilievo 1: tornare alla lingua di partenza mentre Applica scrive l
   await ui.unmount()
 })
 
+test('giro 3: it→de→it, poi fr da un altro pannello, poi de con Applica sospeso e riselezione fr: resta pendente fr, non it', async ($, on) => {
+  const amb = ambiente(on)
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-lingua-premi' })
+  await ui.press({ key: 'lingua-de-premi' })
+  await ui.press({ key: 'lingua-it-premi' })
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  // Un altro pannello sceglie fr: arriva al battito; la scelta di prima (it, allora quella salvata) non diventa pendente.
+  amb.disco.set(CONFIG, JSON.stringify({ lingua: 'fr', progetti: { 'esempio/demo': {} } }))
+  await clock.advance(20_000)
+  expect(await ui.find({ type: 'Text', text: 'Langue' })).toBeDefined()
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  await ui.press({ key: 'lingua-de-premi' })
+  // Mentre l'helper scrive de, si riseleziona fr (la lingua salvata quando Applica è partito).
+  amb.hook.primaDiUtente = () => void ui.press({ key: 'lingua-fr-premi' })
+  await ui.press({ key: 'applica' })
+  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('de')
+  expect(await ui.find({ type: 'Text', text: '1 ungespeicherte Änderung' })).toBeDefined()
+  expect((await ui.find({ key: 'lingua-fr-premi' }))?.props.variant).toBe('primary')
+  await ui.press({ key: 'applica' })
+  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('fr')
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('rilievo 3: un conflitto CAS dopo il controllo preliminare (codice 4) apre lo stesso popup; «Ricarica e riapplica» scrive', async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
