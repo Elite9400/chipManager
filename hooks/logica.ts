@@ -224,7 +224,9 @@ export function risorseDa(p: Record<string, unknown>): RisorseProgetto | Msg {
   if (api !== undefined && (!oggettoRisorse(api) || !numero(api.budgetUsd, 0.01, 100_000) || (api.tetto !== undefined && !numero(api.tetto, 0.01, 1_000))))
     return errore
   const apiClaude = api && { budgetUsd: api.budgetUsd as number, tetto: (api.tetto as number | undefined) ?? TETTO_API_PREDEFINITO }
-  return { ...(apiClaude && { apiClaude }), board, fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
+  // F6.5: una preferenza; ogni altra forma vale come spento.
+  const consigliere = p.consigliere === 'suggerisci' || p.consigliere === 'applica' ? p.consigliere : undefined
+  return { ...(apiClaude && { apiClaude }), ...(consigliere && { consigliere }), board, fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
     freellmapi: { livello: f.livello as RisorseProgetto['freellmapi']['livello'], endpoint: (f.endpoint as string | undefined) ?? RISORSE_DEFAULT.freellmapi.endpoint },
     pesi: pesi.map(x => ({ tipo: x.tipo, nome: x.nome, percentuale: x.percentuale, assoluto: x.assoluto })), limitiManuali,
     soglie: { claude: soglia('claude'), codex: soglia('codex'), deepseek: soglia('deepseek'), freellmapi: soglia('freellmapi') },
@@ -485,6 +487,48 @@ export const conDestinazione = (a: Azione, d: Destinazione): Azione => ({ ...a, 
 export function destinazioniPer(a: Azione, regole: Regole, lista: readonly Azione[] = []): { d: Destinazione; motivo?: Msg }[] {
   const comuni = new Set(violazioni(conDestinazione(a, 'local'), regole, lista).map(m => JSON.stringify(m)))
   return DESTINAZIONI.map(d => ({ d, motivo: violazioni(conDestinazione(a, d), regole, lista).find(m => !comuni.has(JSON.stringify(m))) }))
+}
+
+/** Un consiglio di destinazione (F6.5): dove, e il perché in poche parole. */
+export type Consiglio = { d: Destinazione; motivi: Msg[] }
+
+/**
+ * F6.5: dove far girare una chip SENZA destinazione esplicita, fra quelle ammesse per l'esecutore e il modello già scelti
+ * da `bilancia` (il consigliere non tocca modello ed effort). Regole pure, in quest'ordine:
+ *  1. una sensibile va sempre in locale;
+ *  2. fork, dati da LAN o testo lungo escludono il cloud (lo dicono già le guardie);
+ *  3. si scarta ciò che non è configurato o è oltre la soglia critica: per locale e cloud il piano Claude (con Codex
+ *     esecutore anche il suo limite: basta uno dei due), per l'API il residuo del budget del mese;
+ *  4. preferenza fissa: locale se il piano è sotto l'attenzione; altrimenti cloud per un lavoro lungo o parallelo su un repo
+ *     GitHub (consuma lo stesso piano: aiuta il parallelismo e la macchina, non il limite); poi l'API; poi il locale.
+ * null = niente da consigliare.
+ */
+export function consigliaDove(a: Azione, regole: Regole, limiti: readonly Limite[], lista: readonly Azione[], spesaApi?: number | null, adesso = Date.now()): Consiglio | null {
+  if (a.destinazione !== undefined || a.esecutore === 'freellmapi') return null
+  if (sensibile(a, regole)) return { d: 'local', motivi: [msg('cons.sensibile')] }
+  const ammesse = destinazioniPer(a, regole, lista).filter(x => !x.motivo).map(x => x.d)
+  const pct = (f: Fornitore) => piuPieno(limiti, f, adesso)?.percentuale
+  const livello = (f: Fornitore) => (pct(f) === undefined ? 'ok' : livelloDi(pct(f)!, sogliaDi(regole.risorse, f)))
+  const piano = livello('claude')
+  const fuori = new Set<Destinazione>()
+  if (piano === 'critica' || (a.esecutore === 'codex' && livello('codex') === 'critica')) fuori.add('local')
+  if (piano === 'critica') fuori.add('cloud')
+  const api = regole.risorse.apiClaude
+  const apiOk = !!api && typeof spesaApi === 'number' && spesaApi + api.tetto <= api.budgetUsd &&
+    livelloDi(Math.min(100, (spesaApi / api.budgetUsd) * 100), sogliaDi(regole.risorse, 'claude')) !== 'critica'
+  if (!apiOk) fuori.add('api-claude')
+  const restanti = ammesse.filter(d => !fuori.has(d))
+  if (!restanti.length) return null
+  const motivoPiano = pct('claude') === undefined ? undefined : msg('cons.piano', { pct: pct('claude')! })
+  const motivoBudget = api && typeof spesaApi === 'number' ? msg('cons.budget', { speso: Math.round(spesaApi * 100) / 100, budget: api.budgetUsd }) : undefined
+  const scegli = (d: Destinazione, ...m: (Msg | undefined)[]): Consiglio => ({ d, motivi: m.filter((x): x is Msg => !!x) })
+  if (restanti.includes('local') && piano === 'ok') return scegli('local', motivoPiano ?? msg('cons.pianoOk'))
+  const lungo = corsiaDi(a, regole) === 'R3' || lista.filter(x => ['proposta', 'accodata', 'in-avvio', 'avviata'].includes(x.stato)).length >= 3
+  if (restanti.includes('cloud') && lungo && /^[^/\s]+\/[^/\s]+$/.test(a.repo ?? ''))
+    return scegli('cloud', motivoPiano, msg('cons.parallelo'), msg('cons.modelloCloud'))
+  if (restanti.includes('api-claude') && piano !== 'ok') return scegli('api-claude', motivoPiano, motivoBudget)
+  if (restanti.includes('local')) return scegli('local', motivoPiano)
+  return scegli(restanti[0]!, motivoPiano)
 }
 
 /** Perché un'azione non può partire così com'è: vuoto = può partire. */

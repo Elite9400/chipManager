@@ -6,6 +6,7 @@ import {
   rigaConsumo,
   modalitaDi,
   spesaDelMese,
+  consigliaDove,
   classeProcesso,
   classiDi,
   contaConsumo,
@@ -64,6 +65,7 @@ import {
   violazioniAvvio,
 } from '../hooks/logica'
 import type { Azione, Chiamante, Consumo, Limite, Regole } from '../types'
+import type { Consiglio } from '../hooks/logica'
 import { DiscoIt } from './disco-it'
 import { chiaveOTesto } from '../hooks/lingua'
 import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
@@ -979,6 +981,51 @@ test('F6.4 Carico: la spesa API del mese (stimata) contro il budget in USD; senz
   amb.disco.set('X:/orch/azioni/spesa-api.json', '{ rotto')
   await ui.press({ key: 'ricarica' })
   expect(await ui.find({ type: 'Text', text: 'API Claude: budget 20 USD, spesa non leggibile' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('F6.5 consigliere: tabella corsia × sensibilità × configurazione × soglie → destinazione e motivo', () => {
+  const RA: Regole = { ...R, chiaveApi: true, risorse: { ...R.risorse, apiClaude: { budgetUsd: 20, tetto: 2 }, consigliere: 'suggerisci' } }
+  const a = base('a-cons0001', 1, { repo: AUTORE.repo!, revisore: 'claude' })
+  const piano = (percentuale: number) => [{ ...LIMITE, percentuale, letto: new Date().toISOString() }]
+  const k = (c: Consiglio | null) => c && [c.d, c.motivi.map(m => m.k)]
+  // Piano sotto l'attenzione: locale.
+  expect(k(consigliaDove(a, RA, piano(50), [a], 3))).toEqual(['local', ['cons.piano']])
+  expect(k(consigliaDove(a, RA, [], [a], 3))).toEqual(['local', ['cons.pianoOk']])
+  // Oltre l'attenzione con budget: API, con il motivo del piano e del budget.
+  expect(k(consigliaDove(a, RA, piano(82), [a], 3))).toEqual(['api-claude', ['cons.piano', 'cons.budget']])
+  expect(consigliaDove(a, RA, piano(82), [a], 3)?.motivi[1]).toEqual({ k: 'cons.budget', p: { speso: 3, budget: 20 } })
+  // Oltre la critica: né locale né cloud (stesso piano); resta l'API.
+  expect(k(consigliaDove(a, RA, piano(95), [a], 3))?.[0]).toBe('api-claude')
+  // Budget che non basta per un altro tetto: niente API; oltre l'attenzione resta il locale.
+  expect(k(consigliaDove(a, RA, piano(82), [a], 19))?.[0]).toBe('local')
+  // Lavoro lungo (R3) su un repo GitHub, piano oltre l'attenzione: cloud, che non promette modello ed effort.
+  expect(k(consigliaDove({ ...a, corsia: 'R3' }, RA, piano(82), [a], 3))).toEqual(['cloud', ['cons.piano', 'cons.parallelo', 'cons.modelloCloud']])
+  // Sensibile: sempre locale.
+  expect(k(consigliaDove({ ...a, corsia: 'R4' }, RA, piano(95), [a], 3))).toEqual(['local', ['cons.sensibile']])
+  // Codex esecutore: basta il suo limite oltre la critica per escludere il locale; cloud e API non sono ammessi → niente.
+  const codex = { ...a, esecutore: 'codex' as const, corsia: 'R2' as const }
+  expect(consigliaDove(codex, RA, [...piano(20), { ...LIMITE, id: 'codex-primary', fornitore: 'codex', percentuale: 97 }], [codex], 3)).toBeNull()
+  // Le scelte esplicite non si toccano; l'esecutore esterno decide da sé.
+  expect(consigliaDove({ ...a, destinazione: 'local' }, RA, piano(95), [a], 3)).toBeNull()
+  expect(consigliaDove({ ...a, esecutore: 'freellmapi' }, RA, piano(95), [a], 3)).toBeNull()
+})
+
+test('F6.5 consigliere: «Suggerisci» mostra dove e perché sulla proposta; «Applica» scrive la destinazione nel giro', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  const amb = ambiente(on)
+  const a = base('a-cons0002', 1, { repo: AUTORE.repo!, revisore: 'claude' })
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 }, consigliere: 'suggerisci' } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  expect(await ui.find({ type: 'Text', text: '→ locale · piano sotto l\'attenzione' })).toBeDefined()
+  expect(JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!).destinazione).toBeUndefined()
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 }, consigliere: 'applica' } } }))
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: 'ricarica' })
+  expect(JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!).destinazione).toBe('local')
   await ui.unmount()
 })
 

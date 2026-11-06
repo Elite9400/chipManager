@@ -31,6 +31,8 @@ export type RisorseProgetto = {
   board: BoardProgetto
   /** F6.2: crediti API di Claude. Assente = non configurata. Budget del mese e tetto per tentativo, in USD. */
   apiClaude?: { budgetUsd: number; tetto: number }
+  /** F6.5: il consigliere di destinazione. Assente = spento. */
+  consigliere?: 'suggerisci' | 'applica'
   /** Profilo di bilanciamento scelto nelle Impostazioni: tocca solo i pesi di motori ed effort. Assente = nessuna scelta. */
   profilo?: 'automatico' | 'risparmio' | 'qualita' | 'velocita' | 'personalizzato'
   /** Cresce a ogni scrittura di profilo o pesi (la incrementa l'helper). Assente = 0. */

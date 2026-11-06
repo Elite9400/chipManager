@@ -26,6 +26,8 @@ import {
   mandato,
   mandatoApi,
   modalitaDi,
+  consigliaDove,
+  conDestinazione,
   spesaDelMese,
   normalizza,
   parametriAvvio,
@@ -1028,6 +1030,19 @@ async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti)
   // R5: nel giro chi sono io viene dalla cache di 60 s; avvii e decisioni rileggono.
   const chi = await chiSonoIo($, { cache: true })
   const lista = delProgetto(tutte, chi)
+  // F6.5 «Applica in automatico»: le proposte senza destinazione esplicita ricevono quella consigliata (CAS); da lì è esplicita
+  // e l'avvio segue le regole di sempre, cloud confermato chip per chip.
+  const regoleGiro = await read($, regole)
+  if (completa && regoleGiro?.risorse.consigliere === 'applica') {
+    const r = regoleGiro
+    const limitiOra = (await read($, risorse)).limiti
+    const speso = (await read($, spesaApi))?.speso
+    for (const a of lista) {
+      if (a.stato !== 'proposta' || a.destinazione !== undefined) continue
+      const cons = consigliaDove(a, r, limitiOra, lista, speso)
+      if (cons) await aggiorna($, a.id, x => (x.stato === 'proposta' && x.destinazione === undefined ? { destinazione: cons.d, contesto: conDestinazione(x, cons.d).contesto } : null)).catch(() => undefined)
+    }
+  }
   const prima = await read($, vive)
   const registro = await leggiRegistro($)
   const chiudi = async (a: Azione) => {

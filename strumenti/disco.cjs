@@ -271,7 +271,7 @@ function avviaComando(comando, opzioni = {}) {
  */
 async function configura(file, richiesta) {
   if (!richiesta || typeof richiesta.repo !== 'string' || !richiesta.repo || !richiesta.campi ||
-      Object.keys(richiesta.campi).some(k => !['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo'].includes(k))) return 2
+      Object.keys(richiesta.campi).some(k => !['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere'].includes(k))) return 2
   if (richiesta.campi.board !== undefined && !BOARD_MODI.includes(richiesta.campi.board?.modo)) return 2
   const dir = path.dirname(file)
   fs.mkdirSync(dir, { recursive: true })

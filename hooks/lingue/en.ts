@@ -811,6 +811,14 @@ const en = {
   "car.apiRiga": "Claude API: {speso} USD of {budget} USD (estimated, this month)",
   "car.apiIlleggibile": "Claude API: budget {budget} USD, spend not readable",
   "car.notaCloud": "The Claude cloud uses the same plan limits as local work: its percentage is the plan's. Whether extra credits apply in the cloud is not documented: check on your account.",
+  // F6.5 destination advisor
+  "cons.riga": "→ {dove} · {motivi}",
+  "cons.sensibile": "sensitive: only here, with human review",
+  "cons.piano": "plan {pct}% used",
+  "cons.pianoOk": "plan below warning",
+  "cons.budget": "API budget {speso}/{budget} USD",
+  "cons.parallelo": "long or parallel work",
+  "cons.modelloCloud": "model chosen by the cloud",
   // ‹fine›
 } satisfies Record<string, Voce>
 

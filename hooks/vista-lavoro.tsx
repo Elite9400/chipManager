@@ -9,6 +9,7 @@ import {
   blocca,
   CORSIE,
   conDestinazione,
+  consigliaDove,
   corsiaDi,
   cartellaCondivisa,
   destinazioniPer,
@@ -403,6 +404,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
           [chipStato(a)],
         )}
         {infoLavoro(a)}
+        {consiglioRiga(a)}
         <Text dimColor size="caption" wrap="wrap">
           {opzioni(a)}
         </Text>
@@ -570,6 +572,17 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       </Box>
     )
   }
+  /** F6.5 «Suggerisci»: dove andrebbe una proposta senza destinazione esplicita, e perché (il consigliere non sceglie). */
+  function consiglioRiga(a: Azione) {
+    if (!regoleOra.risorse.consigliere || a.stato !== 'proposta') return null
+    const cons = consigliaDove(a, regoleOra, d.limiti, tutte, d.spesaApiOra?.speso, adesso)
+    if (!cons) return null
+    return (
+      <Text key={`cons-${a.id}`} size="caption" dimColor wrap="wrap">
+        {T('cons.riga', { dove: T(BREVE_DOVE[cons.d]), motivi: cons.motivi.map(m => T.m(m)).join(', ') })}
+      </Text>
+    )
+  }
   function barraScelte() {
     const n = tutte.filter(a => scelte.includes(a.id)).length
     if (!n) return null
@@ -668,6 +681,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
           [chipStato(a)],
         )}
         {infoLavoro(a)}
+        {consiglioRiga(a)}
         {brief && (
           <Text size="caption" dimColor wrap="wrap">
             {corto(brief, Math.max(40, 2 * (colonne - 8)))}

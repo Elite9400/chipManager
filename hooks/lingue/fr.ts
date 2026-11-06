@@ -809,6 +809,14 @@ const fr: Dizionario = {
   "car.apiRiga": "API Claude : {speso} USD sur {budget} USD (estimé, ce mois-ci)",
   "car.apiIlleggibile": "API Claude : budget {budget} USD, dépense illisible",
   "car.notaCloud": "Le cloud de Claude consomme les mêmes limites du forfait que le travail local : son pourcentage est celui du forfait. Que les crédits supplémentaires valent dans le cloud n'est pas documenté : vérifiez sur votre compte.",
+  // F6.5 destination advisor
+  "cons.riga": "→ {dove} · {motivi}",
+  "cons.sensibile": "sensible : seulement ici, avec relecture humaine",
+  "cons.piano": "forfait {pct}% utilisé",
+  "cons.pianoOk": "forfait sous l'alerte",
+  "cons.budget": "budget API {speso}/{budget} USD",
+  "cons.parallelo": "travail long ou en parallèle",
+  "cons.modelloCloud": "modèle choisi par le cloud",
   // ‹fine›
 }
 

@@ -136,7 +136,7 @@ export const manualiDaScrivere = (limiti: readonly Limite[]) =>
 // tiene il valore che aveva quando lo si è toccato (`base`), così all'Applica si vede se un'altra sessione l'ha cambiato.
 
 /** I campi del progetto che stanno nella bozza; i budget manuali no: si scrivono subito, e Applica non li tocca mai. */
-export const CAMPI_BOZZA = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'freellmapi', 'board', 'soglie', 'profilo']
+export const CAMPI_BOZZA = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere']
 /** Il valore di un campo del progetto nella forma che scrive `configura`. */
 export const valoreConfig = (r: RisorseProgetto, k: string): unknown => (k === 'board' ? { modo: r.board.modo } : (r as Record<string, unknown>)[k])
 

@@ -809,6 +809,14 @@ const pt: Dizionario = {
   "car.apiRiga": "API Claude: {speso} USD de {budget} USD (estimado, este mês)",
   "car.apiIlleggibile": "API Claude: orçamento {budget} USD, gasto ilegível",
   "car.notaCloud": "A nuvem do Claude usa os mesmos limites do plano que o trabalho local: a porcentagem dela é a do plano. Não está documentado se os créditos extras valem na nuvem: verifique na sua conta.",
+  // F6.5 destination advisor
+  "cons.riga": "→ {dove} · {motivi}",
+  "cons.sensibile": "sensível: só aqui, com revisão humana",
+  "cons.piano": "plano {pct}% usado",
+  "cons.pianoOk": "plano abaixo do alerta",
+  "cons.budget": "orçamento de API {speso}/{budget} USD",
+  "cons.parallelo": "trabalho longo ou em paralelo",
+  "cons.modelloCloud": "modelo escolhido pela nuvem",
   // ‹fine›
 }
 
