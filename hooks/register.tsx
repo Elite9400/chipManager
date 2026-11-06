@@ -1236,11 +1236,13 @@ async function cambiaSessione($: Eng, id: string, campo: 'modello' | 'effort', v
   // Dopo la conferma: la chip, il tentativo e la sessione sono ancora quelli? E le regole di adesso?
   const r = await leggiRegole($)
   if (!r.lette) throw errore('v.regoleNonLette')
-  const a = (await carica($, { fresca: true })).find(x => x.id === id)
+  const lette = await carica($, { fresca: true })
+  const a = lette.find(x => x.id === id)
   if (!a || a.stato !== 'avviata' || a.tentativo !== a0.tentativo || a.sessione !== a0.sessione || !puoCambiare(a, await chiSonoIo($), campo)) throw errore('cambia.obsoleta')
   // La configurazione proposta si valida per intero: qualunque vincolo violato blocca, anche se c'era già prima.
   const nuova: Azione = { ...a, [campo]: valore }
-  const motivi = violazioni(nuova, r)
+  // Con l'elenco appena riletto: dipendenze, posti e corsie si giudicano sullo stato vero delle altre chip.
+  const motivi = violazioni(nuova, r, lette)
   if (motivi.length) throw new Errore(motivi[0]!)
   if (revisoreConcreto(nuova, r) !== revisoreConcreto(a, r)) throw errore('cambia.revisore')
   let esito: 'fatto' | 'incerto' = 'incerto'
@@ -1855,11 +1857,6 @@ async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pend
     base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])),
     immediati: daProposta(ora) && cambiati.some(k => k === 'pesi' || k === 'profilo') ? ['pesi', 'profilo'].filter(k => k in p.campi) : [],
   })
-  // F7.1: la lingua messa in bozza da una proposta si scrive per prima, con la base controllata dentro il CAS della lingua:
-  // cambiata intanto altrove (anche da un altro progetto, anche durante la scrittura) = conflitto, niente scritto.
-  if (p.lingua && p.linguaBase && p.lingua !== (await leggiLingua($))) {
-    if ((await scegliLingua($, p.lingua, p.linguaBase)) === 'cambiata') return { cambiati: ['lingua'], base: { lingua: await leggiLingua($) } }
-  }
   let ora = (await leggiRegole($)).risorse
   if (cambiatiAltrove(p, ora).length) return conflitto(ora, cambiatiAltrove(p, ora))
   const progetto = Object.keys(p.campi).length > 0
@@ -1879,11 +1876,15 @@ async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pend
     }
     if ('board' in p.campi) await dopoBoard($)
   }
-  // La lingua si scrive solo se diversa da quella salvata adesso (riletta: un altro pannello può averla cambiata). Quella di
-  // una proposta è già stata scritta (o rifiutata) per prima, con la sua base: qui non si riscrive mai.
-  if (p.lingua && !p.linguaBase && p.lingua !== (await leggiLingua($))) {
+  // La lingua si scrive solo dopo il progetto, e solo se diversa da quella salvata adesso. Quella di una proposta porta la
+  // sua base, controllata dentro il CAS della lingua: cambiata altrove = conflitto se non si è scritto altro, altrimenti il
+  // salvataggio parziale dichiarato (il progetto è scritto, in bozza resta solo la lingua).
+  if (p.lingua && p.lingua !== (await leggiLingua($))) {
     try {
-      await scegliLingua($, p.lingua)
+      if ((await scegliLingua($, p.lingua, p.linguaBase)) === 'cambiata') {
+        if (!progetto) return { cambiati: ['lingua'], base: { lingua: await leggiLingua($) } }
+        return { cambiati: [], base: {}, errore: msg('imp.linguaNonSalvata', { motivo: msg('imp.linguaCambiataAltrove') }) }
+      }
     } catch (err) {
       // Rilievo 4: il progetto è già scritto; lo si dice, e in bozza resta solo la lingua.
       if (!progetto) throw err

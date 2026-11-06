@@ -1488,25 +1488,22 @@ test('F7.1 con una bozza aperta la proposta resta in coda e la fascia lo dice; e
   await ui.unmount()
 })
 
-test('F7.1 Apply in conflitto: un\'altra sessione cambia il profilo proposto; e la lingua cambiata altrove (un altro progetto) si chiede', async ($, on) => {
+test('F7.1 Apply con la lingua cambiata altrove (un altro progetto): prima il progetto, poi la lingua non si scrive e lo si dice; un nuovo Applica la sceglie', async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await proponi($, { motivo: 'Qualità e tedesco.', profilo: 'qualita', lingua: 'de' })
   await ui.press({ key: 'impostazioni' })
-  // Un altro progetto sceglie il francese mentre la proposta aspetta: Applica lo dice e non scrive niente.
+  // Un altro progetto sceglie il francese mentre la proposta aspetta: il progetto si scrive, la lingua no, e lo si dice.
   amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
-  amb.popup.risposta = () => null
   await ui.press({ key: 'applica' })
-  expect(amb.domande.at(-1)).toMatch(/cambiato Lingua dopo le tue modifiche/)
+  expect(amb.progettoOra().profilo).toBe('qualita')
   expect(JSON.parse(amb.disco.get(CONFIG)!)).toMatchObject({ lingua: 'fr' })
-  expect(amb.progettoOra().profilo).toBeUndefined()
-  // Riapplica (il pannello parla già francese, la lingua salvata ora): la lingua della proposta vince, con la base nuova.
-  amb.popup.risposta = () => t('fr', 'imp.riapplica')
+  expect(await ui.find({ type: 'Text', text: new RegExp(t('fr', 'imp.linguaCambiataAltrove').slice(0, 30)) })).toBeDefined()
+  // In bozza resta la sola lingua, senza base: un nuovo Applica è la scelta esplicita dell'utente.
   await ui.press({ key: 'applica' })
   expect(JSON.parse(amb.disco.get(CONFIG)!)).toMatchObject({ lingua: 'de' })
-  expect(amb.progettoOra().profilo).toBe('qualita')
   await ui.unmount()
 })
 
@@ -1569,5 +1566,41 @@ test('F7 rilievo 4: un\'altra lingua salvata dentro la scrittura della lingua (C
   await ui.press({ key: 'applica' })
   expect(lingua()).toBe('fr')
   expect(amb.domande.some(q => /Lingua|Langue/.test(q))).toBe(true)
+  await ui.unmount()
+})
+
+test('F7 giro 2, rilievo 2: con il progetto in conflitto la lingua proposta non si salva; «Scarta» lascia tutto com\'era', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  const lingua = () => (JSON.parse(amb.disco.get(CONFIG)!) as { lingua?: string }).lingua
+  await proponi($, { motivo: 'Tedesco e qualità.', profilo: 'qualita', lingua: 'de' })
+  await ui.press({ key: 'impostazioni' })
+  // Un'altra sessione cambia il profilo: Applica va in conflitto e la lingua non deve essere già scritta.
+  const c = JSON.parse(amb.disco.get(CONFIG)!)
+  amb.disco.set(CONFIG, JSON.stringify({ ...c, progetti: { 'esempio/demo': { ...c.progetti['esempio/demo'], profilo: 'velocita' } } }))
+  amb.popup.risposta = () => 'Scarta la mia bozza'
+  await ui.press({ key: 'applica' })
+  expect(amb.domande.at(-1)).toMatch(/cambiato .* dopo le tue modifiche/)
+  expect(lingua()).toBe('it')
+  expect(amb.progettoOra().profilo).toBe('velocita')
+  await ui.unmount()
+})
+
+test('F7 giro 2, rilievo 2: progetto scritto e lingua cambiata altrove intanto: salvataggio parziale dichiarato, in bozza resta la lingua', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await proponi($, { motivo: 'Tedesco e qualità.', profilo: 'qualita', lingua: 'de' })
+  await ui.press({ key: 'impostazioni' })
+  amb.hook.primaDiUtente = () => amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
+  // Il pannello rilegge prima la lingua salvata: la si cambia appena prima della sua scrittura.
+  amb.hook.primaDiConfigura = () => amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra().profilo).toBe('qualita')
+  expect((JSON.parse(amb.disco.get(CONFIG)!) as { lingua?: string }).lingua).toBe('fr')
+  expect(await ui.find({ key: 'pendenti' })).toBeDefined()
   await ui.unmount()
 })

@@ -338,8 +338,16 @@ function filtraStderr(testo, chiave, casa = os.homedir(), troncato = false) {
   const b = Buffer.from(t, 'utf8')
   return b.length <= TETTO_STDERR ? t : b.subarray(0, TETTO_STDERR).toString('utf8').replace(/\uFFFD+$/, '')
 }
-/** Un rifiuto all'avvio è un'uscita entro questo tempo, con errore, senza alcun turno. */
+/** Un rifiuto all'avvio è un'uscita entro questo tempo, con errore e senza JSON finale. */
 const AVVIO_MS = 20_000
+/** Il worktree è come alla partenza: `git status` pulito e HEAD ancora la base. Ogni dubbio (git che non risponde) = no. */
+function worktreeInvariato(cwd, base, deps = {}) {
+  if (deps.worktreeInvariato) return deps.worktreeInvariato(cwd, base)
+  const git = args => spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15_000 })
+  const stato = git(['status', '--porcelain'])
+  const testa = git(['rev-parse', 'HEAD'])
+  return stato.status === 0 && stato.stdout.trim() === '' && testa.status === 0 && testa.stdout.trim() === base
+}
 /** Un'uscita anticipata per l'advisor: consenso a Fable, esclusione da `availableModels`, o rifiuto all'avvio. */
 const advisorNonDisponibile = stderr =>
   /\/model fable|consent/i.test(stderr) ? 'consenso' : /availableModels/i.test(stderr) ? 'escluso' : /advisor/i.test(stderr) ? 'rifiutato' : undefined
@@ -429,7 +437,7 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
     let rec = lock
     try {
       if (!ingressoValido(input)) throw new Error('parametri non validi')
-      const { cwd, ramo } = d.preparaWorktree(input, tentativo, deps, fuori)
+      const { cwd, ramo, base } = d.preparaWorktree(input, tentativo, deps, fuori)
       // Il processo parte nel worktree, che può avere impostazioni sue: si ricontrolla lì, prima della chiave e dello spawn.
       const fontiCwd = deps.fontiCwd?.(cwd) ?? fontiImpostazioni(cwd, deps.env ?? process.env)
       const vietate = blocchiImpostazioni(fontiCwd, deps.env ?? process.env)
@@ -492,14 +500,14 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
       const esito = troncato ? null : estraiEsito(Buffer.concat(pezzi).toString('utf8'))
       const errori = Buffer.concat(grezzo).toString('utf8')
       const stderr = errori ? { stderr: filtraStderr(errori, input.chiave, undefined, erroriTroncati) } : {}
-      // Rifiuto all'avvio: uscita con errore entro pochi secondi, nessun turno (niente stdout, o un JSON d'errore a zero
-      // turni) e lo stderr che parla dell'advisor. Mai dedurre dallo stderr che non si è lavorato: il resto è incerto.
-      const nessunTurno = esito ? esito.errore && !esito.turni : letti === 0
-      const nonDisp = codice !== 0 && nessunTurno && Date.now() - avvio < (deps.avvioMs ?? AVVIO_MS) ? advisorNonDisponibile(errori) : undefined
-      if (nonDisp) scrivi({ stato: 'fallita', ramo, costo: esito?.costo ?? null, advisorNonDisponibile: nonDisp, errore: "advisor non disponibile all'avvio: controlla il worktree prima di riprovare", ...adv, ...stderr })
+      // Rifiuto all'avvio SOLO se tutto è vero: nessun JSON finale, uscita con errore entro pochi secondi, stderr che cita
+      // advisor, availableModels o il consenso, e il worktree invariato (status pulito, nessun commit oltre la base). Lo
+      // stdout vuoto non dice che non si è lavorato. Ogni altro caso è incerto, con il costo di §4.
+      const nonDisp = !esito && codice !== 0 && Date.now() - avvio < (deps.avvioMs ?? AVVIO_MS) ? advisorNonDisponibile(errori) : undefined
+      if (nonDisp && worktreeInvariato(cwd, base, deps)) scrivi({ stato: 'fallita', ramo, costo: null, advisorNonDisponibile: nonDisp, errore: "advisor non disponibile all'avvio: il worktree è invariato", ...adv, ...stderr })
       else if (!esito) scrivi({ stato: 'avviata', ramo, incerto: true, costo: null, errore: 'esito API incerto: controlla il worktree prima di chiudere', ...adv, ...stderr })
-      // Un JSON con is_error non è una consegna: l'esecuzione è finita con errore, e lo si dice.
-      else if (esito.errore) scrivi({ stato: 'fallita', ramo, costo: esito.costo, turni: esito.turni, errore: 'esecuzione API terminata con errore: controlla il worktree prima di riprovare', ...adv, ...stderr })
+      // Un JSON con is_error non è una consegna: finita con errore, il lavoro fatto non si sa (num_turns mancante = ignoto).
+      else if (esito.errore) scrivi({ stato: 'avviata', ramo, incerto: true, costo: esito.costo, ...(esito.turni !== undefined && { turni: esito.turni }), errore: 'esecuzione API terminata con errore: controlla il worktree prima di chiudere', ...adv, ...stderr })
       else scrivi({ stato: 'consegnata', ramo, costo: esito.costo, turni: esito.turni, errore: codice !== 0 ? 'esecuzione API terminata con errore: controlla il worktree prima di chiudere' : undefined, ...adv, ...stderr })
       await contaSpesa(dir, tentativo, esito?.costo ?? null)
     } catch (e) {
@@ -613,6 +621,6 @@ async function comando(cmd, a, stdin, opz = {}) {
 }
 
 module.exports = {
-  comando, lanciaApi, eseguiApi, booleano, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
+  comando, lanciaApi, eseguiApi, booleano, worktreeInvariato, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
   leggiSpesa, spesoNelMese, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
 }

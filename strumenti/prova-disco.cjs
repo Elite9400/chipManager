@@ -1729,7 +1729,7 @@ const claudeAdvisor = (vista, { codice = 0, uscita = '', stderr = '' } = {}) => 
   queueMicrotask(() => p.emit('spawn'))
   return p
 }
-async function eseguiConAdvisor(tentativo, input, fontiWorktree, figlio) {
+async function eseguiConAdvisor(tentativo, input, fontiWorktree, figlio, invariato = true) {
   const dir = tmp()
   const dm = tmp()
   const root = tmp()
@@ -1737,7 +1737,8 @@ async function eseguiConAdvisor(tentativo, input, fontiWorktree, figlio) {
   recordApi(dir, id, tentativo)
   // Il padre (lanciaApi) vede fonti pulite: l'eredità si guarda solo sul worktree del figlio.
   assert.strictEqual((await API.lanciaApi(dir, id, tentativo, { ...ingressoApi(root), ...input }, { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }))[0], 0)
-  await API.eseguiApi(dir, id, tentativo, { ...ingressoApi(root), ...input }, { dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], env: {}, fontiCwd: () => fontiWorktree, avvia: figlio })
+  await API.eseguiApi(dir, id, tentativo, { ...ingressoApi(root), ...input }, { dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], env: {}, fontiCwd: () => fontiWorktree, avvia: figlio,
+    worktreeInvariato: (_cwd, base) => (assert.strictEqual(base, 'a'.repeat(40)), invariato) })
   return JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', `${tentativo}.json`), 'utf8'))
 }
 const fontiCon = (contenuti) => {
@@ -1802,11 +1803,12 @@ test('F7.3 advisor non disponibile: uscita anticipata con lo stderr sull\'adviso
 // --- revisione F7 (Codex) ------------------------------------------------------------------------------------------
 
 test('F7 rilievo 2: un figlio che ha lavorato (stdout) e cita l\'advisor resta incerto; un JSON con is_error non è una consegna; il rifiuto all\'avvio sì', async () => {
-  const lavorato = await eseguiConAdvisor('az-riv70201', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: 'testo di lavoro senza JSON', stderr: 'warning: advisor call failed once' }))
+  const lavorato = await eseguiConAdvisor('az-riv70201', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: 'testo di lavoro senza JSON', stderr: 'warning: advisor call failed once' }), false)
   assert.deepStrictEqual([lavorato.stato, lavorato.incerto, lavorato.advisorNonDisponibile], ['avviata', true, undefined])
   const errore = await eseguiConAdvisor('az-riv70202', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: JSON.stringify({ is_error: true, total_cost_usd: 0.3, num_turns: 4 }) }))
-  assert.deepStrictEqual([errore.stato, errore.costo, errore.advisorNonDisponibile], ['fallita', 0.3, undefined])
-  const rifiuto = await eseguiConAdvisor('az-riv70203', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: JSON.stringify({ is_error: true, num_turns: 0 }), stderr: 'advisor model rejected' }))
+  assert.deepStrictEqual([errore.stato, errore.incerto, errore.costo, errore.advisorNonDisponibile], ['avviata', true, 0.3, undefined])
+  // Senza JSON finale, uscita subito, stderr sull'advisor e worktree invariato: il rifiuto all'avvio.
+  const rifiuto = await eseguiConAdvisor('az-riv70203', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr: 'advisor model rejected' }))
   assert.deepStrictEqual([rifiuto.stato, rifiuto.advisorNonDisponibile], ['fallita', 'rifiutato'])
   for (const e of [lavorato, errore, rifiuto]) assert.ok(!/nessun lavoro/i.test(e.errore ?? ''))
 })
@@ -1822,4 +1824,27 @@ test('F7 rilievo 5: lo stderr salvato sta in 16 KiB di byte e non lascia mai un 
     for (let n = 6; n <= chiave.length; n++) assert.ok(!(e.stderr ?? '').includes(chiave.slice(0, n)), `${t}: prefisso di ${n}`)
     assert.ok(Buffer.byteLength(e.stderr ?? '', 'utf8') <= 16 * 1024)
   }
+})
+
+
+test('F7 giro 2, rilievo 3: senza stdout ma con il worktree cambiato è incerto; is_error senza num_turns non vale zero turni; un JSON d\'errore sull\'advisor non è un rifiuto', async () => {
+  const cambiato = await eseguiConAdvisor('az-rv8301', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr: 'advisor warning' }), false)
+  assert.deepStrictEqual([cambiato.stato, cambiato.incerto, cambiato.advisorNonDisponibile, cambiato.costo], ['avviata', true, undefined, null])
+  const senzaTurni = await eseguiConAdvisor('az-rv8302', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: JSON.stringify({ is_error: true }) }))
+  assert.deepStrictEqual([senzaTurni.stato, senzaTurni.incerto, 'turni' in senzaTurni], ['avviata', true, false])
+  const conJson = await eseguiConAdvisor('az-rv8303', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: JSON.stringify({ is_error: true, num_turns: 0 }), stderr: 'advisor model rejected' }))
+  assert.deepStrictEqual([conJson.stato, conJson.incerto, conJson.advisorNonDisponibile], ['avviata', true, undefined])
+  // Il controllo vero: un worktree con un file nuovo o un commit oltre la base non è invariato; git che non risponde nemmeno.
+  const repo = tmp()
+  const git = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8' })
+  git('init', '-q')
+  git('-c', 'user.email=prova@esempio.it', '-c', 'user.name=prova', 'commit', '-q', '--allow-empty', '-m', 'base')
+  const base = git('rev-parse', 'HEAD').stdout.trim()
+  assert.strictEqual(API.worktreeInvariato(repo, base), true)
+  fs.writeFileSync(path.join(repo, 'nuovo.txt'), 'x')
+  assert.strictEqual(API.worktreeInvariato(repo, base), false)
+  fs.rmSync(path.join(repo, 'nuovo.txt'))
+  git('-c', 'user.email=prova@esempio.it', '-c', 'user.name=prova', 'commit', '-q', '--allow-empty', '-m', 'dopo')
+  assert.strictEqual(API.worktreeInvariato(repo, base), false)
+  assert.strictEqual(API.worktreeInvariato(path.join(repo, 'non-esiste'), base), false)
 })

@@ -622,7 +622,7 @@ function preparaWorktree(input, tentativo, deps = {}, fuori = {}) {
   const cwd = path.join(destinazione, `chipmanager-${tentativo}`)
   const ramo = (fuori.ramo = `chipmanager/${tentativo}`)
   git(['worktree', 'add', '-b', ramo, cwd, base])
-  return { cwd, ramo }
+  return { cwd, ramo, base }
 }
 
 /** I parametri di un avvio da riga di comando (CLI o API): modello, effort e permessi fra quelli ammessi. */

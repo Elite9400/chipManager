@@ -3351,3 +3351,21 @@ test('F7 rilievo 8: «nessuno» scelto è una scelta esplicita: si salva, non è
   expect((JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione).auditor).toBe('nessuno')
   await ui.unmount()
 })
+
+test('F7 giro 2, rilievo 1: «Cambia» rivaluta con l\'elenco riletto: una dipendenza fusa non blocca il cambio', async ($, on) => {
+  const amb = ambiente(on, { strumenti: STRUMENTI_CAMBIO, mcp: (_s, tool, args) => (tool === 'get_session' && (args as { session_id?: string }).session_id === SID
+    ? { isError: false, content: [{ type: 'text', text: JSON.stringify({ model: 'claude-opus-5-5', effort: 'xhigh' }) }] } : undefined) })
+  const dip = base('a-riv80000', 2, { repo: AUTORE.repo!, revisore: 'nessuno', stato: 'completata', completataIl: '2026-11-06T09:00:00Z' })
+  const a = alLavoro('a-riv80001', { dipende: [dip.id] })
+  for (const x of [dip, a]) amb.disco.set(`X:/orch/azioni/${x.id}.json`, JSON.stringify(x))
+  rispondiCambia(on, 'Cambia')
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.select({ key: `cambia-eff-${a.id}`, value: 'xhigh' })
+  await finche(() => !!(JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione).cambio)
+  expect(amb.chiamate.filter(c => c.tool === 'set_session_effort')).toHaveLength(1)
+  expect(JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!)).toMatchObject({ effort: 'xhigh', cambio: { esito: 'fatto' } })
+  await ui.unmount()
+})
