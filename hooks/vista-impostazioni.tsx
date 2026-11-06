@@ -50,7 +50,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const { Box, Text, Button } = d.el
   const terminale = !d.conVelo
   const u = componenti(d.el, terminale ? 'terminal' : 'desktop')
-  const classe = d.stretto ? 'stretta' : 'media'
+  const classe = d.classe
   const r = regoleOra.risorse
   const vista = await read($, statoVista)
   const cambia = (f: (s: StatoVista) => StatoVista) => update($, statoVista, f)

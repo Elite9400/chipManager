@@ -337,3 +337,18 @@ test('C1: «Avvia la prossima» con la corsia Codex occupata da fuori avvia la p
   expect(amb.toast).toContain('Parte «Seconda, per Claude»; «Prima, per Codex» aspetta: corsia Codex occupata')
   await ui.unmount()
 })
+
+test('C1: anche le Impostazioni ricevono la classe di larghezza da bodyColumns, sul desktop come nel terminale', async ($, on) => {
+  ambiente(on, [])
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const surface of SUPERFICI)
+    for (const [colonne, verso] of [[60, 'column'], [130, 'row']] as const) {
+      const ui = await $.ui.mount(PANE(surface, colonne))
+      await ui.press({ key: 'impostazioni' })
+      // Le righe dei fornitori (ui.Riga): su `stretta` le azioni scendono sotto, altrimenti stanno accanto.
+      expect((await ui.find({ key: 'riga-claude' }))?.props.flexDirection).toBe(verso)
+      await ui.press({ key: 'vista-lavoro' })
+      await ui.unmount()
+    }
+})
