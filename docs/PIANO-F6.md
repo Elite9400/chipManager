@@ -364,3 +364,29 @@ Si parte da `main` dopo la fusione di F5. F6 tocca gli stessi file, quindi viene
   - Il limite mensile del workspace contiene la spesa, ma si rinnova ogni mese.
   - Accanto al campo della chiave e nella procedura guidata va scritto: «Se pensi che la chiave sia stata copiata, revocala dalla Console e creane una nuova. Con una chiave dedicata alla mod puoi farlo senza toccare le altre».
   - Le garanzie «dopo l'esecuzione» della §12 valgono per **questa macchina e questa mod**, non per le copie della chiave.
+
+## 14. F6.7 — Configurazione semplice o automatica dalla mod (richiesta del committente, 6 novembre 2026)
+
+«Ovviamente questa procedura deve essere semplice o automatica direttamente dalla mod»: nessun passo di configurazione deve chiedere all'utente di aprire un terminale e incollare comandi.
+
+- **Stato automatico.** Nella sezione Esecuzione ogni requisito ha una riga ✓/✗ calcolata dalla mod, all'apertura della sezione e su «Ricontrolla», mai a ogni battito. Le verifiche passano dall'helper, come argv senza shell e con l'output filtrato, e mostrano solo lo stato, mai email o identificativi dell'account:
+  - login Claude con `claude auth status`: solo `loggedIn` e `authMethod`;
+  - GitHub con `gh auth status` e il remote `origin` del repository: solo sì/no e host;
+  - chiave API presente: lettura della `userConfig`, mai del valore;
+  - fonti di impostazioni compatibili con `api-claude`, dal controllo di §6/§7, con il motivo;
+  - budget e tetto impostati.
+- **Azione con un clic** per ogni ✗, dove l'host lo permette:
+  - **«Accedi»** avvia `claude auth login`, che apre da solo il browser, come processo distaccato. Poi la mod ricontrolla da sola ogni 5 s per al massimo 3 minuti, e solo mentre la sezione è aperta. Lo stesso vale per **«Collega GitHub»** con `gh auth login --web`. Se l'avvio non è possibile, mostra la riga da copiare con il pulsante «Copia».
+  - **«Inserisci la chiave»**: la chiave resta solo nel campo nativo sensibile. Se l'host consente di aprire il menu `/config` sulla riga della mod, lo apre; altrimenti indica il percorso esatto «/config → chip-manager → Claude API key», con il nome della riga tradotto. Il valore non passa mai dal pannello.
+  - **Fonti incompatibili**: la mod spiega quale file e quale impostazione bloccano e offre «Apri il file», in sola lettura. Non lo modifica mai da sola, per non aggirare le policy.
+- **Procedura guidata «Configura Esecuzione»**. Mette in fila i passi mancanti, uno per volta, e si chiude da sola quando tutto è ✓. Ogni passo si può saltare. Budget e tetto passano dalla bozza e da Apply di F5.9.
+- **Vincoli invariati.**
+  - Nessun comando con privilegi.
+  - Nessuna modifica a file di impostazioni dell'utente.
+  - Nessun dato dell'account nei log, nei record o nella board.
+  - I processi di login sono al massimo uno per tipo e non partono mai da soli: solo su clic.
+- **Test.**
+  - Stato ✓/✗ con eseguibili finti; output di `auth status` con email filtrato e mai mostrato.
+  - «Accedi» avvia un solo processo e il ricontrollo si ferma a 3 minuti o alla chiusura della sezione.
+  - Ripiego «Copia» quando lo spawn fallisce.
+  - Sei lingue, 60 colonne.
