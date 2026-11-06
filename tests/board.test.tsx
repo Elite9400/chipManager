@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { board, esc, hash, improntaBoard, oscura, testoRiassunto } from '../hooks/board'
+import { board, chiaveRiassunto, esc, hash, improntaBoard, oscura, testoRiassunto } from '../hooks/board'
 import type { DatiBoard, IngressiBoard } from '../hooks/board'
 import { normalizza, pianoValido, regoleDa, risorseDa, transizione } from '../hooks/logica'
 import type { Azione, Chiamante } from '../types'
@@ -28,7 +28,7 @@ const az = (id: string, ordine: number, extra: Partial<Azione> = {}): Azione => 
 
 const dati = (azioni: Azione[], extra: Partial<DatiBoard> = {}): DatiBoard => ({
   progetto: 'esempio/demo', versione: '2.4.0', generata: ADESSO, azioni, vive: {}, regole: R, chi: CHI, piani: {}, commit: [],
-  traguardi: null, riassunti: {}, percorso: 'X:/dati/board/esempio__demo-abc/index.html', ...extra,
+  traguardi: null, riassunti: {}, percorso: 'X:/dati/board/esempio__demo-abc/index.html', lingua: 'it', ...extra,
 })
 
 const SID = 'local_12345678-1234-1234-1234-123456789abc'
@@ -52,7 +52,7 @@ test('board: quattro gruppi, un <details> per ogni chip mostrata, fallita fra «
   expect((html.match(/<\/details>/g) ?? []).length).toBe(7)
   expect(html).not.toContain('id="t-a-scar0001"')
   expect(html).not.toContain('id="t-a-vecc0001"')
-  expect(html).toContain('1 completate da più di 30 giorni')
+  expect(html).toContain('1 completata da più di 30 giorni')
   const attesa = html.slice(html.indexOf('Aspettano te ('), html.indexOf('In corso ('))
   expect(attesa).toContain('id="t-a-fall0001"')
   expect(attesa).toContain('id="t-a-ferm0001"')
@@ -115,7 +115,7 @@ test('board: piano escapato con troncamento; riassunto per impronta del testo; m
   const t = { repo: 'esempio/demo', lista: [{ numero: 1, titolo: 'M1', aperte: 1, chiuse: 3, scadenza: null }], milestoneDi: {}, letto: ADESSO }
   const html = board(dati([a], {
     regole: r, traguardi: t, piani: { 'a-pia00001': { testo: '# Piano <b>', troncato: true } },
-    riassunti: { [hash(testoRiassunto(a, [a]))]: 'Riassunto breve.' },
+    riassunti: { [chiaveRiassunto(a, [a], 'it')]: 'Riassunto breve.' },
   }))
   expect(html).toContain('# Piano &lt;b&gt;')
   expect(html).toContain('troncato a 200 KB')
@@ -126,7 +126,7 @@ test('board: piano escapato con troncamento; riassunto per impronta del testo; m
 
 test('impronta: ignora `aggiornata` e l\'ora; cambia con Regole.lette (e la board mostra i blocchi)', () => {
   const ingressi = (regole = R, azioni = insieme()): IngressiBoard => ({
-    azioni, vive: {}, regole, piani: {}, registro: null, commit: [], traguardi: null, riassunti: {}, oggi: '2026-11-05', modo: 'accesa', versione: '2.4.0',
+    azioni, vive: {}, regole, piani: {}, registro: null, commit: [], traguardi: null, riassunti: {}, oggi: '2026-11-05', modo: 'accesa', versione: '2.4.0', lingua: 'it',
   })
   const base = improntaBoard(ingressi())
   expect(improntaBoard(ingressi(R, insieme().map(a => ({ ...a, aggiornata: ADESSO }))))).toBe(base)
@@ -171,4 +171,19 @@ test('impostazioni: board spenta per difetto; modo e generazione validati', () =
   expect(risorseDa({ board: { modo: 'pubblica' } })).toEqual({ k: 'cfg.risorse' })
   expect(risorseDa({ board: { modo: 'accesa', generazione: -1 } })).toEqual({ k: 'cfg.risorse' })
   expect(risorseDa({ board: 'accesa' })).toEqual({ k: 'cfg.risorse' })
+})
+
+test('lingue: la board nella lingua dell\'utente, con `lang` della pagina; cambiare lingua cambia l\'impronta', () => {
+  const lista = [az('a-blk00002', 1, { titolo: 'Sample chip', brief: 'Sample brief.' })]
+  const blocco = regoleDa({ ...ROUTING, corsia_codex: { ...ROUTING.corsia_codex, modelli: undefined } }, 'routing.json v1')
+  const en = board(dati(lista, { lingua: 'en', regole: blocco }))
+  expect(en).toContain('<html lang="en">')
+  for (const parola of ['Waiting for you', 'Next', 'Done', 'Legend:', 'routing.json not read', 'Generated on Nov 5, 2026']) expect(en).toContain(parola)
+  for (const parola of ['Aspettano te', 'Prossimi', 'Legenda', 'Generata il', 'non letto']) expect(en).not.toContain(parola)
+  const it = board(dati(lista, { lingua: 'it', regole: blocco }))
+  expect(it).toContain('<html lang="it">')
+  for (const parola of ['Aspettano te', 'Prossimi', 'Legenda:', 'Generata il 5 nov 2026']) expect(it).toContain(parola)
+  expect(board(dati(lista, { lingua: 'pt' }))).toContain('<html lang="pt-BR">')
+  const ingressi: IngressiBoard = { azioni: lista, vive: {}, regole: R, piani: {}, registro: null, commit: [], traguardi: null, riassunti: {}, oggi: '2026-11-05', modo: 'accesa', versione: '2.4.0', lingua: 'it' }
+  expect(improntaBoard({ ...ingressi, lingua: 'de' })).not.toBe(improntaBoard(ingressi))
 })

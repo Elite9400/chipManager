@@ -15,7 +15,8 @@ import {
   mandato,
 } from './logica'
 import type { Strumenti } from './logica'
-import { testo } from './lingua'
+import { giorno, letto, ora, traduttore } from './lingua'
+import type { Lingua, T } from './lingua'
 
 export type Commit = { sha: string; data: string; oggetto: string }
 export type Piano = { testo: string; troncato?: boolean } | { errore: string }
@@ -38,6 +39,8 @@ export type DatiBoard = {
   riassunti: Record<string, string>
   percorso: string
   impronta?: string
+  /** La lingua dell'utente: testi, date e attributo `lang` della pagina. */
+  lingua: Lingua
 }
 
 /** L'unica funzione di escape: ogni testo che viene da chip, piani, git, riassunti e regole passa da qui. */
@@ -72,6 +75,9 @@ export function testoRiassunto(a: Azione, lista: readonly Azione[]) {
   return `${a.titolo}\n${a.brief}${dip.length ? `\nDipende da: ${dip.join('; ')}` : ''}`.slice(0, 2000)
 }
 
+/** La chiave di un riassunto: il testo della chip e la lingua (cambiare lingua chiede un riassunto nuovo). */
+export const chiaveRiassunto = (a: Azione, lista: readonly Azione[], lingua: Lingua) => hash(`${lingua}\n${testoRiassunto(a, lista)}`)
+
 export type IngressiBoard = {
   azioni: readonly Azione[]
   vive: Record<string, Vita>
@@ -87,6 +93,8 @@ export type IngressiBoard = {
   versione: string
   /** La sessione che genera: i blocchi di avvio mostrati dipendono da lei. */
   chi?: Chiamante | null
+  /** Cambiare lingua rigenera la board: entra nell'impronta come ogni altro ingresso. */
+  lingua: Lingua
 }
 
 /** Impronta degli ingressi: cambia solo se cambia ciò che la board mostra (mai per `aggiornata` o per l'ora). */
@@ -100,61 +108,58 @@ export function improntaBoard(i: IngressiBoard) {
 }
 
 const GIORNO = 86_400_000
-const data = (iso: string | undefined) => {
-  if (!iso || !Number.isFinite(Date.parse(iso))) return 'ignoto'
-  const d = new Date(iso)
-  const due = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${due(d.getMonth() + 1)}-${due(d.getDate())} ${due(d.getHours())}:${due(d.getMinutes())}`
-}
-const motore = (m: string) => ({ claude: 'Claude', codex: 'Codex', freellmapi: 'FreeLLMAPI', nessuno: 'Nessuno' })[m] ?? m
+/** Giorno con l'anno e ora, nella lingua della board. */
+const data = (T: T, iso: string | undefined) =>
+  !iso || !Number.isFinite(Date.parse(iso)) ? T('board.ignoto') : `${giorno(T.lingua, iso)}, ${ora(T.lingua, iso)}`
+const motore = (T: T, m: string) => (m === 'nessuno' ? T('motore.nessuno') : ({ claude: 'Claude', codex: 'Codex', freellmapi: 'FreeLLMAPI' } as Record<string, string>)[m] ?? m)
 const voce = (k: string, v: string) => `<dt>${esc(k)}</dt><dd>${v}</dd>`
 
 const SEGNI = {
-  attesa: ['▲', 'aspetta te'],
-  corso: ['▶', 'in corso'],
-  prossimo: ['○', 'prossimo'],
-  fatto: ['✓', 'fatto'],
-  fallita: ['✕', 'fallita'],
+  attesa: ['▲', 'board.segno.attesa'],
+  corso: ['▶', 'board.segno.corso'],
+  prossimo: ['○', 'board.segno.prossimo'],
+  fatto: ['✓', 'board.segno.fatto'],
+  fallita: ['✕', 'board.segno.fallita'],
 } as const
 
-function scheda(a: Azione, d: DatiBoard, lista: readonly Azione[], segno: keyof typeof SEGNI) {
+function scheda(T: T, a: Azione, d: DatiBoard, lista: readonly Azione[], segno: keyof typeof SEGNI) {
   const r = d.regole
   const vita = d.vive[a.id]
   const [s, parola] = a.stato === 'fallita' ? SEGNI.fallita : SEGNI[segno]
   const rev = revisoreConcreto(a, r)
-  const revisore = a.revisore === 'nessuno' ? 'senza revisione' : `${motore(a.revisore)}${rev && rev !== 'motore:codex' ? ` (${nomeModello(rev)})` : ''}`
+  const revisore = a.revisore === 'nessuno' ? T('info.senzaRevisione') : `${motore(T, a.revisore)}${rev && rev !== 'motore:codex' ? ` (${nomeModello(rev)})` : ''}`
   const piano = a.piano ? d.piani[a.id] : undefined
   const pianoHtml = !a.piano
-    ? '<p class="tenue">Nessun piano collegato.</p>'
+    ? `<p class="tenue">${esc(T('board.nessunPiano'))}</p>`
     : !piano
-      ? `<p class="tenue">${esc(a.piano)}: non letto.</p>`
+      ? `<p class="tenue">${esc(T('board.pianoNonLetto', { piano: a.piano }))}</p>`
       : 'errore' in piano
-        ? `<p class="tenue">${esc(a.piano)}: ${esc(piano.errore)}</p>`
-        : `<p class="tenue">${esc(a.piano)}${piano.troncato ? ' · troncato a 200 KB' : ''}</p><pre>${esc(piano.testo)}</pre>`
+        ? `<p class="tenue">${esc(a.piano)}: ${esc(T.k(piano.errore))}</p>`
+        : `<p class="tenue">${esc(a.piano)}${piano.troncato ? ` · ${esc(T('board.troncato'))}` : ''}</p><pre>${esc(piano.testo)}</pre>`
   const fase = vita?.fase
   const passi = FASI.map(f => (f === fase ? `<strong>● ${esc(f)}</strong>` : esc(f))).join(' › ')
   // La revisione vale solo per il tentativo corrente.
   const esito = a.revisione && a.revisione.tentativo === a.tentativo ? a.revisione : undefined
   const dip = a.dipende.map(id => lista.find(x => x.id === id)?.titolo ?? id)
   const sblocca = attive(lista).filter(x => x.dipende.includes(a.id)).map(x => x.titolo)
-  const riassunto = d.riassunti[hash(testoRiassunto(a, lista))]
+  const riassunto = d.riassunti[chiaveRiassunto(a, lista, d.lingua)]
   const blocchi = ['proposta', 'accodata'].includes(a.stato) ? violazioniAvvio(a, r, d.azioni, d.chi) : []
   const m = mandato(a, r, d.strumenti)
-  return `<details id="t-${esc(a.id)}"><summary><span class="segno">${s}</span> ${esc(a.titolo)} <span class="tenue">· ${esc(parola)} · ${esc(motore(a.esecutore))} ${esc(nomeModello(modelloDi(a, r)))}</span></summary>
+  return `<details id="t-${esc(a.id)}"><summary><span class="segno">${s}</span> ${esc(a.titolo)} <span class="tenue">· ${esc(T(parola))} · ${esc(motore(T, a.esecutore))} ${esc(nomeModello(modelloDi(a, r)))}</span></summary>
 <div class="corpo">
-${riassunto ? `<h4>Riassunto</h4><p>${esc(riassunto)}</p>` : ''}
-${a.stato === 'fallita' && a.errore ? `<h4>Errore</h4><p class="errore">✕ ${esc(a.errore)}</p>` : ''}
-${blocchi.length ? `<h4>Blocchi</h4><ul>${blocchi.map(b => `<li>▲ ${esc(testo('it', b))}</li>`).join('')}</ul>` : ''}
-${a.motivoCoda ? `<p>In coda: ${esc(a.motivoCoda)}</p>` : ''}
-<h4>Piano</h4>${pianoHtml}
-<h4>Processo</h4><dl>${voce('Corsia', esc(corsiaDi(a, r) ?? 'nessuna'))}${voce('Passi', `esecuzione (${esc(motore(a.esecutore))}) → revisione (${esc(revisore)}) → fusione`)}${voce('Fase del registro', fase ? passi : 'nessuna')}</dl>
-<h4>Chi</h4><dl>${voce('Esecutore', esc(motore(a.esecutore)))}${voce('Modello', esc(nomeModello(modelloDi(a, r))))}${voce('Effort', `${esc(effortDi(a, r))} ${barreEffort(effortDi(a, r))}`)}${voce('Permessi', esc(a.permessi ?? 'come chi avvia'))}${voce('Contesto', esc(a.contesto ?? 'fresh'))}${voce('Worktree', a.worktree === false ? 'cartella condivisa' : `proprio${a.ramo ? ` · ramo ${esc(a.ramo)}` : ''}${a.ramoSessione ? ` · ${esc(a.ramoSessione)}` : ''}`)}${voce('Destinazione', esc(a.destinazione ?? 'local'))}</dl>
-<h4>Revisione</h4><dl>${voce('Revisore previsto', esc(revisore))}${esito ? `${voce('Esito', esc(esito.esito))}${voce('Riferita da', esc(esito.riferitaDa))}${voce('Quando', esc(data(esito.quando)))}${esito.nota ? voce('Nota', esc(esito.nota)) : ''}` : voce('Esito', 'non riferito')}</dl>
-<h4>Tempi</h4><dl>${voce('Creata', esc(data(a.creata)))}${voce('Avviata', esc(data(a.avviataIl)))}${voce('Consegnata', esc(data(a.consegnataIl)))}${voce('Completata', esc(data(a.completataIl)))}</dl>
-<h4>Legami</h4><dl>${voce('Issue', a.issue ? `#${a.issue}` : 'nessuna')}${voce('Dipende da', dip.length ? esc(dip.join('; ')) : 'nulla')}${voce('Sblocca', sblocca.length ? esc(sblocca.join('; ')) : 'nulla')}${voce('Sessione', esc(a.sessione ?? 'nessuna'))}</dl>
-<h4>Mandato (ricostruito con le regole attuali)</h4><pre>${esc(m.prompt)}</pre>
-<h4>Brief originale</h4><pre>${esc(a.brief)}</pre>
-${a.background ? `<h4>Background originale</h4><pre>${esc(a.background)}</pre>` : ''}
+${riassunto ? `<h4>${esc(T('board.riassunto'))}</h4><p>${esc(riassunto)}</p>` : ''}
+${a.stato === 'fallita' && a.errore ? `<h4>${esc(T('board.errore'))}</h4><p class="errore">✕ ${esc(T.m(letto(a.erroreCodice, a.erroreParametri, a.errore)))}</p>` : ''}
+${blocchi.length ? `<h4>${esc(T('board.blocchi'))}</h4><ul>${blocchi.map(b => `<li>▲ ${esc(T.m(b))}</li>`).join('')}</ul>` : ''}
+${a.motivoCoda ? `<p>${esc(T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) }))}</p>` : ''}
+<h4>${esc(T('ed.piano'))}</h4>${pianoHtml}
+<h4>${esc(T('board.processo'))}</h4><dl>${voce(T('ed.corsia'), esc(corsiaDi(a, r) ?? T('board.nessuna')))}${voce(T('board.passi'), esc(T('board.passiValore', { esecutore: motore(T, a.esecutore), revisore })))}${voce(T('board.fase'), fase ? passi : esc(T('board.nessuna')))}</dl>
+<h4>${esc(T('tab.chi'))}</h4><dl>${voce(T('ed.esecutore'), esc(motore(T, a.esecutore)))}${voce(T('ed.modello'), esc(nomeModello(modelloDi(a, r))))}${voce(T('ed.effort'), `${esc(effortDi(a, r))} ${barreEffort(effortDi(a, r))}`)}${voce(T('ed.permessi'), esc(a.permessi ?? T('board.comeChiAvvia')))}${voce(T('ed.contesto'), esc(a.contesto ?? 'fresh'))}${voce('Worktree', a.worktree === false ? esc(T('op.condivisa')) : `${esc(T('board.proprio'))}${a.ramo ? ` · ${esc(T('board.ramo', { ramo: a.ramo }))}` : ''}${a.ramoSessione ? ` · ${esc(a.ramoSessione)}` : ''}`)}${voce(T('board.destinazione'), esc(a.destinazione ?? 'local'))}</dl>
+<h4>${esc(T('board.revisione'))}</h4><dl>${voce(T('board.revisorePrevisto'), esc(revisore))}${esito ? `${voce(T('board.esito'), esc(esito.esito))}${voce(T('board.riferitaDa'), esc(esito.riferitaDa))}${voce(T('board.quando'), esc(data(T, esito.quando)))}${esito.nota ? voce(T('board.nota'), esc(esito.nota)) : ''}` : voce(T('board.esito'), esc(T('board.nonRiferito')))}</dl>
+<h4>${esc(T('board.tempi'))}</h4><dl>${voce(T('board.creata'), esc(data(T, a.creata)))}${voce(T('stato.avviata'), esc(data(T, a.avviataIl)))}${voce(T('board.consegnata'), esc(data(T, a.consegnataIl)))}${voce(T('board.completata'), esc(data(T, a.completataIl)))}</dl>
+<h4>${esc(T('board.legami'))}</h4><dl>${voce('Issue', a.issue ? `#${a.issue}` : esc(T('board.nessuna')))}${voce(T('board.dipendeDa'), dip.length ? esc(dip.join('; ')) : esc(T('board.nulla')))}${voce(T('board.sblocca'), sblocca.length ? esc(sblocca.join('; ')) : esc(T('board.nulla')))}${voce(T('board.sessione'), esc(a.sessione ?? T('board.nessuna')))}</dl>
+<h4>${esc(T('board.mandato'))}</h4><pre>${esc(m.prompt)}</pre>
+<h4>${esc(T('board.brief'))}</h4><pre>${esc(a.brief)}</pre>
+${a.background ? `<h4>${esc(T('board.background'))}</h4><pre>${esc(a.background)}</pre>` : ''}
 </div></details>`
 }
 
@@ -171,6 +176,7 @@ footer{margin-top:40px;color:var(--tenue);font-size:13px;word-break:break-all}`
 
 /** La board intera: HTML statico, nessuno script, nessun link costruito da dati, gettoni oscurati. */
 export function board(d: DatiBoard): string {
+  const T = traduttore(d.lingua)
   const tutte = [...d.azioni]
   const lista = attive(tutte)
   const adesso = Date.parse(d.generata)
@@ -182,33 +188,33 @@ export function board(d: DatiBoard): string {
   const recenti = chiuse.filter(a => adesso - Date.parse(a.completataIl ?? a.aggiornata) <= 30 * GIORNO)
   const vecchie = chiuse.length - recenti.length
   const gruppo = (titolo: string, k: keyof typeof SEGNI, voci: Azione[], vuoto: string) =>
-    `<section><h2><span class="segno">${SEGNI[k][0]}</span> ${titolo} (${voci.length})</h2>${voci.length ? voci.map(a => scheda(a, d, tutte, k)).join('\n') : `<p class="tenue">${vuoto}</p>`}</section>`
+    `<section><h2><span class="segno">${SEGNI[k][0]}</span> ${esc(titolo)} (${voci.length})</h2>${voci.length ? voci.map(a => scheda(T, a, d, tutte, k)).join('\n') : `<p class="tenue">${esc(vuoto)}</p>`}</section>`
   const traguardi =
     d.regole.risorse.milestoneGithub && d.traguardi?.lista.length
       ? `<section><h2>Milestone</h2><ul>${d.traguardi.lista
-          .map(t => `<li>${esc(t.titolo)} <span class="barra" role="img" aria-label="${percentuale(t)}%"><span style="width:${percentuale(t)}%"></span></span> ${percentuale(t)}% · ${t.chiuse} chiuse su ${t.chiuse + t.aperte}</li>`)
+          .map(t => `<li>${esc(t.titolo)} <span class="barra" role="img" aria-label="${percentuale(t)}%"><span style="width:${percentuale(t)}%"></span></span> ${percentuale(t)}% · ${esc(T('board.chiuseSu', { n: t.chiuse, totale: t.chiuse + t.aperte }))}</li>`)
           .join('')}</ul></section>`
       : ''
   const commit = d.commit.length
-    ? `<h3>Ramo base</h3><ul>${d.commit.map(c => `<li><code>${esc(c.sha)}</code> ${esc(data(c.data))} · ${esc(c.oggetto)}</li>`).join('')}</ul>`
+    ? `<h3>${esc(T('board.ramoBase'))}</h3><ul>${d.commit.map(c => `<li><code>${esc(c.sha)}</code> ${esc(data(T, c.data))} · ${esc(c.oggetto)}</li>`).join('')}</ul>`
     : ''
   const html = `<!doctype html>
-<html lang="it"><head><meta charset="utf-8">
+<html lang="${d.lingua === 'pt' ? 'pt-BR' : d.lingua}"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 ${d.impronta ? `<meta name="chipmanager-impronta" content="${esc(d.impronta)}">` : ''}
 <title>Board · ${esc(d.progetto)}</title><style>${CSS}</style></head><body>
 <header><h1>${esc(d.progetto)}</h1>
-<p class="tenue">Generata il ${esc(data(d.generata))} · chipManager ${esc(d.versione)} · regole da ${esc(d.regole.fonte || 'non lette')}</p>
-<p>${inCorso.filter(a => a.stato === 'avviata').length} al lavoro · ${attesa.length} ${attesa.length === 1 ? 'aspetta' : 'aspettano'} te · ${lista.filter(a => a.stato === 'proposta').length} da avviare</p></header>
+<p class="tenue">${esc(T('board.generata', { quando: data(T, d.generata), versione: d.versione, fonte: d.regole.lette ? d.regole.fonte : T('regole.nonLetteAncora') }))}</p>
+<p>${esc([T('sintesi.alLavoro', { n: inCorso.filter(a => a.stato === 'avviata').length }), T('sintesi.aspettano', { n: attesa.length }), T('sintesi.daAvviare', { n: lista.filter(a => a.stato === 'proposta').length })].join(' · '))}</p></header>
 <main>
-${gruppo('Aspettano te', 'attesa', attesa, 'Niente aspetta te.')}
-${gruppo('In corso', 'corso', inCorso, 'Nessun lavoro in corso.')}
-${gruppo('Prossimi', 'prossimo', prossimi, 'Niente in programma.')}
-<section><h2><span class="segno">✓</span> Fatto (${recenti.length})</h2>${recenti.map(a => scheda(a, d, tutte, 'fatto')).join('\n')}${vecchie ? `<p class="tenue">${vecchie} completate da più di 30 giorni.</p>` : ''}${commit}${!recenti.length && !commit ? '<p class="tenue">Ancora niente.</p>' : ''}</section>
+${gruppo(T('sez.aspettano'), 'attesa', attesa, T('board.vuotoAttesa'))}
+${gruppo(T('board.inCorso'), 'corso', inCorso, T('board.vuotoCorso'))}
+${gruppo(T('board.prossimi'), 'prossimo', prossimi, T('board.vuotoProssimi'))}
+<section><h2><span class="segno">✓</span> ${esc(T('board.fatto'))} (${recenti.length})</h2>${recenti.map(a => scheda(T, a, d, tutte, 'fatto')).join('\n')}${vecchie ? `<p class="tenue">${esc(T('board.vecchie', { n: vecchie }))}</p>` : ''}${commit}${!recenti.length && !commit ? `<p class="tenue">${esc(T('board.ancoraNiente'))}</p>` : ''}</section>
 ${traguardi}
 </main>
-<footer><p>Legenda: ${Object.values(SEGNI).map(([s, p]) => `${s} ${p}`).join(' · ')}. La revisione è l'esito riferito dalla sessione indicata.</p><p>File: ${esc(d.percorso)}</p></footer>
+<footer><p>${esc(T('board.legenda', { segni: Object.values(SEGNI).map(([s, p]) => `${s} ${T(p)}`).join(' · ') }))}</p><p>${esc(T('boa.file', { percorso: d.percorso }))}</p></footer>
 </body></html>
 `
   return oscura(html, tutte.map(a => a.tentativo))

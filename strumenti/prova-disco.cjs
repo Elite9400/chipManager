@@ -777,7 +777,7 @@ test('2.4 board: junction nel percorso o cartella dentro un working tree: board 
   const gd = await imposta(dentro, 'accesa')
   const rd = bc(dentro, 'board-scrivi', gd, ['h'], HTML)
   assert.strictEqual(rd.status, 6)
-  assert.match(rd.stdout, /working tree/)
+  assert.strictEqual(rd.stdout.trim(), 'helper.dentroWorkingTree')
   assert.strictEqual(fs.existsSync(path.join(dentro.cartella, 'board')), false)
 })
 

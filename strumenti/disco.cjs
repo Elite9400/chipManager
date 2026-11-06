@@ -99,7 +99,7 @@ async function prenota(dir, richiesta) {
     }
     return {}
   })
-  if (r.occupato) return [3, 'mutex occupato']
+  if (r.occupato) return [3, 'helper.mutex']
   if (r.valore.conflitto) return [4, r.valore.conflitto]
   return [0, '']
 }
@@ -363,7 +363,7 @@ function senzaLink(...percorsi) {
       if (e.code === 'ENOENT') continue
       throw e
     }
-    if (st.isSymbolicLink() || !st.isDirectory()) throw new Rifiuto(6, `percorso non sicuro: ${p} è un collegamento o non è una cartella`)
+    if (st.isSymbolicLink() || !st.isDirectory()) throw new Rifiuto(6, `helper.collegamento: ${p}`)
   }
 }
 
@@ -384,10 +384,10 @@ function dentroWorkingTree(dir) {
   for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CEILING_DIRECTORIES']) delete env[k]
   const g = spawnSync('git', ['-C', dir, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8', windowsHide: true, timeout: 10_000, env })
   if (g.error?.code === 'ENOENT') return gitRisalendo(dir)
-  if (g.error) throw new Rifiuto(6, `git non ha risposto (${g.error.code ?? g.error.message}): non posso escludere un working tree`)
+  if (g.error) throw new Rifiuto(6, `helper.gitNonRisponde: ${g.error.code ?? g.error.message}`)
   if (g.status === 0) return true
   if (/not a git repository/i.test(g.stderr)) return gitRisalendo(dir)
-  throw new Rifiuto(6, `git non riesce a dire se la cartella è in un working tree: ${(g.stderr.trim().split('\n')[0] || `uscita ${g.status}`).slice(0, 160)}`)
+  throw new Rifiuto(6, `helper.gitWorkingTree: ${(g.stderr.trim().split('\n')[0] || `exit ${g.status}`).slice(0, 160)}`)
 }
 
 /**
@@ -395,7 +395,7 @@ function dentroWorkingTree(dir) {
  * l'identità; senza, restituisce null se non c'è. Rifiuta link, junction, identità diverse e working tree.
  */
 function destBoard(cartella, repo, crea) {
-  if (!path.isAbsolute(cartella)) throw new Rifiuto(2, 'cartella non assoluta')
+  if (!path.isAbsolute(cartella)) throw new Rifiuto(2, 'helper.cartellaNonAssoluta')
   const base = path.resolve(cartella)
   const contenitore = path.join(base, 'board')
   const dest = path.join(contenitore, nomeBoard(repo))
@@ -405,7 +405,7 @@ function destBoard(cartella, repo, crea) {
     fs.mkdirSync(base, { recursive: true })
     // Il controllo «fuori da ogni working tree» va fatto prima di scrivere, sul percorso reale.
     if (dentroWorkingTree(fs.realpathSync.native(base)))
-      throw new Rifiuto(6, 'la cartella dei dati è dentro un working tree git: cambia «cartella» nella configurazione del progetto')
+      throw new Rifiuto(6, 'helper.dentroWorkingTree')
     if (!fs.existsSync(contenitore)) fs.mkdirSync(contenitore)
     senzaLink(contenitore)
     fs.mkdirSync(dest)
@@ -413,8 +413,8 @@ function destBoard(cartella, repo, crea) {
   senzaLink(base, contenitore, dest)
   const reale = fs.realpathSync.native(dest)
   if (!stessoPercorso(reale, path.join(fs.realpathSync.native(base), 'board', nomeBoard(repo))))
-    throw new Rifiuto(6, 'percorso non sicuro: la destinazione non è dove deve essere')
-  if (dentroWorkingTree(reale)) throw new Rifiuto(6, 'la cartella dei dati è dentro un working tree git: cambia «cartella» nella configurazione del progetto')
+    throw new Rifiuto(6, 'helper.destinazione')
+  if (dentroWorkingTree(reale)) throw new Rifiuto(6, 'helper.dentroWorkingTree')
   const marcatore = path.join(reale, MARCATORE)
   let st
   try {
@@ -423,22 +423,22 @@ function destBoard(cartella, repo, crea) {
     if (e.code !== 'ENOENT') throw e
   }
   if (!st) {
-    if (!crea || fs.readdirSync(reale).length) throw new Rifiuto(4, 'cartella della board senza marcatore: non la tocco')
+    if (!crea || fs.readdirSync(reale).length) throw new Rifiuto(4, 'helper.senzaMarcatore')
     fs.writeFileSync(marcatore, repo, { mode: 0o600 })
-  } else if (!st.isFile() || fs.readFileSync(marcatore, 'utf8') !== repo) throw new Rifiuto(4, 'il marcatore è di un altro progetto')
+  } else if (!st.isFile() || fs.readFileSync(marcatore, 'utf8') !== repo) throw new Rifiuto(4, 'helper.marcatoreAltrui')
   return reale
 }
 
 /** Esegue `fn(dest)` sotto il mutex del config, solo se la board di `repo` vale ancora `modi` alla `generazione` attesa. */
 async function conBoard(file, cartella, repo, generazione, modi, crea, fn) {
   const gen = Number(generazione)
-  if (typeof repo !== 'string' || !repo || repo.length > 400 || !Number.isInteger(gen) || gen < 0) return [2, 'argomenti non validi']
+  if (typeof repo !== 'string' || !repo || repo.length > 400 || !Number.isInteger(gen) || gen < 0) return [2, 'helper.argomenti']
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const r = await conMutex(mutexConfig(file), 8000, () => {
     try {
       const c = JSON.parse(fs.readFileSync(file, 'utf8'))
       const b = c?.progetti?.[repo]?.board
-      if (!b || !modi.includes(b.modo) || b.generazione !== gen) return [4, 'board cambiata: lavoro scartato']
+      if (!b || !modi.includes(b.modo) || b.generazione !== gen) return [4, 'helper.boardCambiata']
       return fn(destBoard(cartella, repo, crea), c.progetti[repo])
     } catch (e) {
       if (e instanceof Rifiuto) return [e.codice, e.message]
@@ -492,14 +492,14 @@ const boardPrenota = (file, cartella, repo, gen, impronta) =>
     const fornitori = progetto.fornitori ?? ['claude', 'codex']
     const valida = (progetto.soloLocale === undefined || typeof progetto.soloLocale === 'boolean') &&
       Array.isArray(fornitori) && fornitori.every(f => ['claude', 'codex', 'deepseek', 'freellmapi'].includes(f))
-    if (!valida || progetto.soloLocale === true || !fornitori.includes('claude')) return [4, 'politica del progetto: niente riassunti con Claude']
+    if (!valida || progetto.soloLocale === true || !fornitori.includes('claude')) return [4, 'helper.riassuntiPolitica']
     const fr = path.join(dest, 'riassunti.json')
     const fb = path.join(dest, 'budget.json')
     const r = leggiJson(fr, { voci: {} })
     const b = leggiJson(fb, { giorno: oggi(), usati: 0 })
-    if (r.voci?.[impronta]) return [4, 'già prenotata']
+    if (r.voci?.[impronta]) return [4, 'helper.giaPrenotata']
     const usati = b.giorno === oggi() && Number.isInteger(b.usati) ? b.usati : 0
-    if (usati >= TETTO_GIORNO) return [5, 'tetto giornaliero dei riassunti raggiunto']
+    if (usati >= TETTO_GIORNO) return [5, 'helper.tetto']
     scriviAtomico(fb, JSON.stringify({ giorno: oggi(), usati: usati + 1 }))
     scriviAtomico(fr, JSON.stringify({ voci: { ...r.voci, [impronta]: { stato: 'prenotata', quando: new Date().toISOString() } } }))
     return [0, '']
@@ -507,10 +507,10 @@ const boardPrenota = (file, cartella, repo, gen, impronta) =>
 
 const boardFinalizza = (file, cartella, repo, gen, impronta, esito) =>
   conBoard(file, cartella, repo, gen, ['riassunti'], false, dest => {
-    if (!dest) return [4, 'board assente']
+    if (!dest) return [4, 'helper.boardAssente']
     const fr = path.join(dest, 'riassunti.json')
     const r = leggiJson(fr, { voci: {} })
-    if (r.voci?.[impronta]?.stato !== 'prenotata') return [4, 'nessuna prenotazione aperta']
+    if (r.voci?.[impronta]?.stato !== 'prenotata') return [4, 'helper.nessunaPrenotazione']
     const testo = typeof esito?.testo === 'string' && esito.testo.trim() ? esito.testo.trim().slice(0, 1000) : undefined
     const voce = testo ? { stato: 'fatto', testo, quando: new Date().toISOString() } : { stato: 'fallita', quando: new Date().toISOString() }
     scriviAtomico(fr, JSON.stringify({ voci: { ...r.voci, [impronta]: voce } }))
@@ -522,14 +522,14 @@ const PIANO_MAX = 200 * 1024
 /** Il piano di una chip: percorso relativo, sotto la radice REALE (link e junction risolti), file regolare, 200 KB. */
 function leggiPiano(radice, relativo) {
   if (typeof relativo !== 'string' || !relativo || relativo.length > 300 || /[\x00-\x1f:*?"<>|]/.test(relativo) ||
-      /^[\\/]/.test(relativo) || /(^|[\\/])\.\.([\\/]|$)/.test(relativo) || !/\.(md|txt)$/i.test(relativo)) return [4, 'percorso del piano non ammesso']
+      /^[\\/]/.test(relativo) || /(^|[\\/])\.\.([\\/]|$)/.test(relativo) || !/\.(md|txt)$/i.test(relativo)) return [4, 'helper.pianoNonAmmesso']
   try {
     const root = fs.realpathSync.native(radice)
     const reale = fs.realpathSync.native(path.resolve(root, relativo))
     const rel = path.relative(root, reale)
-    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return [4, 'il piano è fuori dal repository']
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return [4, 'helper.pianoFuori']
     const st = fs.statSync(reale)
-    if (!st.isFile()) return [4, 'il piano non è un file']
+    if (!st.isFile()) return [4, 'helper.pianoNonFile']
     const fd = fs.openSync(reale, 'r')
     try {
       const buf = Buffer.alloc(Math.min(st.size, PIANO_MAX))
@@ -551,9 +551,9 @@ function gitLog(radice) {
   const remoto = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
   const daRemoto = remoto.status === 0 ? remoto.stdout.trim().replace(/^origin\//, '') : ''
   const nome = [daRemoto, 'main', 'master'].find(n => /^[A-Za-z0-9._/-]{1,100}$/.test(n) && git(['rev-parse', '--verify', '--quiet', `refs/heads/${n}`]).status === 0)
-  if (!nome) return [4, 'ramo base locale non trovato']
+  if (!nome) return [4, 'helper.ramoBase']
   const r = git(['log', '--first-parent', '-15', '--format=%h%x09%cI%x09%s', `refs/heads/${nome}`, '--'])
-  if (r.status !== 0) return [4, 'git log non riuscito']
+  if (r.status !== 0) return [4, 'helper.gitLog']
   const voci = r.stdout.split('\n').filter(Boolean).map(riga => {
     const [sha, data, ...oggetto] = riga.split('\t')
     return { sha, data, oggetto: oggetto.join('\t').replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 200) }

@@ -48,6 +48,8 @@ const fr: Parziale = {
   // Settings: advanced
 
 
+  // Project board (HTML page)
+  // Helper answers on board, plans and git
   // ‹fine›
 }
 

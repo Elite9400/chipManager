@@ -60,7 +60,7 @@ import type { Azione, Chiamante, Limite } from '../types'
 import { DiscoIt } from './disco-it'
 import { chiaveOTesto } from '../hooks/lingua'
 import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
-import { hash, testoRiassunto } from '../hooks/board'
+import { chiaveRiassunto } from '../hooks/board'
 import { GRIGIO, LIVELLO, STATO } from '../hooks/tema'
 
 // Un routing.json d'esempio, nella forma che il pannello legge.
@@ -1894,7 +1894,7 @@ test('2.4: riassunti: uno per testo, mai per un cambio di stato; senza risposta 
   await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Altro', brief: 'Altro lavoro.' } as never)
   const nuova = amb.azione().find(x => x.titolo === 'Altro')!
   const lista = amb.azione().filter(x => !['completata', 'scartata'].includes(x.stato))
-  amb.disco.set('X:/orch/board/demo/riassunti.json', JSON.stringify({ voci: { ...voci(amb), [hash(testoRiassunto(nuova, lista))]: { stato: 'prenotata' } } }))
+  amb.disco.set('X:/orch/board/demo/riassunti.json', JSON.stringify({ voci: { ...voci(amb), [chiaveRiassunto(nuova, lista, 'it')]: { stato: 'prenotata' } } }))
   await clock.advance(60_000)
   expect(amb.modello.length).toBe(2)
   await ui.unmount()
@@ -1964,7 +1964,7 @@ test('2.4: la board riceve tutte le chip: completate vecchie contate, dipendenze
   await clock.advance(60_000)
   await clock.advance(60_000)
   const html = amb.disco.get(INDICE)!
-  expect(html).toContain('1 completate da più di 30 giorni')
+  expect(html).toContain('1 completata da più di 30 giorni')
   expect(html).not.toContain('non esiste')
   expect(html).toContain('Base vecchia')
   // Il riassunto della chip che dipende dalla vecchia si vede: stesso testo (con i titoli delle dipendenze) per generare e mostrare.
