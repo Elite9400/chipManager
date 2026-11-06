@@ -1178,12 +1178,14 @@ export function contaConsumo(secchi: Secchi, adesso: number, delta: Partial<Omit
 }
 
 export type ClasseProcesso = 'raccolta' | 'orchestrazione' | 'altri'
-// Rilievo 8: la raccolta è un elenco chiuso (letture dei fornitori e cache Codex, git, piano, scrittura e generazione
-// della board); spegnere la board è orchestrazione; un comando nuovo non elencato resta «non classificato».
-const RACCOLTA = /^(limiti|sessioni|git-log|git|leggi-piano|board-scrivi|board-prenota|board-finalizza)$/
-const ORCHESTRAZIONE = /^(occupata|prenota|stato-cli|cas|configura(-utente)?|pesi-[a-z]+|board-spegni|gh|explorer|apri|codex|corsia-codex|lancia-cli|esegui-cli)$/
+// Le due classi sono elenchi chiusi (piano F5.3, giro 3). Raccolta: letture dei fornitori e cache Codex, git, piano,
+// board in scrittura e generazione. Orchestrazione: mutex e prenotazioni, configura*, pesi-*, gh, Explorer (o l'apri-
+// programma), codex, avvii di sessione. Ogni altro comando, anche nuovo o somigliante, è «non classificato».
+const RACCOLTA = new Set(['limiti', 'sessioni', 'git-log', 'git', 'leggi-piano', 'board-scrivi', 'board-prenota', 'board-finalizza'])
+const ORCHESTRAZIONE = new Set(['occupata', 'prenota', 'stato-cli', 'cas', 'configura', 'configura-utente', 'pesi-proponi', 'pesi-decidi',
+  'pesi-annulla', 'gh', 'explorer', 'apri', 'codex', 'lancia-cli', 'esegui-cli'])
 /** La classe di un comando (F5.3): raccolta, orchestrazione o non classificato. Vale anche per il registratore esterno. */
-export const classeProcesso = (comando: string): ClasseProcesso => (RACCOLTA.test(comando) ? 'raccolta' : ORCHESTRAZIONE.test(comando) ? 'orchestrazione' : 'altri')
+export const classeProcesso = (comando: string): ClasseProcesso => (RACCOLTA.has(comando) ? 'raccolta' : ORCHESTRAZIONE.has(comando) ? 'orchestrazione' : 'altri')
 /** I processi per comando sommati per classe; ogni classe c'è sempre, anche a zero. */
 export function classiDi(comandi: Record<string, number> = {}): Record<ClasseProcesso, number> {
   const tot: Record<ClasseProcesso, number> = { raccolta: 0, orchestrazione: 0, altri: 0 }

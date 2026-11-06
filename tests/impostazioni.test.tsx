@@ -184,7 +184,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   /** Risposta al popup: una stringa, oppure `null` = popup chiuso (`$.ui.ask` rifiuta). */
   const popup = { risposta: (_: string): string | null => null }
   /** Concorrenza: `primaDiConfigura` gira una volta appena prima del CAS dell'helper; `rifiutaUtente` fa fallire un configura-utente. */
-  const hook: { primaDiConfigura?: () => void; rifiutaUtente?: boolean } = {}
+  const hook: { primaDiConfigura?: () => void; primaDiUtente?: () => void; rifiutaUtente?: boolean } = {}
   const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
   disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING))
   disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': progetto } }))
@@ -232,6 +232,9 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
         hook.rifiutaUtente = false
         return fine(4)
       }
+      const altra = hook.primaDiUtente
+      hook.primaDiUtente = undefined
+      altra?.()
       const input = JSON.parse(e.init!.stdin!)
       const prima = disco.get(p(file)) ?? null
       if (prima !== input.atteso) return fine(4)
@@ -623,6 +626,26 @@ test('rilievo 1: una modifica fatta mentre Applica scrive resta nella bozza; si 
   expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
   await ui.press({ key: 'applica' })
   expect(amb.progettoOra()).toEqual({ soloLocale: true, milestoneGithub: true })
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('giro 2, rilievo 1: tornare alla lingua di partenza mentre Applica scrive l\'altra resta pendente e non si perde', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-lingua-premi' })
+  await ui.press({ key: 'lingua-de-premi' })
+  // Mentre l'helper scrive `de`, si riseleziona `it` (la lingua di partenza).
+  amb.hook.primaDiUtente = () => void ui.press({ key: 'lingua-it-premi' })
+  await ui.press({ key: 'applica' })
+  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('de')
+  expect(await ui.find({ type: 'Text', text: '1 ungespeicherte Änderung' })).toBeDefined()
+  expect((await ui.find({ key: 'lingua-it-premi' }))?.props.variant).toBe('primary')
+  await ui.press({ key: 'applica' })
+  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('it')
   expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
   await ui.unmount()
 })

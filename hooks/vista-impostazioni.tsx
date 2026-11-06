@@ -618,10 +618,11 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           onCambia: v =>
             void cambia(s => {
               const p = s.pendenti ?? { campi: {}, base: {}, dove: {} }
+              // La lingua di partenza resta nota anche se la scelta torna lì: serve se intanto Applica ne scrive un'altra.
               const lingua = v === T.lingua ? undefined : (v as Lingua)
               const { lingua: _, ...altri } = p.dove
               const dove = lingua ? { ...altri, lingua: ['lingua'] } : altri
-              return { ...s, pendenti: piena({ ...p, lingua, dove }), errore: undefined }
+              return { ...s, pendenti: { ...p, lingua, linguaBase: p.linguaBase ?? T.lingua, dove }, errore: undefined }
             }),
         }),
         errore('lingua'),

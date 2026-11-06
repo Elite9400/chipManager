@@ -298,9 +298,15 @@ export type StatoImpostazioni = {
 }
 /**
  * La bozza delle Impostazioni: campi del progetto come li scrive `configura`, il loro valore al primo tocco, i controlli
- * toccati con i campi di ciascuno (`lingua` per la lingua), la lingua.
+ * toccati con i campi di ciascuno (`lingua` per la lingua), la lingua scelta e quella di partenza (al primo tocco).
  */
-export type Pendenti = { campi: Record<string, unknown>; base: Record<string, unknown>; dove: Record<string, string[]>; lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt' }
+export type Pendenti = {
+  campi: Record<string, unknown>
+  base: Record<string, unknown>
+  dove: Record<string, string[]>
+  lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
+  linguaBase?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
+}
 
 declare module 'claude-code' {
   interface PluginState {

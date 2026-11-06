@@ -2310,11 +2310,12 @@ test('cadenza: dopo una sospensione un solo giro di recupero; dopo un errore si 
 })
 
 test('D6: processi per comando, con le classi di F5.3 (raccolta, orchestrazione, non classificati) nella stessa finestra', () => {
-  // Rilievo 8: la raccolta è un elenco chiuso; spegnere la board è orchestrazione, un board-* ignoto non è classificato.
+  // Le due classi sono elenchi chiusi (piano F5.3, giro 3); ogni altro comando è «non classificato», anche se somiglia.
   for (const c of ['limiti', 'sessioni', 'git-log', 'leggi-piano', 'board-scrivi', 'board-prenota', 'board-finalizza', 'git']) expect([c, classeProcesso(c)]).toEqual([c, 'raccolta'])
-  for (const c of ['occupata', 'prenota', 'stato-cli', 'cas', 'configura', 'configura-utente', 'pesi-decidi', 'pesi-proponi', 'pesi-annulla', 'board-spegni', 'gh', 'explorer', 'codex', 'corsia-codex', 'lancia-cli', 'esegui-cli'])
+  for (const c of ['occupata', 'prenota', 'stato-cli', 'cas', 'configura', 'configura-utente', 'pesi-decidi', 'pesi-proponi', 'pesi-annulla', 'gh', 'explorer', 'apri', 'codex', 'lancia-cli', 'esegui-cli'])
     expect([c, classeProcesso(c)]).toEqual([c, 'orchestrazione'])
-  for (const c of ['completa', 'docker', 'qualcosa', 'board-altro']) expect([c, classeProcesso(c)]).toEqual([c, 'altri'])
+  for (const c of ['completa', 'docker', 'qualcosa', 'board-spegni', 'board-altro', 'pesi-altro', 'corsia-codex', 'configura-altro'])
+    expect([c, classeProcesso(c)]).toEqual([c, 'altri'])
   let secchi = contaConsumo([], 0, { processi: 1 }, 'gh')
   secchi = contaConsumo(secchi, 60_000, { processi: 4 }, 'git')
   secchi = contaConsumo(secchi, 61_000, { processi: 1 }, 'git-log')
