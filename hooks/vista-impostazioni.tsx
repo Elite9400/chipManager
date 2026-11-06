@@ -210,7 +210,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         <Text weight="medium">{nome}</Text>
         {u.GruppoChip({
           chiave: `soglia-${f}`, etichetta: presetDi(s) ? 'Preset' : 'Preset (adesso una soglia personale)', modo: 'scelta', valore: presetDi(s),
-          voci: SOGLIE_PRESET, onCambia: v => scrivi(SOGLIE_PRESET.find(p => p.valore === v)!.soglia),
+          voci: SOGLIE_PRESET, contesto: nome, onCambia: v => scrivi(SOGLIE_PRESET.find(p => p.valore === v)!.soglia),
         })}
         {s &&
           u.Gamma({

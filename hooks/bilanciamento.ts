@@ -83,9 +83,9 @@ export const SOGLIE_PRESET: readonly { valore: string; testo: string; soglia: So
 export const presetDi = (s: Soglia | null) =>
   SOGLIE_PRESET.find(p => (p.soglia === null ? s === null : !!s && p.soglia.attenzione === s.attenzione && p.soglia.critica === s.critica))?.valore ?? ''
 
-/** Le soglie con quella di `f` cambiata. Vale lo stesso vincolo della lettura: interi da 1 a 100, attenzione sotto la critica. */
+/** Le soglie con quella di `f` cambiata. Vale lo stesso vincolo della lettura: numeri finiti da 1 a 100, attenzione sotto la critica. */
 export function conSoglia(soglie: RisorseProgetto['soglie'], f: Fornitore, s: Soglia | null): RisorseProgetto['soglie'] {
-  const ok = (n: number) => Number.isInteger(n) && n >= 1 && n <= 100
+  const ok = (n: number) => typeof n === 'number' && Number.isFinite(n) && n >= 1 && n <= 100
   if (s && (!ok(s.attenzione) || !ok(s.critica))) throw new Error('Le soglie vanno da 1 a 100')
   if (s && s.attenzione >= s.critica) throw new Error(`Attenzione (${s.attenzione}%) deve stare sotto la critica (${s.critica}%)`)
   return { ...soglie, [f]: s }

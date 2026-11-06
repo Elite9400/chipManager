@@ -30,11 +30,13 @@ export function componenti(el: ElementTable, surface: RenderSurface) {
     colore?: string
     onPress?: () => void
     onRimuovi?: () => void
+    /** Di chi è la chip, solo nella label («Claude, 70/90»): distingue chip uguali di gruppi diversi. */
+    contesto?: string
   }) {
     const segno = p.segno ?? (p.attiva ? '●' : '○')
     const tinta = p.attiva ? ACCENTO : p.colore
     // Il desktop disegna la label, non i figli: il segno sta anche lì.
-    const etichetta = `${segno} ${p.testo}${p.attiva === undefined ? '' : p.attiva ? ', selezionato' : ', non selezionato'}`
+    const etichetta = `${segno} ${p.contesto ? `${p.contesto}, ` : ''}${p.testo}${p.attiva === undefined ? '' : p.attiva ? ', selezionato' : ', non selezionato'}`
     const chiusa = terminale && !p.onRimuovi ? ']' : ''
     const corpo = (
       <Text key={`${p.chiave}-testo`}>
@@ -73,7 +75,7 @@ export function componenti(el: ElementTable, surface: RenderSurface) {
 
   /** Chip in fila che vanno a capo. `scelta`: una sola attiva. `filtro`: ciascuna si accende e si spegne da sé. */
   function GruppoChip(
-    p: { chiave: string; etichetta: string; voci: readonly Voce[] } & (
+    p: { chiave: string; etichetta: string; voci: readonly Voce[]; contesto?: string } & (
       | { modo: 'scelta'; valore: string; onCambia: (v: string) => void }
       | { modo: 'filtro'; valore: readonly string[]; onCambia: (v: string[]) => void }
     ),
@@ -95,6 +97,7 @@ export function componenti(el: ElementTable, surface: RenderSurface) {
               testo: v.testo,
               attiva: p.modo === 'scelta' ? v.valore === p.valore : p.valore.includes(v.valore),
               onPress: premi(v.valore),
+              contesto: p.contesto,
             }),
           )}
         </Box>

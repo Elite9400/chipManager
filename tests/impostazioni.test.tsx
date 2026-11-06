@@ -93,10 +93,15 @@ test('profili: ognuno scrive esattamente i suoi pesi su motori ed effort; i mode
   expect(profiloDi({ ...RISORSE_DEFAULT, profilo: 'qualita' })).toBe('qualita')
 })
 
-test('profilo nel config: si legge solo fra i cinque; assente non compare', () => {
+test('profilo nel config: vale solo una stringa fra le cinque; ogni altra forma si tratta come assente', () => {
   expect(risorseDa({})).not.toHaveProperty('profilo')
   expect(risorseDa({ profilo: 'risparmio' })).toMatchObject({ profilo: 'risparmio' })
-  for (const profilo of ['economico', 3, null]) expect(typeof risorseDa({ profilo })).toBe('string')
+  // Un elenco con un nome valido non passa da String(): niente profilo, e il resto della politica resta valido.
+  for (const profilo of ['economico', 3, null, ['qualita'], { qualita: true }]) {
+    const r = risorseDa({ profilo, fornitori: ['claude'] })
+    expect(typeof r).toBe('object')
+    expect(r).not.toHaveProperty('profilo')
+  }
 })
 
 test('simulazione: è la scelta di bilancia sulla stessa proposta e passa la guardia d\'avvio', () => {
@@ -127,6 +132,12 @@ test('soglie: preset riconosciuti, valori personali e null intatti, attenzione s
   expect(presetDi({ attenzione: 72, critica: 93 })).toBe('')
   const s = RISORSE_DEFAULT.soglie
   expect(conSoglia(s, 'codex', { attenzione: 42, critica: 93 })).toEqual({ ...s, codex: { attenzione: 42, critica: 93 } })
+  // Come la lettura: numeri finiti da 1 a 100, anche decimali; +5 da 72.5 resta valido.
+  const decimali = risorseDa({ soglie: { codex: { attenzione: 72.5, critica: 93.5 } } })
+  expect(decimali).toMatchObject({ soglie: { codex: { attenzione: 72.5, critica: 93.5 } } })
+  expect(conSoglia(s, 'codex', { attenzione: 77.5, critica: 93.5 }).codex).toEqual({ attenzione: 77.5, critica: 93.5 })
+  for (const rotta of [{ attenzione: NaN, critica: 90 }, { attenzione: 50, critica: Infinity }, { attenzione: 0.5, critica: 90 }])
+    expect(() => conSoglia(s, 'codex', rotta)).toThrow()
   expect(conSoglia(s, 'codex', null).codex).toBeNull()
   expect(() => conSoglia(s, 'codex', { attenzione: 90, critica: 90 })).toThrow()
   expect(() => conSoglia(s, 'codex', { attenzione: 0, critica: 50 })).toThrow()
@@ -236,6 +247,43 @@ const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
     props: { title: 'chipManager', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
   }) as const
 const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate'] as const
+
+test('impostazioni: profilo illeggibile nel config (un elenco) non rompe il disegno e vale come assente', async ($, on) => {
+  ambiente(on, { profilo: ['qualita'] })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-bilanciamento-premi' })
+  expect(String((await ui.find({ key: 'profilo-automatico-premi' }))?.props.label)).toMatch(/, selezionato$/)
+  await ui.unmount()
+})
+
+test('impostazioni: in ogni sezione le etichette dei pulsanti sono uniche (preset delle soglie con il fornitore)', async ($, on) => {
+  ambiente(on, {
+    fornitori: ['claude', 'codex', 'deepseek'],
+    limitiManuali: [
+      { id: 'quota', fornitore: 'codex', nome: 'settimanale', letto: '2026-11-01T00:00:00Z', percentuale: 20, unita: '%' },
+      { id: 'saldo', fornitore: 'deepseek', nome: 'saldo mensile', letto: '2026-11-01T00:00:00Z', valore: 12, unita: 'USD' },
+    ],
+  })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount({ ...PANE(surface) })
+    await ui.press({ key: 'impostazioni' })
+    for (const s of SEZIONI) {
+      await ui.press({ key: `sezione-${s}-premi` })
+      if (s === 'bilanciamento' && !(await ui.find({ key: 'gruppo' }))) await ui.press({ key: 'regola-a-mano' })
+      const etichette = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label))
+      expect([s, etichette.filter((e, i) => etichette.indexOf(e) !== i)]).toEqual([s, []])
+    }
+    expect(String((await ui.find({ key: 'sezione-avanzate-premi' }))?.props.label)).toBe('● Avanzate, selezionato')
+    await ui.press({ key: 'sezione-soglie-premi' })
+    expect(String((await ui.find({ key: 'soglia-codex-70/90-premi' }))?.props.label)).toBe('● Codex, 70/90 (predefinita), selezionato')
+    await ui.unmount()
+  }
+})
 
 test('impostazioni: chip di sezione in cima, una sezione alla volta, la scelta sta nell\'etichetta', async ($, on) => {
   ambiente(on)
