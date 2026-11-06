@@ -1168,6 +1168,11 @@ let secchi: Secchi = []
 export const conta = (delta: Partial<Omit<Consumo, 'da'>>) => void (secchi = contaConsumo(secchi, Date.now(), delta))
 export const sommaConsumo = () => sommaSecchi(secchi, Date.now(), AVVIO)
 
+/** R4: due valori di stato uguali nel JSON: scriverli di nuovo farebbe solo ridisegnare chi li legge. */
+export const uguale = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+/** Il consumo senza `da`, che scorre col tempo: cambia solo se cambiano i conteggi. */
+export const consumoUguale = (a: Consumo, b: Consumo) => uguale({ ...a, da: 0 }, { ...b, da: 0 })
+
 /** La riga grigia della vista Carico: solo i numeri di QUESTA sessione, e lo dice. */
 export function rigaConsumo(c: Consumo, adesso: number, l: Lingua = 'en'): string {
   const min = Math.max(1, Math.round((adesso - c.da) / 60_000))

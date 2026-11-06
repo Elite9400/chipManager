@@ -7,6 +7,8 @@ import {
   contaConsumo,
   diagnosticaHelper,
   passoCadenza,
+  uguale,
+  consumoUguale,
   STATI_PENDENTI,
   segnaLavori,
   sommaSecchi,
@@ -57,7 +59,7 @@ import {
   violazioni,
   violazioniAvvio,
 } from '../hooks/logica'
-import type { Azione, Chiamante, Limite } from '../types'
+import type { Azione, Chiamante, Consumo, Limite } from '../types'
 import { DiscoIt } from './disco-it'
 import { chiaveOTesto } from '../hooks/lingua'
 import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
@@ -358,7 +360,8 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
   on('tool.list', () => ({ value: [...(opz.cli ? [] : [{ name: 'mcp__ccd_session__start_session' }]), ...(opz.strumenti ?? []).map(name => ({ name }))] as never }))
   on('session.repo', () => ({ value: { root: 'X:/repo', remote: 'https://github.com/acme/progetto.git', internal: false, repo: null } as never }))
   on('fs.exists', (_, e) => ({ value: [...disco.keys()].some(k => k === p(e.path) || k.startsWith(`${p(e.path)}/`)) }))
-  on('fs.list', (_, e) => ({
+  const elenchi: string[] = []
+  on('fs.list', (_, e) => (elenchi.push(p(e.path)), {
     value: [...disco.keys()]
       .filter(k => k.startsWith(`${p(e.path)}/`) && !k.slice(p(e.path).length + 1).includes('/'))
       .map(k => ({ name: k.slice(p(e.path).length + 1), kind: 'file' as const, size: disco.get(k)!.length, mtimeMs: disco.mtime.get(k) ?? 0, isLink: false })),
@@ -524,7 +527,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
           return []
         }
       })
-  return { disco, chiamate, toast, processi, azione, modello, letti, registrati, inviati }
+  return { disco, chiamate, toast, processi, azione, modello, letti, registrati, inviati, elenchi }
 }
 
 const PANE = (surface: 'desktop' | 'terminal') =>
@@ -2525,4 +2528,24 @@ test('R1: board accesa: git-log al più ogni 5 minuti, subito se cambiano le azi
   // Cinque minuti dopo l'ultima lettura: di nuovo, anche senza cambiamenti.
   for (let i = 0; i < 10; i++) await clock.advance(30_000)
   expect(gitLog()).toBe(primo + 3)
+})
+
+test('R4: il giro riusa le azioni lette dal battito: una sola lettura della cartella per battito', async ($, on) => {
+  const amb = ambiente(on)
+  const clock = mock.clock(on)
+  amb.disco.set('X:/orch/azioni/a-avv00099.json', JSON.stringify(base('a-avv00099', 1, { repo: 'acme/progetto', stato: 'in-avvio', tentativo: 'az-attesa002', avvioScade: '2999-01-01T00:00:00.000Z', lanciataDa: 'altra' })))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(20_000)
+  const prima = amb.elenchi.filter(d => d === 'X:/orch/azioni').length
+  await clock.advance(20_000)
+  // Un battito con il giro dovuto: la cartella si elenca una volta, non due.
+  expect(amb.elenchi.filter(d => d === 'X:/orch/azioni').length - prima).toBe(1)
+})
+
+test('R4: scrivi se cambia: uguaglianza sul JSON; il consumo si confronta senza `da`', () => {
+  expect(uguale({ a: [1, 2] }, { a: [1, 2] })).toBe(true)
+  expect(uguale({ a: [1, 2] }, { a: [2, 1] })).toBe(false)
+  const c: Consumo = { processi: 3, app: 1, byte: 10, byteLimiti: 0, salti: 0, da: 1_000 }
+  expect(consumoUguale(c, { ...c, da: 61_000 })).toBe(true)
+  expect(consumoUguale(c, { ...c, processi: 4 })).toBe(false)
 })

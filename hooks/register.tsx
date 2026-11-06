@@ -42,6 +42,8 @@ import {
   CADENZA_INIZIALE,
   conta,
   passoCadenza,
+  uguale,
+  consumoUguale,
   segnaLavori,
   sommaConsumo,
   STATI_PENDENTI,
@@ -248,8 +250,9 @@ async function leggiTutte($: Eng, fresca = false): Promise<Letti> {
     lette.filter((a): a is Azione => !!a),
     { nomi: voci.filter(v => v.kind === 'file' && /^a-[a-z0-9]+\.json$/.test(v.name)).map(v => v.name), rotte },
   )
-  await update($, azioni, () => [...lista])
-  await update($, illeggibili, () => rotte)
+  // R4: si scrive solo ciò che è cambiato: ogni scrittura fa ridisegnare il pannello.
+  if (!uguale(await read($, azioni), lista)) await update($, azioni, () => [...lista])
+  if (!uguale(await read($, illeggibili), rotte)) await update($, illeggibili, () => rotte)
   return lista
 }
 
@@ -330,7 +333,7 @@ async function chiSonoIo($: Eng): Promise<Chiamante> {
   } catch {
     // Senza la risposta dell'app restano modello e progetto letti dal motore.
   }
-  await update($, contesto, () => c)
+  if (!uguale(await read($, contesto), c)) await update($, contesto, () => c)
   return c
 }
 
@@ -361,7 +364,7 @@ async function leggiRegole($: Eng) {
     const m = msgDi(err)
     r = { ...REGOLE_DEFAULT, motivo: typeof m === 'string' ? m.slice(0, 60) : m, ...(progetto && !eMsg(progetto) ? { risorse: progetto.risorse } : {}) }
   }
-  await update($, regole, () => r)
+  if (!uguale(await read($, regole), r)) await update($, regole, () => r)
   return r
 }
 
@@ -440,7 +443,9 @@ async function leggiSessioni($: Eng) {
       note.push('ses.codexNonLette')
     }
   }
-  await update($, sessioni, () => ({ lista: [io, ...claude, ...codex], letto: new Date(adesso).toISOString(), nota: note.join(' · ') || undefined }))
+  // L'istante della lettura al minuto (quello che il pannello mostra): a sessioni invariate, al più una scrittura al minuto.
+  const nuove: Sessioni = { lista: [io, ...claude, ...codex], letto: `${new Date(adesso).toISOString().slice(0, 16)}:00.000Z`, nota: note.join(' · ') || undefined }
+  if (!uguale(await read($, sessioni), nuove)) await update($, sessioni, () => nuove)
   // Stessa cadenza delle sessioni (20 s a schermo, 2 minuti nascosto): una proposta nuova si vede presto.
   await leggiProposte($)
 }
@@ -451,7 +456,8 @@ async function leggiProposte($: Eng) {
     const chi = (await read($, contesto)) ?? (await chiSonoIo($))
     const f = await fileProposte($)
     const json = (await $.fs.exists(f)) ? (JSON.parse((await $.fs.read(f)) as string) as unknown) : null
-    await update($, propostePesi, () => proposteDa(json, chi.repo))
+    const nuove = proposteDa(json, chi.repo)
+    if (!uguale(await read($, propostePesi), nuove)) await update($, propostePesi, () => nuove)
   } catch { /* file in scrittura o cartella non valida: resta la lista letta prima */ }
 }
 
@@ -858,16 +864,17 @@ async function leggiRegistro($: Eng) {
  * Un giro alla volta: il timer e «Aggiorna» che coincidono condividono lo stesso giro, così due giri non
  * leggono la stessa osservazione precedente e non avvisano due volte dello stesso arresto.
  */
-function giro($: Eng, options: Record<string, unknown>) {
-  giroInCorso ??= giroVero($, options).finally(() => {
+function giro($: Eng, options: Record<string, unknown>, lette?: Letti) {
+  giroInCorso ??= giroVero($, options, lette).finally(() => {
     giroInCorso = null
   })
   return giroInCorso
 }
 
 /** Un giro: file, avvii incerti, sessioni, registro, code. Ogni pannello lo fa; le scritture sono CAS. */
-async function giroVero($: Eng, options: Record<string, unknown>) {
-  let tutte = await carica($)
+async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti) {
+  // R4: le azioni appena lette dal battito valgono; senza (Aggiorna, apertura) si leggono qui.
+  let tutte = lette && !lette.rotte?.length ? lette : await carica($)
   if (tutte.rotte?.length) tutte = await carica($)
   // Senza tutti i record niente chiusure né avvii automatici: si osserva soltanto (e il pannello lo dice).
   const completa = !tutte.rotte?.length
@@ -984,7 +991,7 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
       if (prima[a.id] && !stati[a.id]) stati[a.id] = prima[a.id]!
     }
   }
-  await update($, vive, () => stati)
+  if (!uguale(await read($, vive), stati)) await update($, vive, () => stati)
   // Le code del progetto ripartono da qualunque pannello aperto: `decidi` ricontrolla e prenota in modo
   // atomico, quindi due pannelli non avviano la stessa azione.
   const tutteOra = await read($, azioni)
@@ -1019,7 +1026,7 @@ async function battito($: Eng, opz: Record<string, unknown>) {
   const passo = passoCadenza(cadenza, adesso, { pendente, aSchermo })
   cadenza = passo.cadenza
   const lavori: Record<Lavoro, () => Promise<unknown>> = {
-    giro: () => giro($, opz),
+    giro: () => giro($, opz, lette ?? undefined),
     sessioni: () => leggiSessioni($),
     traguardi: () => leggiTraguardi($),
     risorse: () => aggiornaRisorse($, opz),
@@ -1027,7 +1034,8 @@ async function battito($: Eng, opz: Record<string, unknown>) {
   for (const k of passo.fare) void lavori[k]().catch(() => {})
   // La lingua scelta in un altro pannello: un file piccolo, nessun processo.
   await leggiLingua($).catch(() => {})
-  await update($, consumo, () => sommaConsumo())
+  const ora_ = sommaConsumo()
+  if (!consumoUguale(await read($, consumo), ora_)) await update($, consumo, () => ora_)
 }
 
 /** Milestone aperte del repo della sessione, da GitHub (con il `gh` di chi usa il pannello). */
@@ -1207,8 +1215,9 @@ const schemaSuggerisci = (r: Regole) => ({
 async function aggiornaRisorse($: Eng, opz: Record<string, unknown>) {
   const r = await leggiRegole($)
   const lette = await osservaRisorse($, opz, r)
-  await update($, risorse, () => lette)
-  await update($, ultimeMisure, prima => conUltime(prima, lette.limiti, lette.letti))
+  if (!uguale(await read($, risorse), lette)) await update($, risorse, () => lette)
+  const misure = conUltime(await read($, ultimeMisure), lette.limiti, lette.letti)
+  if (!uguale(await read($, ultimeMisure), misure)) await update($, ultimeMisure, () => misure)
 }
 
 async function configura($: Eng, opz: Record<string, unknown>, campi: Record<string, unknown>, attese: RisorseProgetto) {
@@ -1266,7 +1275,8 @@ async function generaBoard($: Eng) {
   // Spenta: nessuna lettura, nessuna scrittura, nessuna chiamata.
   if (modo.modo === 'spenta') {
     improntaScritta = undefined
-    return void (await update($, statoBoard, () => ({})))
+    if (!uguale(await read($, statoBoard), {})) await update($, statoBoard, () => ({}))
+    return
   }
   const chi = (await read($, contesto)) ?? (await chiSonoIo($))
   if (!chi.repo) return
