@@ -2275,14 +2275,12 @@ const banco = async ($: Parameters<TestBody>[0], on: Parameters<TestBody>[1], op
 
 test('banco D7: a riposo e nascosto, raccolta entro 0,7 processi/min', async ($, on) => {
   const m = await banco($, on, { nascosto: true, pendente: false })
-  console.log('banco nascosto a riposo, 10 min:', JSON.stringify(m))
   expect(m.raccolta).toBeLessThanOrEqual(7)
   expect(m.orchestrazione).toBe(0)
 })
 
 test('banco D7: a schermo con lavoro in corso, raccolta entro 3,2 processi/min', async ($, on) => {
   const m = await banco($, on, { nascosto: false, pendente: true })
-  console.log('banco a schermo al lavoro, 10 min:', JSON.stringify(m))
   expect(m.raccolta).toBeLessThanOrEqual(32)
 })
 
