@@ -3,7 +3,7 @@
 import type { Azione, Chiamante, Fornitore, Limite, Pendenti, Peso, PesiProfilo, PropostaImpostazioni, PropostaPesi, Regolazione, Regole, RisorseProgetto, SessioneProgetto, Soglia } from '../types'
 import { ALIAS_UNITA, data, eMsg, errore, LINGUE, msg, t } from './lingua'
 import type { Chiave, Lingua, Msg } from './lingua'
-import { bilancia, corsiaDi, effortDi, FORNITORI, idAuditor, modelloDi, motivoAuditor, nomeModello, pesoValido, profiloDi, rangoModello, risorseDa, TETTO_API_PREDEFINITO, violazioniAvvio } from './logica'
+import { bilancia, corsiaDi, effortDi, FORNITORI, idAuditor, modelloDi, motivoAuditor, nomeModello, pesoValido, profiloDi, rangoModello, risorseDa, TETTO_API_PREDEFINITO, violazioni, violazioniAvvio } from './logica'
 
 export type Profilo = NonNullable<RisorseProgetto['profilo']>
 
@@ -263,7 +263,11 @@ export function propostaImpostazioniDa(x: unknown): { proposta: PropostaImpostaz
 /** I campi della bozza (forma di `configura`) che una proposta riempie, completati con i valori correnti di `r`. */
 export function campiDaProposta(p: PropostaImpostazioni, r: RisorseProgetto): Record<string, unknown> {
   const campi: Record<string, unknown> = {}
-  if (p.profilo) campi.profilo = p.profilo
+  // Profilo e pesi sono una coppia: il profilo proposto porta i suoi pesi (i modelli restano), e i conflitti li vedono entrambi.
+  if (p.profilo) {
+    campi.profilo = p.profilo
+    campi.pesi = conProfilo(r.pesi, p.profilo)
+  }
   if (p.soglie) campi.soglie = { ...r.soglie, ...p.soglie }
   if (p.board) campi.board = { modo: p.board.modo }
   if (p.consigliere) campi.consigliere = p.consigliere === 'spento' ? null : p.consigliere
@@ -304,12 +308,19 @@ export function presetChi(a: Azione, preset: PresetChi, r: Regole, limiti: reado
   const rp: Regole = profilo ? { ...r, risorse: { ...r.risorse, profilo, pesi: conProfilo(r.risorse.pesi, profilo) } } : r
   const s = bilancia({ ...a, auditor: undefined, senzaAuditor: undefined }, { revisore: a.revisore }, rp, limiti, lista, chi)
   const modello = s.esecutore === 'claude' ? modelloDi(s, r) : undefined
-  let auditor = s.esecutore === 'claude' && a.auditor && modello && !motivoAuditor(modello, a.auditor) ? a.auditor : undefined
-  const auditorTolto = a.auditor && !auditor ? a.auditor : undefined
-  // Qualità: sulle corsie alte un auditor di rango più alto del modello che esegue, se la tabella lo ammette.
+  // Una scelta esplicita (anche «nessuno») non si tocca; un auditor scelto torna a «nessuno» solo se non fa più coppia.
+  let auditor = a.auditor === 'nessuno' ? 'nessuno'
+    : s.esecutore === 'claude' && a.auditor && modello && !motivoAuditor(modello, a.auditor) ? a.auditor : undefined
+  const auditorTolto = a.auditor && a.auditor !== 'nessuno' && !auditor ? a.auditor : undefined
+  // Qualità, solo senza una scelta: sulle corsie alte un auditor di rango più alto, se la candidata completa (auditor
+  // compreso) non viola niente di più di quella senza: niente auditor dove la modalità non lo ammette (il cloud).
   const alta = ['R3', 'R4', 'R5'].includes(corsiaDi(a, r) ?? '')
-  if (preset === 'qualita' && !auditor && !a.auditor && alta && modello)
-    auditor = ['opus', 'fable'].find(x => !motivoAuditor(modello, x) && rangoModello(idAuditor(x)!) > rangoModello(modello))
+  if (preset === 'qualita' && a.auditor === undefined && alta && modello) {
+    const candidata: Azione = { ...a, esecutore: s.esecutore, modello: s.modello, effort: s.effort, auditor: undefined, senzaAuditor: undefined }
+    const senza = violazioni(candidata, r).map(m => JSON.stringify(m))
+    auditor = ['opus', 'fable'].find(x => !motivoAuditor(modello, x) && rangoModello(idAuditor(x)!) > rangoModello(modello) &&
+      violazioni({ ...candidata, auditor: x }, r).every(m => senza.includes(JSON.stringify(m))))
+  }
   const campi: Pick<Azione, 'esecutore' | 'modello' | 'effort' | 'auditor'> = { esecutore: s.esecutore, modello: s.modello, effort: s.effort, auditor }
   return { campi, ...(auditorTolto && { auditorTolto }) }
 }

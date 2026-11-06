@@ -172,7 +172,8 @@ export async function versaProposta($: EngineInterface, T: T, r0: RisorseProgett
     esito = 'riempita'
     const pendenti: Pendenti = {
       campi, base: Object.fromEntries(Object.keys(campi).map(k => [k, valoreConfig(r0, k)])),
-      dove: [...Object.keys(campi), ...(lingua ? ['lingua'] : [])].map(k => `proposta:${k}`),
+      // I pesi vanno in coppia col profilo: una modifica sola per l'utente.
+      dove: [...Object.keys(campi).filter(k => k !== 'pesi'), ...(lingua ? ['lingua'] : [])].map(k => `proposta:${k}`),
       ...(lingua && { lingua, linguaBase: salvata }),
     }
     return conEpoca(s, { ...s, pendenti, propostaInCoda: undefined, errore: undefined,
@@ -214,7 +215,7 @@ async function applicaFerma($: EngineInterface, c: Ctx, T: T): Promise<boolean> 
         const tieni = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([k]) => !via.has(k)))
         const { lingua: linguaOra, ...altre } = esito.base
         const base = { ...q.base, ...altre }
-        const dove = via.size ? q.dove.filter(d => !/^(profilo|peso-)/.test(d)) : q.dove
+        const dove = via.size ? q.dove.filter(d => !/^(profilo|peso-|proposta:profilo)/.test(d)) : q.dove
         const linguaBase = typeof linguaOra === 'string' ? (linguaOra as Lingua) : q.linguaBase
         return { ...s, pendenti: piena({ ...q, campi: tieni(q.campi), base: tieni(base), dove, ...(linguaBase && { linguaBase }) }) }
       })

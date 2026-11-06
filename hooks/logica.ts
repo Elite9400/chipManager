@@ -614,10 +614,11 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
   }
   if (a.modello && a.modello !== modello) v.push(msg('v.modelloNonAmmesso', { modello: a.modello, esecutore: a.esecutore }))
   // F7.3: l'auditor solo su Claude, mai nel cloud (non lo si controlla), e solo in una coppia della tabella.
-  if (a.auditor) {
+  const auditor = auditorDi(a)
+  if (auditor) {
     if (a.esecutore !== 'claude') v.push(msg('au.soloClaude'))
     else {
-      const m = motivoAuditor(modello, a.auditor)
+      const m = motivoAuditor(modello, auditor)
       if (m) v.push(m)
     }
     if (modo === 'cloud') v.push(msg('au.cloud'))
@@ -781,6 +782,8 @@ const nellaRegola = (regola: string, id: string) => {
   if (!x || !r || x.f !== r[1]) return false
   return !r[2] || (r[2] === '-' ? x.v === Number(r[3]) : x.v >= Number(r[3]))
 }
+/** L'auditor richiesto: `nessuno` è una scelta esplicita di non averne (i preset non la toccano), non un modello. */
+export const auditorDi = (a: Pick<Azione, 'auditor'>) => (a.auditor && a.auditor !== 'nessuno' ? a.auditor : undefined)
 /** L'id dell'auditor: un alias si risolve, un id deve stare nella tabella; null = sconosciuto. */
 export const idAuditor = (auditor: string): string | null => ADVISOR.alias[auditor] ?? (MODELLI_ADVISOR.includes(auditor) ? auditor : null)
 /** Perché `auditor` non va con il modello che esegue (id sconosciuti, coppia fuori tabella), o undefined se va. */
@@ -800,9 +803,10 @@ export function puoCambiare(a: Azione, chi: Chiamante | null, campo: 'modello' |
 
 /** Come si applica l'auditor richiesto: con `--advisor` (api-claude), a mano con /advisor (sessioni), o spento per l'avvio. */
 export function statoAuditor(a: Azione): 'applicato' | 'manuale' | 'senza' | undefined {
-  if (!a.auditor) return undefined
-  if (modalitaDi(a) === 'api-claude') return a.senzaAuditor ? 'senza' : 'applicato'
-  return 'manuale'
+  // «Senza auditor» vale anche per un advisor ereditato: per questo avvio l'advisor è spento comunque.
+  if (modalitaDi(a) === 'api-claude' && a.senzaAuditor) return 'senza'
+  if (!auditorDi(a)) return undefined
+  return modalitaDi(a) === 'api-claude' ? 'applicato' : 'manuale'
 }
 
 // --- coda e avvio massivo -----------------------------------------------------------------------

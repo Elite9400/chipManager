@@ -198,7 +198,7 @@ export type Azione = {
   costoApi?: number | null
   /** F7.2: l'ultimo «Cambia» su una sessione al lavoro: che cosa, verso quale valore, con quale esito (incerto = da ricontrollare). */
   cambio?: { campo: 'modello' | 'effort'; valore: string; esito: 'fatto' | 'incerto'; quando: string }
-  /** F7.3: l'auditor (advisor) richiesto: alias `sonnet`, `opus`, `fable` o un id completo; assente = nessuno. */
+  /** F7.3: l'auditor (advisor) richiesto: alias `sonnet`, `opus`, `fable` o un id completo; `nessuno` = scelta esplicita; assente = nessuna scelta. */
   auditor?: string
   /** F7.3: gli avvii `api-claude` spengono l'advisor (`CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` sul solo figlio). */
   senzaAuditor?: boolean

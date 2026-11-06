@@ -911,9 +911,9 @@ const it: Dizionario = {
   "au.esito.incerto": "ultima esecuzione API: CLAUDE_CODE_DISABLE_ADVISOR_TOOL ha un valore che Claude Code potrebbe non leggere né come acceso né come spento",
   "au.riavviaSenza": "Riavvia senza auditor",
   "au.senzaBloccato": "«Riavvia senza auditor» non è disponibile: {fonte} imposta CLAUDE_CODE_DISABLE_ADVISOR_TOOL nel suo env (o non si legge) e lo sovrascriverebbe. La mod non modifica mai quel file.",
-  "err.advisor.consenso": "advisor non disponibile: Fable richiede il tuo consenso una tantum (/model fable in una sessione interattiva). Nessun lavoro fatto.",
-  "err.advisor.escluso": "advisor non disponibile: availableModels della tua organizzazione lo esclude. Nessun lavoro fatto.",
-  "err.advisor.rifiutato": "advisor non disponibile: Claude Code l'ha rifiutato all'avvio. Nessun lavoro fatto.",
+  "err.advisor.consenso": "advisor non disponibile: Fable richiede il tuo consenso una tantum (/model fable in una sessione interattiva). Controlla il worktree prima di riprovare.",
+  "err.advisor.escluso": "advisor non disponibile: availableModels della tua organizzazione lo esclude. Controlla il worktree prima di riprovare.",
+  "err.advisor.rifiutato": "advisor non disponibile: Claude Code l'ha rifiutato all'avvio. Controlla il worktree prima di riprovare.",
   // F7.4 Who works, F7.2 Change
   "chi.auditor": "auditor {auditor}",
   "chi.senzaAuditor": "nessun auditor",

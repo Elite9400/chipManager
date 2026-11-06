@@ -28,6 +28,7 @@ import {
   modalitaDi,
   controlloDa,
   ADVISOR,
+  auditorDi,
   idAuditor,
   puoCambiare,
   passiMancanti,
@@ -146,19 +147,33 @@ async function leggiLingua($: Eng) {
 }
 
 /** Scrive la lingua al primo livello del config: helper `configura-utente`, stesso mutex e CAS, nessun progetto. */
-async function scegliLingua($: Eng, l: Lingua) {
+/**
+ * Scrive la lingua dell'utente con CAS sul testo intero del config. Con `base` (la lingua salvata quando una proposta l'ha
+ * messa in bozza) la lingua letta per il CAS deve essere ancora quella: altrimenti `'cambiata'`, niente scritto. Un CAS
+ * mancato si rilegge e si ricontrolla (fino a 3 volte).
+ */
+async function scegliLingua($: Eng, l: Lingua, base?: Lingua): Promise<'scritta' | 'cambiata'> {
   const f = await fileConfig($)
-  const atteso = (await $.fs.exists(f)) ? ((await $.fs.read(f)) as string) : null
-  if (atteso !== null) {
-    try {
-      JSON.parse(atteso)
-    } catch {
-      throw new Error(t(await read($, lingua), 'errore.configIlleggibile'))
+  for (let tentativo = 1; ; tentativo++) {
+    const atteso = (await $.fs.exists(f)) ? ((await $.fs.read(f)) as string) : null
+    let letta: unknown
+    if (atteso !== null) {
+      try {
+        letta = (JSON.parse(atteso) as { lingua?: unknown }).lingua
+      } catch {
+        throw new Error(t(await read($, lingua), 'errore.configIlleggibile'))
+      }
     }
+    if (base && linguaDa(letta) !== base) {
+      await leggiLingua($)
+      return 'cambiata'
+    }
+    const esito = await helper($, ['configura-utente', f], JSON.stringify({ atteso, campi: { lingua: l } }))
+    if (esito.codice === 0) break
+    if (esito.codice !== 4 || !base || tentativo >= 3) throw new Error(t(await read($, lingua), 'errore.configCambiata'))
   }
-  const esito = await helper($, ['configura-utente', f], JSON.stringify({ atteso, campi: { lingua: l } }))
-  if (esito.codice !== 0) throw new Error(t(await read($, lingua), 'errore.configCambiata'))
   await leggiLingua($)
+  return 'scritta'
 }
 
 /** Il progetto della sessione: `owner/repo` dal remote GitHub, altrimenti la radice locale. */
@@ -801,7 +816,8 @@ async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: 
   const root = (await $.session.repo())?.root
   if (!root) throw new Error('repository root not available')
   // F7.3: l'auditor va con `--advisor` (alias risolto, coppia già controllata dalla guardia); «senza auditor» lo spegne.
-  const advisor = a.auditor && !a.senzaAuditor ? idAuditor(a.auditor) ?? undefined : undefined
+  const scelto = auditorDi(a)
+  const advisor = scelto && !a.senzaAuditor ? idAuditor(scelto) ?? undefined : undefined
   const ingresso = { root, prompt: `${m.background}\n\n${m.prompt}`, modello: m.model, effort: m.effort, permessi: a.permessi ?? 'default', base: a.base,
     tetto: api.tetto, budget: api.budgetUsd, mese: ora().slice(0, 7), chiave, ...(advisor && { advisor }), ...(a.senzaAuditor && { senzaAdvisor: true }) }
   const esito = await helper($, ['lancia-api', await cartella($), a.id, a.tentativo!], JSON.stringify(ingresso))
@@ -1222,10 +1238,10 @@ async function cambiaSessione($: Eng, id: string, campo: 'modello' | 'effort', v
   if (!r.lette) throw errore('v.regoleNonLette')
   const a = (await carica($, { fresca: true })).find(x => x.id === id)
   if (!a || a.stato !== 'avviata' || a.tentativo !== a0.tentativo || a.sessione !== a0.sessione || !puoCambiare(a, await chiSonoIo($), campo)) throw errore('cambia.obsoleta')
+  // La configurazione proposta si valida per intero: qualunque vincolo violato blocca, anche se c'era già prima.
   const nuova: Azione = { ...a, [campo]: valore }
-  const chiavi = (l: Msg[]) => l.map(m => JSON.stringify(m))
-  const nuove = violazioni(nuova, r).filter(m => !chiavi(violazioni(a, r)).includes(JSON.stringify(m)))
-  if (nuove.length) throw new Errore(nuove[0]!)
+  const motivi = violazioni(nuova, r)
+  if (motivi.length) throw new Errore(motivi[0]!)
   if (revisoreConcreto(nuova, r) !== revisoreConcreto(a, r)) throw errore('cambia.revisore')
   let esito: 'fatto' | 'incerto' = 'incerto'
   try {
@@ -1839,10 +1855,10 @@ async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pend
     base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])),
     immediati: daProposta(ora) && cambiati.some(k => k === 'pesi' || k === 'profilo') ? ['pesi', 'profilo'].filter(k => k in p.campi) : [],
   })
-  // F7.1: la lingua messa in bozza da una proposta, cambiata intanto altrove (anche da un altro progetto): lo si chiede.
-  if (p.lingua && p.linguaBase) {
-    const salvata = await leggiLingua($)
-    if (salvata !== p.linguaBase) return { cambiati: ['lingua'], base: { lingua: salvata } }
+  // F7.1: la lingua messa in bozza da una proposta si scrive per prima, con la base controllata dentro il CAS della lingua:
+  // cambiata intanto altrove (anche da un altro progetto, anche durante la scrittura) = conflitto, niente scritto.
+  if (p.lingua && p.linguaBase && p.lingua !== (await leggiLingua($))) {
+    if ((await scegliLingua($, p.lingua, p.linguaBase)) === 'cambiata') return { cambiati: ['lingua'], base: { lingua: await leggiLingua($) } }
   }
   let ora = (await leggiRegole($)).risorse
   if (cambiatiAltrove(p, ora).length) return conflitto(ora, cambiatiAltrove(p, ora))
@@ -1863,8 +1879,9 @@ async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pend
     }
     if ('board' in p.campi) await dopoBoard($)
   }
-  // La lingua si scrive solo se diversa da quella salvata adesso (riletta: un altro pannello può averla cambiata).
-  if (p.lingua && p.lingua !== (await leggiLingua($))) {
+  // La lingua si scrive solo se diversa da quella salvata adesso (riletta: un altro pannello può averla cambiata). Quella di
+  // una proposta è già stata scritta (o rifiutata) per prima, con la sua base: qui non si riscrive mai.
+  if (p.lingua && !p.linguaBase && p.lingua !== (await leggiLingua($))) {
     try {
       await scegliLingua($, p.lingua)
     } catch (err) {

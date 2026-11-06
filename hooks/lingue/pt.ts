@@ -911,9 +911,9 @@ const pt: Dizionario = {
   "au.esito.incerto": "última execução API: CLAUDE_CODE_DISABLE_ADVISOR_TOOL tem um valor que o Claude Code pode não ler nem como ligado nem como desligado",
   "au.riavviaSenza": "Reiniciar sem auditor",
   "au.senzaBloccato": "«Reiniciar sem auditor» não está disponível: {fonte} define CLAUDE_CODE_DISABLE_ADVISOR_TOOL no seu env (ou não pode ser lido) e o sobrescreveria. A mod nunca altera esse arquivo.",
-  "err.advisor.consenso": "advisor indisponível: Fable precisa do seu consentimento único (/model fable numa sessão interativa). Nenhum trabalho foi feito.",
-  "err.advisor.escluso": "advisor indisponível: o availableModels da sua organização o exclui. Nenhum trabalho foi feito.",
-  "err.advisor.rifiutato": "advisor indisponível: o Claude Code o recusou ao iniciar. Nenhum trabalho foi feito.",
+  "err.advisor.consenso": "advisor indisponível: Fable precisa do seu consentimento único (/model fable numa sessão interativa). Verifique o worktree antes de tentar de novo.",
+  "err.advisor.escluso": "advisor indisponível: o availableModels da sua organização o exclui. Verifique o worktree antes de tentar de novo.",
+  "err.advisor.rifiutato": "advisor indisponível: o Claude Code o recusou ao iniciar. Verifique o worktree antes de tentar de novo.",
   // F7.4 Who works, F7.2 Change
   "chi.auditor": "auditor {auditor}",
   "chi.senzaAuditor": "sem auditor",

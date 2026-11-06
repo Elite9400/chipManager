@@ -3278,3 +3278,76 @@ test('F7.4 editor: anteprima del preset prima di applicarla; «modificato» e «
   expect(amb.toast.some(t => /^auditor .* tolto: non fa coppia con il nuovo modello$/.test(t))).toBe(true)
   await ui.unmount()
 })
+
+// --- revisione F7 (Codex) -------------------------------------------------------------------------------------------
+
+test('F7 rilievo 1: «Cambia» valida per intero la configurazione proposta: la chip diventata R4 durante la conferma non scende a low', async ($, on) => {
+  const amb = ambiente(on, { strumenti: STRUMENTI_CAMBIO })
+  const a = alLavoro('a-riv70001', { effort: 'medium' })
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+  let domande = 0
+  on('tool.call', { tool: 'AskUserQuestion' }, (_, e) => {
+    domande++
+    // Durante la conferma la chip diventa sensibile (R4): medium era già sotto il minimo, low lo è ancora di più.
+    amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify({ ...a, versione: 2, corsia: 'R4' }))
+    return { result: { questions: e.questions, answers: { [e.questions[0]!.question]: 'Cambia' } } }
+  })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.select({ key: `cambia-eff-${a.id}`, value: 'low' })
+  await finche(() => domande > 0)
+  await finche(() => false, 60)
+  expect(amb.chiamate.filter(c => /^set_session_/.test(c.tool))).toEqual([])
+  expect((JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione).cambio).toBeUndefined()
+  await ui.unmount()
+})
+
+test('F7 rilievo 6: «Riavvia senza auditor» anche quando a fallire è un advisor ereditato (la chip non ne chiede uno)', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  const ingressi: Record<string, unknown>[] = []
+  const amb = ambiente(on, { api: (cmd, _a, stdin) => (cmd === 'lancia-api' ? (ingressi.push(JSON.parse(stdin!)), [0, '']) : undefined) })
+  amb.disco.set(CONFIG, CONFIG_API)
+  const a = { ...chipApi('a-riv70006'), stato: 'avviata' as const, lanciatore: 'api-claude' as const, tentativo: 'az-riv70006', avviataIl: '2026-11-06T10:00:00Z' }
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+  amb.disco.set('X:/orch/azioni/esecuzioni/az-riv70006.json', JSON.stringify({ id: a.id, tentativo: a.tentativo, stato: 'fallita', ramo: 'chipmanager/az-riv70006', costo: null,
+    advisorNonDisponibile: 'escluso', errore: "advisor non disponibile all'avvio", advisor: { stato: 'ereditato', modello: 'opus' }, senzaAuditor: {} }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: `senza-auditor-${a.id}` })
+  await finche(() => ingressi.length > 0)
+  expect(JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!)).toMatchObject({ senzaAuditor: true })
+  expect(ingressi.at(-1)).toMatchObject({ senzaAdvisor: true })
+  expect(ingressi.at(-1)).not.toHaveProperty('advisor')
+  expect(statoAuditor({ ...a, senzaAuditor: true })).toBe('senza')
+  await ui.unmount()
+})
+
+test('F7 rilievo 7: Qualità non aggiunge un auditor dove la modalità non lo ammette (cloud): la candidata completa si rivalida', () => {
+  const a = base('a-riv70007', 1, { repo: AUTORE.repo!, revisore: 'claude', corsia: 'R3', destinazione: 'cloud' })
+  const q = presetChi(a, 'qualita', R, [], [a], AUTORE)
+  expect(q.campi.auditor).toBeUndefined()
+  expect(violazioni({ ...a, ...q.campi }, R).map(m => m.k)).not.toContain('au.cloud')
+})
+
+test('F7 rilievo 8: «nessuno» scelto è una scelta esplicita: si salva, non è un modello sconosciuto, e nessun preset lo cambia', async ($, on) => {
+  const nessuno = base('a-riv70008', 1, { repo: AUTORE.repo!, revisore: 'claude', corsia: 'R3', auditor: 'nessuno' })
+  for (const p of ['consigliato', 'economico', 'qualita'] as const) expect([p, presetChi(nessuno, p, R, [], [nessuno], AUTORE).campi.auditor]).toEqual([p, 'nessuno'])
+  expect(violazioni(nessuno, R).map(m => m.k).filter(k => k.startsWith('au.'))).toEqual([])
+  expect(statoAuditor(nessuno)).toBeUndefined()
+  const amb = ambiente(on)
+  const a = base('a-riv70009', 1, { repo: AUTORE.repo!, revisore: 'claude', corsia: 'R3' })
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: `mod-${a.id}` })
+  await ui.press({ key: `chi-dettagli-${a.id}` })
+  await ui.select({ key: `aud-${a.id}`, value: 'nessuno' })
+  await finche(() => (JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione).auditor === 'nessuno')
+  expect((JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione).auditor).toBe('nessuno')
+  await ui.unmount()
+})

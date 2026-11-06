@@ -1798,3 +1798,28 @@ test('F7.3 advisor non disponibile: uscita anticipata con lo stderr sull\'adviso
   const lungo = await eseguiConAdvisor('az-advn0004', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr: 'x'.repeat(40_000) }))
   assert.ok(lungo.stderr.length <= 16 * 1024)
 })
+
+// --- revisione F7 (Codex) ------------------------------------------------------------------------------------------
+
+test('F7 rilievo 2: un figlio che ha lavorato (stdout) e cita l\'advisor resta incerto; un JSON con is_error non è una consegna; il rifiuto all\'avvio sì', async () => {
+  const lavorato = await eseguiConAdvisor('az-riv70201', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: 'testo di lavoro senza JSON', stderr: 'warning: advisor call failed once' }))
+  assert.deepStrictEqual([lavorato.stato, lavorato.incerto, lavorato.advisorNonDisponibile], ['avviata', true, undefined])
+  const errore = await eseguiConAdvisor('az-riv70202', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: JSON.stringify({ is_error: true, total_cost_usd: 0.3, num_turns: 4 }) }))
+  assert.deepStrictEqual([errore.stato, errore.costo, errore.advisorNonDisponibile], ['fallita', 0.3, undefined])
+  const rifiuto = await eseguiConAdvisor('az-riv70203', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: JSON.stringify({ is_error: true, num_turns: 0 }), stderr: 'advisor model rejected' }))
+  assert.deepStrictEqual([rifiuto.stato, rifiuto.advisorNonDisponibile], ['fallita', 'rifiutato'])
+  for (const e of [lavorato, errore, rifiuto]) assert.ok(!/nessun lavoro/i.test(e.errore ?? ''))
+})
+
+test('F7 rilievo 5: lo stderr salvato sta in 16 KiB di byte e non lascia mai un pezzo della chiave', async () => {
+  const chiave = 'chiave-dedicata-0123456789'
+  const lungo = await eseguiConAdvisor('az-riv70501', { chiave }, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr: ('è'.repeat(100) + '\n').repeat(400) }))
+  assert.ok(Buffer.byteLength(lungo.stderr, 'utf8') <= 16 * 1024, String(Buffer.byteLength(lungo.stderr, 'utf8')))
+  assert.ok(Buffer.byteLength(lungo.stderr, 'utf8') > 15 * 1024)
+  // La chiave a cavallo del vecchio taglio (16 KiB di caratteri) e del tetto del grezzo (64 KiB).
+  for (const [t, stderr] of [['az-riv70502', 'x'.repeat(16 * 1024 - 10) + chiave], ['az-riv70503', 'riga\n'.repeat(13_000) + 'x'.repeat(64 * 1024 - 65_000 - 10) + chiave + '\nfine']]) {
+    const e = await eseguiConAdvisor(t, { chiave }, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr }))
+    for (let n = 6; n <= chiave.length; n++) assert.ok(!(e.stderr ?? '').includes(chiave.slice(0, n)), `${t}: prefisso di ${n}`)
+    assert.ok(Buffer.byteLength(e.stderr ?? '', 'utf8') <= 16 * 1024)
+  }
+})

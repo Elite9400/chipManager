@@ -323,13 +323,23 @@ function statoAdvisor(input, w, envFiglio) {
 }
 
 const TETTO_STDERR = 16 * 1024
-/** Lo stderr del figlio come si salva: senza la chiave, `sk-ant-…`, email e percorsi della home. */
-function filtraStderr(testo, chiave, casa = os.homedir()) {
-  let t = chiave ? testo.split(chiave).join('[key]') : testo
+/** Quanto stderr grezzo si tiene in memoria prima del filtro (mai salvato così). */
+const TETTO_STDERR_GREZZO = 64 * 1024
+/**
+ * Lo stderr del figlio come si salva: senza la chiave, `sk-ant-…`, email e percorsi della home, al più 16 KiB in byte. Si
+ * filtra PRIMA di tagliare; se il grezzo era troncato si scarta la riga incompleta in fondo (un segreto a metà non si
+ * riconoscerebbe), e il taglio finale cade su un confine di carattere.
+ */
+function filtraStderr(testo, chiave, casa = os.homedir(), troncato = false) {
+  let t = troncato ? testo.slice(0, Math.max(0, testo.lastIndexOf('\n'))) : testo
+  if (chiave) t = t.split(chiave).join('[key]')
   t = t.replace(/sk-ant-[A-Za-z0-9_-]+/g, 'sk-ant-…').replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '<email>')
   for (const h of new Set([casa, casa.replace(/\\/g, '/')])) if (h && h.length > 2) t = t.split(h).join('~')
-  return t
+  const b = Buffer.from(t, 'utf8')
+  return b.length <= TETTO_STDERR ? t : b.subarray(0, TETTO_STDERR).toString('utf8').replace(/\uFFFD+$/, '')
 }
+/** Un rifiuto all'avvio è un'uscita entro questo tempo, con errore, senza alcun turno. */
+const AVVIO_MS = 20_000
 /** Un'uscita anticipata per l'advisor: consenso a Fable, esclusione da `availableModels`, o rifiuto all'avvio. */
 const advisorNonDisponibile = stderr =>
   /\/model fable|consent/i.test(stderr) ? 'consenso' : /availableModels/i.test(stderr) ? 'escluso' : /advisor/i.test(stderr) ? 'rifiutato' : undefined
@@ -458,9 +468,17 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
         else pezzi.push(b)
         letti += b.length
       })
-      // F7.3: lo stderr non si scarta più: al più 16 KiB, filtrato prima di salvarlo.
-      let errori = ''
-      p.stderr?.on('data', b => { if (errori.length < TETTO_STDERR) errori = (errori + b.toString('utf8')).slice(0, TETTO_STDERR) })
+      // F7.3: lo stderr non si scarta più: in memoria al più 64 KiB grezzi, salvato filtrato e al più 16 KiB.
+      const grezzo = []
+      let byteErrori = 0
+      let erroriTroncati = false
+      p.stderr?.on('data', b => {
+        // Si tiene la parte che sta nel tetto; il resto si scarta e lo si ricorda (il filtro toglie la riga incompleta).
+        const resta = TETTO_STDERR_GREZZO - byteErrori
+        if (resta > 0) grezzo.push(b.subarray(0, resta))
+        if (b.length > resta) erroriTroncati = true
+        byteErrori += Math.min(b.length, Math.max(0, resta))
+      })
       // La fine degli stream arriva dopo l'uscita: il costo si legge solo allora (al più 30 s dopo l'uscita, poi vale quel che c'è).
       const chiuso = new Promise(ok => p.once('close', ok))
       p.stdin.on('error', () => {})
@@ -472,11 +490,17 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
       scriviLock(dm, rec)
       await Promise.race([chiuso, new Promise(ok => setTimeout(ok, 30_000).unref?.())])
       const esito = troncato ? null : estraiEsito(Buffer.concat(pezzi).toString('utf8'))
-      const stderr = errori ? { stderr: filtraStderr(errori, input.chiave) } : {}
-      const nonDisp = !esito && codice !== 0 ? advisorNonDisponibile(errori) : undefined
-      if (nonDisp) scrivi({ stato: 'fallita', ramo, costo: null, advisorNonDisponibile: nonDisp, errore: 'advisor non disponibile: nessun lavoro fatto', ...adv, ...stderr })
+      const errori = Buffer.concat(grezzo).toString('utf8')
+      const stderr = errori ? { stderr: filtraStderr(errori, input.chiave, undefined, erroriTroncati) } : {}
+      // Rifiuto all'avvio: uscita con errore entro pochi secondi, nessun turno (niente stdout, o un JSON d'errore a zero
+      // turni) e lo stderr che parla dell'advisor. Mai dedurre dallo stderr che non si è lavorato: il resto è incerto.
+      const nessunTurno = esito ? esito.errore && !esito.turni : letti === 0
+      const nonDisp = codice !== 0 && nessunTurno && Date.now() - avvio < (deps.avvioMs ?? AVVIO_MS) ? advisorNonDisponibile(errori) : undefined
+      if (nonDisp) scrivi({ stato: 'fallita', ramo, costo: esito?.costo ?? null, advisorNonDisponibile: nonDisp, errore: "advisor non disponibile all'avvio: controlla il worktree prima di riprovare", ...adv, ...stderr })
       else if (!esito) scrivi({ stato: 'avviata', ramo, incerto: true, costo: null, errore: 'esito API incerto: controlla il worktree prima di chiudere', ...adv, ...stderr })
-      else scrivi({ stato: 'consegnata', ramo, costo: esito.costo, turni: esito.turni, errore: esito.errore || codice !== 0 ? 'esecuzione API terminata con errore: controlla il worktree prima di chiudere' : undefined, ...adv, ...stderr })
+      // Un JSON con is_error non è una consegna: l'esecuzione è finita con errore, e lo si dice.
+      else if (esito.errore) scrivi({ stato: 'fallita', ramo, costo: esito.costo, turni: esito.turni, errore: 'esecuzione API terminata con errore: controlla il worktree prima di riprovare', ...adv, ...stderr })
+      else scrivi({ stato: 'consegnata', ramo, costo: esito.costo, turni: esito.turni, errore: codice !== 0 ? 'esecuzione API terminata con errore: controlla il worktree prima di chiudere' : undefined, ...adv, ...stderr })
       await contaSpesa(dir, tentativo, esito?.costo ?? null)
     } catch (e) {
       if (!partito) {

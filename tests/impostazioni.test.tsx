@@ -3,6 +3,7 @@ import type { TestBody } from 'claude-code/testing'
 
 import {
   budgetDa,
+  campiDaProposta,
   conPendente,
   propostaImpostazioniDa,
   conPosizione,
@@ -202,7 +203,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
    * Concorrenza: `primaDiConfigura` gira una volta appena prima del CAS dell'helper; `rifiutaUtente` fa fallire un
    * configura-utente; `trattieni()` ferma la prossima scrittura (configura o configura-utente) finché il test non la apre.
    */
-  const hook: { primaDiConfigura?: () => void; rifiutaUtente?: boolean; cancello?: { attesa: Promise<void>; segnala: () => void }; nonPrendere?: boolean } = {}
+  const hook: { primaDiConfigura?: () => void; primaDiUtente?: () => void; rifiutaUtente?: boolean; cancello?: { attesa: Promise<void>; segnala: () => void }; nonPrendere?: boolean } = {}
   const popupFermi: { quale: (q: string) => boolean; attesa: Promise<void>; segnala: () => void }[] = []
   /** Il prossimo popup la cui domanda soddisfa `quale` resta aperto finché non si chiama `apri()`. */
   const trattieniPopup = (quale: (q: string) => boolean) => {
@@ -286,6 +287,9 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
     if (cmd === 'configura-utente')
       return scrittura(() => {
         // Come l'helper vero: stesso CAS, solo campi dell'utente al primo livello.
+        const altra = hook.primaDiUtente
+        hook.primaDiUtente = undefined
+        altra?.()
         if (hook.rifiutaUtente) {
           hook.rifiutaUtente = false
           return fine(4)
@@ -1514,4 +1518,56 @@ test('F7.1 risorse_agenti: le impostazioni proponibili con i valori di adesso, n
   expect(r.result.length).toBeLessThanOrEqual(4000)
   expect(r.result).not.toContain('SENTINELLA')
   expect(JSON.parse(r.result).impostazioni).toMatchObject({ profilo: 'qualita', apiClaude: { budgetUsd: 12, tetto: 2 }, consigliere: 'suggerisci', board: 'spenta', lingua: 'it' })
+})
+
+// --- revisione F7 (Codex) -------------------------------------------------------------------------------------------
+
+test('F7 rilievo 3: un profilo proposto porta i suoi pesi (Risparmio → Qualità non tiene low +40 né xhigh −90), come coppia della bozza', async ($, on) => {
+  const pesiRisparmio = conProfilo([], 'risparmio')
+  const amb = ambiente(on, { profilo: 'risparmio', pesi: pesiRisparmio })
+  const r = risorseDa({ profilo: 'risparmio', pesi: pesiRisparmio })
+  if ('k' in r) throw new Error(r.k)
+  const campi = campiDaProposta({ motivo: 'm', profilo: 'qualita' }, r)
+  expect(campi).toEqual({ profilo: 'qualita', pesi: conProfilo(pesiRisparmio, 'qualita') })
+  expect(JSON.stringify(campi.pesi)).not.toMatch(/"nome":"low","percentuale":40/)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await proponi($, { motivo: 'Più qualità.', profilo: 'qualita' })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra()).toMatchObject({ profilo: 'qualita', pesi: conProfilo(pesiRisparmio, 'qualita') })
+  await ui.unmount()
+})
+
+test('F7 rilievo 4: la lingua di una proposta non sovrascrive quella salvata da un altro progetto, né durante configura né dentro il CAS della lingua', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  const lingua = () => (JSON.parse(amb.disco.get(CONFIG)!) as { lingua?: string }).lingua
+  // 1) Un altro progetto salva il francese mentre si scrive il progetto: alla fine resta la sua scelta, più recente.
+  await proponi($, { motivo: 'Tedesco e qualità.', profilo: 'qualita', lingua: 'de' })
+  await ui.press({ key: 'impostazioni' })
+  amb.hook.primaDiConfigura = () => amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
+  amb.popup.risposta = () => null
+  await ui.press({ key: 'applica' })
+  expect(lingua()).toBe('fr')
+  await ui.unmount()
+})
+
+test('F7 rilievo 4: un\'altra lingua salvata dentro la scrittura della lingua (CAS mancato) porta al popup di conflitto, niente sovrascritto', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  const lingua = () => (JSON.parse(amb.disco.get(CONFIG)!) as { lingua?: string }).lingua
+  await proponi($, { motivo: 'Tedesco.', lingua: 'de' })
+  await ui.press({ key: 'impostazioni' })
+  amb.hook.primaDiUtente = () => amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
+  amb.popup.risposta = () => null
+  await ui.press({ key: 'applica' })
+  expect(lingua()).toBe('fr')
+  expect(amb.domande.some(q => /Lingua|Langue/.test(q))).toBe(true)
+  await ui.unmount()
 })

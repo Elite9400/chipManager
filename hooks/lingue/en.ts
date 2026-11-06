@@ -913,9 +913,9 @@ const en = {
   "au.esito.incerto": "last API run: CLAUDE_CODE_DISABLE_ADVISOR_TOOL has a value Claude Code may not read as on or off",
   "au.riavviaSenza": "Restart without auditor",
   "au.senzaBloccato": "Restart without auditor is not available: {fonte} sets CLAUDE_CODE_DISABLE_ADVISOR_TOOL in its env (or cannot be read) and would override it. The mod never edits that file.",
-  "err.advisor.consenso": "advisor not available: Fable needs your one-time consent (/model fable in an interactive session). No work was done.",
-  "err.advisor.escluso": "advisor not available: your organization's availableModels excludes it. No work was done.",
-  "err.advisor.rifiutato": "advisor not available: Claude Code refused it at start. No work was done.",
+  "err.advisor.consenso": "advisor not available: Fable needs your one-time consent (/model fable in an interactive session). Check the worktree before retrying.",
+  "err.advisor.escluso": "advisor not available: your organization's availableModels excludes it. Check the worktree before retrying.",
+  "err.advisor.rifiutato": "advisor not available: Claude Code refused it at start. Check the worktree before retrying.",
   // F7.4 Who works, F7.2 Change
   "chi.auditor": "auditor {auditor}",
   "chi.senzaAuditor": "no auditor",

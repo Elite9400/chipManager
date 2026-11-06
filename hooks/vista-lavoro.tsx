@@ -18,6 +18,7 @@ import {
   effortDi,
   effortPer,
   FASI,
+  auditorDi,
   idAuditor,
   modelloDi,
   motivoAuditor,
@@ -107,7 +108,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const rev = revisoreConcreto(a, regoleOra)
     const riga1 = [motore(a.esecutore), a.esecutore === 'claude' || modello ? nomeModello(modello) : '', `${barreEffort(eff)} ${eff}`].filter(Boolean).join(' · ')
     const riga2 = [
-      a.auditor ? T('chi.auditor', { auditor: nomeModello(idAuditor(a.auditor) ?? a.auditor) }) : T('chi.senzaAuditor'),
+      auditorDi(a) ? T('chi.auditor', { auditor: nomeModello(idAuditor(auditorDi(a)!) ?? auditorDi(a)!) }) : T('chi.senzaAuditor'),
       a.revisore === 'nessuno' ? T('chi.senzaRev') : T('chi.rev', { revisore: rev === 'motore:codex' ? 'Codex' : rev ? nomeModello(rev) : motore(a.revisore) }),
       corsiaDi(a, regoleOra) ?? T('ed.corsiaNessuna'),
     ].join(' · ')
@@ -130,8 +131,9 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
   /** Con un nuovo esecutore o modello l'auditor si ricontrolla: se non è più una coppia valida torna a «nessuno», e lo si dice. */
   const conAuditorValido = (a: Azione, campi: Partial<Azione>): Partial<Azione> => {
     const n = { ...a, ...campi }
-    if (!n.auditor || (n.esecutore === 'claude' && !motivoAuditor(modelloDi(n, regoleOra), n.auditor))) return campi
-    $.ui.toast(T('au.tolto', { auditor: n.auditor }))
+    const aud = auditorDi(n)
+    if (!aud || (n.esecutore === 'claude' && !motivoAuditor(modelloDi(n, regoleOra), aud))) return campi
+    $.ui.toast(T('au.tolto', { auditor: aud }))
     return { ...campi, auditor: undefined, senzaAuditor: undefined }
   }
   /**
@@ -163,7 +165,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         {prev && (
           <Box key={`chi-anteprima-${a.id}`} flexDirection="column">
             {prev.auditorTolto ? <Text key={`chi-tolto-${a.id}`} size="caption" dimColor wrap="wrap">{T('au.tolto', { auditor: prev.auditorTolto })}</Text> : null}
-            {prev.campi.auditor && !a.auditor ? <Text key={`chi-costo-${a.id}`} size="caption" dimColor wrap="wrap">{T('chi.costoAuditor')}</Text> : null}
+            {auditorDi(prev.campi) && !auditorDi(a) ? <Text key={`chi-costo-${a.id}`} size="caption" dimColor wrap="wrap">{T('chi.costoAuditor')}</Text> : null}
             <Box key={`chi-anteprima-${a.id}-pulsanti`} flexDirection="row" flexWrap="wrap" columnGap={1}>
               <Button key={`preset-applica-${a.id}`} variant="secondary" label={`${T('chi.applica')} ${breve(a)}`}
                 onPress={fai(async () => {
@@ -188,8 +190,8 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
           a.esecutore === 'claude' && scelta(a, 'aud', T('chi.auditorScelta'), a.auditor ?? 'nessuno', [
             { value: 'nessuno', label: T('chi.senzaAuditor') },
             ...auditorNo.filter(x => !x.motivo).map(x => ({ value: x.x, label: nomeModello(idAuditor(x.x)!) })),
-            ...(a.auditor && !ALIAS_AUDITOR.includes(a.auditor) ? [{ value: a.auditor, label: nomeModello(a.auditor) }] : []),
-          ], v => ({ auditor: v === 'nessuno' ? undefined : v, senzaAuditor: undefined })),
+            ...(auditorDi(a) && !ALIAS_AUDITOR.includes(a.auditor!) ? [{ value: a.auditor!, label: nomeModello(a.auditor!) }] : []),
+          ], v => ({ auditor: v, senzaAuditor: undefined })),
           ...auditorNo.filter(x => x.motivo).map(x => (
             <Text key={`aud-no-${x.x}-${a.id}`} size="caption" dimColor wrap="wrap">{T.m(x.motivo!)}</Text>
           )),
@@ -710,9 +712,10 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const st = statoAuditor(a)
     const esito = a.lanciatore === 'api-claude' ? a.advisorEsito : undefined
     if (!st && !esito && !a.advisorNonDisponibile) return null
-    const id = a.auditor ? idAuditor(a.auditor) : undefined
-    const nome = a.auditor ? nomeModello(id ?? a.auditor) : ''
-    const comando = `/advisor ${a.auditor ?? ''}`
+    const scelto = auditorDi(a)
+    const id = scelto ? idAuditor(scelto) : undefined
+    const nome = scelto ? nomeModello(id ?? scelto) : ''
+    const comando = `/advisor ${scelto ?? ''}`
     return (
       <Box key={`auditor-${a.id}`} flexDirection="column">
         {st === 'applicato' && <Text key={`auditor-${a.id}-testo`} size="caption" dimColor wrap="wrap">{T('au.applicato', { auditor: nome })}</Text>}
@@ -729,7 +732,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         {st === 'manuale' && <Text key={`auditor-${a.id}-nota`} size="caption" dimColor wrap="wrap">{T('au.manualeNota')}</Text>}
         {id?.startsWith('claude-fable') && st !== 'senza' && <Text key={`auditor-${a.id}-fable`} size="caption" dimColor wrap="wrap">{T('au.fable')}</Text>}
         {esito && <Text key={`auditor-${a.id}-esito`} size="caption" dimColor wrap="wrap">{T(`au.esito.${esito.stato}`, { modello: esito.modello ? nomeModello(esito.modello) : '' })}</Text>}
-        {a.stato === 'fallita' && a.lanciatore === 'api-claude' && a.auditor && a.advisorNonDisponibile && !a.senzaAuditor && (
+        {a.stato === 'fallita' && a.lanciatore === 'api-claude' && a.advisorNonDisponibile && !a.senzaAuditor && (
           a.senzaAuditorBloccato
             ? nota1(`auditor-${a.id}-bloccato`, STATO.attesa, '!', T('au.senzaBloccato', { fonte: T(`ese.fonte.${a.senzaAuditorBloccato as 'utente'}`) }))
             : (
