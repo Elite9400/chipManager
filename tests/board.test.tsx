@@ -246,7 +246,15 @@ test('F8 board: consegnata con ✓ e la sua parola; ✗ della fallita nel colore
   expect(html).toMatch(/<span class="segno">✓<\/span> Lavoro a-cons0001 <span class="tenue">· delivered ·/)
   expect(html).toMatch(/<span class="segno fallita">✗<\/span> Lavoro a-fall0001/)
   expect(html).toContain('.segno.fallita{color:var(--errore)}')
-  expect(html).toMatch(/<dt>Auditor<\/dt><dd>Fable 5\.1<\/dd>/)
+  expect(html).toMatch(/<dt>Auditor<\/dt><dd>Fable 5\.1 · auditor: turn it on yourself with \/advisor fable in that session<\/dd>/)
+  // Come nel pannello: «senza auditor» per l'avvio API e l'advisor ereditato registrato dall'esecuzione.
+  const api = board(dati([
+    az('a-aud00002', 1, { auditor: 'fable', modello: 'claude-opus-5-5', destinazione: 'api-claude', senzaAuditor: true }),
+    az('a-aud00003', 2, { destinazione: 'api-claude', lanciatore: 'api-claude', stato: 'fallita', advisorEsito: { stato: 'ereditato', modello: 'claude-opus-5-5' } }),
+  ], { lingua: 'en' }))
+  expect(api).toMatch(/<dt>Auditor<\/dt><dd>Fable 5\.1 · auditor: turned off for this start<\/dd>/)
+  expect(api).toMatch(/<dt>Auditor<\/dt><dd>no auditor · last API run: advisor inherited from the settings \(Opus 5\.5\)<\/dd>/)
+  expect(html).toContain('.barra{display:inline-block;width:160px;height:8px;border:1px solid var(--traccia)')
   expect(html).toContain('grid-template-columns:minmax(0,11em) 1fr')
   // Fuori dal blocco generato in tema.ts nessun colore scritto a mano, e mai l'azzurro dell'icona.
   const css = html.slice(html.indexOf('<style>') + 7, html.indexOf('</style>'))

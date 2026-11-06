@@ -949,6 +949,8 @@ const es: Dizionario = {
   "cambia.esitoIncerto": "cambio a {valore}: resultado incierto",
   "imp.linguaCambiataAltrove": "mientras tanto otro proyecto cambió el idioma; pulsa Aplicar otra vez para elegir el tuyo",
   "board.segno.consegnata": "entregada",
+  "au.manualeBreve": "/advisor cambia tu valor por defecto para todas las sesiones: al terminar escribe /advisor off.",
+  "au.fableBreve": "Fable como auditor: en algunos planes necesita un consentimiento único (/model fable, nunca lo da la mod) y puede cobrarse a los créditos de uso.",
   // ‹fine›
 }
 

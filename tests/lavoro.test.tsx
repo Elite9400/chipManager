@@ -722,7 +722,7 @@ test('F8.2 albero: ogni hover sta su un Box con chiave unica fra i fratelli (o i
   expect(azioni.terminal).toEqual(azioni.desktop)
 })
 
-test('F8.4 «Chi lavora»: nella scheda compatta l\'auditor è una riga con «Copy», le note solo a chip aperta; i dettagli senza titolo ripetuto né righe vuote', async ($, on) => {
+test('F8.4 «Chi lavora»: nella scheda compatta l\'auditor ha «Copy» e gli avvisi in una riga, per esteso a chip aperta; i dettagli senza titolo ripetuto né righe vuote', async ($, on) => {
   const a = az('a-f84cmp01', 1, { revisore: 'claude', corsia: 'R3', auditor: 'fable' })
   ambiente(on, [a])
   mock.clock(on)
@@ -730,9 +730,13 @@ test('F8.4 «Chi lavora»: nella scheda compatta l\'auditor è una riga con «Co
   const ui = await $.ui.mount(PANE('terminal', 60))
   await ui.press({ key: 'ricarica' })
   expect(await ui.find({ type: 'Text', text: /^auditor: attivalo tu con \/advisor fable/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^\/advisor cambia il tuo default/ })).toBeUndefined()
+  // Compatta: l'effetto globale di /advisor e il consenso di Fable restano accanto alle azioni, in una riga ciascuno.
+  expect(await ui.find({ type: 'Text', text: t('it', 'au.manualeBreve') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: t('it', 'au.fableBreve') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: t('it', 'au.manualeNota') })).toBeUndefined()
   await ui.press({ key: `mod-${a.id}` })
-  expect(await ui.find({ type: 'Text', text: /^\/advisor cambia il tuo default/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: t('it', 'au.manualeNota') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: t('it', 'au.fable') })).toBeDefined()
   await ui.press({ key: `chi-dettagli-${a.id}` })
   const dettagli = await ui.find({ key: `g-chi-dettagli-${a.id}` }) as unknown as NodoF8
   expect(dettagli.props?.gap).toBeUndefined()

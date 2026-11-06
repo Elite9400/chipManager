@@ -13,6 +13,7 @@ import {
   nomeModello,
   percentuale,
   revisoreConcreto,
+  statoAuditor,
   violazioni,
   mandato,
 } from './logica'
@@ -123,6 +124,19 @@ const SEGNI = {
   consegnata: ['✓', 'board.segno.consegnata'],
 } as const
 
+/** L'auditor come nel pannello: la richiesta, come si applica (`statoAuditor`) e l'esito registrato dell'ultima esecuzione API. */
+function rigaAuditor(T: T, a: Azione) {
+  const scelto = auditorDi(a)
+  const st = statoAuditor(a)
+  const parti = [scelto ? nomeModello(idAuditor(scelto) ?? scelto) : T('chi.senzaAuditor')]
+  if (st === 'senza') parti.push(T('au.senza'))
+  else if (st === 'manuale') parti.push(T('au.manuale', { comando: `/advisor ${scelto}` }))
+  else if (st === 'applicato') parti.push(T('au.applicato', { auditor: parti[0]! }))
+  const esito = a.lanciatore === 'api-claude' ? a.advisorEsito : undefined
+  if (esito) parti.push(T(`au.esito.${esito.stato}`, { modello: esito.modello ? nomeModello(esito.modello) : '' }))
+  return parti.join(' · ')
+}
+
 function scheda(T: T, a: Azione, d: DatiBoard, lista: readonly Azione[], segno: keyof typeof SEGNI) {
   const r = d.regole
   const vita = d.vive[a.id]
@@ -157,7 +171,7 @@ ${blocchi.length ? `<h4>${esc(T('board.blocchi'))}</h4><ul>${blocchi.map(b => `<
 ${a.motivoCoda ? `<p>${esc(T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) }))}</p>` : ''}
 <h4>${esc(T('ed.piano'))}</h4>${pianoHtml}
 <h4>${esc(T('board.processo'))}</h4><dl>${voce(T('ed.corsia'), esc(corsiaDi(a, r) ?? T('board.nessuna')))}${voce(T('board.passi'), esc(T('board.passiValore', { esecutore: motore(T, a.esecutore), revisore })))}${voce(T('board.fase'), fase ? passi : esc(T('board.nessuna')))}</dl>
-<h4>${esc(T('tab.chi'))}</h4><dl>${voce(T('ed.esecutore'), esc(motore(T, a.esecutore)))}${voce(T('ed.modello'), esc(nomeModello(modelloDi(a, r))))}${voce(T('ed.effort'), `${esc(effortDi(a, r))} ${barreEffort(effortDi(a, r))}`)}${voce(T('chi.auditorScelta'), esc(auditorDi(a) ? nomeModello(idAuditor(auditorDi(a)!) ?? auditorDi(a)!) : T('chi.senzaAuditor')))}${voce(T('ed.permessi'), esc(a.permessi ?? T('board.comeChiAvvia')))}${voce(T('ed.contesto'), esc(a.contesto ?? 'fresh'))}${voce('Worktree', a.worktree === false ? esc(T('op.condivisa')) : `${esc(T('board.proprio'))}${a.ramo ? ` · ${esc(T('board.ramo', { ramo: a.ramo }))}` : ''}${a.ramoSessione ? ` · ${esc(a.ramoSessione)}` : ''}`)}${voce(T('board.destinazione'), esc(a.destinazione ?? 'local'))}</dl>
+<h4>${esc(T('tab.chi'))}</h4><dl>${voce(T('ed.esecutore'), esc(motore(T, a.esecutore)))}${voce(T('ed.modello'), esc(nomeModello(modelloDi(a, r))))}${voce(T('ed.effort'), `${esc(effortDi(a, r))} ${barreEffort(effortDi(a, r))}`)}${voce(T('chi.auditorScelta'), esc(rigaAuditor(T, a)))}${voce(T('ed.permessi'), esc(a.permessi ?? T('board.comeChiAvvia')))}${voce(T('ed.contesto'), esc(a.contesto ?? 'fresh'))}${voce('Worktree', a.worktree === false ? esc(T('op.condivisa')) : `${esc(T('board.proprio'))}${a.ramo ? ` · ${esc(T('board.ramo', { ramo: a.ramo }))}` : ''}${a.ramoSessione ? ` · ${esc(a.ramoSessione)}` : ''}`)}${voce(T('board.destinazione'), esc(a.destinazione ?? 'local'))}</dl>
 <h4>${esc(T('board.revisione'))}</h4><dl>${voce(T('board.revisorePrevisto'), esc(revisore))}${esito ? `${voce(T('board.esito'), esc(T(`esito.${esito.esito}`)))}${voce(T('board.riferitaDa'), esc(esito.riferitaDa))}${voce(T('board.quando'), esc(data(T, esito.quando)))}${esito.nota ? voce(T('board.nota'), esc(esito.nota)) : ''}` : voce(T('board.esito'), esc(T('board.nonRiferito')))}</dl>
 <h4>${esc(T('board.tempi'))}</h4><dl>${voce(T('board.creata'), esc(data(T, a.creata)))}${voce(T('stato.avviata'), esc(data(T, a.avviataIl)))}${voce(T('board.consegnata'), esc(data(T, a.consegnataIl)))}${voce(T('board.completata'), esc(data(T, a.completataIl)))}</dl>
 <h4>${esc(T('board.legami'))}</h4><dl>${voce('Issue', a.issue ? `#${a.issue}` : esc(T('board.nessuna')))}${voce(T('board.dipendeDa'), dip.length ? esc(dip.join('; ')) : esc(T('board.nulla')))}${voce(T('board.sblocca'), sblocca.length ? esc(sblocca.join('; ')) : esc(T('board.nulla')))}${voce(T('board.sessione'), esc(a.sessione ?? T('board.nessuna')))}</dl>
@@ -177,7 +191,7 @@ details{border:1px solid var(--bordo);border-radius:4px;margin:4px 0;padding:4px
 details:target{outline:2px solid var(--accento)}.segno{color:var(--accento)}.tenue{color:var(--tenue);font-weight:400}
 .errore,.segno.fallita{color:var(--errore)}pre{white-space:pre-wrap;word-break:break-word;background:var(--velo);padding:8px;border-radius:4px;max-height:480px;overflow:auto}
 dl{display:grid;grid-template-columns:minmax(0,11em) 1fr;gap:0 12px;margin:0}dt{color:var(--tenue)}dd{margin:0;min-width:0;overflow-wrap:anywhere}
-.barra{display:inline-block;width:160px;height:8px;border:1px solid var(--bordo);vertical-align:middle}.barra>span{display:block;height:100%;background:var(--accento)}
+.barra{display:inline-block;width:160px;height:8px;border:1px solid var(--traccia);vertical-align:middle}.barra>span{display:block;height:100%;background:var(--accento)}
 footer{margin-top:40px;color:var(--tenue);font-size:13px;word-break:break-all}`
 
 /** La board intera: HTML statico, nessuno script, nessun link costruito da dati, gettoni oscurati. */

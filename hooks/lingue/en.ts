@@ -951,6 +951,8 @@ const en = {
   "cambia.esitoIncerto": "change to {valore}: outcome uncertain",
   "imp.linguaCambiataAltrove": "another project changed the language meanwhile; press Apply again to choose yours",
   "board.segno.consegnata": "delivered",
+  "au.manualeBreve": "/advisor changes your default for every session: type /advisor off when done.",
+  "au.fableBreve": "Fable as auditor: on some plans it needs a one-time consent (/model fable, never given by the mod) and can bill to usage credits.",
   // ‹fine›
 } satisfies Record<string, Voce>
 

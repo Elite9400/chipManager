@@ -214,6 +214,8 @@ test('F8.3 contrasto in due: l\'accento è grafica (≥ 3:1 su ogni sfondo); la 
     const t = BOARD[tema]
     for (const k of ['testo', 'tenue', 'errore'] as const) expect([tema, k, contrasto(t[k], t.fondo) >= 4.5]).toEqual([tema, k, true])
     expect([tema, 'accento', contrasto(t.accento, t.fondo) >= 3]).toEqual([tema, 'accento', true])
+    // La traccia vuota della barra (il suo contorno) è grafica che porta informazione: anche lei ≥ 3:1 sul fondo.
+    expect([tema, 'traccia', contrasto(t.traccia, t.fondo) >= 3]).toEqual([tema, 'traccia', true])
   }
   // Il blocco CSS nasce dagli stessi valori; il colore dell'icona non c'entra.
   const css = cssVariabiliBoard()

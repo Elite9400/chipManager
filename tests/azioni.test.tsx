@@ -3054,12 +3054,8 @@ test('F7.3 avvio: --advisor solo per api-claude (alias risolto); le sessioni des
   await ui.press({ key: 'ricarica' })
   // La chip di sessione dice come attivarlo a mano, con «Copia», e che /advisor cambia il default di tutte le sessioni.
   expect(await ui.find({ type: 'Text', text: 'auditor: attivalo tu con /advisor opus in quella sessione' })).toBeDefined()
-  // F8.4: le note lunghe stanno nella chip aperta, non nella scheda compatta.
-  await ui.press({ key: `mod-${desk.id}` })
   expect(await ui.find({ type: 'Text', text: /^\/advisor cambia il tuo default per tutte le sessioni/ })).toBeDefined()
-  await ui.press({ key: `mod-${api.id}` })
   expect(await ui.find({ type: 'Text', text: /^Fable come auditor: su alcuni piani serve un consenso una tantum/ })).toBeDefined()
-  await ui.press({ key: `mod-${api.id}` })
   await ui.press({ key: `avvia-${api.id}` })
   await ui.press({ key: `avvia-${desk.id}` })
   expect(ingressi).toHaveLength(1)

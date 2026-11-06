@@ -743,8 +743,9 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
             </Button>
           </Box>
         )}
-        {/* Nella scheda compatta solo la riga e «Copy»: le note lunghe stanno nella chip aperta. */}
-        {st === 'manuale' && !compatta && <Text key={`auditor-${a.id}-nota`} size="caption" dimColor wrap="wrap">{T('au.manualeNota')}</Text>}
+        {/* Gli avvisi restano accanto a «Copy» e «Avvia» anche nella compatta, in una riga; per esteso nella chip aperta. */}
+        {st === 'manuale' && <Text key={`auditor-${a.id}-nota`} size="caption" dimColor wrap="wrap">{T(compatta ? 'au.manualeBreve' : 'au.manualeNota')}</Text>}
+        {id?.startsWith('claude-fable') && st !== 'senza' && compatta && <Text key={`auditor-${a.id}-fable`} size="caption" dimColor wrap="wrap">{T('au.fableBreve')}</Text>}
         {id?.startsWith('claude-fable') && st !== 'senza' && !compatta && <Text key={`auditor-${a.id}-fable`} size="caption" dimColor wrap="wrap">{T('au.fable')}</Text>}
         {esito && <Text key={`auditor-${a.id}-esito`} size="caption" dimColor wrap="wrap">{T(`au.esito.${esito.stato}`, { modello: esito.modello ? nomeModello(esito.modello) : '' })}</Text>}
         {a.stato === 'fallita' && a.lanciatore === 'api-claude' && a.advisorNonDisponibile && !a.senzaAuditor && (

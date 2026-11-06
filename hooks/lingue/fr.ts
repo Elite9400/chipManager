@@ -949,6 +949,8 @@ const fr: Dizionario = {
   "cambia.esitoIncerto": "changement vers {valore} : résultat incertain",
   "imp.linguaCambiataAltrove": "entre-temps un autre projet a changé la langue ; appuyez à nouveau sur Appliquer pour choisir la vôtre",
   "board.segno.consegnata": "livrée",
+  "au.manualeBreve": "/advisor change votre valeur par défaut pour toutes les sessions : à la fin tapez /advisor off.",
+  "au.fableBreve": "Fable comme auditeur : sur certains plans il faut un consentement unique (/model fable, jamais donné par le mod) et il peut être facturé sur les crédits d'utilisation.",
   // ‹fine›
 }
 

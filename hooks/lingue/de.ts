@@ -949,6 +949,8 @@ const de: Dizionario = {
   "cambia.esitoIncerto": "Änderung auf {valore}: Ergebnis unsicher",
   "imp.linguaCambiataAltrove": "inzwischen hat ein anderes Projekt die Sprache geändert; drücke erneut Anwenden, um deine zu wählen",
   "board.segno.consegnata": "geliefert",
+  "au.manualeBreve": "/advisor ändert deinen Standard für alle Sitzungen: tippe am Ende /advisor off.",
+  "au.fableBreve": "Fable als Auditor: bei manchen Plänen braucht es eine einmalige Zustimmung (/model fable, nie von der Mod gegeben) und es kann über Nutzungsguthaben abgerechnet werden.",
   // ‹fine›
 }
 

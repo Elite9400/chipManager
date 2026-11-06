@@ -49,18 +49,19 @@ export const SFONDI = { chiaro: ['#FFFFFF', '#FAF9F5'], scuro: ['#000000', '#262
 
 /**
  * F8.3: i valori concreti della board HTML, per tema, dalla stessa fonte. Testo, tenue ed errore sono testo (≥ 4,5:1 sul
- * fondo); accento e bordo sono grafica (l'accento ≥ 3:1; il bordo separa, non porta informazione). Lo script dei test
+ * fondo); accento e traccia (il contorno della barra delle milestone) sono grafica che porta informazione (≥ 3:1); il bordo
+ * delle schede separa soltanto. Lo script dei test
  * misura queste coppie: il contrasto dei temi dell'host (dimColor, hover, fuoco) si guarda al collaudo.
  */
 export const BOARD = {
-  scuro: { fondo: '#0F1115', testo: '#E5E7EB', tenue: '#9CA3AF', bordo: '#2A2F3A', accento: ACCENTO, errore: '#EF4444' },
-  chiaro: { fondo: '#FFFFFF', testo: '#111827', tenue: '#6B7280', bordo: '#E5E7EB', accento: ACCENTO, errore: STATO.errore },
+  scuro: { fondo: '#0F1115', testo: '#E5E7EB', tenue: '#9CA3AF', bordo: '#2A2F3A', traccia: '#6B7280', accento: ACCENTO, errore: '#EF4444' },
+  chiaro: { fondo: '#FFFFFF', testo: '#111827', tenue: '#6B7280', bordo: '#E5E7EB', traccia: '#868B94', accento: ACCENTO, errore: STATO.errore },
 } as const
 
 /** Il blocco unico di variabili CSS della board, generato dai valori sopra: scuro di default, chiaro se il sistema lo chiede. */
 export function cssVariabiliBoard() {
   const v = (t: (typeof BOARD)['scuro' | 'chiaro']) =>
-    `--fondo:${t.fondo};--testo:${t.testo};--tenue:${t.tenue};--bordo:${t.bordo};--accento:${t.accento};--errore:${t.errore};--velo:${GRIGIO}${VELO.riquadro}`
+    `--fondo:${t.fondo};--testo:${t.testo};--tenue:${t.tenue};--bordo:${t.bordo};--traccia:${t.traccia};--accento:${t.accento};--errore:${t.errore};--velo:${GRIGIO}${VELO.riquadro}`
   return `:root{color-scheme:dark light;${v(BOARD.scuro)};--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}\n@media (prefers-color-scheme:light){:root{${v(BOARD.chiaro)}}}`
 }
 
