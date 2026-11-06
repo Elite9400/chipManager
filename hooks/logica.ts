@@ -1,5 +1,6 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
 import type { Azione, BoardProgetto, Chiamante, Consumo, Corsia, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo, Vita } from '../types'
+import { GRIGIO, LIVELLO, STATO } from './tema'
 
 // --- regole (routing.json) ---------------------------------------------------------------------
 
@@ -196,10 +197,11 @@ export const sogliaDi = (r: RisorseProgetto, f: Fornitore): Soglia | null => (r.
 export type Livello = 'ok' | 'attenzione' | 'critica'
 export const livelloDi = (percentuale: number, soglia: Soglia | null): Livello =>
   !soglia ? 'ok' : percentuale >= soglia.critica ? 'critica' : percentuale >= soglia.attenzione ? 'attenzione' : 'ok'
-export const COLORE_LIVELLO: Record<Livello, string> = { ok: '#059669', attenzione: '#D97706', critica: '#DC2626' }
+/** Il colore del livello su barre e segni: `ok` non ha una tinta di livello, la sua barra è quella del lavoro che va. */
+export const COLORE_LIVELLO: Record<Livello, string> = { ok: STATO.inCorso, attenzione: LIVELLO.attenzione, critica: LIVELLO.critica }
 // Il manuale si colora per soglia anche se non è «fresco»: è una dichiarazione, non una misura che scade.
 export const coloreLimite = (l: Limite, adesso = Date.now(), soglia: Soglia | null = SOGLIA_PREDEFINITA) =>
-  (!l.manuale && !limiteFresco(l, adesso)) || l.percentuale === undefined ? '#808080' : COLORE_LIVELLO[livelloDi(l.percentuale, soglia)]
+  (!l.manuale && !limiteFresco(l, adesso)) || l.percentuale === undefined ? GRIGIO : COLORE_LIVELLO[livelloDi(l.percentuale, soglia)]
 
 /** La quota misurata più piena di un fornitore fra quelle fresche (i manuali e la spesa API non sono quote di piano). */
 export function piuPieno(limiti: readonly Limite[], f: Fornitore, adesso = Date.now()): Limite | undefined {
@@ -889,48 +891,21 @@ const NOMI: Record<string, string> = {
 }
 export const nomeModello = (id: string) => NOMI[id] ?? id
 
-// Palette delle etichette: una tinta per modello, una scala «calda» per l'effort (più caldo = più costoso),
-// una per motore e una per stato. I colori marcano (pallini, velo, bordi): le parole restano nell'inchiostro.
-export const COLORE_MODELLO: Record<string, string> = {
-  'claude-opus-5-5': '#E11D48',
-  'claude-fable-5-1': '#C026D3',
-  'claude-sonnet-5-5': '#2563EB',
-  'claude-haiku-5-5': '#0D9488',
-  'gpt-6.1-sol': '#EA580C',
-  'gpt-6-astra': '#CA8A04',
-}
-export const COLORE_EFFORT: Record<string, string> = {
-  low: '#16A34A',
-  medium: '#0891B2',
-  high: '#D97706',
-  xhigh: '#DC2626',
-}
-export const COLORE_MOTORE: Record<string, string> = { claude: '#D97757', codex: '#10A37F', freellmapi: '#0D9488', nessuno: '#6B7280' }
-// «Da avviare» porta l'unico accento freddo del pannello, l'azzurro.
-// «Ferma» e «fallita» chiedono una decisione: gli unici caldi, gli unici con il bordo acceso.
+// Colori degli stati in parole di dominio, dai gettoni di tema.ts (l'unico file con colori esadecimali).
 export const COLORE_STATO = {
-  proposta: '#00BFFF',
-  accodata: '#F59E0B',
-  inAvvio: '#38BDF8',
-  inCorso: '#22C55E',
-  consegnata: '#14B8A6',
-  ferma: '#F97316',
-  fallita: '#EF4444',
-  qui: '#D97757',
-  sensibile: '#EF4444',
+  proposta: STATO.coda,
+  accodata: STATO.coda,
+  inAvvio: STATO.coda,
+  inCorso: STATO.inCorso,
+  consegnata: STATO.consegnata,
+  ferma: STATO.attesa,
+  fallita: STATO.errore,
+  qui: STATO.inCorso,
+  sensibile: STATO.errore,
 } as const
 
 /** Tinta pallida dello stesso colore (alfa ~16%): regge sia sul tema chiaro sia sullo scuro. */
 export const velo = (hex: string, alfa = '29') => `${hex}${alfa}`
-
-/** Testo scuro su sfondi chiari, bianco sugli altri (luminanza relativa WCAG). */
-export function testoSu(hex: string) {
-  const [r, g, b] = [1, 3, 5].map(i => {
-    const c = parseInt(hex.slice(i, i + 2), 16) / 255
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-  }) as [number, number, number]
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? '#111827' : '#FFFFFF'
-}
 
 /** L'effort come grandezza, non solo come colore: ▰ pieni su 4. */
 export const barreEffort = (effort: string) => {

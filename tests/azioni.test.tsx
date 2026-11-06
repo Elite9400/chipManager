@@ -9,7 +9,6 @@ import {
   passoCadenza,
   segnaLavori,
   sommaSecchi,
-  COLORE_EFFORT,
   bilancia,
   cartellaDati,
   checkoutDi,
@@ -29,7 +28,8 @@ import {
   limiteFresco,
   punteggio,
   RISORSE_DEFAULT,
-  COLORE_MODELLO,
+  COLORE_LIVELLO,
+  COLORE_STATO,
   corrisponde,
   dipendenze,
   dipendenzeChiuse,
@@ -38,7 +38,6 @@ import {
   datiLocali,
   faseDiAzione,
   mandato,
-  MODELLI,
   normalizza,
   parametriAvvio,
   progettoDa,
@@ -51,7 +50,6 @@ import {
   sopra,
   sposta,
   stimaArrivo,
-  testoSu,
   taskAccertato,
   traguardiDa,
   trovaTask,
@@ -61,6 +59,7 @@ import {
 import type { Azione, Chiamante, Limite } from '../types'
 import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
 import { hash, testoRiassunto } from '../hooks/board'
+import { GRIGIO, LIVELLO, STATO } from '../hooks/tema'
 
 // Un routing.json d'esempio, nella forma che il pannello legge.
 const ROUTING = {
@@ -122,11 +121,11 @@ test('mandato: Claude esegue, Codex rivede prendendo la corsia della macchina', 
   expect(m.prompt).not.toContain('codex exec -m')
 })
 
-test('etichette: ogni modello e ogni effort ha la sua tinta', () => {
-  for (const m of [...MODELLI.claude, ...MODELLI.codex]) expect(COLORE_MODELLO[m]).toMatch(/^#[0-9A-F]{6}$/)
-  expect(new Set(Object.values(COLORE_MODELLO)).size).toBe(Object.keys(COLORE_MODELLO).length)
-  expect(Object.keys(COLORE_EFFORT)).toEqual(['low', 'medium', 'high', 'xhigh'])
-  expect(testoSu('#F59E0B')).toBe('#111827')
+test('colori: stati e livelli vengono dai gettoni di tema.ts; modello ed effort non hanno tinte proprie', () => {
+  const stati: string[] = Object.values(STATO)
+  for (const colore of Object.values(COLORE_STATO)) expect(stati.includes(colore)).toBe(true)
+  expect(COLORE_LIVELLO).toEqual({ ok: STATO.inCorso, attenzione: LIVELLO.attenzione, critica: LIVELLO.critica })
+  expect(coloreLimite({ ...LIMITE, letto: '2000-01-01T00:00:00Z' })).toBe(GRIGIO)
 })
 
 test('dipendenze: si sbloccano solo esistenti e completate; scartate e inesistenti bloccano', () => {
@@ -1509,11 +1508,11 @@ test('2.2: «Al lavoro adesso» mostra anche le sessioni aperte a mano e quelle 
   await ui.press({ key: `apri-ses-${ID_ESEMPIO(1)}` })
   expect(amb.chiamate.some(c => c.tool === 'open_session_in' && c.args.session_id === ID_ESEMPIO(1))).toBe(true)
   await ui.unmount()
-  // Terminale stretto: cadono Contesto e Attività, modello ed effort in una colonna.
+  // Pannello stretto (C1.3): niente tabella; due righe per sessione, il ramo su una terza.
   const t = await $.ui.mount({ ...PANE('terminal') })
-  expect(await t.find({ type: 'Text', text: /^Modello · effort$/ })).toBeDefined()
   expect(await t.find({ type: 'Text', text: /^Contesto$/ })).toBeUndefined()
-  expect(await t.find({ type: 'Text', text: /^GPT-6 Astra · xhigh$|^gpt-6-astra · xhigh$/ })).toBeDefined()
+  for (const testo of [/^GPT-6 Astra$|^gpt-6-astra$/, /^▰▰▰▰ xhigh$/, /^contesto 61%$/, /^fix-ricerca$/])
+    expect(await t.find({ type: 'Text', text: testo })).toBeDefined()
   await t.unmount()
   const largo = await $.ui.mount({ ...PANE('terminal'), props: { ...PANE('terminal').props, bodyColumns: 120 } })
   expect(await largo.find({ type: 'Text', text: /^Contesto$/ })).toBeDefined()
@@ -1609,9 +1608,9 @@ test('2.3: soglie per fornitore: predefinite 70/90, nessuna, personali; forme no
     expect(typeof r(rotta)).toBe('string')
   const s = { attenzione: 60, critica: 80 }
   expect([livelloDi(59, s), livelloDi(60, s), livelloDi(80, s), livelloDi(99, null)]).toEqual(['ok', 'attenzione', 'critica', 'ok'])
-  expect(coloreLimite({ ...LIMITE, percentuale: 85 }, Date.now(), s)).toBe('#DC2626')
-  expect(coloreLimite({ ...LIMITE, percentuale: 85 })).toBe('#D97706')
-  expect(coloreLimite({ ...LIMITE, percentuale: 99 }, Date.now(), null)).toBe('#059669')
+  expect(coloreLimite({ ...LIMITE, percentuale: 85 }, Date.now(), s)).toBe(LIVELLO.critica)
+  expect(coloreLimite({ ...LIMITE, percentuale: 85 })).toBe(LIVELLO.attenzione)
+  expect(coloreLimite({ ...LIMITE, percentuale: 99 }, Date.now(), null)).toBe(STATO.inCorso)
   // La quota più piena conta solo misure fresche di piano: non la spesa API, non i manuali, non le vecchie.
   const limiti: Limite[] = [
     { ...LIMITE, id: 'claude-a', percentuale: 40 },
@@ -1710,11 +1709,13 @@ test('2.3: vista Carico: matrice modello × effort, limiti per fornitore con le 
     await ui.press({ key: 'vista-carico' })
     expect(await ui.find({ type: 'Text', text: /Sonnet 5\.5: 1 sessione · 340k token/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /(GPT-6 Astra|gpt-6-astra): 1 sessione · 61k token/ })).toBeDefined()
-    for (const testo of [/^Al lavoro per modello ed effort$/, /^Sonnet 5\.5$/, /^Limiti e budget$/, /attenzione da 70% · critica da 90%/, /nessuna soglia/,
+    // Su `stretta` la matrice diventa un elenco per modello (C1.4).
+    const stretta = colonne < 70
+    for (const testo of [/^Al lavoro per modello ed effort$/, stretta ? /^Sonnet 5\.5: medium 1 \(\+1 in coda\)$/ : /^Sonnet 5\.5$/, /^Limiti e budget$/, /attenzione da 70% · critica da 90%/, /nessuna soglia/,
       /^Contesto delle sessioni al lavoro$/, /^Guida delle API$/, /^Codex \+50%\. Valgono solo/, /Nessun avvio nelle ultime 24 ore/])
       expect(await ui.find({ type: 'Text', text: testo })).toBeDefined()
-    // Sonnet 5.5 · medium: una sessione al lavoro e una chip in coda nella stessa cella.
-    expect((await ui.findAll({ type: 'Text', text: /^1 \+1$/ })).length).toBe(1)
+    // Sonnet 5.5 · medium: una sessione al lavoro e una chip in coda nella stessa cella (sull'elenco, nella riga del modello).
+    expect((await ui.findAll({ type: 'Text', text: /^1 \+1$/ })).length).toBe(stretta ? 0 : 1)
     await ui.press({ key: 'vista-lavoro' })
     await ui.unmount()
   }

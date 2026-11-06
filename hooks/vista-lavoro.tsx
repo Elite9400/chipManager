@@ -7,10 +7,6 @@ import {
   barreEffort,
   BASE_RE,
   blocca,
-  COLORE_EFFORT,
-  COLORE_MODELLO,
-  COLORE_MOTORE,
-  COLORE_STATO,
   CORSIE,
   corsiaDi,
   cartellaCondivisa,
@@ -22,6 +18,7 @@ import {
   modelloDi,
   nomeModello,
   percentuale,
+  pianifica,
   pianoValido,
   PERMESSI,
   RAMO_RE,
@@ -33,6 +30,7 @@ import {
   violazioniAvvio,
 } from './logica'
 import type { Dati } from './pannello'
+import { GRIGIO, MOTORE, STATO } from './tema'
 
 // Copia identica degli atomi di register.tsx (lo scanner li vuole nel file che li usa).
 const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as string | null)
@@ -46,9 +44,9 @@ const corto = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…
 
 // `$` resta un argomento: lo scanner non lo vuole dentro un oggetto.
 export function vistaLavoro($: EngineInterface, d: Dati) {
-  const { c, Select, Input, conVelo, stretto, io, tutte, senzaProgetto, ses, tutteLeSessioni, regoleOra,
-    testoFiltro, lista, visibili, espansa, stati, tr, adesso, boardPronta, fai, modifica, completa,
-    apriChiudi, ferma, statoDi, etichetta, nota1, proposte, tentativoAnnullabile, aspettaTe, titoloSezione, righe,
+  const { c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, tutteLeSessioni, regoleOra,
+    testoFiltro, lista, visibili, espansa, motiviAperti, stati, tr, adesso, capacita, boardPronta, fai, modifica, completa,
+    apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, titoloSezione, righe,
     alLavoro, cella, MOTORI, motore, oraDi } = d
   const { Box, Text, Button } = d.el
   type Riga = Dati['righe'][number]
@@ -82,7 +80,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         gap={1}
         marginTop={1}
         padding={1}
-        backgroundColor={conVelo ? velo('#808080', '14') : undefined}
+        backgroundColor={conVelo ? velo(GRIGIO, '14') : undefined}
         borderStyle={conVelo ? undefined : 'single'}
         borderDimColor
       >
@@ -283,7 +281,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
           return (
             <Text key={`f-${a.id}-${f}`}>
               {k ? <Text dimColor>{'  ›  '}</Text> : ''}
-              {qui ? <Text color={COLORE_STATO.inCorso}>{'● '}</Text> : ''}
+              {qui ? <Text color={STATO.inCorso}>{'● '}</Text> : ''}
               <Text dimColor={!qui} bold={qui}>{`${i > pos ? '✓ ' : ''}${f}`}</Text>
             </Text>
           )
@@ -297,19 +295,65 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     return n ? tr?.lista.find(t => t.numero === n) : undefined
   }
 
-  const scheda = (a: Azione) => {
+  /**
+   * Prima riga di una scheda o di una sessione: il titolo va a capo e lascia lo stato a destra; su `stretta` lo stato
+   * scende sotto. (`ui.Riga` manda a capo l'intero gruppo di destra quando il titolo è lungo: qui lo stato resta fisso.)
+   */
+  const testa = (k: string, principale: unknown, destra: unknown[]) => (
+    <Box key={k} flexDirection={classe === 'stretta' ? 'column' : 'row'} justifyContent="space-between" alignItems="flex-start" columnGap={1}>
+      <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+        {principale as never}
+      </Box>
+      <Box flexDirection="row" flexShrink={0} columnGap={1}>
+        {destra as never}
+      </Box>
+    </Box>
+  )
+
+  /** Frammenti in fila che vanno a capo fra un frammento e l'altro, separati da «·». */
+  const pezzi = (k: string, voci: unknown[]) => (
+    <Box key={k} flexDirection="row" flexWrap="wrap" columnGap={1}>
+      {voci.filter(Boolean).map((v, i) => (
+        <Text key={`${k}-${i}`}>
+          {i ? <Text dimColor>{'· '}</Text> : ''}
+          {v as never}
+        </Text>
+      ))}
+    </Box>
+  )
+
+  /** Le informazioni di lavoro in inchiostro: il colore solo sul ◆ del motore e sul ▲ della corsia sensibile. */
+  const infoLavoro = (a: Azione) => {
+    const effort = effortDi(a, regoleOra)
+    const corsia = corsiaDi(a, regoleOra)
+    const prima = a.dipende.map(x => tutte.find(y => y.id === x)?.titolo ?? x)
+    const ms = milestoneDi(a)
+    return pezzi(`info-${a.id}`, [
+      <Text><Text color={MOTORE[a.esecutore]}>{'◆ '}</Text>{motore(a.esecutore)}</Text>,
+      <Text>{nomeModello(modelloDi(a, regoleOra))}</Text>,
+      <Text>{`${barreEffort(effort)} ${effort}`}</Text>,
+      <Text>{a.revisore === 'nessuno' ? 'senza revisione' : `↺ rivede ${motore(a.revisore)}`}</Text>,
+      sensibile(a, regoleOra) ? <Text><Text color={STATO.errore}>{'▲ '}</Text>{`${corsia ?? 'R4'} sensibile`}</Text> : corsia && <Text>{corsia}</Text>,
+      a.issue && <Text>{`#${a.issue}`}</Text>,
+      ms && <Text>{`◎ ${corto(ms.titolo, 28)}`}</Text>,
+      prima.length > 0 && <Text>{`dopo «${corto(prima.join('», «'), 40)}»`}</Text>,
+    ])
+  }
+  /** La chip dello stato, con il segno nel suo colore e la parola nell'inchiostro. */
+  const chipStato = (a: Azione) => {
     const s = statoDi(a)
+    return ui.Chip({ chiave: `st-${a.id}`, testo: s.parola, segno: s.segno, colore: s.colore })
+  }
+
+  const scheda = (a: Azione) => {
     const modificabile = ['proposta', 'accodata', 'fallita'].includes(a.stato)
     const aperto = espansa === a.id && modificabile
     const dip = dipendenze(a, tutte)
-    const allerta = ferma(a) || a.stato === 'fallita'
-    const modello = modelloDi(a, regoleOra)
-    const effort = effortDi(a, regoleOra)
+    const allerta = ferma(a) ? STATO.attesa : a.stato === 'fallita' ? STATO.errore : undefined
     const vita = stati[a.id]
     const blocchi = modificabile ? violazioniAvvio(a, regoleOra, tutte, io) : []
     const bloccatoQui = a.stato === 'proposta' ? violazioniAvvio(a, regoleOra, tutte, io, true) : []
     const sblocca = blocca(a, tutte)
-    const ms = milestoneDi(a)
     const mia = !!io && a.lanciataDa === io.io
     return (
       <Box
@@ -317,41 +361,31 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         flexDirection="column"
         gap={1}
         borderStyle="round"
-        borderColor={allerta ? s.colore : undefined}
+        borderColor={allerta}
         borderDimColor={!allerta}
         paddingX={1}
         paddingY={conVelo ? 1 : 0}
       >
-        <Box flexDirection="row" gap={1} justifyContent="space-between" alignItems="flex-start">
-          <Button key={`apri-${a.id}`} plain label={`${aperto ? 'Chiudi' : 'Apri'} i dettagli di ${a.titolo}`} onPress={apriChiudi(a.id)}>
-            <Text dimColor tabular>{`${lista.indexOf(a) + 1}  `}</Text>
-            <Text weight="semibold" bold>
-              {a.titolo}
-            </Text>
-          </Button>
-          {a.issue ? <Text dimColor tabular>{`#${a.issue}`}</Text> : null}
-        </Box>
-        <Box flexDirection="row" gap={1} flexWrap="wrap">
-          {etichetta(`et-st-${a.id}`, s.colore, s.parola)}
-          {sensibile(a, regoleOra) && etichetta(`et-r4-${a.id}`, COLORE_STATO.sensibile, `${corsiaDi(a, regoleOra) ?? 'R4'} sensibile`, '▲')}
-          {etichetta(`et-mot-${a.id}`, COLORE_MOTORE[a.esecutore] ?? '#0D9488', motore(a.esecutore), '◆')}
-          {etichetta(`et-mod-${a.id}`, COLORE_MODELLO[modello] ?? '#808080', nomeModello(modello))}
-          {etichetta(`et-eff-${a.id}`, COLORE_EFFORT[effort] ?? '#808080', effort, barreEffort(effort))}
-          {etichetta(
-            `et-rev-${a.id}`,
-            COLORE_MOTORE[a.revisore]!,
-            a.revisore === 'nessuno' ? 'senza revisione' : `rivede ${motore(a.revisore)}`,
-            '↺',
-          )}
-          {ms && etichetta(`et-ms-${a.id}`, COLORE_STATO.proposta, corto(ms.titolo, 28), '◎')}
-        </Box>
-        <Text dimColor size="caption">
+        {testa(
+          `testa-${a.id}`,
+          (
+            <Button key={`apri-${a.id}`} plain label={`${aperto ? 'Chiudi' : 'Apri'} i dettagli di ${a.titolo}`} onPress={apriChiudi(a.id)}>
+              <Text dimColor tabular>{`${lista.indexOf(a) + 1}  `}</Text>
+              <Text weight="semibold" bold>
+                {a.titolo}
+              </Text>
+            </Button>
+          ),
+          [chipStato(a)],
+        )}
+        {infoLavoro(a)}
+        <Text dimColor size="caption" wrap="wrap">
           {opzioni(a)}
         </Text>
         {a.dipende.length > 0 &&
           nota1(
             `dip-${a.id}`,
-            dip.chiuse ? COLORE_STATO.inCorso : COLORE_STATO.accodata,
+            dip.chiuse ? STATO.inCorso : STATO.coda,
             dip.chiuse ? '✓' : '◔',
             `${dip.chiuse ? 'Dipendenze fuse' : 'Aspetta che siano fuse'}: ${a.dipende.map(d => tutte.find(x => x.id === d)?.titolo ?? d).join(', ')}`,
           )}
@@ -360,7 +394,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
             {`Sblocca ${sblocca} ${sblocca === 1 ? 'azione' : 'azioni'}`}
           </Text>
         )}
-        {a.stato === 'accodata' && a.motivoCoda && nota1(`coda-${a.id}`, COLORE_STATO.accodata, '◔', `In coda: ${a.motivoCoda}`)}
+        {a.stato === 'accodata' && a.motivoCoda && nota1(`coda-${a.id}`, STATO.coda, '◔', `In coda: ${a.motivoCoda}`)}
         {a.contesto === 'fork' && a.origineFork && (
           <Text size="caption" dimColor>
             {a.origineFork === io?.io
@@ -368,17 +402,10 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
               : `Fork della conversazione di «${a.origineNome ?? `${a.origineFork.slice(0, 8)}…`}»: riparte solo da quella sessione`}
           </Text>
         )}
-        {blocchi.length > 0 && (
-          <Box flexDirection="column" backgroundColor={conVelo ? velo(COLORE_STATO.fallita, '1F') : undefined} paddingX={1}>
-            {nota1(`bt-${a.id}`, COLORE_STATO.fallita, '▲', 'Così non può partire')}
-            {blocchi.map((b, i) => (
-              <Text key={`bl-${a.id}-${i}`} size="caption">{`· ${b}`}</Text>
-            ))}
-          </Box>
-        )}
+        {blocchi.length > 0 && motivi(a, blocchi, 'Così non può partire')}
         {(a.stato === 'avviata' || a.stato === 'consegnata') && pipeline(a, vita?.fase)}
         {(a.stato === 'avviata' || a.stato === 'consegnata') && (
-          <Text size="caption" dimColor tabular>
+          <Text size="caption" dimColor tabular wrap="wrap">
             {[
               a.avviataIl ? `da ${durata(adesso - Date.parse(a.avviataIl))}` : undefined,
               vita?.ultimaAttivita ? `ultima attività ${durata(adesso - Date.parse(vita.ultimaAttivita))} fa` : undefined,
@@ -389,18 +416,22 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
               .join(' · ') || ' '}
           </Text>
         )}
-        {a.errore && nota1(`err-${a.id}`, COLORE_STATO.ferma, '!', a.errore)}
+        {a.errore && nota1(`err-${a.id}`, STATO.attesa, '!', a.errore)}
         {a.risultato && <Box flexDirection="column" borderStyle="single" paddingX={1}><Text weight="semibold">Bozza FreeLLMAPI da rivedere</Text><Text>{a.risultato}</Text></Box>}
         <Box flexDirection="row" gap={1} flexWrap="wrap" justifyContent="space-between" alignItems="center">
           <Box flexDirection="row" gap={1} flexWrap="wrap">
             {a.stato === 'proposta' && blocchi.length === 0 && (
-              <Button key={`avvia-${a.id}`} variant="secondary" label={dip.chiuse ? 'Avvia' : 'Accoda'} onPress={fai(() => c.avvia(a))} />
+              <Button key={`avvia-${a.id}`} variant="secondary" label={`${dip.chiuse ? 'Avvia' : 'Accoda'} ${a.titolo}`} onPress={fai(() => c.avvia(a))}>
+                {dip.chiuse ? '▶ Avvia' : '▶ Accoda'}
+              </Button>
             )}
             {a.stato === 'proposta' && dip.chiuse && bloccatoQui.length === 0 && (
               <Button key={`qui-${a.id}`} plain label="Fallo qui" onPress={fai(() => c.faiQui(a))} />
             )}
             {a.stato === 'fallita' && blocchi.length === 0 && (
-              <Button key={`riprova-${a.id}`} variant="secondary" label="Riprova" onPress={fai(() => c.avvia(a))} />
+              <Button key={`riprova-${a.id}`} variant="secondary" label={`Riprova ${a.titolo}`} onPress={fai(() => c.avvia(a))}>
+                ▶ Riprova
+              </Button>
             )}
             {a.stato === 'fallita' && blocchi.length === 0 && io?.lanciatore !== 'cli' && a.esecutore !== 'freellmapi' && (
               <Button key={`chiedi-${a.id}`} plain label="Chiedi a questa sessione" onPress={fai(() => c.chiediQui(a))} />
@@ -425,17 +456,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
             {boardPronta && <Button key={`board-${a.id}`} plain label="Nella board" onPress={fai(c.apriBoard)} />}
             {modificabile && <Button key={`mod-${a.id}`} plain label={aperto ? 'Chiudi' : 'Modifica'} onPress={apriChiudi(a.id)} />}
           </Box>
-          {modificabile && (
-            <Box flexDirection="row" gap={1}>
-              <Button key={`su-${a.id}`} plain dimColor label={`Sposta prima: ${a.titolo}`} onPress={fai(() => c.riordina(a.id, -1))}>
-                ↑
-              </Button>
-              <Button key={`giu-${a.id}`} plain dimColor label={`Sposta dopo: ${a.titolo}`} onPress={fai(() => c.riordina(a.id, 1))}>
-                ↓
-              </Button>
-              <Button key={`scarta-${a.id}`} plain dimColor label="Scarta" onPress={fai(() => c.scarta(a))} />
-            </Box>
-          )}
+          {modificabile && spostaScarta(a)}
         </Box>
         {aperto && editor(a)}
       </Box>
@@ -443,99 +464,125 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
   }
 
   // --- vista Lavoro ------------------------------------------------------------------------------------
-  // Righe compatte; «Dettagli» apre al loro posto la scheda completa (con l'editor, se si può modificare).
+  // Una scheda compatta per ogni chip; «Dettagli» apre al suo posto la scheda completa (con l'editor, se si può modificare).
   // Stessa chiave del «Modifica» della scheda: lo stesso controllo, chiusa o aperta.
-  const dettagli = (a: Azione) => <Button key={`mod-${a.id}`} plain label="Dettagli" onPress={apriChiudi(a.id)} />
-  const chiLavora = (a: Azione) =>
-    [motore(a.esecutore), nomeModello(modelloDi(a, regoleOra)), effortDi(a, regoleOra), a.revisore === 'nessuno' ? 'senza revisione' : `rivede ${motore(a.revisore)}`].join(' · ')
-
-  /** Una chip che aspetta una decisione: il bordo acceso solo qui, l'azione che la sblocca sulla riga. */
-  const rigaAttesa = (a: Azione) => {
-    if (espansa === a.id) return scheda(a)
-    const s = statoDi(a)
-    const blocchi = a.stato === 'fallita' ? violazioniAvvio(a, regoleOra, tutte, io) : []
-    const mia = !!io && a.lanciataDa === io.io
+  const dettagli = (a: Azione) => (
+    <Button key={`mod-${a.id}`} plain label={`Dettagli di ${a.titolo}`} onPress={apriChiudi(a.id)}>
+      Dettagli
+    </Button>
+  )
+  function spostaScarta(a: Azione) {
     return (
-      <Box key={`riga-${a.id}`} flexDirection="column" borderStyle={conVelo ? 'round' : undefined} borderColor={s.colore} paddingX={conVelo ? 1 : 0}>
-        <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
-          <Text wrap="truncate-end">
-            <Text color={s.colore}>{'▲ '}</Text>
-            <Text weight="semibold">{a.titolo}</Text>
-            {`: ${a.stato === 'fallita' ? `avvio fallito${a.errore ? ` (${corto(a.errore, 60)})` : ''}` : a.stato === 'in-avvio' ? s.parola.toLowerCase() : 'ferma, aspetta te'}`}
-          </Text>
-          <Box flexDirection="row" gap={1}>
-            {a.stato === 'fallita' && blocchi.length === 0 && <Button key={`riprova-${a.id}`} variant="secondary" label="Riprova" onPress={fai(() => c.avvia(a))} />}
-            {a.stato === 'fallita' && blocchi.length === 0 && io?.lanciatore !== 'cli' && a.esecutore !== 'freellmapi' && (
-              <Button key={`chiedi-${a.id}`} plain label="Chiedi a questa sessione" onPress={fai(() => c.chiediQui(a))} />
-            )}
-            {tentativoAnnullabile(a) && <Button key={`annullaT-${a.id}`} plain label="Annulla il tentativo" onPress={fai(() => c.annullaTentativo(a))} />}
-            {ferma(a) && a.sessione && mia && <Button key={`vedi-${a.id}`} variant="secondary" label="Apri" onPress={fai(() => c.apri(a.sessione!))} />}
-            {dettagli(a)}
-          </Box>
-        </Box>
-        <Text size="caption" dimColor>{chiLavora(a)}</Text>
+      <Box key={`ordine-${a.id}`} flexDirection="row" gap={1}>
+        <Button key={`su-${a.id}`} plain dimColor label={`Sposta prima: ${a.titolo}`} onPress={fai(() => c.riordina(a.id, -1))}>
+          ↑
+        </Button>
+        <Button key={`giu-${a.id}`} plain dimColor label={`Sposta dopo: ${a.titolo}`} onPress={fai(() => c.riordina(a.id, 1))}>
+          ↓
+        </Button>
+        <Button key={`scarta-${a.id}`} plain dimColor label={`Scarta ${a.titolo}`} onPress={fai(() => c.scarta(a))}>
+          Scarta
+        </Button>
+      </Box>
+    )
+  }
+  /** L'elenco completo dei motivi per cui una chip non parte. */
+  function motivi(a: Azione, blocchi: string[], titolo: string) {
+    return (
+      <Box key={`motivi-${a.id}`} flexDirection="column" backgroundColor={conVelo ? velo(STATO.errore, '1F') : undefined} paddingX={1}>
+        {nota1(`bt-${a.id}`, STATO.errore, '▲', titolo)}
+        {blocchi.map((b, i) => (
+          <Text key={`bl-${a.id}-${i}`} size="caption" wrap="wrap">{`· ${b}`}</Text>
+        ))}
       </Box>
     )
   }
 
-  /** Da avviare e in coda: numero d'ordine, titolo e dipendenza; chi lavora sulla seconda riga, grigia. */
-  const rigaCoda = (a: Azione) => {
+  /**
+   * Scheda compatta (C1.1, matrice C1.6): numero e titolo intero con lo stato, le informazioni di lavoro, l'inizio del
+   * mandato, le azioni. «▶ Avvia» è sempre il primo pulsante; su una chip bloccata il primo motivo e «Perché».
+   */
+  const schedaCompatta = (a: Azione) => {
     if (espansa === a.id) return scheda(a)
+    const modificabile = ['proposta', 'accodata', 'fallita'].includes(a.stato)
     const dip = dipendenze(a, tutte)
-    const blocchi = violazioniAvvio(a, regoleOra, tutte, io)
-    const prima = a.dipende.map(d => tutte.find(x => x.id === d)?.titolo ?? d)
-    const avvisi = [
-      sensibile(a, regoleOra) ? `${corsiaDi(a, regoleOra) ?? 'R4'} sensibile` : undefined,
-      blocchi.length ? 'così non può partire' : undefined,
-      a.stato === 'accodata' && a.motivoCoda ? `in coda: ${a.motivoCoda}` : undefined,
-    ].filter(Boolean)
-    return (
-      <Box key={`riga-${a.id}`} flexDirection="column">
-        <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
-          <Text wrap="truncate-end">
-            <Text dimColor tabular>{`${lista.indexOf(a) + 1}  `}</Text>
-            <Text weight="semibold">{a.titolo}</Text>
-            {prima.length > 0 && <Text dimColor>{` · dopo «${corto(prima.join('», «'), 40)}»`}</Text>}
-          </Text>
-          <Box flexDirection="row" gap={1}>
-            {a.stato === 'proposta' && blocchi.length === 0 && (
-              <Button key={`avvia-${a.id}`} variant="secondary" label={dip.chiuse ? 'Avvia' : 'Accoda'} onPress={fai(() => c.avvia(a))} />
-            )}
-            {a.stato === 'accodata' && (
-              <Button key={`annulla-${a.id}`} plain label="Togli dalla coda" onPress={modifica(a, { ...transizione(a, 'proposta', new Date(adesso).toISOString()), motivoCoda: undefined })} />
-            )}
-            {dettagli(a)}
-          </Box>
-        </Box>
-        <Text size="caption" dimColor>
-          {chiLavora(a)}
-          {avvisi.length > 0 && <Text color={COLORE_STATO.fallita}>{'  ▲ '}</Text>}
-          {avvisi.join(' · ')}
-        </Text>
-      </Box>
-    )
-  }
-
-  /** Consegnate: aspettano la fusione. */
-  const rigaFondere = (a: Azione) => {
-    if (espansa === a.id) return scheda(a)
+    const blocchi = a.stato === 'proposta' || a.stato === 'fallita' ? violazioniAvvio(a, regoleOra, tutte, io) : []
+    const bloccatoQui = a.stato === 'proposta' ? violazioniAvvio(a, regoleOra, tutte, io, true) : []
+    const bloccata = blocchi.length > 0
     const mia = !!io && a.lanciataDa === io.io
+    const allerta = bloccata || a.stato === 'fallita' ? STATO.errore : ferma(a) ? STATO.attesa : undefined
+    const brief = a.brief.split('\n').find(r => r.trim())?.trim() ?? ''
+    const avviata = a.stato === 'avviata' || a.stato === 'consegnata'
+    const pulsanti = [
+      a.stato === 'proposta' && !bloccata && (
+        <Button key={`avvia-${a.id}`} variant="secondary" label={`${dip.chiuse ? 'Avvia' : 'Accoda'} ${a.titolo}`} onPress={fai(() => c.avvia(a))}>
+          {dip.chiuse ? '▶ Avvia' : '▶ Accoda'}
+        </Button>
+      ),
+      a.stato === 'fallita' && !bloccata && (
+        <Button key={`riprova-${a.id}`} variant="secondary" label={`Riprova ${a.titolo}`} onPress={fai(() => c.avvia(a))}>
+          ▶ Riprova
+        </Button>
+      ),
+      // «Fallo qui» ha la sua guardia: resta anche su una chip che non può partire come sessione nuova.
+      a.stato === 'proposta' && dip.chiuse && bloccatoQui.length === 0 && <Button key={`qui-${a.id}`} plain label="Fallo qui" onPress={fai(() => c.faiQui(a))} />,
+      a.stato === 'fallita' && !bloccata && io?.lanciatore !== 'cli' && a.esecutore !== 'freellmapi' && (
+        <Button key={`chiedi-${a.id}`} plain label="Chiedi a questa sessione" onPress={fai(() => c.chiediQui(a))} />
+      ),
+      bloccata && (
+        <Button
+          key={`perche-${a.id}`}
+          plain
+          label={motiviAperti === a.id ? `Nascondi i motivi di ${a.titolo}` : `Perché ${a.titolo} non parte`}
+          onPress={apriPerche(a.id)}
+        >
+          {motiviAperti === a.id ? 'Nascondi i motivi' : 'Perché'}
+        </Button>
+      ),
+      tentativoAnnullabile(a) && <Button key={`annullaT-${a.id}`} plain label="Annulla il tentativo" onPress={fai(() => c.annullaTentativo(a))} />,
+      a.stato === 'accodata' && (
+        <Button key={`annulla-${a.id}`} plain label="Togli dalla coda" onPress={modifica(a, { ...transizione(a, 'proposta', new Date(adesso).toISOString()), motivoCoda: undefined })} />
+      ),
+      avviata && a.sessione && mia && <Button key={`vedi-${a.id}`} variant="secondary" label="Apri" onPress={fai(() => c.apri(a.sessione!))} />,
+      avviata && <Button key={`fatta-${a.id}`} plain label="Segna completata" onPress={completa(a)} />,
+      dettagli(a),
+      modificabile && spostaScarta(a),
+    ]
     return (
-      <Box key={`riga-${a.id}`} flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
-        <Text wrap="truncate-end">
-          <Text color={COLORE_STATO.consegnata}>{'✓ '}</Text>
-          <Text weight="semibold">{a.titolo}</Text>
-          <Text dimColor>{stati[a.id]?.ramo ? ` · ${stati[a.id]!.ramo}` : ''}</Text>
-        </Text>
-        <Box flexDirection="row" gap={1}>
-          {a.sessione && mia && <Button key={`vedi-${a.id}`} variant="secondary" label="Apri" onPress={fai(() => c.apri(a.sessione!))} />}
-          <Button key={`fatta-${a.id}`} plain label="Segna completata" onPress={completa(a)} />
-          {dettagli(a)}
+      <Box
+        key={`riga-${a.id}`}
+        flexDirection="column"
+        borderStyle={conVelo ? 'round' : undefined}
+        borderColor={conVelo ? allerta : undefined}
+        borderDimColor={conVelo && !allerta}
+        paddingX={conVelo ? 1 : 0}
+      >
+        {testa(
+          `testa-${a.id}`,
+          (
+            <Text wrap="wrap">
+              {modificabile ? <Text dimColor tabular>{`${lista.indexOf(a) + 1}  `}</Text> : ''}
+              <Text weight="semibold">{a.titolo}</Text>
+            </Text>
+          ),
+          [chipStato(a)],
+        )}
+        {infoLavoro(a)}
+        {brief && (
+          <Text size="caption" dimColor wrap="wrap">
+            {corto(brief, Math.max(40, 2 * (colonne - 8)))}
+          </Text>
+        )}
+        {a.stato === 'accodata' && a.motivoCoda && nota1(`coda-${a.id}`, STATO.coda, '◔', `In coda: ${a.motivoCoda}`)}
+        {a.errore && nota1(`err-${a.id}`, STATO.attesa, '!', a.errore)}
+        {bloccata && nota1(`blocco-${a.id}`, STATO.errore, '▲', `Non può partire: ${blocchi[0]}${blocchi.length > 1 ? ` (+${blocchi.length - 1})` : ''}`)}
+        <Box key={`azioni-${a.id}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
+          {pulsanti as never}
         </Box>
+        {bloccata && motiviAperti === a.id && motivi(a, blocchi, blocchi.length === 1 ? 'Il motivo' : `I ${blocchi.length} motivi`)}
       </Box>
     )
   }
-
 
   const mostrate = tutteLeSessioni ? righe : righe.slice(0, 6)
 
@@ -544,66 +591,124 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const ms = adesso - Date.parse(iso)
     return ms < 60_000 ? 'adesso' : durata(ms)
   }
-  // Larghezze in percentuale: stesse colonne sul desktop e sul terminale; strette, ne cadono due.
-  const COL: { lavoro: string; chi: string; modello: string; stato: string; effort?: string; contesto?: string; attivita?: string } = stretto
-    ? { lavoro: '40%', chi: '18%', modello: '24%', stato: '18%' }
-    : { lavoro: '30%', chi: '11%', modello: '14%', effort: '16%', stato: '11%', contesto: '9%', attivita: '9%' }
+  // «Al lavoro adesso» (C1.3): la tabella solo su `larga`; sotto, due righe per sessione (tre su `stretta`, col ramo).
+  const COL = { lavoro: '30%', chi: '11%', modello: '14%', effort: '16%', stato: '11%', contesto: '9%', attivita: '9%' }
   const intestazione = (
     <Box key="tab-testa" flexDirection="row">
       {cella('h-lav', COL.lavoro, <Text size="caption" dimColor>Lavoro</Text>)}
       {cella('h-chi', COL.chi, <Text size="caption" dimColor>Chi</Text>)}
-      {cella('h-mod', COL.modello, <Text size="caption" dimColor>{stretto ? 'Modello · effort' : 'Modello'}</Text>)}
-      {COL.effort && cella('h-eff', COL.effort, <Text size="caption" dimColor>Effort</Text>)}
+      {cella('h-mod', COL.modello, <Text size="caption" dimColor>Modello</Text>)}
+      {cella('h-eff', COL.effort, <Text size="caption" dimColor>Effort</Text>)}
       {cella('h-st', COL.stato, <Text size="caption" dimColor>Stato</Text>)}
-      {COL.contesto && cella('h-ctx', COL.contesto, <Text size="caption" dimColor>Contesto</Text>, true)}
-      {COL.attivita && cella('h-att', COL.attivita, <Text size="caption" dimColor>Attività</Text>, true)}
+      {cella('h-ctx', COL.contesto, <Text size="caption" dimColor>Contesto</Text>, true)}
+      {cella('h-att', COL.attivita, <Text size="caption" dimColor>Attività</Text>, true)}
     </Box>
   )
-  const rigaSessione = (r: Riga) => {
-    const seconda = [r.ramo, r.qui ? 'questa sessione' : r.azione ? undefined : 'aperta a mano'].filter(Boolean).join(' · ')
-    const titolo = <Text weight="semibold" wrap="truncate-end">{r.titolo}</Text>
+  /** Il titolo apre la sessione quando si può; una chip tiene «Dettagli» accanto. */
+  const titoloSessione = (r: Riga) => {
+    const testo = <Text weight="semibold" wrap="wrap">{r.titolo}</Text>
     const apribile = r.motore === 'claude' && !r.qui && !r.id.startsWith('chip-')
     // Solo chi ha chiesto l'avvio apre la sessione di una chip (l'app la affianca a questa).
     const sessioneChip = r.azione?.sessione && io && r.azione.lanciataDa === io.io ? r.azione.sessione : undefined
-    return [
+    const titolo = sessioneChip ? (
+      <Button key={`vedi-${r.azione!.id}`} plain label={`Apri la sessione di ${r.titolo}`} onPress={fai(() => c.apri(sessioneChip))}>{testo}</Button>
+    ) : apribile ? (
+      <Button key={`apri-ses-${r.id}`} plain label={`Apri la sessione ${r.titolo}`} onPress={fai(() => c.apri(r.id))}>{testo}</Button>
+    ) : r.azione ? (
+      <Button key={`apri-${r.azione.id}`} plain label={`Dettagli di ${r.titolo}`} onPress={apriChiudi(r.azione.id)}>{testo}</Button>
+    ) : (
+      <Box key={`t-${r.id}`}>{testo}</Box>
+    )
+    const altri = r.azione && (sessioneChip || apribile) ? (
+      <Button key={`mod-${r.azione.id}`} plain dimColor label={`Dettagli di ${r.titolo}`} onPress={apriChiudi(r.azione.id)}>Dettagli</Button>
+    ) : null
+    return { titolo, altri }
+  }
+  const statoSessione = (r: Riga) => (
+    <Text dimColor={r.stato === 'ignota'}>
+      <Text color={r.colore}>{`${r.segno} `}</Text>
+      {r.parola}
+    </Text>
+  )
+  const chiSessione = (r: Riga) => (
+    <Text>
+      <Text color={MOTORE[r.motore]}>{'◆ '}</Text>
+      {r.motore === 'codex' ? 'Codex' : 'Claude'}
+    </Text>
+  )
+  const extraSessione = (r: Riga) => (r.qui ? 'questa sessione' : r.azione ? undefined : 'aperta a mano')
+
+  const rigaTabella = (r: Riga) => {
+    const seconda = [r.ramo, extraSessione(r)].filter(Boolean).join(' · ')
+    const { titolo, altri } = titoloSessione(r)
+    return (
       <Box key={`ses-${r.id}`} flexDirection="row">
         {cella(`c-lav-${r.id}`, COL.lavoro, [
-          // Il titolo apre la sessione quando si può; una chip tiene «Dettagli» sulla seconda riga.
-          sessioneChip
-            ? <Button key={`vedi-${r.azione!.id}`} plain label={`Apri la sessione di ${r.titolo}`} onPress={fai(() => c.apri(sessioneChip))}>{titolo}</Button>
-            : apribile
-              ? <Button key={`apri-ses-${r.id}`} plain label={`Apri la sessione ${r.titolo}`} onPress={fai(() => c.apri(r.id))}>{titolo}</Button>
-              : r.azione
-                ? <Button key={`apri-${r.azione.id}`} plain label={`Dettagli di ${r.titolo}`} onPress={apriChiudi(r.azione.id)}>{titolo}</Button>
-                : <Box key={`t-${r.id}`}>{titolo}</Box>,
-          <Box key={`r2-${r.id}`} flexDirection="row" gap={1}>
-            {seconda ? <Text size="caption" dimColor wrap="truncate-end">{seconda}</Text> : null}
-            {r.azione && (sessioneChip || apribile) && <Button key={`mod-${r.azione.id}`} plain dimColor label="Dettagli" onPress={apriChiudi(r.azione.id)} />}
+          titolo,
+          <Box key={`r2-${r.id}`} flexDirection="row" flexWrap="wrap" columnGap={1}>
+            {seconda ? <Text size="caption" dimColor wrap="truncate-middle">{seconda}</Text> : null}
+            {altri}
           </Box>,
         ])}
-        {cella(`c-chi-${r.id}`, COL.chi, <Text><Text color={COLORE_MOTORE[r.motore]}>{'◆ '}</Text>{r.motore === 'codex' ? 'Codex' : 'Claude'}</Text>)}
-        {cella(`c-mod-${r.id}`, COL.modello, stretto
-          ? <Text wrap="truncate-end">{[r.modello ? nomeModello(r.modello) : '—', r.effort].filter(Boolean).join(' · ')}</Text>
-          : <Text wrap="truncate-end" dimColor={!r.modello}>{r.modello ? nomeModello(r.modello) : '—'}</Text>)}
-        {COL.effort && cella(`c-eff-${r.id}`, COL.effort, r.effort
-          ? <Text>{`${barreEffort(r.effort)} ${r.effort}`}</Text>
-          : <Text dimColor>—</Text>)}
-        {cella(`c-st-${r.id}`, COL.stato, <Text dimColor={r.stato === 'ignota'}><Text color={r.colore}>{`${r.segno} `}</Text>{r.parola}</Text>)}
-        {COL.contesto && cella(`c-ctx-${r.id}`, COL.contesto, <Text tabular dimColor={r.contesto === undefined}>{r.contesto === undefined ? '—' : `${r.contesto}%`}</Text>, true)}
-        {COL.attivita && cella(`c-att-${r.id}`, COL.attivita, <Text tabular dimColor>{r.qui ? 'adesso' : quando(r.attivita)}</Text>, true)}
-      </Box>,
-      r.azione && espansa === r.azione.id ? scheda(r.azione) : null,
-    ]
+        {cella(`c-chi-${r.id}`, COL.chi, chiSessione(r))}
+        {cella(`c-mod-${r.id}`, COL.modello, <Text wrap="wrap" dimColor={!r.modello}>{r.modello ? nomeModello(r.modello) : '—'}</Text>)}
+        {cella(`c-eff-${r.id}`, COL.effort, r.effort ? <Text>{`${barreEffort(r.effort)} ${r.effort}`}</Text> : <Text dimColor>—</Text>)}
+        {cella(`c-st-${r.id}`, COL.stato, statoSessione(r))}
+        {cella(`c-ctx-${r.id}`, COL.contesto, <Text tabular dimColor={r.contesto === undefined}>{r.contesto === undefined ? '—' : `${r.contesto}%`}</Text>, true)}
+        {cella(`c-att-${r.id}`, COL.attivita, <Text tabular dimColor>{r.qui ? 'adesso' : quando(r.attivita)}</Text>, true)}
+      </Box>
+    )
   }
+  const rigaCompatta = (r: Riga) => {
+    const { titolo, altri } = titoloSessione(r)
+    const ramoSotto = classe === 'stretta' && !!r.ramo
+    return (
+      <Box key={`ses-${r.id}`} flexDirection="column">
+        {testa(`ses1-${r.id}`, titolo, [statoSessione(r), altri])}
+        {pezzi(`ses2-${r.id}`, [
+          chiSessione(r),
+          <Text dimColor={!r.modello}>{r.modello ? nomeModello(r.modello) : 'modello ignoto'}</Text>,
+          r.effort && <Text>{`${barreEffort(r.effort)} ${r.effort}`}</Text>,
+          r.contesto !== undefined && (
+            <Text>
+              <Text dimColor>{'contesto '}</Text>
+              <Text tabular>{`${r.contesto}%`}</Text>
+            </Text>
+          ),
+          <Text dimColor>{r.qui ? 'adesso' : quando(r.attivita)}</Text>,
+          !ramoSotto && r.ramo && <Text dimColor>{r.ramo}</Text>,
+          extraSessione(r) && <Text dimColor>{extraSessione(r)}</Text>,
+        ])}
+        {ramoSotto && (
+          <Text size="caption" dimColor wrap="truncate-middle">
+            {r.ramo}
+          </Text>
+        )}
+      </Box>
+    )
+  }
+  const rigaSessione = (r: Riga) => [classe === 'larga' ? rigaTabella(r) : rigaCompatta(r), r.azione && espansa === r.azione.id ? scheda(r.azione) : null]
 
   const attesaTe = visibili.filter(aspettaTe)
   const daAvviare = visibili.filter(a => a.stato === 'proposta' || a.stato === 'accodata')
   const daFondere = visibili.filter(a => a.stato === 'consegnata')
 
+  // «Avvia la prossima» (C1.2): la stessa pianificazione di «Avvia tutte», limitata alla prima che partirebbe adesso.
+  // L'avvio passa da `avvia`, che ridecide sotto la guardia atomica di sempre (regole, posti, corsia Codex).
+  const proposteOra = lista.filter(a => a.stato === 'proposta')
+  const piano = proposteOra.length
+    ? pianifica(proposteOra, tutte, regoleOra, c.max, false, x => violazioniAvvio(x, regoleOra, tutte, io), capacita.limiti)
+    : undefined
+  const prossima = piano?.avvia[0]
+  const nessunaParte =
+    piano && !prossima
+      ? [...new Set([...piano.coda.map(x => x.motivo), ...(piano.bloccate.length ? [`${piano.bloccate.length} ${piano.bloccate.length === 1 ? 'bloccata' : 'bloccate'} dalle regole`] : [])])]
+      : []
+
   /** Barra di avanzamento: due Box in proporzione sul desktop, celle █ sul terminale. */
   const barra = (t: Traguardo) => {
     const pct = percentuale(t)
-    const colore = pct >= 100 ? COLORE_STATO.inCorso : COLORE_STATO.proposta
+    const colore = pct >= 100 ? STATO.inCorso : STATO.coda
     if (!conVelo) {
       const pieni = Math.round(pct / 5)
       return (
@@ -614,7 +719,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       )
     }
     return (
-      <Box key={`barra-${t.numero}`} flexDirection="row" backgroundColor={velo('#808080', '33')}>
+      <Box key={`barra-${t.numero}`} flexDirection="row" backgroundColor={velo(GRIGIO, '33')}>
         {pct > 0 && (
           <Box flexGrow={pct} backgroundColor={colore}>
             <Text size="caption"> </Text>
@@ -637,7 +742,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       gap={1}
       marginTop={1}
       padding={1}
-      backgroundColor={conVelo ? velo('#808080', '14') : undefined}
+      backgroundColor={conVelo ? velo(GRIGIO, '14') : undefined}
       borderStyle={conVelo ? undefined : 'single'}
       borderDimColor
     >
@@ -657,8 +762,8 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         ].filter(Boolean)
         return (
           <Box key={`tr-${t.numero}`} flexDirection="column">
-            <Box flexDirection="row" justifyContent="space-between" alignItems="flex-end">
-              <Text weight="semibold">{corto(t.titolo, 40)}</Text>
+            <Box flexDirection="row" justifyContent="space-between" alignItems="flex-end" gap={1}>
+              <Text weight="semibold" wrap="wrap">{t.titolo}</Text>
               <Text weight="semibold" tabular>{`${percentuale(t)}%`}</Text>
             </Box>
             {barra(t)}
@@ -675,7 +780,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       })}
       {tr.lista.length === 0 && !tr.errore && <Text dimColor>{`Nessuna milestone aperta su ${tr.repo}.`}</Text>}
       {tr.parziale && <Text size="caption" dimColor>{`Copertura parziale: ${tr.parziale}`}</Text>}
-      {tr.errore && nota1('tr-err', COLORE_STATO.ferma, '!', `Milestone non lette: ${tr.errore}`)}
+      {tr.errore && nota1('tr-err', STATO.attesa, '!', `Milestone non lette: ${tr.errore}`)}
     </Box>
   )
 
@@ -684,7 +789,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       {senzaProgetto > 0 && (
         <Box key="senza-progetto" flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
           <Text>
-            <Text color={COLORE_STATO.accodata}>{'◔ '}</Text>
+            <Text color={STATO.coda}>{'◔ '}</Text>
             {`${senzaProgetto} ${senzaProgetto === 1 ? 'azione salvata' : 'azioni salvate'} da una versione precedente senza progetto`}
           </Text>
           <Button key="senza-assegna" variant="secondary" label="Assegna a questo progetto" onPress={fai(() => c.senzaProgetto('assegna'))} />
@@ -711,12 +816,12 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       {attesaTe.length > 0 && (
         <Box key="sez-attesa" flexDirection="column" gap={1}>
           {titoloSezione('t-attesa', 'Aspettano te', attesaTe.length)}
-          {attesaTe.map(rigaAttesa)}
+          {attesaTe.map(schedaCompatta)}
         </Box>
       )}
 
       <Box key="sez-lavoro" flexDirection="column" gap={1}>
-        <Box flexDirection="row" justifyContent="space-between" alignItems="center">
+        <Box flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
           {titoloSezione('t-lavoro', 'Al lavoro adesso', alLavoro)}
           {righe.length > 6 && (
             <Button key="tutte-sessioni" plain label={tutteLeSessioni ? 'Mostra meno' : `Mostra tutte · ${righe.length}`} onPress={() => void update($, tutteSessioni, v => !v)} />
@@ -726,7 +831,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
           <Text dimColor>{ses.nota ? `Nessuna sessione letta: ${ses.nota}.` : 'Nessuna sessione di questo progetto nelle ultime 24 ore.'}</Text>
         ) : (
           <Box flexDirection="column" gap={1}>
-            {intestazione}
+            {classe === 'larga' && intestazione}
             {mostrate.flatMap(rigaSessione)}
           </Box>
         )}
@@ -734,10 +839,18 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       </Box>
 
       <Box key="sez-avvio" flexDirection="column" gap={1}>
-        <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
-          {titoloSezione('t-avvio', 'Da avviare e in coda', daAvviare.length)}
-          {proposte > 0 && <Button key="tutte" variant="primary" hotkey="a" label={`Avvia tutte · ${proposte}`} onPress={fai(c.avviaTutte)} />}
-        </Box>
+        {ui.Riga({
+          chiave: 'testa-avvio',
+          classe,
+          principale: titoloSezione('t-avvio', 'Da avviare e in coda', daAvviare.length),
+          azioni: [
+            prossima && (
+              <Button key="prossima" variant="secondary" hotkey="n" label={`Avvia la prossima: ${corto(prossima.titolo, 32)}`} onPress={fai(() => c.avvia(prossima))} />
+            ),
+            proposte > 0 && <Button key="tutte" variant="primary" hotkey="a" label={`Avvia tutte · ${proposte}`} onPress={fai(c.avviaTutte)} />,
+          ],
+        })}
+        {nessunaParte.length > 0 && nota1('nessuna-parte', STATO.attesa, '◔', `Nessuna parte adesso: ${nessunaParte.join(' · ')}`)}
         {daAvviare.length === 0 ? (
           <Text dimColor>
             {lista.length === 0
@@ -745,7 +858,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
               : 'Niente da avviare.'}
           </Text>
         ) : (
-          daAvviare.map(rigaCoda)
+          daAvviare.map(schedaCompatta)
         )}
         {proposte > 0 && <Text size="caption" dimColor>{`al massimo ${c.max} in parallelo · regole da ${regoleOra.fonte}`}</Text>}
       </Box>
@@ -753,7 +866,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       {daFondere.length > 0 && (
         <Box key="sez-fondere" flexDirection="column" gap={1}>
           {titoloSezione('t-fondere', 'Da fondere', daFondere.length)}
-          {daFondere.map(rigaFondere)}
+          {daFondere.map(schedaCompatta)}
         </Box>
       )}
       {footer}

@@ -1,7 +1,6 @@
 // Vista Carico: quale modello fa cosa, con quale effort, e quanto resta dei limiti.
 import type { Limite, Motore, Soglia } from '../types'
 import {
-  COLORE_STATO,
   coloreLimite,
   aspettoLimite,
   COLORE_LIVELLO,
@@ -16,9 +15,10 @@ import {
   velo,
 } from './logica'
 import type { Dati } from './pannello'
+import { ACCENTO, GRIGIO, STATO } from './tema'
 
 export function vistaCarico(d: Dati) {
-  const { conVelo, stretto, tutte, regoleOra, lista, adesso, capacita, nota1, titoloSezione,
+  const { conVelo, classe, tutte, regoleOra, lista, adesso, capacita, nota1, titoloSezione,
     righe, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, consumoOra } = d
   const { Box, Text } = d.el
 
@@ -28,8 +28,8 @@ export function vistaCarico(d: Dati) {
   const barraPct = (k: string, pct: number, colore: string, corta = false) => {
     const p = Math.min(100, Math.max(0, pct))
     if (!conVelo) {
-      // Terminale stretto o colonna stretta: 10 celle, così la riga non va a capo.
-      const celle = stretto || corta ? 10 : 20
+      // Pannello stretto o colonna stretta: 10 celle, così la riga non va a capo.
+      const celle = classe === 'stretta' || corta ? 10 : 20
       const pieni = Math.round((p / 100) * celle)
       return (
         <Text key={k}>
@@ -42,7 +42,7 @@ export function vistaCarico(d: Dati) {
     return (
       <Box key={k} flexDirection="row" alignItems="center" gap={1}>
         <Text size="caption" dimColor>0</Text>
-        <Box flexGrow={1} flexDirection="row" backgroundColor={velo('#808080', '33')}>
+        <Box flexGrow={1} flexDirection="row" backgroundColor={velo(GRIGIO, '33')}>
           {p > 0 && (
             <Box flexGrow={p} backgroundColor={colore}>
               <Text size="caption"> </Text>
@@ -93,7 +93,7 @@ export function vistaCarico(d: Dati) {
       {fornitoriInUso.length === 0 && <Text dimColor>Nessun limite collegato · vai a Impostazioni</Text>}
       {fornitoriInUso.map(f => (
         <Box key={`forn-${f}`} flexDirection="column" gap={1}>
-          <Text>
+          <Text wrap="wrap">
             <Text weight="semibold">{NOME_FORNITORE[f]}</Text>
             <Text dimColor size="caption">{`  ${parolaSoglia(sogliaDi(regoleOra.risorse, f))}`}</Text>
           </Text>
@@ -120,38 +120,55 @@ export function vistaCarico(d: Dati) {
   // Ogni sessione al lavoro che non cade in una cella si conta qui: la matrice non sottostima in silenzio.
   const senzaDati = alLavoroOra.filter(r => !r.modello || !r.effort || !regoleOra.effort.includes(r.effort)).length
   const larghezzaEffort = `${Math.floor(64 / Math.max(1, regoleOra.effort.length))}%`
+  // Il velo dell'accento più intenso dove si lavora di più: 1, 2, 3 o più sessioni.
   const VELI = ['', '26', '4D', '80'] as const
+  const griglia = (
+    <Box flexDirection="column">
+      <Box key="m-testa" flexDirection="row">
+        {cella('m-h-mod', '36%', <Text size="caption" dimColor>Modello</Text>)}
+        {regoleOra.effort.map(e => cella(`m-h-${e}`, larghezzaEffort, <Text size="caption" dimColor>{e}</Text>, true))}
+      </Box>
+      {modelliAttivi.map(m => (
+        <Box key={`m-${m}`} flexDirection="row">
+          {cella(`m-n-${m}`, '36%', <Text wrap="wrap">{nomeModello(m)}</Text>)}
+          {regoleOra.effort.map(e => {
+            const c = conta2(m, e)
+            return (
+              <Box key={`m-${m}-${e}`} width={larghezzaEffort} flexDirection="row" justifyContent="flex-end" paddingRight={1}
+                backgroundColor={conVelo && c.lavoro ? velo(ACCENTO, VELI[Math.min(3, c.lavoro)]) : undefined}>
+                <Text tabular>
+                  <Text weight={c.lavoro ? 'semibold' : 'regular'} dimColor={!c.lavoro}>{String(c.lavoro)}</Text>
+                  {c.coda ? <Text dimColor>{` +${c.coda}`}</Text> : ''}
+                </Text>
+              </Box>
+            )
+          })}
+        </Box>
+      ))}
+      <Text size="caption" dimColor>{`al lavoro · +in coda${senzaDati ? ` · ${senzaDati} al lavoro senza modello o effort noto` : ''}`}</Text>
+    </Box>
+  )
+  // Su `stretta` la griglia non entra: un elenco per modello, solo le celle non vuote.
+  const elenco = (
+    <Box flexDirection="column">
+      {modelliAttivi.map(m => {
+        const celle = regoleOra.effort.map(e => ({ e, ...conta2(m, e) })).filter(x => x.lavoro + x.coda > 0)
+        const coda = celle.reduce((n, x) => n + x.coda, 0)
+        return (
+          <Text key={`m-${m}`} wrap="wrap">
+            <Text weight="semibold">{`${nomeModello(m)}: `}</Text>
+            {celle.map(x => `${x.e} ${x.lavoro}`).join(' · ')}
+            {coda ? <Text dimColor>{` (+${coda} in coda)`}</Text> : ''}
+          </Text>
+        )
+      })}
+      {senzaDati > 0 && <Text size="caption" dimColor>{`${senzaDati} al lavoro senza modello o effort noto`}</Text>}
+    </Box>
+  )
   const matrice = (
     <Box key="matrice" flexDirection="column" gap={1}>
       {titoloSezione('t-matrice', 'Al lavoro per modello ed effort')}
-      {modelliAttivi.length === 0 ? (
-        <Text dimColor>Nessuna sessione al lavoro e niente in coda.</Text>
-      ) : (
-        <Box flexDirection="column">
-          <Box key="m-testa" flexDirection="row">
-            {cella('m-h-mod', '36%', <Text size="caption" dimColor>Modello</Text>)}
-            {regoleOra.effort.map(e => cella(`m-h-${e}`, larghezzaEffort, <Text size="caption" dimColor>{e}</Text>, true))}
-          </Box>
-          {modelliAttivi.map(m => (
-            <Box key={`m-${m}`} flexDirection="row">
-              {cella(`m-n-${m}`, '36%', <Text wrap="truncate-end">{nomeModello(m)}</Text>)}
-              {regoleOra.effort.map(e => {
-                const c = conta2(m, e)
-                return (
-                  <Box key={`m-${m}-${e}`} width={larghezzaEffort} flexDirection="row" justifyContent="flex-end" paddingRight={1}
-                    backgroundColor={conVelo && c.lavoro ? velo(COLORE_STATO.proposta, VELI[Math.min(3, c.lavoro)]) : undefined}>
-                    <Text tabular>
-                      <Text weight={c.lavoro ? 'semibold' : 'regular'} dimColor={!c.lavoro}>{String(c.lavoro)}</Text>
-                      {c.coda ? <Text dimColor>{` +${c.coda}`}</Text> : ''}
-                    </Text>
-                  </Box>
-                )
-              })}
-            </Box>
-          ))}
-          <Text size="caption" dimColor>{`al lavoro · +in coda${senzaDati ? ` · ${senzaDati} al lavoro senza modello o effort noto` : ''}`}</Text>
-        </Box>
-      )}
+      {modelliAttivi.length === 0 ? <Text dimColor>Nessuna sessione al lavoro e niente in coda.</Text> : classe === 'stretta' ? elenco : griglia}
     </Box>
   )
 
@@ -172,13 +189,23 @@ export function vistaCarico(d: Dati) {
       {conContesto.length === 0 ? (
         <Text dimColor>Nessuna sessione al lavoro riporta il suo contesto.</Text>
       ) : (
-        conContesto.map(r => (
-          <Box key={`tok-${r.id}`} flexDirection="row" alignItems="center">
-            {cella(`tok-t-${r.id}`, '40%', <Text wrap="truncate-end">{r.titolo}</Text>)}
-            <Box width="45%" paddingRight={1}>{barraPct(`tok-b-${r.id}`, r.contesto!, COLORE_STATO.proposta, true)}</Box>
-            {cella(`tok-p-${r.id}`, '15%', <Text tabular>{`${r.contesto}%`}</Text>, true)}
-          </Box>
-        ))
+        conContesto.map(r =>
+          classe === 'stretta' ? (
+            <Box key={`tok-${r.id}`} flexDirection="column">
+              <Text wrap="wrap">{r.titolo}</Text>
+              <Box flexDirection="row" alignItems="center" gap={1}>
+                <Box flexGrow={1}>{barraPct(`tok-b-${r.id}`, r.contesto!, STATO.coda, true)}</Box>
+                <Text tabular>{`${r.contesto}%`}</Text>
+              </Box>
+            </Box>
+          ) : (
+            <Box key={`tok-${r.id}`} flexDirection="row" alignItems="center">
+              {cella(`tok-t-${r.id}`, '40%', <Text wrap="wrap">{r.titolo}</Text>)}
+              <Box width="45%" paddingRight={1}>{barraPct(`tok-b-${r.id}`, r.contesto!, STATO.coda, true)}</Box>
+              {cella(`tok-p-${r.id}`, '15%', <Text tabular>{`${r.contesto}%`}</Text>, true)}
+            </Box>
+          ),
+        )
       )}
       {Object.keys(perModello).length > 0 && (
         <Text size="caption" dimColor>
