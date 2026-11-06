@@ -147,19 +147,28 @@ async function codexOccupato($: Eng) {
  * metà di un rename) e, se l'elenco resta incompleto, RIFIUTA: una decisione automatica (posti, corsia,
  * dipendenze, unicità dei task) presa senza un record può sbagliare.
  */
-async function carica($: Eng, opz: { completa?: boolean } = {}): Promise<Letti> {
-  const lista = await leggiTutte($)
+async function carica($: Eng, opz: { completa?: boolean; fresca?: boolean } = {}): Promise<Letti> {
+  const lista = await leggiTutte($, opz.fresca)
   if (!opz.completa || !lista.rotte?.length) return lista
-  const ancora = await leggiTutte($)
+  const ancora = await leggiTutte($, opz.fresca)
   if (ancora.rotte?.length)
     throw new Error(`${ancora.rotte.length} ${ancora.rotte.length === 1 ? 'azione non si legge' : 'azioni non si leggono'} (${ancora.rotte.map(r => r.nome).join(', ')}): nessuna decisione automatica finché non si leggono tutte`)
   return ancora
 }
 
-/** Ultima lettura riuscita di ogni record (percorso → data, dimensione, azione): un file invariato non si rilegge. */
+/**
+ * Ultima lettura riuscita di ogni record (percorso → data, dimensione, azione): un file invariato non si rilegge.
+ * Data e dimensione non bastano sempre (una riscrittura nello stesso istante con la stessa lunghezza): per questo
+ * dopo un conflitto si rilegge senza cache (`fresca`), e ogni 5 minuti si rilegge comunque tutto.
+ */
 const letture = new Map<string, { mtimeMs: number; size: number; a: Azione }>()
+const RILETTURA_COMPLETA_MS = 300_000
+let ultimaCompleta = -Infinity
 
-async function leggiTutte($: Eng): Promise<Letti> {
+async function leggiTutte($: Eng, fresca = false): Promise<Letti> {
+  const adesso = await $.clock.now()
+  const tutto = fresca || adesso - ultimaCompleta >= RILETTURA_COMPLETA_MS || adesso < ultimaCompleta
+  if (tutto) ultimaCompleta = adesso
   const dir = await cartella($)
   const voci = (await $.fs.exists(dir)) ? await $.fs.list(dir) : []
   const rotte: { nome: string; motivo: string }[] = []
@@ -172,7 +181,7 @@ async function leggiTutte($: Eng): Promise<Letti> {
         visti.add(f)
         const prima = letture.get(f)
         // Le scritture passano da un file nuovo e una rinomina: data o dimensione cambiano a ogni versione.
-        if (prima && prima.mtimeMs === v.mtimeMs && prima.size === v.size) return prima.a
+        if (!tutto && prima && prima.mtimeMs === v.mtimeMs && prima.size === v.size) return prima.a
         try {
           const a = normalizza(JSON.parse((await $.fs.read(f)) as string))
           if (typeof a === 'string') throw new Error(a)
@@ -232,7 +241,8 @@ async function prenota($: Eng, letti: Letti, a: Azione) {
 /** Aggiornamento di sistema: rilegge, applica, CAS; su conflitto rilegge e riprova (fino a 3 volte). */
 async function aggiorna($: Eng, id: string, fn: (a: Azione) => Partial<Azione> | null) {
   for (let i = 0; i < 3; i++) {
-    const a = (await carica($)).find(x => x.id === id)
+    // Dopo un conflitto il record si rilegge dal disco, mai dalla cache.
+    const a = (await carica($, { fresca: i > 0 })).find(x => x.id === id)
     if (!a) return undefined
     const campi = fn(a)
     if (!campi) return a
@@ -437,7 +447,7 @@ async function decidi(
   opz: { approvata?: number; qui?: boolean; cloudApprovato?: number; terzoApprovato?: number; manuale?: boolean } = {},
 ): Promise<Decisione> {
   for (let prova = 0; prova < 3; prova++) {
-    const [tutte, r, chi] = await Promise.all([carica($, { completa: true }), leggiRegole($), chiSonoIo($)])
+    const [tutte, r, chi] = await Promise.all([carica($, { completa: true, fresca: prova > 0 }), leggiRegole($), chiSonoIo($)])
     const a = tutte.find(x => x.id === id)
     const ammessi = opz.qui ? ['proposta'] : ['proposta', 'accodata', 'fallita']
     if (!a || !ammessi.includes(a.stato)) return { nulla: a }
@@ -724,15 +734,17 @@ async function ritrova($: Eng, a: Azione): Promise<string | undefined | 'errore'
 
 let giroInCorso: Promise<void> | null = null
 
-/** registro.json riletto solo se cambiano data o dimensione; illeggibile o assente = undefined. */
-let registroLetto: { file: string; mtimeMs: number; size: number; json: unknown } | undefined
+/** registro.json riletto solo se cambiano data o dimensione, e comunque ogni 5 minuti; illeggibile o assente = undefined. */
+let registroLetto: { file: string; mtimeMs: number; size: number; letto: number; json: unknown } | undefined
 async function leggiRegistro($: Eng) {
   const file = `${await baseOrch($)}/registro.json`
+  const adesso = await $.clock.now()
   const st = await $.fs.stat(file).catch(() => null)
   if (!st || st.kind !== 'file') return (registroLetto = undefined)
-  if (registroLetto?.file === file && registroLetto.mtimeMs === st.mtimeMs && registroLetto.size === st.size) return registroLetto.json
+  const r = registroLetto
+  if (r?.file === file && r.mtimeMs === st.mtimeMs && r.size === st.size && adesso >= r.letto && adesso - r.letto < RILETTURA_COMPLETA_MS) return r.json
   const json = await $.fs.read(file).then(t => JSON.parse(t as string) as unknown).catch(() => undefined)
-  registroLetto = json === undefined ? undefined : { file, mtimeMs: st.mtimeMs, size: st.size, json }
+  registroLetto = json === undefined ? undefined : { file, mtimeMs: st.mtimeMs, size: st.size, letto: adesso, json }
   return json
 }
 
@@ -977,7 +989,7 @@ async function fai($: Eng, fn: () => Promise<unknown>) {
     await fn()
     await update($, avviso, () => null)
   } catch (err) {
-    if (err instanceof Conflitto) await carica($)
+    if (err instanceof Conflitto) await carica($, { fresca: true })
     await update($, avviso, () => String((err as Error)?.message ?? err).slice(0, 300))
   }
 }

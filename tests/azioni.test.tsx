@@ -328,7 +328,21 @@ test('codex senza corsia, o routing senza la regola: bloccato', () => {
 
 /** Engine finto: disco in memoria, helper (lock/CAS) e `gh` emulati, servizio di sessione scriptabile. */
 function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown } = {}) {
-  const disco = new Map<string, string>()
+  // Come un disco vero: la data è quella della scrittura, al millisecondo; due scritture nello stesso istante la condividono.
+  class Disco extends Map<string, string> {
+    mtime = new Map<string, number>()
+    override set(k: string, v: string) {
+      this.mtime?.set(k, Date.now())
+      return super.set(k, v)
+    }
+    /** Riscrittura nello stesso istante della precedente: contenuto nuovo, stessa data. */
+    stessoIstante(k: string, v: string) {
+      const t = this.mtime.get(k)
+      super.set(k, v)
+      if (t !== undefined) this.mtime.set(k, t)
+    }
+  }
+  const disco = new Disco()
   const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
   const chiamate: { server: string; tool: string; args: Record<string, unknown> }[] = []
   const toast: string[] = []
@@ -342,17 +356,15 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
   on('tool.list', () => ({ value: [...(opz.cli ? [] : [{ name: 'mcp__ccd_session__start_session' }]), ...(opz.strumenti ?? []).map(name => ({ name }))] as never }))
   on('session.repo', () => ({ value: { root: 'X:/repo', remote: 'https://github.com/acme/progetto.git', internal: false, repo: null } as never }))
   on('fs.exists', (_, e) => ({ value: [...disco.keys()].some(k => k === p(e.path) || k.startsWith(`${p(e.path)}/`)) }))
-  // Data e dimensione seguono il contenuto, come sul disco vero: la mod rilegge solo i file cambiati.
-  const impronta = (t: string) => [...t].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7)
   on('fs.list', (_, e) => ({
     value: [...disco.keys()]
       .filter(k => k.startsWith(`${p(e.path)}/`) && !k.slice(p(e.path).length + 1).includes('/'))
-      .map(k => ({ name: k.slice(p(e.path).length + 1), kind: 'file' as const, size: disco.get(k)!.length, mtimeMs: impronta(disco.get(k)!), isLink: false })),
+      .map(k => ({ name: k.slice(p(e.path).length + 1), kind: 'file' as const, size: disco.get(k)!.length, mtimeMs: disco.mtime.get(k) ?? 0, isLink: false })),
   }))
   on('fs.stat', (_, e) => {
     const t = disco.get(p(e.path))
     if (t === undefined) throw new Error('ENOENT')
-    return { value: { kind: 'file' as const, size: t.length, mtimeMs: impronta(t), isLink: false } }
+    return { value: { kind: 'file' as const, size: t.length, mtimeMs: disco.mtime.get(p(e.path)) ?? 0, isLink: false } }
   })
   on('ui.panes', () => ({ value: opz.nascosto ? [] : [{ id: 'chipManager', title: 'chipManager', isShown: true, isFocused: false, isPlaced: true }] }))
   const letti: string[] = []
@@ -2304,4 +2316,41 @@ test('vista Carico: in fondo la riga del consumo di questa sessione', async ($, 
   await ui.press({ key: 'vista-carico' })
   expect((await ui.find({ type: 'Text', text: /^Questa sessione, ultimi/ }))?.text).toMatch(/process[oi] · \d+ chiamat[ae] all'app · [\d,]+ MB letti dall'helper Codex/)
   await ui.unmount()
+})
+
+test('carica: dopo un conflitto il record si rilegge dal disco, anche se riscritto nello stesso istante con la stessa lunghezza', async ($, on) => {
+  const amb = ambiente(on)
+  const clock = mock.clock(on)
+  const f = 'X:/orch/azioni/a-stesso01.json'
+  const uno = base('a-stesso01', 1, { repo: 'acme/progetto', proponente: 'sessione-master', versione: 1 })
+  amb.disco.set(f, JSON.stringify(uno))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(20_000)
+  // Un'altra sessione la riscrive nello stesso istante: versione 2, stessa lunghezza, stessa data.
+  const due = { ...uno, versione: 2 }
+  expect(JSON.stringify(due).length).toBe(JSON.stringify(uno).length)
+  amb.disco.stessoIstante(f, JSON.stringify(due))
+  const r = await $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id: 'a-stesso01', stato: 'scartata' } as never)
+  expect((r as { deny?: unknown }).deny).toBeUndefined()
+  expect(JSON.parse(amb.disco.get(f)!)).toMatchObject({ stato: 'scartata', versione: 3 })
+})
+
+test('carica: una riscrittura nello stesso istante si vede al più alla rilettura completa dei 5 minuti', async ($, on) => {
+  const amb = ambiente(on)
+  const clock = mock.clock(on)
+  const f = 'X:/orch/azioni/a-stesso02.json'
+  const uno = base('a-stesso02', 1, { repo: 'acme/progetto', versione: 1 })
+  amb.disco.set(f, JSON.stringify(uno))
+  amb.disco.set('X:/orch/registro.json', '{"task":[],"prova":"stesso-istante"}')
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(20_000)
+  amb.disco.stessoIstante(f, JSON.stringify({ ...uno, versione: 2 }))
+  amb.disco.stessoIstante('X:/orch/registro.json', '{"task":[],"prova":"stesso-istant2"}')
+  const letture = (x: string) => amb.letti.filter(y => y === x).length
+  const n = [letture(f), letture('X:/orch/registro.json')]
+  await clock.advance(20_000)
+  expect([letture(f), letture('X:/orch/registro.json')]).toEqual(n)
+  await clock.advance(300_000)
+  expect(letture(f)).toBeGreaterThan(n[0]!)
+  expect(letture('X:/orch/registro.json')).toBeGreaterThan(n[1]!)
 })
