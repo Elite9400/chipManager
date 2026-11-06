@@ -883,8 +883,10 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
   for (let a of lista) {
     if (a.lanciatore === 'cli' && ['in-avvio', 'avviata'].includes(a.stato)) {
       try {
-        const esito = await helper($, ['stato-cli', await cartella($), a.tentativo!])
-        const s = esito.codice === 0 ? JSON.parse(esito.testo) as { id?: string; tentativo?: string; stato?: string; ramo?: string; errore?: string } : null
+        // R9: il record dell'esecuzione si legge con $.fs, senza processo; il percorso viene da un gettone valido.
+        if (!/^az-[a-z0-9]{6,20}$/.test(a.tentativo ?? '')) throw new Error('invalid attempt token')
+        const f = `${await cartella($)}/esecuzioni/${a.tentativo}.json`
+        const s = (await $.fs.exists(f)) ? JSON.parse((await $.fs.read(f)) as string) as { id?: string; tentativo?: string; stato?: string; ramo?: string; errore?: string } : null
         if (s?.id === a.id && s.tentativo === a.tentativo && ['avviata', 'consegnata', 'fallita'].includes(s.stato ?? '')) {
           if (a.stato !== s.stato || a.ramoSessione !== s.ramo || a.errore !== s.errore)
             a = (await aggiorna($, a.id, x => x.tentativo === a.tentativo && ['in-avvio', 'avviata'].includes(x.stato)

@@ -7,6 +7,7 @@ import {
   contaConsumo,
   diagnosticaHelper,
   passoCadenza,
+  STATI_PENDENTI,
   segnaLavori,
   sommaSecchi,
   bilancia,
@@ -692,7 +693,8 @@ test('giro: ferma = toast una volta; archiviata NON è fusa; il task del registr
   expect(amb.azione()[0]!.stato).toBe('consegnata')
   const conIssue = amb.azione()[0]!
   amb.disco.set(`X:/orch/azioni/${conIssue.id}.json`, JSON.stringify({ ...conIssue, issue: 1 }))
-  await clock.advance(20_000)
+  // R10: una consegnata segue la cadenza lenta (60 s): la chiude il registro entro un minuto.
+  await clock.advance(60_000)
   expect(amb.azione()[0]!.stato).toBe('completata')
   await ui.unmount()
 })
@@ -1255,6 +1257,9 @@ test('2.0: CLI usa una sola prenotazione, stesso mandato e consegna non equivale
   amb.disco.set(`X:/orch/azioni/esecuzioni/${a.tentativo}.json`, JSON.stringify({ id, tentativo: a.tentativo, stato: 'consegnata', ramo: `chipmanager/${a.tentativo}` }))
   await clock.advance(20_000)
   expect(amb.azione()[0]!.stato).toBe('consegnata')
+  // R9: lo stato dell'esecuzione si legge con $.fs, senza avviare un processo.
+  expect(amb.processi.filter(p => p.argv[2] === 'stato-cli')).toEqual([])
+  expect(amb.letti).toContain(`X:/orch/azioni/esecuzioni/${a.tentativo}.json`)
   // Un esito incerto salvato come codice, poi l'esito vero dell'helper: frase, codice e parametri cambiano insieme.
   amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...amb.azione()[0], stato: 'avviata', erroreCodice: 'rec.esitoCli', errore: 'Uncertain outcome: check the process or the dashboard before cancelling' }))
   amb.disco.set(`X:/orch/azioni/esecuzioni/${a.tentativo}.json`, JSON.stringify({ id, tentativo: a.tentativo, stato: 'fallita', errore: 'spawn codex ENOENT' }))
@@ -2199,6 +2204,31 @@ test('cadenza: giro veloce solo con lavoro pendente; sessioni a 20 s solo a sche
   expect(passo(300_000, { pendente: false, aSchermo: true })).toEqual(['giro', 'sessioni', 'traguardi', 'risorse'])
 })
 
+test('R10: il giro veloce solo per accodata, in-avvio e avviata; proposte e consegnate non lo tengono a 20 s', () => {
+  expect([...STATI_PENDENTI].sort()).toEqual(['accodata', 'avviata', 'in-avvio'])
+})
+
+test('R10: nessuna transizione automatica parte da una proposta: dieci minuti di giri e il record non cambia', async ($, on) => {
+  const amb = ambiente(on)
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Proposta ferma', brief: 'Resta proposta.' } as never)
+  const prima = amb.azione()[0]!
+  for (let i = 0; i < 30; i++) await clock.advance(20_000)
+  expect(amb.azione()[0]).toEqual(prima)
+})
+
+test('R9: un tentativo che non è un gettone (../../outside) non si legge e non avvia processi', async ($, on) => {
+  const amb = ambiente(on, { cli: true })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  amb.disco.set('X:/orch/azioni/a-cli00009.json', JSON.stringify({ ...base('a-cli00009', 1, { repo: 'acme/progetto' }), stato: 'in-avvio', lanciatore: 'cli', tentativo: '../../outside', avvioScade: '2999-01-01T00:00:00.000Z' }))
+  await clock.advance(20_000)
+  await clock.advance(20_000)
+  expect(amb.letti.filter(f => f.includes('outside'))).toEqual([])
+  expect(amb.processi.filter(p => p.argv[2] === 'stato-cli')).toEqual([])
+})
+
 test('cadenza: dopo una sospensione un solo giro di recupero; dopo un errore si riprova alla cadenza normale', () => {
   let c = segnaLavori(CADENZA_INIZIALE, ['giro', 'sessioni', 'traguardi', 'risorse'], 0)
   // La macchina dorme un'ora: al risveglio ogni lavoro una volta, non uno per battito perso.
@@ -2251,9 +2281,11 @@ test('battito: pannello nascosto e niente da fare = sessioni ogni 2 minuti, giro
 test('battito: con lavoro pendente il giro resta a 20 s; si rileggono solo i record e il registro cambiati', async ($, on) => {
   const amb = ambiente(on)
   const clock = mock.clock(on)
-  const uno = base('a-uno0001', 1, { repo: 'acme/progetto' })
+  // Un avvio in attesa di risposta: lavoro pendente (R10), il giro resta a 20 s senza cambiare i record.
+  const inAvvio = { stato: 'in-avvio' as const, tentativo: 'az-attesa001', avvioScade: '2999-01-01T00:00:00.000Z', lanciataDa: 'altra-sessione' }
+  const uno = base('a-uno0001', 1, { repo: 'acme/progetto', ...inAvvio })
   amb.disco.set('X:/orch/azioni/a-uno0001.json', JSON.stringify(uno))
-  amb.disco.set('X:/orch/azioni/a-due0001.json', JSON.stringify(base('a-due0001', 2, { repo: 'acme/progetto' })))
+  amb.disco.set('X:/orch/azioni/a-due0001.json', JSON.stringify(base('a-due0001', 2, { repo: 'acme/progetto', ...inAvvio })))
   amb.disco.set('X:/orch/registro.json', '{"task":[]}')
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await clock.advance(20_000)
@@ -2261,7 +2293,7 @@ test('battito: con lavoro pendente il giro resta a 20 s; si rileggono solo i rec
   const registro = () => amb.letti.filter(f => f.endsWith('/registro.json')).length
   const prima = { record: record().length, registro: registro() }
   await clock.advance(20_000)
-  // Nessun file cambiato: nessuna rilettura, ma il giro c'è stato (proposte = lavoro pendente).
+  // Nessun file cambiato: nessuna rilettura, ma il giro c'è stato (avvii in attesa = lavoro pendente).
   expect(record().length).toBe(prima.record)
   expect(registro()).toBe(prima.registro)
   amb.disco.set('X:/orch/azioni/a-uno0001.json', JSON.stringify({ ...uno, versione: 1, titolo: 'Titolo cambiato altrove' }))
@@ -2269,7 +2301,7 @@ test('battito: con lavoro pendente il giro resta a 20 s; si rileggono solo i rec
   await clock.advance(20_000)
   expect(record().slice(prima.record)).toEqual(['X:/orch/azioni/a-uno0001.json'])
   expect(registro()).toBe(prima.registro + 1)
-  // Proposte Claude soltanto: la corsia Codex non si interroga.
+  // Chip Claude soltanto: la corsia Codex non si interroga.
   expect(amb.processi.some(x => x.argv.includes('occupata'))).toBe(false)
 })
 

@@ -1181,3 +1181,8 @@ test('F4 contesto Codex: l\'istante è quello del token_count valido, non della 
   fs.rmSync(fonti.fileCache(home), { force: true })
   assert.strictEqual((await unaSessione(home)).tokenIl, '2026-11-05T10:05:00Z')
 })
+
+test('R16: nessun export morto di modelli in logica (MODELLI non usato)', () => {
+  const logica = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'logica.ts'), 'utf8')
+  assert.doesNotMatch(logica, /export const MODELLI\b/)
+})

@@ -39,7 +39,6 @@ export const REGOLE_DEFAULT: Regole = {
   risorse: RISORSE_DEFAULT,
 }
 export const EFFORT = REGOLE_DEFAULT.effort
-export const MODELLI = REGOLE_DEFAULT.modelli
 export const CORSIE: readonly Corsia[] = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5']
 const COORDINATORE_PREDEFINITO = 'claude-sonnet-5-5'
 
@@ -1116,7 +1115,8 @@ export type Cadenza = { ultimi: Record<Lavoro, number>; aSchermo: boolean }
 // Mai fatti: al primo battito è tutto dovuto, qualunque sia l'orologio.
 export const CADENZA_INIZIALE: Cadenza = { ultimi: { giro: -Infinity, sessioni: -Infinity, traguardi: -Infinity, risorse: -Infinity }, aSchermo: false }
 /** Stati che tengono il giro veloce: l'orchestrazione non deve rallentare mentre c'è lavoro pendente. */
-export const STATI_PENDENTI: readonly StatoAzione[] = ['proposta', 'accodata', 'in-avvio', 'avviata', 'consegnata']
+// R10: solo questi stati hanno lavoro del giro da fare presto; proposte e consegnate seguono la cadenza lenta (60 s).
+export const STATI_PENDENTI: readonly StatoAzione[] = ['accodata', 'in-avvio', 'avviata']
 // Il battito arriva ogni 20 s, mai esattamente: un lavoro da 20 s è dovuto anche a 19,5 s.
 const MARGINE_MS = 1_000
 
