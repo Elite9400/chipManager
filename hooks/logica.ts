@@ -270,8 +270,12 @@ const corsiaPenalizza = (a: Azione, r: Regole) => corsiaAdatta(a, r) && MOLTIPLI
  */
 export function punteggio(a: Azione, r: Regole, limiti: readonly Limite[], lista: readonly Azione[]) {
   let peso = 100
+  // R3: l'effort che corsia_codex impone a Codex non è una scelta: con un profilo predefinito la sua penalità non vale
+  // (solo per quel valore esatto: un effort sopra resta penalizzato, e i pesi personalizzati valgono come scritti).
+  const imposto = a.esecutore === 'codex' && profiloDi(r.risorse) !== 'personalizzato' ? r.corsiaCodex.effort[corsiaDi(a, r) ?? ''] : undefined
   for (const p of r.risorse.pesi) {
     const nome = p.tipo === 'fornitore' ? a.esecutore : p.tipo === 'modello' ? modelloDi(a, r) : effortDi(a, r)
+    if (p.tipo === 'effort' && imposto && nome === imposto && p.percentuale + p.assoluto < 0) continue
     if (p.nome === nome) peso *= Math.max(0, 100 * (1 + p.percentuale / 100) + p.assoluto) / 100
   }
   if (corsiaAdatta(a, r)) peso *= MOLTIPLICATORE_CORSIA[effortDi(a, r)] ?? 1
@@ -289,6 +293,18 @@ export function punteggio(a: Azione, r: Regole, limiti: readonly Limite[], lista
 export function bilancia(a: Azione, espliciti: Record<string, unknown>, r: Regole, limiti: readonly Limite[], lista: readonly Azione[], chi: Chiamante) {
   let scelta = a
   let migliore = -1
+  const profilo = profiloDi(r.risorse)
+  const corsia = corsiaDi(a, r)
+  // R2 (decisione del committente): senza un modello indicato, a parità vince il Claude di rango più basso sulle corsie
+  // leggere (R0–R1) con ogni profilo, e su tutte con Risparmio e Velocità. Codex non entra in questo spareggio.
+  const perRango = espliciti.modello === undefined && (corsia === 'R0' || corsia === 'R1' || profilo === 'risparmio' || profilo === 'velocita')
+  const meglio = (c: Azione, punti: number) => {
+    if (migliore < 0 || punti > migliore * (1 + 1e-9)) return true
+    if (punti < migliore * (1 - 1e-9)) return false
+    // R3: con Risparmio, a parità vince Codex quando è ammesso.
+    if (profilo === 'risparmio' && c.esecutore === 'codex' && scelta.esecutore !== 'codex') return true
+    return perRango && c.esecutore === 'claude' && scelta.esecutore === 'claude' && rangoModello(c.modello ?? '') < rangoModello(scelta.modello ?? '')
+  }
   for (const esecutore of ['claude', 'codex', 'freellmapi'] as const) {
     if (espliciti.esecutore !== undefined && espliciti.esecutore !== esecutore) continue
     for (const modello of r.modelli[esecutore]) {
@@ -308,7 +324,7 @@ export function bilancia(a: Azione, espliciti: Record<string, unknown>, r: Regol
           const candidata: Azione = { ...a, esecutore, modello, effort, revisore }
           if (violazioniAvvio(candidata, r, lista, chi).length) continue
           const punti = punteggio(candidata, r, limiti, lista)
-          if (punti > migliore) { migliore = punti; scelta = candidata }
+          if (meglio(candidata, punti)) { migliore = Math.max(migliore, punti); scelta = candidata }
         }
       }
     }

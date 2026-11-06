@@ -490,3 +490,32 @@ test('registro: applica A, poi rifiuta B: il registro dice B e tiene «Annulla»
   expect(await ui.find({ key: 'carico-pesi-registro-annulla' })).toBeUndefined()
   await ui.unmount()
 })
+
+test('R2/R3: matrice profilo × corsia per una chip senza modello né effort; il modello esplicito non cambia', () => {
+  // Le righe dei revisori anche per Codex, come nel routing del rapporto: così Codex è avviabile dove la corsia lo ammette.
+  const RC = regoleDa({ ...ROUTING, revisione: { revisori_ammessi_per_autore: { ...ROUTING.revisione.revisori_ammessi_per_autore, 'gpt-6.1-sol': ['claude-sonnet-5-5', 'claude-opus-5-5'], 'gpt-6-astra': ['claude-sonnet-5-5', 'claude-opus-5-5'] } } }, 'routing.json')
+  const conRC = (risorse: Partial<Regole['risorse']>): Regole => ({ ...RC, risorse: { ...RISORSE_DEFAULT, ...risorse } })
+  const scelta = (profilo: 'automatico' | 'risparmio' | 'qualita' | 'velocita', corsia: Corsia) => {
+    const r = conRC({ profilo, pesi: conProfilo([], profilo) })
+    const a = azione(`a-mat-${profilo.slice(0, 3)}-${corsia}`.toLowerCase().replace(/[^a-z0-9-]/g, ''), corsia)
+    const b = bilancia(a, {}, r, [], [a], CHI)
+    return `${b.esecutore === 'codex' ? 'codex' : b.modello}`
+  }
+  const matrice = Object.fromEntries((['automatico', 'risparmio', 'qualita', 'velocita'] as const).map(p => [p, (['R0', 'R1', 'R2', 'R3'] as Corsia[]).map(c => scelta(p, c))]))
+  expect(matrice).toEqual({
+    // R2 (decisione del committente): sulle corsie leggere vince il modello Claude di rango più basso.
+    automatico: ['claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-opus-5-5'],
+    // R3: con Risparmio l'effort imposto dalla corsia non penalizza Codex, e a parità vince Codex.
+    risparmio: ['claude-sonnet-5-5', 'codex', 'codex', 'codex'],
+    qualita: ['claude-sonnet-5-5', 'claude-sonnet-5-5', expect.any(String), expect.any(String)],
+    velocita: ['claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5'],
+  })
+  // Il modello esplicito resta intoccabile, anche sulle corsie leggere.
+  const r = conRisorse({ profilo: 'velocita', pesi: conProfilo([], 'velocita') })
+  const a = azione('a-matesp01', 'R0', { modello: 'claude-opus-5-5' })
+  expect(bilancia(a, { modello: 'claude-opus-5-5' }, r, [], [a], CHI).modello).toBe('claude-opus-5-5')
+  // Un effort sopra quello imposto dalla corsia resta penalizzato: la neutralizzazione vale solo per il valore imposto.
+  const ris = conRC({ profilo: 'risparmio', pesi: conProfilo([], 'risparmio') })
+  const codexR1 = azione('a-matcod01', 'R1', { esecutore: 'codex', revisore: 'claude', modello: 'gpt-6.1-sol' })
+  expect(punteggio({ ...codexR1, effort: 'high' }, ris, [], [codexR1])).toBeGreaterThan(punteggio({ ...codexR1, effort: 'xhigh' }, ris, [], [codexR1]))
+})
