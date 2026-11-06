@@ -21,6 +21,9 @@ function finestreClaude(json, letto, fonte) {
   })
 }
 
+const limiteCodex = (id, percentuale, letto, reset) => ({ id, fornitore: 'codex', nome: `Codex piano · ${id === 'codex-primary' ? 'primaria' : 'secondaria'}`,
+  percentuale, unita: '%', letto, fonte: 'Codex sessions · token_count/rate_limits', reset })
+
 function finestreCodex(evento) {
   if (!data(evento?.timestamp) || evento?.type !== 'event_msg' || evento?.payload?.type !== 'token_count') return []
   const limiti = evento.payload.rate_limits
@@ -28,9 +31,7 @@ function finestreCodex(evento) {
   return ['primary', 'secondary'].flatMap(k => {
     const v = limiti?.[k]
     if (!numero(v?.used_percent) || v.used_percent > 100) return []
-    return [{ id: `codex-${k}`, fornitore: 'codex', nome: `Codex piano · ${k === 'primary' ? 'primaria' : 'secondaria'}`,
-      percentuale: v.used_percent, unita: '%', letto: evento.timestamp, fonte: 'Codex sessions · token_count/rate_limits',
-      reset: numero(v.resets_at) && v.resets_at < 8e12 ? new Date(v.resets_at * 1000).toISOString() : undefined }]
+    return [limiteCodex(`codex-${k}`, v.used_percent, evento.timestamp, numero(v.resets_at) && v.resets_at < 8e12 ? new Date(v.resets_at * 1000).toISOString() : undefined)]
   })
 }
 
@@ -79,36 +80,209 @@ async function richiesta(url, init = {}, fetcher = fetch) {
   return JSON.parse(Buffer.concat(parti).toString('utf8'))
 }
 
-/** Legge al massimo trenta code da 512 KiB, senza emettere testo delle conversazioni. */
-function codexLocale(home) {
-  const radice = path.join(home, '.codex', 'sessions')
-  const file = []
+// --- cache incrementale dei file di sessione Codex --------------------------------------------------------
+// Ogni .jsonl si apre solo se è cambiato, e se ne leggono solo i byte nuovi. La cache è un dato derivato:
+// illeggibile o non valida si scarta e si ricostruisce (cambia il costo, non il risultato). Tiene solo metadati
+// validati: mai payload integrali né testo delle conversazioni.
+const TESTA = 256_000
+const CODA = 512_000
+const BLOCCO = 65_536
+const RIGA_MAX = 256_000
+const GIORNO = 86_400_000
+const testo = (v, n) => (typeof v === 'string' && v && v.length <= n && !/[\x00-\x1f\x7f]/.test(v) ? v : undefined)
+const fileCache = home => path.join(home, '.claude', 'chipmanager', 'cache', 'codex.json')
+
+/** I file recenti, i più nuovi prima: fino a 40 delle ultime 24 ore (sessioni) e 30 degli ultimi 7 giorni (limiti). */
+function elencoCodex(home, adesso) {
+  const sessioni = []
+  const limiti = []
+  const pieno = () => sessioni.length >= 40 && limiti.length >= 30
   const visita = (dir, livello) => {
-    if (file.length >= 30 || livello > 3) return
+    if (pieno() || livello > 3) return
     const voci = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => b.name.localeCompare(a.name))
     for (const v of voci) {
-      if (file.length >= 30) break
+      if (pieno()) break
       if (v.isSymbolicLink()) continue
-      if (v.isDirectory() && /^\d{2,4}$/.test(v.name)) visita(path.join(dir, v.name), livello + 1)
-      else if (v.isFile() && v.name.endsWith('.jsonl')) file.push(path.join(dir, v.name))
+      const f = path.join(dir, v.name)
+      if (v.isDirectory() && /^\d{2,4}$/.test(v.name)) visita(f, livello + 1)
+      else if (v.isFile() && v.name.endsWith('.jsonl')) {
+        // Un file sparito fra readdir e stat salta da solo, non svuota l'elenco.
+        let st
+        try { st = fs.statSync(f) } catch { continue }
+        if (sessioni.length < 40 && adesso - st.mtimeMs <= GIORNO) sessioni.push({ f, st })
+        if (limiti.length < 30 && adesso - st.mtimeMs <= 7 * GIORNO) limiti.push({ f, st })
+      }
     }
   }
-  visita(radice, 0)
-  const ultime = new Map()
-  for (const f of file) {
-    const fd = fs.openSync(f, 'r')
-    try {
-      const size = fs.fstatSync(fd).size
-      const buffer = Buffer.alloc(Math.min(size, 512_000))
-      fs.readSync(fd, buffer, 0, buffer.length, size - buffer.length)
-      for (const riga of buffer.toString('utf8').split('\n')) {
-        try {
-          for (const x of finestreCodex(JSON.parse(riga))) if (!ultime.has(x.id) || Date.parse(x.letto) > Date.parse(ultime.get(x.id).letto)) ultime.set(x.id, x)
-        } catch { /* una coda può iniziare o finire a metà evento */ }
-      }
-    } finally { fs.closeSync(fd) }
+  try { visita(path.join(home, '.codex', 'sessions'), 0) } catch { /* nessuna cartella: nessun file */ }
+  return { sessioni, limiti }
+}
+
+/** Una voce della cache con i soli campi ammessi, validati; null se qualcosa non vale. */
+function vocePulita(v) {
+  const n = x => typeof x === 'number' && Number.isFinite(x) && x >= 0
+  if (!v || typeof v !== 'object' || !n(v.dimensione) || !n(v.mtimeMs) || !n(v.ino) || !n(v.offset) || v.offset > v.dimensione) return null
+  let meta = null
+  if (v.meta) {
+    const id = testo(v.meta.id, 64)
+    const cwd = testo(v.meta.cwd, 400)
+    if (!id || !cwd) return null
+    meta = { id, cwd, ramo: testo(v.meta.ramo, 80), figlia: v.meta.figlia === true }
   }
-  return [...ultime.values()]
+  const pt = v.primoTurno ?? {}
+  const u = v.ultimo ?? {}
+  if (!['aperto', 'chiuso', 'ignoto'].includes(u.stato) || !Array.isArray(v.limiti ?? [])) return null
+  const limiti = (v.limiti ?? []).slice(0, 2).flatMap(l => /^codex-(primary|secondary)$/.test(l?.id) && numero(l.percentuale) && l.percentuale <= 100 && data(l.letto) &&
+    (l.reset === undefined || (typeof l.reset === 'string' && Number.isFinite(Date.parse(l.reset)))) ? [{ id: l.id, percentuale: l.percentuale, letto: l.letto, reset: l.reset }] : [])
+  return {
+    dimensione: v.dimensione, mtimeMs: v.mtimeMs, ino: v.ino, offset: v.offset, meta,
+    primoTurno: { modello: testo(pt.modello, 60), effort: testo(pt.effort, 20) },
+    ultimo: { modello: testo(u.modello, 60), effort: testo(u.effort, 20), token: numero(u.token) ? u.token : undefined, finestra: numero(u.finestra) ? u.finestra : undefined, stato: u.stato },
+    limiti,
+  }
+}
+
+function leggiCache(file) {
+  const voci = new Map()
+  try {
+    const j = JSON.parse(fs.readFileSync(file, 'utf8'))
+    if (j?.versione !== 1 || !j.voci || typeof j.voci !== 'object') return voci
+    for (const [k, v] of Object.entries(j.voci)) {
+      const p = vocePulita(v)
+      if (p) voci.set(k, p)
+    }
+  } catch { /* assente o corrotta: si ricostruisce */ }
+  return voci
+}
+
+/**
+ * Aggiorna la voce di un file. Invariato (dimensione, data, ino): nessuna apertura. Riscritto (altro ino, più corto
+ * dell'offset, data indietro, o data cambiata senza crescita): da capo. Cresciuto: solo i byte dopo l'ultimo `\n`
+ * letto. Oltre 512 KB d'arretrato lo stato si ricalcola dalla sola coda (ignoto se la coda non lo dice), mentre i
+ * limiti si cercano anche nell'intervallo saltato, a blocchi, analizzando solo le righe con `rate_limits`.
+ */
+function aggiornaVoce(f, st, c, diag) {
+  const ino = numero(st.ino) ? st.ino : 0
+  if (c && c.dimensione === st.size && c.mtimeMs === st.mtimeMs && c.ino === ino) return c
+  const daCapo = !c || (ino && c.ino && ino !== c.ino) || st.size < c.offset || st.mtimeMs < c.mtimeMs || st.size <= c.dimensione
+  const v = daCapo
+    ? { offset: 0, meta: null, primoTurno: {}, ultimo: { stato: 'ignoto' }, limiti: [] }
+    : { ...c, primoTurno: { ...c.primoTurno }, ultimo: { ...c.ultimo }, limiti: [...c.limiti] }
+  const da = v.offset
+  const inizioCoda = Math.max(da, st.size - CODA)
+  if (inizioCoda > da) {
+    diag.salti += 1
+    // Lo stato di prima del salto non si eredita mai.
+    v.ultimo.stato = 'ignoto'
+  }
+  let metaVisto = !daCapo
+  const esamina = (riga, inizio) => {
+    const inCoda = inizio >= inizioCoda
+    const inTesta = daCapo && inizio < TESTA && (!metaVisto || !v.primoTurno.modello) && (riga.includes('"session_meta"') || riga.includes('"turn_context"'))
+    if (!inCoda && !inTesta && !riga.includes('rate_limits')) return
+    let e
+    try { e = JSON.parse(riga.toString('utf8')) } catch { return }
+    const p = e?.payload
+    if (inTesta && e?.type === 'session_meta' && !metaVisto) {
+      metaVisto = true
+      const id = testo(p?.id, 64)
+      const cwd = testo(p?.cwd, 400)
+      v.meta = id && cwd ? { id, cwd, ramo: testo(p.git?.branch, 80), figlia: !!p.parent_thread_id } : null
+    }
+    if (e?.type === 'turn_context') {
+      if (inTesta && !v.primoTurno.modello) v.primoTurno = { modello: testo(p?.model, 60), effort: testo(p?.effort, 20) }
+      if (inCoda) {
+        v.ultimo.modello = testo(p?.model, 60) ?? v.ultimo.modello
+        v.ultimo.effort = testo(p?.effort, 20) ?? v.ultimo.effort
+      }
+    }
+    if (inCoda && e?.type === 'event_msg') {
+      if (p?.type === 'task_started') v.ultimo.stato = 'aperto'
+      if (p?.type === 'task_complete') v.ultimo.stato = 'chiuso'
+      const t = p?.info?.last_token_usage?.total_tokens
+      if (p?.type === 'token_count' && numero(t) && numero(p.info.model_context_window)) {
+        v.ultimo.token = t
+        v.ultimo.finestra = p.info.model_context_window
+      }
+    }
+    // Per ogni finestra l'osservazione con il timestamp più recente; un evento senza limiti non cancella nulla.
+    for (const x of finestreCodex(e)) {
+      const nuovo = { id: x.id, percentuale: x.percentuale, letto: x.letto, reset: x.reset }
+      const i = v.limiti.findIndex(l => l.id === x.id)
+      if (i < 0) v.limiti.push(nuovo)
+      else if (Date.parse(x.letto) > Date.parse(v.limiti[i].letto)) v.limiti[i] = nuovo
+    }
+  }
+  const fd = fs.openSync(f, 'r')
+  diag.aperti += 1
+  try {
+    const b = Buffer.alloc(BLOCCO)
+    let pos = da
+    let resto = null
+    let restoInizio = da
+    let scarta = false
+    while (pos < st.size) {
+      const n = fs.readSync(fd, b, 0, Math.min(BLOCCO, st.size - pos), pos)
+      if (n <= 0) break
+      diag.byte += n
+      if (pos < inizioCoda) diag.byteLimiti += Math.min(n, inizioCoda - pos)
+      const blocco = b.subarray(0, n)
+      let i = 0
+      for (let j = blocco.indexOf(10, i); j >= 0; j = blocco.indexOf(10, i)) {
+        if (!scarta) esamina(resto ? Buffer.concat([resto, blocco.subarray(i, j)]) : blocco.subarray(i, j), resto ? restoInizio : pos + i)
+        resto = null
+        scarta = false
+        i = j + 1
+        // Solo dopo un `\n`: una riga ancora senza fine si rilegge al giro dopo.
+        v.offset = pos + i
+      }
+      if (i < n && !scarta) {
+        if (!resto) restoInizio = pos + i
+        resto = resto ? Buffer.concat([resto, blocco.subarray(i)]) : Buffer.from(blocco.subarray(i))
+        // Una riga enorme è testo, non un evento che serve: si salta fino al prossimo `\n`.
+        if (resto.length > RIGA_MAX) {
+          resto = null
+          scarta = true
+        }
+      }
+      pos += n
+    }
+  } finally { fs.closeSync(fd) }
+  return vocePulita({ ...v, dimensione: st.size, mtimeMs: st.mtimeMs, ino })
+}
+
+async function scriviCache(home, voci) {
+  const file = fileCache(home)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const { conMutex, scriviAtomico } = require('./disco.cjs')
+  // Dato derivato: se il mutex non arriva in 2 s la cache resta com'è, e il prossimo passaggio la riscrive.
+  await conMutex('codex-cache', 2_000, () => scriviAtomico(file, JSON.stringify({ versione: 1, voci: Object.fromEntries(voci) })))
+}
+
+/** Aggiorna la cache dei file recenti e la restituisce, con i contatori di questo passaggio. */
+async function codexCache(home, adesso = Date.now()) {
+  const diag = { byte: 0, byteLimiti: 0, salti: 0, aperti: 0 }
+  const elenco = elencoCodex(home, adesso)
+  const prima = leggiCache(fileCache(home))
+  const voci = new Map()
+  for (const { f, st } of [...elenco.sessioni, ...elenco.limiti]) {
+    if (voci.has(f)) continue
+    try {
+      const v = aggiornaVoce(f, st, prima.get(f), diag)
+      if (v) voci.set(f, v)
+    } catch { /* sparito o illeggibile: fuori dalla cache */ }
+  }
+  if (JSON.stringify([...voci]) !== JSON.stringify([...prima])) await scriviCache(home, voci).catch(() => undefined)
+  return { elenco, voci, diag }
+}
+
+/** Limiti di piano Codex dai file degli ultimi 7 giorni, dalla cache: per ogni finestra l'osservazione più recente. */
+async function codexLocale(home, adesso = Date.now(), cache) {
+  const { elenco, voci } = cache ?? (await codexCache(home, adesso))
+  const ultime = new Map()
+  for (const { f } of elenco.limiti)
+    for (const l of voci.get(f)?.limiti ?? []) if (!ultime.has(l.id) || Date.parse(l.letto) > Date.parse(ultime.get(l.id).letto)) ultime.set(l.id, l)
+  return [...ultime.values()].map(l => limiteCodex(l.id, l.percentuale, l.letto, l.reset))
 }
 
 function politicaValida(p) {
@@ -135,7 +309,12 @@ async function osserva(p, chiavi, deps = {}) {
     const s = JSON.parse(fs.readFileSync(path.join(home, '.claude', 'chipmanager', 'statusline.json'), 'utf8'))
     return finestreClaude(s, s.letto, 'Claude status line · snapshot locale')
   })
-  await sonda('codex', 'codex', 'Codex piano', 'Codex sessions', async () => codexLocale(home))
+  let diagnostica
+  await sonda('codex', 'codex', 'Codex piano', 'Codex sessions', async () => {
+    const c = await codexCache(home)
+    diagnostica = c.diag
+    return codexLocale(home, Date.now(), c)
+  })
   if (abilita('claude') && chiavi.anthropic) {
     await sonda('claude-api', 'claude', 'Claude API', 'Anthropic Admin · cost_report', async () => costoClaude(await get(
       `https://api.anthropic.com/v1/organizations/cost_report?starting_at=${letto.slice(0, 7)}-01T00%3A00%3A00Z&limit=31`,
@@ -155,7 +334,7 @@ async function osserva(p, chiavi, deps = {}) {
     } catch { proxy = 'non raggiungibile o API non disponibile' }
   }
   if (!limiti.some(l => l.fornitore === 'freellmapi')) limiti.push(assente('freellmapi', 'freellmapi', 'FreeLLMAPI', 'GET /v1/usage', proxy))
-  return { limiti, proxy, chiavi: { anthropic: !!chiavi.anthropic, deepseek: !!chiavi.deepseek, freellmapi: !!chiavi.freellmapi } }
+  return { limiti, proxy, chiavi: { anthropic: !!chiavi.anthropic, deepseek: !!chiavi.deepseek, freellmapi: !!chiavi.freellmapi }, diagnostica }
 }
 
 /** Solo testo, nessuna lettura di file o tool call. Il controllo completo del mandato è nella mod. */
@@ -174,57 +353,20 @@ async function completa(p, input, chiave, get = richiesta) {
 
 /**
  * Sessioni Codex delle ultime 24 ore: solo metadati (cartella, ramo, modello, effort, token, finestra, stato).
- * Mai testo della conversazione: si leggono soltanto session_meta, turn_context, token_count e task_*.
+ * Mai testo della conversazione: dalla cache vengono soltanto session_meta, turn_context, token_count e task_*.
+ * `stato` ignoto (un salto oltre la coda senza eventi di turno) non è «in corso».
  */
-function sessioniCodexLocali(home, adesso = Date.now()) {
-  const radice = path.join(home, '.codex', 'sessions')
-  const file = []
-  const visita = (dir, livello) => {
-    if (file.length >= 40 || livello > 3) return
-    const voci = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => b.name.localeCompare(a.name))
-    for (const v of voci) {
-      if (file.length >= 40) break
-      if (v.isSymbolicLink()) continue
-      const f = path.join(dir, v.name)
-      if (v.isDirectory() && /^\d{2,4}$/.test(v.name)) visita(f, livello + 1)
-      else if (v.isFile() && v.name.endsWith('.jsonl')) {
-        // Un file sparito fra readdir e stat salta da solo, non svuota l'elenco.
-        try { if (adesso - fs.statSync(f).mtimeMs <= 86_400_000) file.push(f) } catch { /* sparito */ }
-      }
-    }
-  }
-  try { visita(radice, 0) } catch { return [] }
-  const testo = (v, n) => (typeof v === 'string' && v && v.length <= n && !/[\x00-\x1f\x7f]/.test(v) ? v : undefined)
-  const righe = (fd, da, quanti) => {
-    const b = Buffer.alloc(quanti)
-    fs.readSync(fd, b, 0, quanti, da)
-    return b.toString('utf8').split('\n').flatMap(r => { try { return [JSON.parse(r)] } catch { return [] } })
-  }
-  return file.flatMap(f => {
-    const fd = fs.openSync(f, 'r')
-    try {
-      const st = fs.fstatSync(fd)
-      const testa = righe(fd, 0, Math.min(st.size, 256_000))
-      const meta = testa.find(e => e?.type === 'session_meta')?.payload
-      if (!meta || meta.parent_thread_id || !testo(meta.id, 64) || !testo(meta.cwd, 400)) return []
-      const s = { id: meta.id, cwd: meta.cwd, ramo: testo(meta.git?.branch, 80), attivita: new Date(st.mtimeMs).toISOString(), inCorso: false }
-      let aperto = false
-      // La testa dà il primo turn_context (modello, effort); la coda gli ultimi eventi.
-      const coda = st.size > 256_000 ? righe(fd, Math.max(0, st.size - 512_000), Math.min(st.size, 512_000)) : []
-      for (const e of [...testa, ...coda]) {
-        const p = e?.payload
-        if (e?.type === 'turn_context') { s.modello = testo(p?.model, 60) ?? s.modello; s.effort = testo(p?.effort, 20) ?? s.effort }
-        if (e?.type !== 'event_msg') continue
-        if (p?.type === 'task_started') aperto = true
-        if (p?.type === 'task_complete') aperto = false
-        const t = p?.info?.last_token_usage?.total_tokens
-        if (p?.type === 'token_count' && numero(t) && numero(p.info.model_context_window)) { s.token = t; s.finestra = p.info.model_context_window }
-      }
-      // Un turno aperto in un file fermo da 10 minuti è un processo finito male, non lavoro in corso.
-      s.inCorso = aperto && adesso - st.mtimeMs <= 600_000
-      return [s]
-    } catch { return [] } finally { fs.closeSync(fd) }
+async function sessioniCodexLocali(home, adesso = Date.now()) {
+  const c = await codexCache(home, adesso)
+  const sessioni = c.elenco.sessioni.flatMap(({ f, st }) => {
+    const v = c.voci.get(f)
+    if (!v?.meta || v.meta.figlia) return []
+    // Un turno aperto in un file fermo da 10 minuti è un processo finito male, non lavoro in corso.
+    return [{ id: v.meta.id, cwd: v.meta.cwd, ramo: v.meta.ramo, attivita: new Date(st.mtimeMs).toISOString(),
+      modello: v.ultimo.modello ?? v.primoTurno.modello, effort: v.ultimo.effort ?? v.primoTurno.effort, token: v.ultimo.token, finestra: v.ultimo.finestra,
+      stato: v.ultimo.stato, inCorso: v.ultimo.stato === 'aperto' && adesso - st.mtimeMs <= 600_000 }]
   })
+  return { sessioni, diagnostica: c.diag }
 }
 
 async function main() {
@@ -241,7 +383,7 @@ async function main() {
   }
   const chiavi = { anthropic: process.env.CHIPMANAGER_ANTHROPIC_ADMIN_KEY || process.env.ANTHROPIC_ADMIN_KEY,
     deepseek: process.env.CHIPMANAGER_DEEPSEEK_KEY || process.env.DEEPSEEK_API_KEY, freellmapi: process.env.CHIPMANAGER_FREELLMAPI_KEY || process.env.FREELLMAPI_KEY }
-  if (cmd === 'sessioni') { process.stdout.write(JSON.stringify(sessioniCodexLocali(os.homedir()))); return }
+  if (cmd === 'sessioni') { process.stdout.write(JSON.stringify(await sessioniCodexLocali(os.homedir()))); return }
   const output = cmd === 'limiti' ? await osserva(input, chiavi) : cmd === 'completa' ? { risultato: await completa(input.politica, input, chiavi.freellmapi) } : null
   if (!output) throw new Error('comando non valido')
   const testo = JSON.stringify(output)
@@ -249,4 +391,4 @@ async function main() {
   process.stdout.write(testo)
 }
 if (require.main === module) main().catch(() => { process.stderr.write('Fonte o richiesta non disponibile'); process.exitCode = 1 })
-module.exports = { sessioniCodexLocali, finestreClaude, finestreCodex, saldoDeepseek, costoClaude, usoFree, codexLocale, osserva, completa, richiesta, locale }
+module.exports = { sessioniCodexLocali, codexCache, fileCache, finestreClaude, finestreCodex, saldoDeepseek, costoClaude, usoFree, codexLocale, osserva, completa, richiesta, locale }

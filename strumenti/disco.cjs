@@ -764,4 +764,4 @@ function esci(codice, testo) {
 }
 
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))
-module.exports = { conMutex, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, lanciaCli, eseguiCli }
+module.exports = { conMutex, scriviAtomico, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, lanciaCli, eseguiCli }

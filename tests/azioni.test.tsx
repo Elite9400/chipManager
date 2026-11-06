@@ -1442,7 +1442,8 @@ function ambienteSessioni(on: Parameters<TestBody>[1], adesso: () => number, lim
   return ambiente(on, {
     strumenti: ['mcp__ccd_session_mgmt__list_sessions', 'mcp__ccd_session_mgmt__get_usage'],
     fonte: cmd => (cmd === 'sessioni'
-      ? [{ id: 'esempio-0001', cwd: 'X:/repo/.claude/worktrees/fix-ricerca', ramo: 'fix-ricerca', modello: 'gpt-6-astra', effort: 'xhigh', inCorso: true, attivita: quando(0), token: 61_000, finestra: 100_000 }]
+      ? { sessioni: [{ id: 'esempio-0001', cwd: 'X:/repo/.claude/worktrees/fix-ricerca', ramo: 'fix-ricerca', modello: 'gpt-6-astra', effort: 'xhigh', stato: 'aperto', inCorso: true, attivita: quando(0), token: 61_000, finestra: 100_000 }],
+          diagnostica: { byte: 4096, byteLimiti: 0, salti: 1, aperti: 1 } }
       : cmd === 'limiti' && limiti ? { limiti: limiti(), proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } } : undefined),
     mcp: (_s, tool, args) => {
       const testo = (v: unknown) => ({ isError: false, content: [{ type: 'text', text: JSON.stringify(v) }] })

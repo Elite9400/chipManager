@@ -271,20 +271,20 @@ test('2.0 fonti: parser stretti e timestamp originario, nessuna conversazione em
   assert.deepStrictEqual(fonti.finestreCodex({ ...evento, payload: { ...evento.payload, rate_limits: { ...evento.payload.rate_limits, limit_id: 'altro' } } }), [])
 })
 
-test('2.0 fonti: log Codex troncati, ultima osservazione valida senza promuovere mtime', () => {
+test('2.0 fonti: log Codex troncati, ultima osservazione valida senza promuovere mtime', async () => {
   const home = tmp()
   const dir = path.join(home, '.codex', 'sessions', '2026', '01', '01')
   fs.mkdirSync(dir, { recursive: true })
   const evento = (timestamp, percentuale) => JSON.stringify({ type: 'event_msg', timestamp, payload: { type: 'token_count', rate_limits: { primary: { used_percent: percentuale } } } })
   fs.writeFileSync(path.join(dir, 'rollout.jsonl'), ['pezzo troncato', evento('2026-01-01T01:00:00Z', 10), '{"testo":"privato"}', evento('2026-01-01T02:00:00Z', 20), '{"fine":'].join('\n'))
-  const l = fonti.codexLocale(home)
+  const l = await fonti.codexLocale(home)
   assert.strictEqual(l.length, 1)
   assert.strictEqual(l[0].percentuale, 20)
   assert.strictEqual(l[0].letto, '2026-01-01T02:00:00Z')
   assert.ok(!JSON.stringify(l).includes('privato'))
 })
 
-test('2.2 sessioni Codex: solo metadati, turno aperto solo se recente, sotto-thread e file vecchi esclusi', () => {
+test('2.2 sessioni Codex: solo metadati, turno aperto solo se recente, sotto-thread e file vecchi esclusi', async () => {
   const home = tmp()
   const dir = path.join(home, '.codex', 'sessions', '2026', '01', '01')
   fs.mkdirSync(dir, { recursive: true })
@@ -292,20 +292,166 @@ test('2.2 sessioni Codex: solo metadati, turno aperto solo se recente, sotto-thr
   const meta = (id, extra = {}) => riga('session_meta', { id, cwd: 'C:/esempio/progetto', git: { branch: 'fix-ricerca' }, ...extra })
   const conto = riga('event_msg', { type: 'token_count', info: { last_token_usage: { total_tokens: 61_000 }, model_context_window: 100_000 } })
   fs.writeFileSync(path.join(dir, 'a.jsonl'), [meta('sessione-a'), riga('turn_context', { model: 'gpt-esempio', effort: 'xhigh' }),
-    riga('response_item', { type: 'message', content: 'testo privato' }), riga('event_msg', { type: 'task_started' }), conto].join('\n'))
-  fs.writeFileSync(path.join(dir, 'b.jsonl'), [meta('sessione-b', { parent_thread_id: 'sessione-a' }), conto].join('\n'))
-  fs.writeFileSync(path.join(dir, 'c.jsonl'), [meta('sessione-c'), conto].join('\n'))
+    riga('response_item', { type: 'message', content: 'testo privato' }), riga('event_msg', { type: 'task_started' }), conto, ''].join('\n'))
+  fs.writeFileSync(path.join(dir, 'b.jsonl'), [meta('sessione-b', { parent_thread_id: 'sessione-a' }), conto, ''].join('\n'))
+  fs.writeFileSync(path.join(dir, 'c.jsonl'), [meta('sessione-c'), conto, ''].join('\n'))
   const vecchio = (Date.now() - 3 * 86_400_000) / 1000
   fs.utimesSync(path.join(dir, 'c.jsonl'), vecchio, vecchio)
-  const s = fonti.sessioniCodexLocali(home)
+  const s = (await fonti.sessioniCodexLocali(home)).sessioni
   assert.deepStrictEqual(s.map(x => x.id), ['sessione-a'])
   assert.deepStrictEqual({ ...s[0], attivita: undefined }, { id: 'sessione-a', cwd: 'C:/esempio/progetto', ramo: 'fix-ricerca', modello: 'gpt-esempio', effort: 'xhigh',
-    token: 61_000, finestra: 100_000, inCorso: true, attivita: undefined })
+    token: 61_000, finestra: 100_000, stato: 'aperto', inCorso: true, attivita: undefined })
   assert.ok(!JSON.stringify(s).includes('privato'))
+  assert.ok(!fs.readFileSync(fonti.fileCache(home), 'utf8').includes('privato'))
   // Lo stesso turno aperto in un file fermo da più di 10 minuti non è lavoro in corso.
   fs.utimesSync(path.join(dir, 'a.jsonl'), Date.now() / 1000 - 900, Date.now() / 1000 - 900)
-  assert.strictEqual(fonti.sessioniCodexLocali(home)[0].inCorso, false)
-  assert.deepStrictEqual(fonti.sessioniCodexLocali(path.join(home, 'nessuna')), [])
+  assert.strictEqual((await fonti.sessioniCodexLocali(home)).sessioni[0].inCorso, false)
+  assert.deepStrictEqual((await fonti.sessioniCodexLocali(path.join(home, 'nessuna'))).sessioni, [])
+})
+
+// --- 2.4.2 cache incrementale delle sessioni Codex (file d'esempio piccoli) ---------------------------------
+const codexDiProva = () => {
+  const home = tmp()
+  const dir = path.join(home, '.codex', 'sessions', '2026', '11', '05')
+  fs.mkdirSync(dir, { recursive: true })
+  return { home, f: path.join(dir, 'rollout-esempio.jsonl') }
+}
+const ev = (type, payload, timestamp = '2026-11-05T10:00:00Z') => `${JSON.stringify({ type, timestamp, payload })}\n`
+const metaEs = ev('session_meta', { id: 'sessione-esempio', cwd: 'C:/esempio/progetto', git: { branch: 'ramo-esempio' } })
+const avvio = ev('event_msg', { type: 'task_started' })
+const fine = ev('event_msg', { type: 'task_complete' })
+const limite = (pct, ts) => ev('event_msg', { type: 'token_count', rate_limits: { primary: { used_percent: pct } } }, ts)
+// Righe di riempimento senza eventi di turno né limiti: testo che la cache non deve mai conservare.
+const riempi = kb => Array.from({ length: kb }, () => ev('response_item', { type: 'message', content: `privato ${'x'.repeat(940)}` })).join('')
+const unaSessione = async (home, adesso) => (await fonti.sessioniCodexLocali(home, adesso)).sessioni[0]
+const contaAperture = async fn => {
+  const vero = fs.openSync
+  let n = 0
+  fs.openSync = (...a) => {
+    if (String(a[0]).endsWith('.jsonl')) n += 1
+    return vero(...a)
+  }
+  try {
+    await fn()
+  } finally {
+    fs.openSync = vero
+  }
+  return n
+}
+
+test('2.4.2 cache Codex: un file invariato non si apre; uno cresciuto si legge solo dalla coda nuova', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs + avvio)
+  assert.strictEqual((await unaSessione(home)).stato, 'aperto')
+  assert.strictEqual(await contaAperture(() => fonti.sessioniCodexLocali(home)), 0)
+  const prima = fs.statSync(f).size
+  fs.appendFileSync(f, fine)
+  const r = await fonti.sessioniCodexLocali(home)
+  assert.strictEqual(r.sessioni[0].stato, 'chiuso')
+  assert.strictEqual(r.diagnostica.byte, fs.statSync(f).size - prima)
+  assert.strictEqual(r.diagnostica.aperti, 1)
+})
+
+test('2.4.2 cache Codex: una riga scritta in due tempi non si consuma finché non ha il suo a capo', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs + avvio.slice(0, 20))
+  assert.strictEqual((await unaSessione(home)).stato, 'ignoto')
+  fs.appendFileSync(f, avvio.slice(20))
+  assert.strictEqual((await unaSessione(home)).stato, 'aperto')
+})
+
+test('2.4.2 cache Codex: troncato o riscritto senza crescita (stessa dimensione) si rilegge da capo', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs + avvio + fine)
+  assert.strictEqual((await unaSessione(home)).stato, 'chiuso')
+  // Troncato: più corto dell'offset letto.
+  fs.writeFileSync(f, metaEs + avvio)
+  assert.strictEqual((await unaSessione(home)).stato, 'aperto')
+  fs.appendFileSync(f, fine)
+  assert.strictEqual((await unaSessione(home)).stato, 'chiuso')
+  // Riscritto con la stessa dimensione e un'altra data: le stesse righe in un altro ordine, lo stato cambia.
+  const n = fs.statSync(f).size
+  fs.writeFileSync(f, metaEs + fine + avvio)
+  assert.strictEqual(fs.statSync(f).size, n)
+  const t = Date.now() / 1000 + 5
+  fs.utimesSync(f, t, t)
+  assert.strictEqual((await unaSessione(home, Date.now() + 10_000)).stato, 'aperto')
+})
+
+test('2.4.2 cache Codex: oltre 512 KB d\'arretrato lo stato viene dalla sola coda (ignoto se non lo dice)', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs + avvio)
+  assert.strictEqual((await unaSessione(home)).stato, 'aperto')
+  fs.appendFileSync(f, riempi(600))
+  const r = await fonti.sessioniCodexLocali(home)
+  assert.strictEqual(r.sessioni[0].stato, 'ignoto', 'lo stato di prima del salto non si eredita')
+  assert.strictEqual(r.sessioni[0].inCorso, false)
+  assert.strictEqual(r.diagnostica.salti, 1)
+  assert.ok(r.diagnostica.byteLimiti > 0)
+  // Il metadato letto una volta resta; la coda dice di nuovo lo stato.
+  fs.appendFileSync(f, riempi(600) + avvio)
+  assert.strictEqual((await unaSessione(home)).stato, 'aperto')
+  assert.strictEqual((await unaSessione(home)).id, 'sessione-esempio')
+  assert.ok(!fs.readFileSync(fonti.fileCache(home), 'utf8').includes('privato'))
+})
+
+test('2.4.2 cache Codex: un turno aperto in un file fermo da 10 minuti diventa inattivo senza riaprirlo', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs + avvio)
+  assert.strictEqual((await unaSessione(home)).inCorso, true)
+  let s
+  assert.strictEqual(await contaAperture(async () => { s = await unaSessione(home, Date.now() + 11 * 60_000) }), 0)
+  assert.strictEqual(s.inCorso, false)
+  assert.strictEqual(s.stato, 'aperto')
+})
+
+test('2.4.2 cache Codex: corrotta o con campi estranei si scarta e si ricostruisce, con lo stesso risultato', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs + avvio + limite(30, '2026-11-05T10:00:00Z'))
+  const giusta = await fonti.sessioniCodexLocali(home)
+  const cache = JSON.parse(fs.readFileSync(fonti.fileCache(home), 'utf8'))
+  // Solo i campi ammessi.
+  const voce = Object.values(cache.voci)[0]
+  assert.deepStrictEqual(Object.keys(voce).sort(), ['dimensione', 'ino', 'limiti', 'meta', 'mtimeMs', 'offset', 'primoTurno', 'ultimo'])
+  assert.deepStrictEqual(Object.keys(voce.meta).sort(), ['cwd', 'figlia', 'id', 'ramo'])
+  for (const rotta of ['{"versione":1,"voci":', JSON.stringify({ versione: 1, voci: { [f]: { ...voce, ultimo: { stato: 'acceso' } } } })]) {
+    fs.writeFileSync(fonti.fileCache(home), rotta)
+    const r = await fonti.sessioniCodexLocali(home)
+    assert.deepStrictEqual(r.sessioni, giusta.sessioni)
+    assert.strictEqual(r.diagnostica.aperti, 1, 'ricostruita leggendo il file')
+  }
+  assert.strictEqual((await fonti.codexLocale(home))[0].percentuale, 30)
+})
+
+test('2.4.2 cache Codex: limiti identici a cache calda e fredda; un evento senza limiti non cancella la misura', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs + limite(10, '2026-11-05T10:00:00Z'))
+  assert.strictEqual((await fonti.codexLocale(home))[0].percentuale, 10)
+  // Calda: 80% e poi oltre 512 KB di righe senza limiti, più un token_count senza rate_limits.
+  fs.appendFileSync(f, limite(80, '2026-11-05T11:00:00Z') + riempi(600) + ev('event_msg', { type: 'token_count', info: {} }, '2026-11-05T12:00:00Z'))
+  const calda = await fonti.codexLocale(home)
+  fs.rmSync(fonti.fileCache(home))
+  const fredda = await fonti.codexLocale(home)
+  assert.strictEqual(calda[0].percentuale, 80)
+  assert.deepStrictEqual(fredda, calda)
+  assert.strictEqual(calda[0].letto, '2026-11-05T11:00:00Z')
+})
+
+test('2.4.2 cache Codex: i limiti vengono solo dai file degli ultimi 7 giorni', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs + limite(55, '2026-11-05T10:00:00Z'))
+  const vecchio = (Date.now() - 8 * 86_400_000) / 1000
+  fs.utimesSync(f, vecchio, vecchio)
+  assert.deepStrictEqual(await fonti.codexLocale(home), [])
+})
+
+test('2.4.2 cache Codex: due processi insieme, nessun errore e risultato corretto', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs + avvio + riempi(200))
+  const codice = `require(${JSON.stringify(path.join(__dirname, 'fornitori.cjs'))}).sessioniCodexLocali(${JSON.stringify(home)})
+    .then(r => process.exit(r.sessioni[0]?.stato === 'aperto' ? 0 : 5), () => process.exit(6))`
+  assert.deepStrictEqual(await Promise.all([corri(codice), corri(codice)]), [0, 0])
+  assert.strictEqual((await unaSessione(home)).stato, 'aperto')
 })
 
 test('2.0 fonti: saldo non è percentuale; costi USD, paginazione incompleta mai totale', () => {

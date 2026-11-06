@@ -351,7 +351,7 @@ async function leggiSessioni($: Eng) {
   let codex: SessioneProgetto[] = []
   if (r.lette && r.risorse.fornitori.includes('codex')) {
     try {
-      codex = sessioniCodex(await fonte($, {}, 'sessioni', {}), radice, adesso)
+      codex = sessioniCodex(((await fonte($, {}, 'sessioni', {})) as { sessioni?: unknown } | null)?.sessioni, radice, adesso)
     } catch {
       note.push('sessioni Codex non lette')
     }
