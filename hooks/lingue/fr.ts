@@ -562,7 +562,7 @@ const fr: Dizionario = {
   "sessione.questa": "Cette session",
   // Project board (HTML page)
   "board.ignoto": "inconnu",
-  "board.segno.attesa": "vous attend",
+  "board.segno.attesa": "en attente du responsable",
   "board.segno.corso": "en cours",
   "board.segno.prossimo": "suivant",
   "board.segno.fatto": "fait",
@@ -719,6 +719,8 @@ const fr: Dizionario = {
   "tr.parzialeLette": "{lette} issues lues sur {totale} par tour",
   "rec.fallitaSessione": "lancement échoué (signalé par la session)",
   "err.strumento": "{tool} non disponible",
+  "board.aspettaCommittente": "En attente du responsable",
+  "board.sintesiAttesa": "{n} en attente du responsable",
   // ‹fine›
 }
 

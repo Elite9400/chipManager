@@ -562,7 +562,7 @@ const it: Dizionario = {
   "sessione.questa": "Questa sessione",
   // Project board (HTML page)
   "board.ignoto": "ignoto",
-  "board.segno.attesa": "aspetta te",
+  "board.segno.attesa": "aspetta il committente",
   "board.segno.corso": "in corso",
   "board.segno.prossimo": "prossimo",
   "board.segno.fatto": "fatto",
@@ -719,6 +719,8 @@ const it: Dizionario = {
   "tr.parzialeLette": "lette {lette} issue su {totale} a giro",
   "rec.fallitaSessione": "avvio non riuscito (segnalato dalla sessione)",
   "err.strumento": "{tool} non disponibile",
+  "board.aspettaCommittente": "Aspetta il committente",
+  "board.sintesiAttesa": "{n} in attesa del committente",
   // ‹fine›
 }
 

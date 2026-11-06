@@ -564,7 +564,7 @@ const en = {
   "sessione.questa": "This session",
   // Project board (HTML page)
   "board.ignoto": "unknown",
-  "board.segno.attesa": "waiting for you",
+  "board.segno.attesa": "waiting for the owner",
   "board.segno.corso": "running",
   "board.segno.prossimo": "next",
   "board.segno.fatto": "done",
@@ -721,6 +721,8 @@ const en = {
   "tr.parzialeLette": "{lette} issues read out of {totale} per round",
   "rec.fallitaSessione": "start failed (reported by the session)",
   "err.strumento": "{tool} not available",
+  "board.aspettaCommittente": "Waiting for the owner",
+  "board.sintesiAttesa": "{n} waiting for the owner",
   // ‹fine›
 } satisfies Record<string, Voce>
 

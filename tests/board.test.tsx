@@ -19,7 +19,6 @@ const ROUTING = {
 }
 const R = regoleDa(ROUTING, 'routing.json v1')
 const ADESSO = '2026-11-05T12:00:00.000Z'
-const CHI: Chiamante = { io: 'sessione-master', repo: 'esempio/demo', modello: 'claude-opus-5-5', effort: 'high', lanciatore: 'desktop' }
 
 const az = (id: string, ordine: number, extra: Partial<Azione> = {}): Azione => ({
   id, versione: 1, repo: 'esempio/demo', titolo: `Lavoro ${id}`, brief: 'Fai una cosa d\'esempio.', ordine, dipende: [],
@@ -27,7 +26,7 @@ const az = (id: string, ordine: number, extra: Partial<Azione> = {}): Azione => 
 })
 
 const dati = (azioni: Azione[], extra: Partial<DatiBoard> = {}): DatiBoard => ({
-  progetto: 'esempio/demo', versione: '2.4.0', generata: ADESSO, azioni, vive: {}, regole: R, chi: CHI, piani: {}, commit: [],
+  progetto: 'esempio/demo', versione: '2.4.0', generata: ADESSO, azioni, vive: {}, regole: R, piani: {}, commit: [],
   traguardi: null, riassunti: {}, percorso: 'X:/dati/board/esempio__demo-abc/index.html', lingua: 'it', ...extra,
 })
 
@@ -44,16 +43,16 @@ const insieme = () => [
   az('a-scar0001', 9, { stato: 'scartata' }),
 ]
 
-test('board: quattro gruppi, un <details> per ogni chip mostrata, fallita fra «Aspettano te»', () => {
+test('board: quattro gruppi, un <details> per ogni chip mostrata, fallita fra «Aspetta il committente»', () => {
   const html = board(dati(insieme(), { vive: { 'a-ferm0001': { stato: 'ferma' }, 'a-avv00001': { stato: 'in-corso', fase: 'rapporto' } } }))
-  for (const g of ['Aspettano te', 'In corso', 'Prossimi', 'Fatto']) expect(html).toContain(`${g} (`)
+  for (const g of ['Aspetta il committente', 'In corso', 'Prossimi', 'Fatto']) expect(html).toContain(`${g} (`)
   // 2 prossimi + fallita + ferma + avviata + consegnata + 1 completata recente; vecchia e scartata no.
   expect((html.match(/<details /g) ?? []).length).toBe(7)
   expect((html.match(/<\/details>/g) ?? []).length).toBe(7)
   expect(html).not.toContain('id="t-a-scar0001"')
   expect(html).not.toContain('id="t-a-vecc0001"')
   expect(html).toContain('1 completata da più di 30 giorni')
-  const attesa = html.slice(html.indexOf('Aspettano te ('), html.indexOf('In corso ('))
+  const attesa = html.slice(html.indexOf('Aspetta il committente ('), html.indexOf('In corso ('))
   expect(attesa).toContain('id="t-a-fall0001"')
   expect(attesa).toContain('id="t-a-ferm0001"')
   expect(attesa).toContain('Errore')
@@ -178,11 +177,11 @@ test('lingue: la board nella lingua dell\'utente, con `lang` della pagina; cambi
   const blocco = regoleDa({ ...ROUTING, corsia_codex: { ...ROUTING.corsia_codex, modelli: undefined } }, 'routing.json v1')
   const en = board(dati(lista, { lingua: 'en', regole: blocco }))
   expect(en).toContain('<html lang="en">')
-  for (const parola of ['Waiting for you', 'Next', 'Done', 'Legend:', 'routing.json not read', 'Generated on Nov 5, 2026']) expect(en).toContain(parola)
-  for (const parola of ['Aspettano te', 'Prossimi', 'Legenda', 'Generata il', 'non letto']) expect(en).not.toContain(parola)
+  for (const parola of ['Waiting for the owner', 'Next', 'Done', 'Legend:', 'routing.json not read', 'Generated on Nov 5, 2026']) expect(en).toContain(parola)
+  for (const parola of ['Aspetta il committente', 'Prossimi', 'Legenda', 'Generata il', 'non letto']) expect(en).not.toContain(parola)
   const it = board(dati(lista, { lingua: 'it', regole: blocco }))
   expect(it).toContain('<html lang="it">')
-  for (const parola of ['Aspettano te', 'Prossimi', 'Legenda:', 'Generata il 5 nov 2026']) expect(it).toContain(parola)
+  for (const parola of ['Aspetta il committente', 'Prossimi', 'Legenda:', 'Generata il 5 nov 2026']) expect(it).toContain(parola)
   expect(board(dati(lista, { lingua: 'pt' }))).toContain('<html lang="pt-BR">')
   const ingressi: IngressiBoard = { azioni: lista, vive: {}, regole: R, piani: {}, registro: null, commit: [], traguardi: null, riassunti: {}, oggi: '2026-11-05', modo: 'accesa', versione: '2.4.0', lingua: 'it' }
   expect(improntaBoard({ ...ingressi, lingua: 'de' })).not.toBe(improntaBoard(ingressi))
@@ -195,4 +194,21 @@ test('lingue: nella board fasi del registro ed esito della revisione tradotti, m
   expect(html).toContain('<dd>approved</dd>')
   // Fuori dal mandato (testo per l'agente, con i valori dell'API): solo parole tradotte.
   expect(html.replace(/<pre>[\s\S]*?<\/pre>/g, '')).not.toMatch(/\b(pronto|avviato|rapporto|fuso|pubblicato|approvata)\b/)
+})
+
+test('R7: la board non dipende da chi la genera: niente chi negli ingressi, blocchi solo dalle regole di progetto, «aspetta il committente»', () => {
+  // Un R4 con autore Haiku viola una regola di progetto: il blocco c'è per chiunque generi.
+  const r4 = az('a-r4b00001', 1, { titolo: 'permessi OU', modello: 'claude-haiku-5-5', effort: 'low', revisore: 'claude' })
+  // Un avvio annullabile solo da chi l'ha chiesto non è lavoro del committente: resta «in corso».
+  const inAvvio = az('a-ina00001', 2, { stato: 'in-avvio', manuale: true, lanciataDa: 'sessione-master', tentativo: 'az-esempio02', avvioScade: '2999-01-01T00:00:00.000Z' })
+  const fallita = az('a-fal00002', 3, { stato: 'fallita', errore: 'HTTP 502' })
+  const d: DatiBoard = { ...dati([r4, inAvvio, fallita], { lingua: 'en' }) }
+  expect('chi' in d).toBe(false)
+  const html = board(d)
+  expect(html).toContain('sensitive lane (R4): author Opus or Fable, not Haiku 5.5')
+  const owner = html.slice(html.indexOf('Waiting for the owner'), html.indexOf('</section>', html.indexOf('Waiting for the owner')))
+  expect(owner).toContain('a-fal00002')
+  expect(owner).not.toContain('a-ina00001')
+  const ingressi: IngressiBoard = { azioni: [r4], vive: {}, regole: R, piani: {}, registro: null, commit: [], traguardi: null, riassunti: {}, oggi: '2026-11-05', modo: 'accesa', versione: '2.4.0', lingua: 'en' }
+  expect('chi' in ingressi).toBe(false)
 })

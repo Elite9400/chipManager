@@ -1,5 +1,5 @@
 // Board di progetto: un file HTML statico generato SENZA modello da una funzione pura. Niente `$`.
-import type { Azione, Chiamante, Regole, Traguardi, Vita } from '../types'
+import type { Azione, Regole, Traguardi, Vita } from '../types'
 import {
   attive,
   aspettaTe,
@@ -11,7 +11,7 @@ import {
   nomeModello,
   percentuale,
   revisoreConcreto,
-  violazioniAvvio,
+  violazioni,
   mandato,
 } from './logica'
 import type { Strumenti } from './logica'
@@ -30,7 +30,6 @@ export type DatiBoard = {
   azioni: readonly Azione[]
   vive: Record<string, Vita>
   regole: Regole
-  chi: Chiamante | null
   strumenti?: Strumenti
   piani: Record<string, Piano>
   commit: readonly Commit[]
@@ -91,8 +90,6 @@ export type IngressiBoard = {
   oggi: string
   modo: string
   versione: string
-  /** La sessione che genera: i blocchi di avvio mostrati dipendono da lei. */
-  chi?: Chiamante | null
   /** Cambiare lingua rigenera la board: entra nell'impronta come ogni altro ingresso. */
   lingua: Lingua
 }
@@ -143,7 +140,8 @@ function scheda(T: T, a: Azione, d: DatiBoard, lista: readonly Azione[], segno: 
   const dip = a.dipende.map(id => lista.find(x => x.id === id)?.titolo ?? id)
   const sblocca = attive(lista).filter(x => x.dipende.includes(a.id)).map(x => x.titolo)
   const riassunto = d.riassunti[chiaveRiassunto(a, lista, d.lingua)]
-  const blocchi = ['proposta', 'accodata'].includes(a.stato) ? violazioniAvvio(a, r, d.azioni, d.chi) : []
+  // R7: solo le regole di progetto, mai la sessione che genera: la board è la stessa per chiunque la scriva.
+  const blocchi = ['proposta', 'accodata'].includes(a.stato) ? violazioni(a, r, d.azioni) : []
   const m = mandato(a, r, d.strumenti)
   return `<details id="t-${esc(a.id)}"><summary><span class="segno">${s}</span> ${esc(a.titolo)} <span class="tenue">· ${esc(T(parola))} · ${esc(motore(T, a.esecutore))} ${esc(nomeModello(modelloDi(a, r)))}</span></summary>
 <div class="corpo">
@@ -180,8 +178,8 @@ export function board(d: DatiBoard): string {
   const tutte = [...d.azioni]
   const lista = attive(tutte)
   const adesso = Date.parse(d.generata)
-  const io = d.chi?.io
-  const attesa = lista.filter(a => aspettaTe(a, d.vive, io, adesso))
+  // Ferme e fallite aspettano il committente; un avvio annullabile lo decide solo chi l'ha chiesto, non la board.
+  const attesa = lista.filter(a => aspettaTe(a, d.vive, undefined, adesso))
   const inCorso = lista.filter(a => ['in-avvio', 'avviata', 'consegnata'].includes(a.stato) && !attesa.includes(a))
   const prossimi = lista.filter(a => a.stato === 'proposta' || a.stato === 'accodata')
   const chiuse = tutte.filter(a => a.stato === 'completata').sort((x, y) => (y.completataIl ?? y.aggiornata).localeCompare(x.completataIl ?? x.aggiornata))
@@ -206,9 +204,9 @@ ${d.impronta ? `<meta name="chipmanager-impronta" content="${esc(d.impronta)}">`
 <title>Board · ${esc(d.progetto)}</title><style>${CSS}</style></head><body>
 <header><h1>${esc(d.progetto)}</h1>
 <p class="tenue">${esc(T('board.generata', { quando: data(T, d.generata), versione: d.versione, fonte: d.regole.lette ? d.regole.fonte : T('regole.nonLetteAncora') }))}</p>
-<p>${esc([T('sintesi.alLavoro', { n: inCorso.filter(a => a.stato === 'avviata').length }), T('sintesi.aspettano', { n: attesa.length }), T('sintesi.daAvviare', { n: lista.filter(a => a.stato === 'proposta').length })].join(' · '))}</p></header>
+<p>${esc([T('sintesi.alLavoro', { n: inCorso.filter(a => a.stato === 'avviata').length }), T('board.sintesiAttesa', { n: attesa.length }), T('sintesi.daAvviare', { n: lista.filter(a => a.stato === 'proposta').length })].join(' · '))}</p></header>
 <main>
-${gruppo(T('sez.aspettano'), 'attesa', attesa, T('board.vuotoAttesa'))}
+${gruppo(T('board.aspettaCommittente'), 'attesa', attesa, T('board.vuotoAttesa'))}
 ${gruppo(T('board.inCorso'), 'corso', inCorso, T('board.vuotoCorso'))}
 ${gruppo(T('board.prossimi'), 'prossimo', prossimi, T('board.vuotoProssimi'))}
 <section><h2><span class="segno">✓</span> ${esc(T('board.fatto'))} (${recenti.length})</h2>${recenti.map(a => scheda(T, a, d, tutte, 'fatto')).join('\n')}${vecchie ? `<p class="tenue">${esc(T('board.vecchie', { n: vecchie }))}</p>` : ''}${commit}${!recenti.length && !commit ? `<p class="tenue">${esc(T('board.ancoraNiente'))}</p>` : ''}</section>

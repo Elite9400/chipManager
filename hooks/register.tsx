@@ -1292,7 +1292,7 @@ async function generaBoard($: Eng) {
   const linguaOra = await read($, lingua)
   // Il percorso entra nell'impronta: la prima scrittura non lo conosce ancora, la seconda lo mette nel piede.
   const impronta = improntaBoard({
-    azioni: tutte, vive: vv, regole: r, piani, registro, commit, traguardi: tr, riassunti, chi,
+    azioni: tutte, vive: vv, regole: r, piani, registro, commit, traguardi: tr, riassunti,
     oggi: new Date(adesso).toISOString().slice(0, 10), modo: `${modo.modo}:${modo.generazione}:${prima.percorso ?? ''}`, versione: versioneOra, lingua: linguaOra,
   })
   if (impronta === improntaScritta && prima.percorso && (await $.fs.exists(prima.percorso))) return
@@ -1308,7 +1308,7 @@ async function generaBoard($: Eng) {
     }
   }
   const html = board({
-    progetto: chi.repo, versione: versioneOra, generata: new Date(adesso).toISOString(), azioni: tutte, vive: vv, regole: r, chi,
+    progetto: chi.repo, versione: versioneOra, generata: new Date(adesso).toISOString(), azioni: tutte, vive: vv, regole: r,
     strumenti: strumenti($), piani: testi, commit, traguardi: tr, riassunti, percorso: prima.percorso ?? t(linguaOra, 'board.inPreparazione'), impronta, lingua: linguaOra,
   })
   const x = await helper($, ['board-scrivi', await fileConfig($), base, chi.repo, String(modo.generazione), impronta], html)
