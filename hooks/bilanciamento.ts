@@ -1,7 +1,7 @@
 // Logica pura delle Impostazioni (piano grafica, C2 con §9 righe 4, 5 e 7 e §10): profili di bilanciamento, regolazioni
 // a cinque posizioni, soglie, budget manuali e simulazione della scelta. Niente `$`: i test la provano senza engine.
 import type { Azione, Chiamante, Fornitore, Limite, Peso, Regole, RisorseProgetto, Soglia } from '../types'
-import { bilancia, violazioniAvvio } from './logica'
+import { bilancia, profiloDi, violazioniAvvio } from './logica'
 
 export type Profilo = NonNullable<RisorseProgetto['profilo']>
 
@@ -67,8 +67,8 @@ export function conProfilo(pesi: readonly Peso[], profilo: Profilo): Peso[] {
   return [...pesi.filter(x => x.tipo === 'modello'), ...p.pesi]
 }
 
-/** Il profilo da mostrare: quello salvato, altrimenti Automatico senza pesi e Personalizzato con dei pesi. */
-export const profiloDi = (r: RisorseProgetto): Profilo => r.profilo ?? (r.pesi.length ? 'personalizzato' : 'automatico')
+// Una sola risoluzione del profilo: sta in logica (la usa `punteggio`), qui solo riesportata.
+export { profiloDi }
 
 // --- soglie -------------------------------------------------------------------------------------------
 

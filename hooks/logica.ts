@@ -243,13 +243,24 @@ export function etaVecchie(limiti: readonly Limite[], f: Fornitore, adesso = Dat
 export const fornitoriVisibili = (r: RisorseProgetto, ultime: Readonly<Record<string, Limite>>): Fornitore[] =>
   FORNITORI.filter(f => r.fornitori.includes(f) && [...Object.values(ultime), ...r.limitiManuali].some(l => l.fornitore === f))
 
-/** Peso = preferenza, mai autorizzazione. Quote sconosciute non equivalgono a 100% libero. */
+/** Il profilo in vigore, unica fonte: quello salvato, altrimenti Personalizzato con dei pesi e Automatico senza. */
+export const profiloDi = (r: RisorseProgetto): NonNullable<RisorseProgetto['profilo']> => r.profilo ?? (r.pesi.length ? 'personalizzato' : 'automatico')
+
+/** Automatico si adatta alla corsia: sulle corsie leggere (R0–R1) gli effort alti valgono meno. R2–R5 non cambiano. */
+export const MOLTIPLICATORE_CORSIA: Readonly<Record<string, number>> = { high: 0.6, xhigh: 0.4 }
+const CORSIE_LEGGERE = ['R0', 'R1']
+
+/**
+ * Peso = preferenza, mai autorizzazione. Quote sconosciute non equivalgono a 100% libero.
+ * Precedenza: pesi salvati × moltiplicatore di corsia (solo Automatico) × margine dei limiti ÷ carico.
+ */
 export function punteggio(a: Azione, r: Regole, limiti: readonly Limite[], lista: readonly Azione[]) {
   let peso = 100
   for (const p of r.risorse.pesi) {
     const nome = p.tipo === 'fornitore' ? a.esecutore : p.tipo === 'modello' ? modelloDi(a, r) : effortDi(a, r)
     if (p.nome === nome) peso *= Math.max(0, 100 * (1 + p.percentuale / 100) + p.assoluto) / 100
   }
+  if (profiloDi(r.risorse) === 'automatico' && CORSIE_LEGGERE.includes(corsiaDi(a, r) ?? '')) peso *= MOLTIPLICATORE_CORSIA[effortDi(a, r)] ?? 1
   const quote = limiti.filter(l => l.fornitore === a.esecutore && !l.manuale && l.percentuale !== undefined && limiteFresco(l))
   const pieno = quote.length ? Math.max(...quote.map(l => l.percentuale!)) : undefined
   // Oltre la soglia critica il margine scende a un residuo: la scelta va altrove se un'alternativa ammessa c'è,
@@ -269,7 +280,10 @@ export function bilancia(a: Azione, espliciti: Record<string, unknown>, r: Regol
     for (const modello of r.modelli[esecutore]) {
       if (espliciti.modello !== undefined && espliciti.modello !== modello) continue
       const preferito = effortDi({ ...a, esecutore, modello }, r)
-      const livelli = [preferito, ...effortPer(r, modello).filter(e => e !== preferito)]
+      // Prima il preferito, poi i più vicini (a pari distanza il più basso): a pari punteggio vince il più vicino.
+      const tutti = effortPer(r, modello)
+      const distanza = (e: string) => Math.abs(tutti.indexOf(e) - tutti.indexOf(preferito))
+      const livelli = [preferito, ...tutti.filter(e => e !== preferito).sort((x, y) => distanza(x) - distanza(y) || tutti.indexOf(x) - tutti.indexOf(y))]
       for (const effort of livelli) {
         if (espliciti.effort !== undefined && espliciti.effort !== effort) continue
         for (const revisore of [a.revisore, ...(a.revisore !== 'claude' ? ['claude' as const] : [])]) {
