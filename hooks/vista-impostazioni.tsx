@@ -5,7 +5,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { Fornitore, Pendenti, Peso, RisorseProgetto, StatoImpostazioni } from '../types'
+import type { Fornitore, PassoEsecuzione, Pendenti, Peso, RisorseProgetto, StatoEsecuzione, StatoImpostazioni, TipoAccesso } from '../types'
 import {
   budgetDa,
   conBozza,
@@ -29,7 +29,7 @@ import {
   TIPI_BUDGET,
 } from './bilanciamento'
 import type { Profilo } from './bilanciamento'
-import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, piuPieno, sogliaDi, TETTO_API_PREDEFINITO } from './logica'
+import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, passiMancanti, piuPieno, sogliaDi, TETTO_API_PREDEFINITO } from './logica'
 import type { Ctx, Dati } from './pannello'
 import { eMsg, Errore, LEGENDA, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
 import type { Chiave, Lingua, T } from './lingua'
@@ -43,6 +43,12 @@ type Gruppo = NonNullable<StatoVista['gruppo']>
 /** La lingua salvata dell'utente, come la tiene il pannello (riletta al battito e dopo ogni scrittura). */
 const linguaSalvata = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
 const statoVista = atom({ plugin: 'chip-manager', key: 'impostazioni' } as const, { sezione: 'connessioni' } as StatoVista, { shape: 'impostazioni-1' })
+const esecuzione = atom({ plugin: 'chip-manager', key: 'esecuzione' } as const, {} as StatoEsecuzione, { shape: 'esecuzione-1' })
+
+/** F6.7: entrando nella vista Impostazioni già sulla sezione Esecuzione, il controllo ✓/✗ (il disegno non scrive stato). */
+export async function apriImpostazioni($: EngineInterface, c: Ctx) {
+  if ((await read($, statoVista)).sezione === 'esecuzione') void c.controllaEsecuzione()
+}
 
 /** «Apri le impostazioni» di una proposta di pesi: la sezione Bilanciamento, dove la proposta resta in evidenza. */
 export async function apriBilanciamento($: EngineInterface) {
@@ -682,21 +688,110 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     if (!Number.isFinite(n) || n < min || n > max) throw new Errore(msg('ese.numero', { min, max }))
     return Math.round(n * 100) / 100
   }
-  const esecuzione = () => {
+  const sezioneEsecuzione = async () => {
     const api = r.apiClaude
     const chiave = !!regoleOra.chiaveApi
     const github = /^[^/\s]+\/[^/\s]+$/.test(io?.repo ?? '')
     const stato = T(api ? 'ese.statoApi' : 'ese.statoLocale')
+    const es = await read($, esecuzione)
+    const k = es.controllo
+    const mancanti = passiMancanti(k, chiave, !!api)
+    // Senza passi da fare la procedura non si disegna; il controllo che la trova finita la chiude (register.tsx).
+    const guidaPassi = es.guida ? mancanti.filter(p => !es.guida!.saltati.includes(p)) : []
+    const segno = (ok: boolean | undefined) => (ok === undefined ? ['…', GRIGIO] : ok ? ['✓', STATO.inCorso] : ['✗', STATO.attesa]) as [string, string]
+    const riga = (key: string, ok: boolean | undefined, testo: string) => nota1(key, segno(ok)[1], segno(ok)[0], testo)
+    const accesso = (tipo: TipoAccesso, pre: string) => {
+      const a = es.accessi?.[tipo]
+      return a ? (
+        <Box key={`${pre}-attesa-${tipo}`} flexDirection="column">
+          {didascalia(`${pre}-attesa-${tipo}-testo`, T('ese.attesaAccesso'))}
+          {a.codice ? <Text key={`${pre}-codice-${tipo}`} weight="semibold">{T('ese.codiceGh', { codice: a.codice })}</Text> : null}
+        </Box>
+      ) : (
+        <Button key={`${pre}-accedi-${tipo}`} variant="secondary" label={T(tipo === 'claude' ? 'ese.accedi' : 'ese.collegaGh')} onPress={() => void esegui('esecuzione', () => c.accedi(tipo), '')} />
+      )
+    }
+    const copia = (pre: string) =>
+      es.copia ? (
+        <Box key={`${pre}-copia`} flexDirection="column">
+          {didascalia(`${pre}-copia-testo`, T('ese.copiaRiga'))}
+          <Text key={`${pre}-copia-riga`} wrap="wrap">{es.copia.riga}</Text>
+          <Button key={`${pre}-copia-premi`} variant="secondary" label={T('ese.copia')}
+            onPress={() => void $.ui.copy({ text: es.copia!.riga }).then(x => x.isCopied && $.ui.toast(T('ese.copiato')))} />
+        </Box>
+      ) : null
+    /** L'azione di un passo mancante: la stessa nella riga e nella procedura guidata (`pre` distingue le chiavi). */
+    const azione = (p: PassoEsecuzione, pre: string): JSX.Element[] => {
+      if (p === 'claude') return k?.claude.trovato ? [accesso('claude', pre)] : [didascalia(`${pre}-claude-assente`, T('ese.claudeAssente'))]
+      if (p === 'github') {
+        if (!k?.github.trovato) return [didascalia(`${pre}-gh-assente`, T('ese.ghAssente'))]
+        if (!k.github.loggedIn) return [accesso('gh', pre)]
+        return [didascalia(`${pre}-gh-remote`, T('ese.ghRemote'))]
+      }
+      if (p === 'chiave')
+        return [
+          <Button key={`${pre}-chiave-vai`} variant="secondary" label={T('ese.chiaveVai')} onPress={() => void esegui('esecuzione', c.apriConfig, '')} />,
+          didascalia(`${pre}-chiave-percorso`, T('ese.chiavePercorso')),
+        ]
+      if (p === 'fonti')
+        return (k?.fonti ?? []).map(f => (
+          <Box key={`${pre}-fonte-${f.nome}`} flexDirection="column">
+            <Text key={`${pre}-fonte-${f.nome}-testo`} wrap="wrap">{f.nome === 'ambiente' ? T('ese.ambienteNo') : T('ese.fonteNo', { fonte: T(`ese.fonte.${f.nome}`) })}</Text>
+            {f.file ? <Text key={`${pre}-fonte-${f.nome}-file`} size="caption" dimColor wrap="truncate-middle">{f.file}</Text> : null}
+            {/* Un'etichetta per file: con più fonti bloccate i pulsanti restano distinti. */}
+            {f.file && f.nome !== 'ambiente' ? <Button key={`${pre}-fonte-${f.nome}-apri`} plain label={`${T('ese.apriFile')} · ${T(`ese.fonte.${f.nome}`)}`} onPress={() => void esegui('esecuzione', () => c.apriFileImpostazioni(f.file!), '')} /> : null}
+          </Box>
+        ))
+      return [didascalia(`${pre}-budget-nota`, T('ese.guidaBudget'))]
+    }
+    const ghOk = k ? k.github.loggedIn && k.github.remote : undefined
+    const passo = guidaPassi[0]
     return u.Sezione({
       chiave: 'pagina-esecuzione',
       titolo: T('imp.sezione.esecuzione'),
       descrizione: T('ese.descrizione'),
       stato,
       figli: [
+        // F6.7: che cosa è pronto, calcolato dalla mod; per ogni ✗ l'azione a un clic.
+        <Box key="ese-stato" flexDirection="column" gap={1}>
+          <Box key="ese-stato-testa" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center">
+            <Text key="ese-stato-titolo" weight="semibold">{T('ese.statoTitolo')}</Text>
+            <Button key="ese-ricontrolla" plain label={es.inCorso ? T('ese.controllando') : T('ese.ricontrolla')} onPress={() => void c.controllaEsecuzione()} />
+            {mancanti.length && !passo ? (
+              <Button key="ese-guida" variant="primary" label={T('ese.guida')} onPress={() => void (async () => {
+                await update($, esecuzione, s => ({ ...s, guida: { saltati: [] } }))
+                await c.controllaEsecuzione()
+              })()} />
+            ) : null}
+          </Box>
+          {es.fallito ? nota1('ese-controllo-fallito', STATO.errore, '▲', T('ese.controlloFallito')) : null}
+          {riga('ese-riga-claude', k && k.claude.loggedIn, T(!k || k.claude.trovato ? (k?.claude.loggedIn ? 'ese.claudeOk' : 'ese.claudeNo') : 'ese.claudeAssente') + (k?.claude.metodo ? ` · ${k.claude.metodo}` : ''))}
+          {k && !k.claude.loggedIn && k.claude.trovato && !passo ? accesso('claude', 'ese') : null}
+          {riga('ese-riga-github', ghOk, T(!k ? 'ese.ghNo' : !k.github.trovato ? 'ese.ghAssente' : !k.github.loggedIn ? 'ese.ghNo' : k.github.remote ? 'ese.ghOk' : 'ese.ghRemote'))}
+          {k && k.github.trovato && !k.github.loggedIn && !passo ? accesso('gh', 'ese') : null}
+          {riga('ese-chiave', chiave, T(chiave ? 'ese.chiavePresente' : 'ese.chiaveAssente'))}
+          {!chiave && !passo ? azione('chiave', 'ese') : null}
+          {riga('ese-riga-fonti', k ? !k.fonti.length : undefined, k && k.fonti.length ? T('ese.fontiNo', { n: k.fonti.length }) : T('ese.fontiOk'))}
+          {k?.fonti.length && !passo ? azione('fonti', 'ese') : null}
+          {riga('ese-riga-budget', !!api, api ? T('ese.budgetOk', { budget: api.budgetUsd, tetto: api.tetto }) : T('ese.budgetNo'))}
+          {passo ? null : copia('ese')}
+          {errore('esecuzione')}
+        </Box>,
+        // La procedura guidata: un passo mancante alla volta, ognuno si può saltare; si chiude da sola quando è tutto ✓.
+        passo ? (
+          <Box key="ese-guida-passo" flexDirection="column" gap={1} borderStyle="single">
+            <Text key="ese-guida-titolo" weight="semibold">{`${T('ese.guida')} · ${T('ese.guidaPasso', { n: mancanti.indexOf(passo) + 1, tot: mancanti.length })}`}</Text>
+            {azione(passo, 'guida')}
+            {copia('guida')}
+            <Box key="ese-guida-pulsanti" flexDirection="row" flexWrap="wrap" columnGap={2}>
+              <Button key="guida-salta" plain label={T('ese.salta')} onPress={() => void update($, esecuzione, s => ({ ...s, guida: s.guida && guidaPassi.length > 1 ? { saltati: [...s.guida.saltati, passo] } : undefined }))} />
+              <Button key="guida-chiudi" plain dimColor label={T('ese.guidaChiudi')} onPress={() => void update($, esecuzione, s => ({ ...s, guida: undefined }))} />
+            </Box>
+          </Box>
+        ) : null,
         // API Claude: chiave (solo presenza), modello di minaccia, budget del mese e tetto per tentativo.
         <Box key="ese-api" flexDirection="column" gap={1}>
           <Text key="ese-api-titolo" weight="semibold">{T('ese.apiTitolo')}</Text>
-          {nota1('ese-chiave', chiave ? STATO.inCorso : STATO.attesa, chiave ? '✓' : '○', T(chiave ? 'ese.chiavePresente' : 'ese.chiaveAssente'))}
           {didascalia('ese-chiave-dove', T('ese.chiaveDove'))}
           {didascalia('ese-chiave-dedicata', T('ese.chiaveDedicata'))}
           {didascalia('ese-chiave-rischio', T('ese.chiaveRischio'))}
@@ -824,7 +919,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
 
   const pendenti = piena(vista.pendenti)?.dove.length ?? 0
   const corpo =
-    vista.sezione === 'esecuzione' ? esecuzione()
+    vista.sezione === 'esecuzione' ? await sezioneEsecuzione()
       : vista.sezione === 'legenda' ? legenda()
       : vista.sezione === 'lingua' ? lingua()
       : vista.sezione === 'soglie' ? soglie()
@@ -838,7 +933,10 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     <Box key="configurazione" flexDirection="column" gap={1}>
       {u.GruppoChip({
         chiave: 'sezione', etichetta: T('imp.sezione'), modo: 'scelta', valore: vista.sezione, voci: SEZIONI.map(s => ({ valore: s.valore, testo: T(s.testo) })),
-        onCambia: v => void cambia(s => ({ ...s, sezione: v as Sezione, errore: undefined })),
+        onCambia: v => {
+          if (v === 'esecuzione') void c.controllaEsecuzione()
+          void cambia(s => ({ ...s, sezione: v as Sezione, errore: undefined }))
+        },
       })}
       {corpo}
       {pendenti > 0 && (

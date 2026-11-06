@@ -1531,3 +1531,71 @@ test('F6.2 rilievo 6: il JSON finale arrivato dopo l\'uscita si legge alla chius
   assert.deepStrictEqual([esec.stato, esec.costo], ['consegnata', 0.25])
   assert.strictEqual(API.leggiSpesa(dir).voci['az-api0016'].costo, 0.25)
 })
+
+// --- F6.7: stato della configurazione e accessi a un clic --------------------------------------------------------
+
+/** Eseguibili finti in una cartella da mettere nel PATH: shim npm su Windows, script con shebang altrove. */
+function eseguibiliFinti(script) {
+  const dir = tmp()
+  for (const [nome, codice] of Object.entries(script)) {
+    fs.writeFileSync(path.join(dir, `${nome}.js`), codice)
+    if (process.platform === 'win32') fs.writeFileSync(path.join(dir, `${nome}.cmd`), `@ECHO off\r\n"%_prog%"  "%dp0%\\${nome}.js" %*\r\n`)
+    else fs.writeFileSync(path.join(dir, nome), `#!${process.execPath}\nrequire(${JSON.stringify(path.join(dir, `${nome}.js`))})\n`, { mode: 0o755 })
+  }
+  return dir
+}
+
+test('F6.7 stato-esecuzione: con eseguibili finti escono solo sì/no, metodo e host; email, organizzazione e token mai', () => {
+  const casa = tmp()
+  const root = tmp()
+  fs.mkdirSync(path.join(root, '.claude'))
+  fs.writeFileSync(path.join(root, '.claude', 'settings.json'), JSON.stringify({ forceLoginGatewayUrl: 'https://gw.example' }))
+  const finti = eseguibiliFinti({
+    claude: `process.stdout.write(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', email: 'persona@esempio.it', orgId: 'org-segreto-42', orgName: 'Ditta Segreta' }))`,
+    gh: `process.stderr.write('Logged in to github.com account utente-segreto (keyring)'); process.exit(0)`,
+    git: `process.stdout.write('https://utente-segreto:ghp_tokensegreto@github.com/acme/progetto.git\\n')`,
+  })
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(path|anthropic_api_key)$/i.test(k)))
+  Object.assign(env, { PATH: finti, CLAUDE_CONFIG_DIR: casa })
+  const r = spawnSync(process.execPath, [ENTRATA, 'stato-esecuzione', root], { encoding: 'utf8', env })
+  assert.strictEqual(r.status, 0, r.stderr)
+  for (const segreto of ['persona@esempio.it', 'org-segreto-42', 'Ditta Segreta', 'utente-segreto', 'ghp_tokensegreto', 'acme']) assert.ok(!r.stdout.includes(segreto), segreto)
+  assert.deepStrictEqual(JSON.parse(r.stdout), {
+    claude: { trovato: true, loggedIn: true, metodo: 'claude.ai' },
+    github: { trovato: true, loggedIn: true, remote: true, host: 'github.com' },
+    fonti: [{ nome: 'progetto', file: path.join(root, '.claude', 'settings.json') }],
+  })
+  // Un metodo che non è una parola semplice non passa; claude assente, gh scollegato, remote non GitHub.
+  assert.strictEqual(API.statoEsecuzione(root, { fonti: [], env: {}, esegui: a => (a[0] === 'claude' ? { codice: 0, testo: '{"loggedIn":true,"authMethod":"api_key"}' } : null) }).claude.metodo, 'api_key')
+  const altro = eseguibiliFinti({ gh: 'process.exit(1)', git: `process.stdout.write('git@gitlab.example.org:acme/x.git')` })
+  const r2 = spawnSync(process.execPath, [ENTRATA, 'stato-esecuzione', tmp()], { encoding: 'utf8', env: { ...env, PATH: altro } })
+  assert.deepStrictEqual(JSON.parse(r2.stdout), { claude: { trovato: false }, github: { trovato: true, loggedIn: false, remote: false, host: 'gitlab.example.org' }, fonti: [] })
+})
+
+test('F6.7 accedi: un solo login per tipo; di GitHub esce solo il codice monouso e l\'output si cancella; spawn fallito → la riga da copiare', async () => {
+  const dm = tmp()
+  const finti = eseguibiliFinti({
+    gh: `console.log('! First copy your one-time code: AB12-CD34'); console.log('Logged in as utente-segreto'); setTimeout(() => {}, 4000)`,
+  })
+  const prima = process.env.PATH
+  process.env.PATH = finti
+  try {
+    const [codice, testo] = await API.accedi('gh', dm, { attese: 20 })
+    assert.deepStrictEqual([codice, JSON.parse(testo)], [0, { codice: 'AB12-CD34' }])
+    assert.strictEqual(fs.existsSync(path.join(dm, 'accesso-gh.log')), false)
+    assert.ok(!fs.readdirSync(dm).some(f => fs.readFileSync(path.join(dm, f), 'utf8').includes('utente-segreto')))
+    // Il primo è ancora vivo: un secondo clic non ne avvia un altro.
+    assert.deepStrictEqual(await API.accedi('gh', dm), [3, ''])
+    // claude non c'è: nessun processo, nessun segno, la riga da copiare.
+    assert.deepStrictEqual(await API.accedi('claude', dm), [1, JSON.stringify({ copia: 'claude auth login' })])
+    assert.strictEqual(fs.existsSync(path.join(dm, 'accesso-claude.json')), false)
+    assert.deepStrictEqual(await API.accedi('rm', dm), [2, ''])
+  } finally {
+    process.env.PATH = prima
+  }
+  // Scaduti i 3 minuti, un nuovo clic riparte anche se il vecchio processo vive ancora.
+  let avvii = 0
+  const avvia = () => { avvii++; const p = new Emettitore(); p.pid = 99; queueMicrotask(() => p.emit('spawn')); return p }
+  assert.strictEqual((await API.accedi('gh', dm, { avvia, attese: 0, adesso: () => Date.now() + 181_000 }))[0], 0)
+  assert.strictEqual(avvii, 1)
+})

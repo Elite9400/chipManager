@@ -247,6 +247,25 @@ export type Regole = {
 /** F6.2: perché il lock della corsia API resta tenuto: uscita non registrata, discendenti, file-chiave, cache della chiave. */
 export type LockApi = { motivo: 'in-corso' | 'senza-pid' | 'discendenti' | 'chiave' | 'cache' | 'illeggibile' | 'mutex'; tentativo?: string; discendenti?: string[]; restaMs?: number }
 
+/** F6.7: il controllo della sezione Esecuzione. Solo stati sì/no, metodo e host: mai email, nomi o identificativi. */
+export type ControlloEsecuzione = {
+  claude: { trovato: boolean; loggedIn?: boolean; metodo?: string }
+  github: { trovato: boolean; loggedIn: boolean; remote: boolean; host?: string }
+  /** Le fonti di impostazioni che bloccano `api-claude` (nome e file; `ambiente` è la variabile ANTHROPIC_API_KEY). */
+  fonti: { nome: 'utente' | 'progetto' | 'locale' | 'gestite' | 'ambiente'; file?: string }[]
+}
+export type TipoAccesso = 'claude' | 'gh'
+export type PassoEsecuzione = 'claude' | 'github' | 'chiave' | 'fonti' | 'budget'
+/** F6.7: l'ultimo controllo, i login avviati da qui (fino a quando si ricontrolla), la riga da copiare, la procedura guidata. */
+export type StatoEsecuzione = {
+  controllo?: ControlloEsecuzione
+  fallito?: boolean
+  inCorso?: boolean
+  accessi?: Partial<Record<TipoAccesso, { fino: number; codice?: string }>>
+  copia?: { tipo: TipoAccesso; riga: string }
+  guida?: { saltati: PassoEsecuzione[] }
+}
+
 /** Una milestone GitHub aperta del repo della sessione. */
 export type Traguardo = {
   numero: number
@@ -327,6 +346,8 @@ declare module 'claude-code' {
       selezionate: Shaped<string[]>
       /** F6.2: il lock della corsia API della macchina, se resta tenuto (null = libero). */
       lockApi: Shaped<LockApi | null>
+      /** F6.7: lo stato della sezione Esecuzione (controllo ✓/✗, login in corso, procedura guidata). */
+      esecuzione: Shaped<StatoEsecuzione>
       /** F6.4: la spesa a crediti API del mese (stimata), dal registro dell'helper; null = non configurata o illeggibile. */
       spesaApi: Shaped<{ mese: string; speso: number | null } | null>
       vive: Shaped<Record<string, Vita>>

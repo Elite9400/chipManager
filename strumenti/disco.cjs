@@ -252,16 +252,21 @@ function risolvi(cmd) {
  * shim .cmd di npm si risolve nello script node che lancia e si avvia quello; un .cmd sconosciuto si rifiuta.
  */
 function avviaComando(comando, opzioni = {}) {
+  const [eseguibile, argomenti, shim] = comandoReale(comando)
+  return spawn(eseguibile, argomenti, { stdio: 'inherit', windowsHide: true, ...(shim ? {} : { detached: process.platform !== 'win32' }), ...opzioni })
+}
+
+/** Eseguibile e argomenti senza shell: uno shim .cmd di npm diventa lo script node che lancia; un .cmd sconosciuto si rifiuta. */
+function comandoReale(comando) {
   const f = risolvi(comando[0])
   if (!f) throw Object.assign(new Error(`comando non trovato: ${comando[0]}`), { code: 'ENOENT' })
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(f)) {
     const testo = fs.readFileSync(f, 'utf8')
     const m = testo.match(/"%dp0%\\([^"]+\.(?:c|m)?js)"\s+%\*/i)
     if (!m) throw new Error(`${path.basename(f)}: uno script .cmd si avvia solo se è uno shim npm riconoscibile (niente shell)`)
-    const script = path.join(path.dirname(f), m[1])
-    return spawn(process.execPath, [script, ...comando.slice(1)], { stdio: 'inherit', windowsHide: true, ...opzioni })
+    return [process.execPath, [path.join(path.dirname(f), m[1]), ...comando.slice(1)], true]
   }
-  return spawn(f, comando.slice(1), { stdio: 'inherit', windowsHide: true, detached: process.platform !== 'win32', ...opzioni })
+  return [f, comando.slice(1), false]
 }
 
 /**
@@ -1028,7 +1033,7 @@ async function main(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {}) {
   const [cmd, ...a] = argv
   const stdin = () => JSON.parse(fs.readFileSync(0, 'utf8'))
   // F6.2: la corsia a crediti API di Claude vive in un modulo suo (letto qui, a modulo caricato).
-  if (/^(lancia|esegui|stato|libera|termina)-api$/.test(cmd ?? '')) return require('./api-claude.cjs').comando(cmd, a, stdin, { dirMacchina })
+  if (/^((lancia|esegui|stato|libera|termina)-api|stato-esecuzione|accedi)$/.test(cmd ?? '')) return require('./api-claude.cjs').comando(cmd, a, stdin, { dirMacchina })
   if (cmd === 'configura' && a.length === 1) return esci(await configura(a[0], stdin()))
   if (cmd === 'configura-utente' && a.length === 1) return esci(await configuraUtente(a[0], stdin()))
   if (cmd === 'lancia-cli' && a.length === 3) return esci(await lanciaCli(...a, stdin()))
@@ -1066,6 +1071,6 @@ function esci(codice, testo) {
 
 module.exports = {
   main, conMutex, scriviAtomico, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
-  esci, preparaWorktree, parametriValidi, avviaComando, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
+  esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

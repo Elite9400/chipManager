@@ -9,7 +9,7 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
 
-import type { LockApi } from '../types'
+import type { LockApi, TipoAccesso } from '../types'
 import type { Azione, Chiamante, Consumo, Fornitore, Limite, Motore, Pendenti, Peso, PropostaPesi, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, Traguardi, Vista, Vita } from '../types'
 import { annullabile as pesiAnnullabili, daDecidere, decisaIl, descriviPesi, statoVisto, TESTI_PESI } from './bilanciamento'
 import {
@@ -35,7 +35,7 @@ import { RISORSE_VUOTE } from './risorse'
 import { ACCENTO, ALFA_VELO, GRIGIO, STATO } from './tema'
 import { classeDi, componenti } from './ui'
 import { vistaCarico } from './vista-carico'
-import { apriBilanciamento, lasciaImpostazioni, vistaImpostazioni } from './vista-impostazioni'
+import { apriBilanciamento, apriImpostazioni, lasciaImpostazioni, vistaImpostazioni } from './vista-impostazioni'
 import { vistaLavoro } from './vista-lavoro'
 
 // Copia identica degli atomi di register.tsx (lo scanner li vuole nel file che li usa).
@@ -86,6 +86,11 @@ export type Ctx = {
   configura: (campi: Record<string, unknown>, attese: RisorseProgetto) => Promise<unknown>
   peso: (peso: Peso, attese: RisorseProgetto) => Promise<unknown>
   installa: (passo: number) => Promise<unknown>
+  /** F6.7: il controllo ✓/✗ della sezione Esecuzione, i login a un clic, i file delle impostazioni, il menu /config. */
+  controllaEsecuzione: () => Promise<unknown>
+  accedi: (tipo: TipoAccesso) => Promise<unknown>
+  apriFileImpostazioni: (file: string) => Promise<unknown>
+  apriConfig: () => Promise<unknown>
   /** F6.2: «Libera» e «Termina» del lock della corsia API, ciascuno con il suo popup. */
   liberaApi: () => Promise<unknown>
   terminaApi: () => Promise<unknown>
@@ -352,6 +357,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   const vai = async (id: Vista) => {
     if (vistaOra === 'impostazioni' && id !== 'impostazioni' && !(await lasciaImpostazioni($, c, T))) return
     await update($, vista, () => id)
+    if (id === 'impostazioni' && vistaOra !== 'impostazioni') await apriImpostazioni($, c)
   }
   const schede = (
     <Box key="viste" flexDirection="row" flexWrap="wrap" gap={1}>

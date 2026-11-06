@@ -183,6 +183,13 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   const toast: string[] = []
   const processi: string[][] = []
   const domande: string[] = []
+  /** F6.7: l'uscita di `stato-esecuzione` (null = l'helper fallisce) e l'esito di `accedi`; si contano entrambi. */
+  const esec = {
+    stato: (): string | null => JSON.stringify({ claude: { trovato: true, loggedIn: true }, github: { trovato: true, loggedIn: true, remote: true, host: 'github.com' }, fonti: [] }),
+    accedi: (_tipo: string): [number, string] => [0, '{}'],
+    controlli: 0,
+    accessi: [] as string[],
+  }
   /** Risposta al popup: una stringa, oppure `null` = popup chiuso (`$.ui.ask` rifiuta). */
   const popup = { risposta: (_: string): string | null => null }
   /**
@@ -283,6 +290,15 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
         disco.set(p(file), JSON.stringify({ ...(prima === null ? {} : JSON.parse(prima)), ...input.campi }))
         return fine(0)
       }) as never
+    if (cmd === 'stato-esecuzione') {
+      esec.controlli++
+      const t = esec.stato()
+      return t === null ? fine(2) : fine(0, t)
+    }
+    if (cmd === 'accedi') {
+      esec.accessi.push(String(file))
+      return fine(...esec.accedi(String(file)))
+    }
     return fine(cmd === 'occupata' ? 0 : 2)
   })
   on('mcp.call', (_, e) => ({
@@ -335,7 +351,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
     letturaFerma = { key, attesa: new Promise<void>(ok => (apri = ok)), segnala }
     return { arrivato, apri }
   }
-  return { disco, toast, domande, popup, progettoOra, configure, hook, trattieni, trattieniPopup, trattieniLettura, trattieniLimiti }
+  return { disco, toast, domande, popup, progettoOra, configure, hook, trattieni, trattieniPopup, trattieniLettura, trattieniLimiti, esec, processi }
 }
 
 const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
@@ -1149,4 +1165,162 @@ test('impostazioni: con solo rete locale la simulazione non propone Claude e dic
     expect(await ui.find({ type: 'Text', text: /andrebbe a/ })).toBeUndefined()
     await ui.unmount()
   }
+})
+
+// --- F6.7: configurazione di Esecuzione dalla mod ---------------------------------------------------------------
+
+const ESEC_OK = { claude: { trovato: true, loggedIn: true, metodo: 'claude.ai' }, github: { trovato: true, loggedIn: true, remote: true, host: 'github.com' }, fonti: [] }
+const FILE_PROGETTO = 'X:/repo/.claude/settings.json'
+
+test('F6.7 stato: righe ✓/✗ calcolate dall\'helper; email, organizzazione e utente non arrivano mai al pannello', async ($, on) => {
+  const amb = ambiente(on)
+  // Un helper che sbagliasse e facesse uscire dati dell'account: il pannello rilegge campo per campo e li scarta.
+  amb.esec.stato = () => JSON.stringify({
+    claude: { trovato: true, loggedIn: false, email: 'persona@esempio.it', orgName: 'Ditta Segreta' },
+    github: { trovato: true, loggedIn: false, remote: false, host: 'gitlab.example.org', utente: 'utente-segreto' },
+    fonti: [{ nome: 'progetto', file: FILE_PROGETTO }, { nome: 'ambiente' }],
+    account: { email: 'persona@esempio.it' },
+  })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  await finoA(() => amb.esec.controlli > 0)
+  await ui.press({ key: 'ese-ricontrolla' })
+  for (const t of ['Accesso a Claude non fatto', 'GitHub non collegato', 'Nessuna chiave impostata', '2 fonti di impostazioni bloccano le esecuzioni API', 'Budget del mese non impostato'])
+    expect([t, await ui.find({ type: 'Text', text: new RegExp(`${t}$`) })]).toEqual([t, expect.anything()])
+  expect(await ui.find({ type: 'Text', text: /^Impostazioni del progetto: un'impostazione cambia chi paga/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^ANTHROPIC_API_KEY è impostata nell'ambiente/ })).toBeDefined()
+  for (const k of ['ese-accedi-claude', 'ese-accedi-gh', 'ese-chiave-vai', 'ese-fonte-progetto-apri', 'ese-guida']) expect([k, await ui.find({ key: k })]).toEqual([k, expect.anything()])
+  const disegno = JSON.stringify(await ui.drawn())
+  for (const segreto of ['persona@esempio.it', 'Ditta Segreta', 'utente-segreto']) expect([segreto, disegno.includes(segreto)]).toEqual([segreto, false])
+  // Tutto a posto: solo ✓, nessuna azione, il metodo di accesso (mai l'account).
+  amb.esec.stato = () => JSON.stringify(ESEC_OK)
+  await ui.press({ key: 'ese-ricontrolla' })
+  expect(await ui.find({ type: 'Text', text: /Accesso a Claude fatto · claude\.ai$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /GitHub collegato e progetto su github\.com$/ })).toBeDefined()
+  expect(await ui.find({ key: 'ese-accedi-claude' })).toBeUndefined()
+  // Il controllo non riesce: lo dice, senza inventare uno stato.
+  amb.esec.stato = () => null
+  await ui.press({ key: 'ese-ricontrolla' })
+  expect(await ui.find({ type: 'Text', text: /Non si è potuto controllare lo stato/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('F6.7 Accedi: un solo login per clic; ricontrollo ogni 5 s che si ferma a login fatto, a 3 minuti o lasciando la sezione', async ($, on) => {
+  const amb = ambiente(on)
+  let fatto = false
+  amb.esec.stato = () => JSON.stringify({ ...ESEC_OK, claude: { trovato: true, loggedIn: fatto }, github: { trovato: true, loggedIn: false, remote: true, host: 'github.com' } })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  await finoA(() => amb.esec.controlli > 0)
+  await ui.press({ key: 'ese-ricontrolla' })
+  const avanti = async (ms: number) => {
+    for (let t = 0; t < ms; t += 5000) await clock.advance(5000)
+  }
+  // Claude: un processo; il pulsante lascia il posto all'attesa; il ricontrollo si ferma appena l'accesso c'è.
+  await ui.press({ key: 'ese-accedi-claude' })
+  expect(amb.esec.accessi).toEqual(['claude'])
+  expect(await ui.find({ key: 'ese-accedi-claude' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Completa l'accesso nel browser/ })).toBeDefined()
+  let prima = amb.esec.controlli
+  await avanti(10_000)
+  expect(amb.esec.controlli - prima).toBe(2)
+  fatto = true
+  await avanti(5000)
+  prima = amb.esec.controlli
+  await avanti(30_000)
+  expect(amb.esec.controlli).toBe(prima)
+  expect(await ui.find({ type: 'Text', text: /Accesso a Claude fatto$/ })).toBeDefined()
+  // GitHub: il codice monouso si mostra; senza login il ricontrollo si ferma dopo 3 minuti.
+  amb.esec.accedi = () => [0, '{"codice":"AB12-CD34"}']
+  await ui.press({ key: 'ese-accedi-gh' })
+  expect(await ui.find({ type: 'Text', text: 'Codice da inserire su GitHub: AB12-CD34' })).toBeDefined()
+  prima = amb.esec.controlli
+  await avanti(200_000)
+  expect(amb.esec.controlli - prima).toBeLessThanOrEqual(36)
+  prima = amb.esec.controlli
+  await avanti(30_000)
+  expect(amb.esec.controlli).toBe(prima)
+  expect(await ui.find({ key: 'ese-accedi-gh' })).toBeDefined()
+  // Lasciando la sezione il ricontrollo si ferma al battito dopo; un login già in corso altrove non ne avvia un altro.
+  await ui.press({ key: 'ese-accedi-gh' })
+  await ui.press({ key: 'sezione-lingua-premi' })
+  await avanti(5000)
+  prima = amb.esec.controlli
+  await avanti(60_000)
+  expect(amb.esec.controlli).toBe(prima)
+  amb.esec.accedi = () => [3, '']
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  await ui.press({ key: 'ese-accedi-gh' })
+  expect(amb.toast.at(-1)).toBe('Un accesso è già in corso: completalo nel browser')
+  expect(amb.esec.accessi).toEqual(['claude', 'gh', 'gh', 'gh'])
+  await ui.unmount()
+})
+
+test('F6.7 Copia: se il login non parte la riga si copia; la chiave apre /config; «Apri il file» non scrive niente', async ($, on) => {
+  const amb = ambiente(on)
+  amb.esec.stato = () => JSON.stringify({ ...ESEC_OK, claude: { trovato: true, loggedIn: false }, fonti: [{ nome: 'progetto', file: FILE_PROGETTO }] })
+  amb.esec.accedi = () => [1, '{"copia":"altro testo"}']
+  const copiati: string[] = []
+  on('ui.copy', (_, e) => (copiati.push(e.text), { value: { isCopied: true } as never }))
+  const comandi: string[] = []
+  on('command.run', (_, e) => (comandi.push(e.command), { text: '' }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  await finoA(() => amb.esec.controlli > 0)
+  await ui.press({ key: 'ese-ricontrolla' })
+  await ui.press({ key: 'ese-accedi-claude' })
+  // La riga è quella fissa della mod, mai il testo arrivato dal processo.
+  expect(await ui.find({ type: 'Text', text: 'claude auth login' })).toBeDefined()
+  await ui.press({ key: 'ese-copia-premi' })
+  expect(copiati).toEqual(['claude auth login'])
+  expect(amb.toast.at(-1)).toBe('Riga copiata')
+  await ui.press({ key: 'ese-chiave-vai' })
+  expect(comandi).toEqual(['config'])
+  expect(await ui.find({ type: 'Text', text: /^In \/config apri chip-manager e incolla la chiave in «Anthropic API \(credits\)»/ })).toBeDefined()
+  const prima = amb.disco.get(FILE_PROGETTO)
+  await ui.press({ key: 'ese-fonte-progetto-apri' })
+  expect(amb.processi.filter(p => p[0] === 'xdg-open')).toEqual([['xdg-open', FILE_PROGETTO]])
+  expect(amb.disco.get(FILE_PROGETTO)).toBe(prima)
+  await ui.unmount()
+})
+
+test('F6.7 procedura guidata: i passi mancanti uno alla volta, ognuno si salta; si chiude da sola quando tutto è ✓', { options: { anthropicApiKey: 'sk-ant-prova' } }, async ($, on) => {
+  const amb = ambiente(on, { apiClaude: { budgetUsd: 20, tetto: 2 } })
+  let fatto = false
+  amb.esec.stato = () => JSON.stringify({ ...ESEC_OK, claude: { trovato: true, loggedIn: fatto }, github: { trovato: true, loggedIn: false, remote: true } })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  await finoA(() => amb.esec.controlli > 0)
+  await ui.press({ key: 'ese-ricontrolla' })
+  await ui.press({ key: 'ese-guida' })
+  expect(await ui.find({ type: 'Text', text: 'Configura Esecuzione · passo 1 di 2' })).toBeDefined()
+  expect(await ui.find({ key: 'guida-accedi-claude' })).toBeDefined()
+  // Le azioni stanno nella procedura, non due volte.
+  expect(await ui.find({ key: 'ese-accedi-claude' })).toBeUndefined()
+  await ui.press({ key: 'guida-salta' })
+  expect(await ui.find({ type: 'Text', text: 'Configura Esecuzione · passo 2 di 2' })).toBeDefined()
+  expect(await ui.find({ key: 'guida-accedi-gh' })).toBeDefined()
+  await ui.press({ key: 'guida-chiudi' })
+  expect(await ui.find({ key: 'ese-guida-passo' })).toBeUndefined()
+  // Riaperta, riparte dal primo; quando l'ultimo mancante diventa ✓ la procedura si chiude e lo dice.
+  await ui.press({ key: 'ese-guida' })
+  expect(await ui.find({ key: 'guida-accedi-claude' })).toBeDefined()
+  amb.esec.stato = () => JSON.stringify({ ...ESEC_OK, claude: { trovato: true, loggedIn: fatto } })
+  fatto = true
+  await ui.press({ key: 'ese-ricontrolla' })
+  await finoA(() => amb.toast.includes('Esecuzione configurata: tutto pronto') || amb.toast.length > 50)
+  expect(await ui.find({ key: 'ese-guida-passo' })).toBeUndefined()
+  await ui.unmount()
 })

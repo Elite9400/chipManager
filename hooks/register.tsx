@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { LockApi } from '../types'
+import type { ControlloEsecuzione, LockApi, StatoEsecuzione, StatoImpostazioni, TipoAccesso, Vista } from '../types'
 import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Limite, Motore, Pendenti, Permessi, Peso, PropostaPesi, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
 import { alLavoroDa, cambiatiAltrove, contestoPerModello, propostaDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
 import {
@@ -26,6 +26,8 @@ import {
   mandato,
   mandatoApi,
   modalitaDi,
+  controlloDa,
+  passiMancanti,
   impostazioniApiVietate,
   consigliaDove,
   spesaDelMese,
@@ -88,6 +90,9 @@ const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { li
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
 const lockApi = atom({ plugin: 'chip-manager', key: 'lockApi' } as const, null as LockApi | null, { shape: 'lock-api-1' })
 const spesaApi = atom({ plugin: 'chip-manager', key: 'spesaApi' } as const, null as { mese: string; speso: number | null } | null, { shape: 'spesa-api-1' })
+const esecuzione = atom({ plugin: 'chip-manager', key: 'esecuzione' } as const, {} as StatoEsecuzione, { shape: 'esecuzione-1' })
+const vistaOra = atom({ plugin: 'chip-manager', key: 'vista' } as const, 'lavoro' as Vista)
+const impostazioni = atom({ plugin: 'chip-manager', key: 'impostazioni' } as const, { sezione: 'connessioni' } as StatoImpostazioni, { shape: 'impostazioni-1' })
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: 0 } as Consumo, { shape: 'consumo-2' })
 const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
 const lingua = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
@@ -1022,6 +1027,93 @@ async function decidiLockApi($: Eng, azione: 'libera' | 'termina') {
   }
 }
 
+// --- F6.7: la sezione Esecuzione si configura da qui, senza terminale -----------------------------------------------
+
+/** Le righe da copiare se un login non parte: fisse, come l'argv dell'helper (mai testo letto da un processo). */
+const RIGHE_ACCESSO: Record<TipoAccesso, string> = { claude: 'claude auth login', gh: 'gh auth login --web --hostname github.com --git-protocol https' }
+/** I ricontrolli dei login avviati da questo pannello: al più uno per tipo. */
+const ricontrolli = new Map<TipoAccesso, { cancel: () => void }>()
+
+/** Lo stato ✓/✗ dall'helper (login Claude, GitHub e remote, fonti di impostazioni): solo sì/no, metodo e host. */
+async function controllaEsecuzione($: Eng): Promise<ControlloEsecuzione | undefined> {
+  await update($, esecuzione, s => ({ ...s, inCorso: true }))
+  let controllo: ControlloEsecuzione | undefined
+  try {
+    const root = (await $.session.repo())?.root
+    const r = root ? await helper($, ['stato-esecuzione', root]) : undefined
+    controllo = r?.codice === 0 ? controlloDa(JSON.parse(r.testo)) : undefined
+  } catch {
+    controllo = undefined
+  }
+  // La procedura guidata si chiude da sola quando, a controllo fatto, non le resta nessun passo (salvo i saltati).
+  const api = !!(await read($, regole))?.risorse.apiClaude
+  const mancanti = controllo ? passiMancanti(controllo, chiaveApiPresente, api) : undefined
+  let finita = false
+  await update($, esecuzione, s => {
+    finita = !!s.guida && !!mancanti && mancanti.every(p => s.guida!.saltati.includes(p))
+    return { ...s, inCorso: false, controllo, fallito: !controllo, ...(finita && { guida: undefined }) }
+  })
+  if (finita && !mancanti?.length) $.ui.toast((await lingue($))('ese.guidaFatta'))
+  return controllo
+}
+
+/**
+ * «Accedi» e «Collega GitHub»: solo su clic, al più un login per tipo. Il login apre da sé il browser; poi si ricontrolla
+ * ogni 5 s per 3 minuti al massimo e solo mentre la sezione è a schermo. Se il login non parte, la riga da copiare.
+ */
+async function accedi($: Eng, tipo: TipoAccesso) {
+  const T = await lingue($)
+  if (ricontrolli.has(tipo)) return void $.ui.toast(T('ese.giaInCorso'))
+  const r = await helper($, ['accedi', tipo]).catch(() => undefined)
+  if (r?.codice === 3) return void $.ui.toast(T('ese.giaInCorso'))
+  if (r?.codice !== 0) return void (await update($, esecuzione, s => ({ ...s, copia: { tipo, riga: RIGHE_ACCESSO[tipo] } })))
+  const codice = (() => {
+    try {
+      const c = (JSON.parse(r.testo || '{}') as { codice?: unknown }).codice
+      return typeof c === 'string' && /^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(c) ? c : undefined
+    } catch {
+      return undefined
+    }
+  })()
+  const fino = (await $.clock.now()) + 180_000
+  await update($, esecuzione, s => ({ ...s, copia: undefined, accessi: { ...s.accessi, [tipo]: { fino, ...(codice && { codice }) } } }))
+  ricontrolli.set(tipo, $.clock.every(5000, () => void ricontrolla($, tipo, fino).catch(() => {})))
+}
+
+/** Un battito del ricontrollo: si ferma a login fatto, a 3 minuti, o quando la sezione non è più a schermo. */
+async function ricontrolla($: Eng, tipo: TipoAccesso, fino: number) {
+  const aSchermo = (await read($, vistaOra)) === 'impostazioni' && (await read($, impostazioni)).sezione === 'esecuzione' &&
+    (await $.ui.panes().then(l => l.some(p => p.id === PANE && p.isShown)).catch(() => false))
+  if (aSchermo && (await $.clock.now()) < fino) {
+    const c = await controllaEsecuzione($)
+    if (!(tipo === 'claude' ? c?.claude.loggedIn : c?.github.loggedIn)) return
+  }
+  ricontrolli.get(tipo)?.cancel()
+  ricontrolli.delete(tipo)
+  await update($, esecuzione, s => {
+    const { [tipo]: _, ...altri } = s.accessi ?? {}
+    return { ...s, accessi: altri }
+  })
+}
+
+/** «Apri il file» di una fonte che blocca l'API: solo un file dell'ultimo controllo, con l'apriprogramma del sistema. */
+async function apriFileImpostazioni($: Eng, file: string) {
+  if (!(await read($, esecuzione)).controllo?.fonti.some(f => f.file === file)) throw errore('ese.fileIgnoto')
+  conta({ processi: 1 }, 'explorer')
+  if ((await $.env.get('OS')) === 'Windows_NT') return void (await $.process.run(['explorer.exe', file.replace(/\//g, '\\')], { timeoutMs: 10_000 }))
+  for (const apri of ['xdg-open', 'open']) {
+    conta({ processi: 1 }, 'apri')
+    const r = await $.process.run([apri, file], { timeoutMs: 10_000 }).catch(() => undefined)
+    if (r?.exitCode === 0) return
+  }
+  throw errore('ese.apriFallito', { file })
+}
+
+/** «Inserisci la chiave»: l'host non apre /config su una riga data, quindi si apre il menu e il pannello dice il percorso. */
+async function apriConfig($: Eng) {
+  await $.command.run({ command: 'config' }).catch(() => undefined)
+}
+
 /** F6.4: la spesa del mese a crediti API, solo se l'API è configurata (la vista Carico la mostra contro il budget). */
 async function aggiornaSpesaApi($: Eng) {
   const r = await read($, regole)
@@ -1949,6 +2041,10 @@ export const register: Register = (on, options) => {
       },
       liberaApi: () => decidiLockApi($, 'libera'),
       terminaApi: () => decidiLockApi($, 'termina'),
+      controllaEsecuzione: () => controllaEsecuzione($),
+      accedi: tipo => accedi($, tipo),
+      apriFileImpostazioni: file => apriFileImpostazioni($, file),
+      apriConfig: () => apriConfig($),
       installa: async passo => {
         let r = await leggiRegole($)
         if (!r.lette || r.risorse.soloLocale || !r.risorse.fornitori.includes('freellmapi')) throw errore('err.abilitaFree')

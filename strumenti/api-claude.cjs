@@ -17,7 +17,7 @@
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { spawn } = require('child_process')
+const { spawn, spawnSync } = require('child_process')
 const d = require('./disco.cjs')
 
 const MUTEX_API = 'api-claude:macchina'
@@ -418,6 +418,98 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
   return r.occupato ? 3 : 0
 }
 
+// --- F6.7: stato della configurazione e accessi a un clic ---------------------------------------------------
+// Solo stati sì/no, metodo e host: email, nomi e identificativi dell'account non escono mai da qui.
+
+/** Un comando senza shell, con l'output catturato (mai mostrato così com'è): null se non parte. */
+function esegui(argv, deps = {}) {
+  if (deps.esegui) return deps.esegui(argv)
+  try {
+    const [eseguibile, argomenti] = d.comandoReale(argv)
+    const r = spawnSync(eseguibile, argomenti, { encoding: 'utf8', windowsHide: true, timeout: 20_000 })
+    return r.error ? null : { codice: r.status, testo: r.stdout ?? '' }
+  } catch {
+    return null
+  }
+}
+
+/** L'host di un URL git (https o scp), nient'altro: utente, percorso e credenziali restano fuori. */
+const hostGit = url => /^(?:[a-z+]+:\/\/(?:[^@/]+@)?|[^@\s/]+@)([a-z0-9.-]+)[:/]/i.exec(url.trim())?.[1]?.toLowerCase()
+
+/** Login Claude, GitHub con il remote del progetto, fonti di impostazioni compatibili con `api-claude`. */
+function statoEsecuzione(root, deps = {}) {
+  const claude = (() => {
+    const r = esegui(['claude', 'auth', 'status'], deps)
+    if (!r) return { trovato: false }
+    try {
+      const j = JSON.parse(r.testo)
+      return { trovato: true, loggedIn: j.loggedIn === true, metodo: typeof j.authMethod === 'string' && /^[a-z._-]{1,20}$/i.test(j.authMethod) ? j.authMethod : undefined }
+    } catch {
+      return { trovato: true, loggedIn: false }
+    }
+  })()
+  const gh = esegui(['gh', 'auth', 'status', '--hostname', 'github.com'], deps)
+  const remote = esegui(['git', '-C', root, 'remote', 'get-url', 'origin'], deps)
+  const host = remote && remote.codice === 0 ? hostGit(remote.testo) : undefined
+  const fonti = deps.fonti ?? fontiImpostazioni(root)
+  const vietate = blocchiImpostazioni(fonti, deps.env ?? process.env)
+  return {
+    claude,
+    github: { trovato: !!gh, loggedIn: !!gh && gh.codice === 0, remote: host === 'github.com', ...(host && { host }) },
+    fonti: vietate.map(nome => ({ nome, ...(fonti.find(f => f.nome === nome) && { file: fonti.find(f => f.nome === nome).file }) })),
+  }
+}
+
+/**
+ * «Accedi» (Claude) e «Collega GitHub»: il login dell'host come processo staccato, che apre da sé il browser. Al più uno
+ * per tipo (3 minuti). Di GitHub serve il codice monouso: l'output passa da un file che si legge solo per quel codice e si
+ * cancella subito (vi finirebbe il nome dell'account). Se il login non parte, la riga da copiare.
+ */
+async function accedi(tipo, dm, deps = {}) {
+  const argv = tipo === 'claude' ? ['claude', 'auth', 'login'] : tipo === 'gh' ? ['gh', 'auth', 'login', '--web', '--hostname', 'github.com', '--git-protocol', 'https'] : null
+  if (!argv) return [2, '']
+  const segno = path.join(dm, `accesso-${tipo}.json`)
+  const uscita = path.join(dm, `accesso-${tipo}.log`)
+  const adesso = (deps.adesso ?? Date.now)()
+  const r = await d.conMutex(`accesso:${tipo}`, 2000, async () => {
+    try {
+      const s = JSON.parse(fs.readFileSync(segno, 'utf8'))
+      if (adesso - s.inizio < 180_000 && (deps.vivo ?? d.vivo)(s.pid)) return [3, '']
+    } catch {
+      // nessun accesso in corso
+    }
+    fs.mkdirSync(dm, { recursive: true })
+    const fd = tipo === 'gh' ? fs.openSync(uscita, 'w', 0o600) : 'ignore'
+    try {
+      const p = deps.avvia ? deps.avvia(argv, fd) : (() => {
+        const [eseguibile, argomenti] = d.comandoReale(argv)
+        return spawn(eseguibile, argomenti, { stdio: ['ignore', fd, fd], detached: true, windowsHide: true })
+      })()
+      await new Promise((ok, ko) => { p.once('spawn', ok); p.once('error', ko) })
+      p.unref?.()
+      d.scriviAtomico(segno, JSON.stringify({ pid: p.pid, inizio: adesso }))
+      let codice
+      for (let i = 0; tipo === 'gh' && i < (deps.attese ?? 16) && !codice; i++) {
+        codice = /\b([A-Z0-9]{4}-[A-Z0-9]{4})\b/.exec(fs.readFileSync(uscita, 'utf8'))?.[1]
+        if (!codice) await new Promise(ok => setTimeout(ok, 500))
+      }
+      return [0, JSON.stringify(codice ? { codice } : {})]
+    } catch {
+      return [1, JSON.stringify({ copia: argv.join(' ') })]
+    } finally {
+      if (typeof fd === 'number') {
+        fs.closeSync(fd)
+        try {
+          fs.rmSync(uscita, { force: true })
+        } catch {
+          // Tenuto aperto dal login (Windows senza condivisione in cancellazione): lo svuota il prossimo «Collega GitHub».
+        }
+      }
+    }
+  })
+  return r.occupato ? [3, ''] : r.valore
+}
+
 /** Il punto d'ingresso da disco.cjs. */
 async function comando(cmd, a, stdin, opz = {}) {
   const dm = opz.dirMacchina ?? dirPredefinita()
@@ -426,10 +518,12 @@ async function comando(cmd, a, stdin, opz = {}) {
   if (cmd === 'stato-api' && !a.length) return d.esci(0, JSON.stringify(await statoApi(dm)))
   if (cmd === 'libera-api' && !a.length) return d.esci(0, JSON.stringify(await liberaApi(dm)))
   if (cmd === 'termina-api' && !a.length) return d.esci(0, JSON.stringify(await terminaApi(dm)))
+  if (cmd === 'stato-esecuzione' && a.length === 1) return d.esci(0, JSON.stringify(statoEsecuzione(a[0])))
+  if (cmd === 'accedi' && a.length === 1) return d.esci(...(await accedi(a[0], dm)))
   return d.esci(2, '')
 }
 
 module.exports = {
-  comando, lanciaApi, eseguiApi, statoApi, liberaApi, terminaApi, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, prenotaSpesa, contaSpesa,
+  comando, lanciaApi, eseguiApi, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, prenotaSpesa, contaSpesa,
   leggiSpesa, spesoNelMese, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
 }

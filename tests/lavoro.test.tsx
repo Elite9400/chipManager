@@ -40,7 +40,7 @@ const az = (id: string, ordine: number, extra: Partial<Azione> = {}): Azione => 
 })
 
 /** Engine finto ridotto: disco in memoria, prenotazione atomica dell'helper, avvio desktop che riesce. */
-function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexOccupato?: boolean } = {}) {
+function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexOccupato?: boolean; esecuzione?: string } = {}) {
   const toast: string[] = []
   const disco = new DiscoIt()
   disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING))
@@ -98,6 +98,7 @@ function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexO
       for (const [n, r] of Object.entries(req.scrivi)) disco.set(`${dir}/${n}`, JSON.stringify(r))
       return fine(0)
     }
+    if (cmd === 'stato-esecuzione' && opz.esecuzione) return fine(0, opz.esecuzione)
     return fine(2)
   })
   on('mcp.call', (_, e) => {
@@ -567,6 +568,44 @@ test('lingue: a 60 colonne nel terminale nessuna riga supera la larghezza e ness
       await ui.press({ key: `sezione-${s}-premi` })
       await controlla(s)
     }
+    await ui.unmount()
+  }
+})
+
+test('F6.7 lingue: Esecuzione con tutto da fare e ogni passo della procedura guidata stanno in 60 colonne, in ogni lingua', async ($, on) => {
+  const ESEC = JSON.stringify({
+    claude: { trovato: true, loggedIn: false },
+    github: { trovato: true, loggedIn: false, remote: false },
+    fonti: [{ nome: 'gestite', file: 'C:/Program Files/ClaudeCode/managed-settings.json' }, { nome: 'locale', file: 'X:/repo/.claude/settings.local.json' }, { nome: 'ambiente' }],
+  })
+  const amb = ambiente(on, [], [], { esecuzione: ESEC })
+  mock.clock(on)
+  const pausa = () => new Promise<void>(ok => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(ok, 5))
+  for (const lingua of ['en', 'it', 'es', 'fr', 'de', 'pt']) {
+    amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua, progetti: { 'acme/progetto': {} } }))
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount(PANE('terminal', 60))
+    const controlla = async (dove: string) => {
+      const albero = await ui.drawn()
+      const troppo: string[] = []
+      minima(albero, troppo, 58)
+      if (troppo.length) throw new Error(`${lingua} ${dove}: ${troppo.slice(0, 4).join(' | ')}`)
+      const etichette = pulsanti(albero).map(b => b.label ?? '')
+      const doppie = etichette.filter((e, i) => etichette.indexOf(e) !== i)
+      if (doppie.length) throw new Error(`${lingua} ${dove}: etichette ripetute ${doppie.join(' | ')}`)
+    }
+    await ui.press({ key: 'impostazioni' })
+    await ui.press({ key: 'sezione-esecuzione-premi' })
+    for (let i = 0; i < 400 && !(await ui.find({ key: 'ese-accedi-claude' })); i++) await pausa()
+    await controlla('righe')
+    await ui.press({ key: 'ese-guida' })
+    for (const passo of ['claude', 'github', 'chiave', 'fonti', 'budget']) {
+      for (let i = 0; i < 400 && !(await ui.find({ key: 'ese-guida-passo' })); i++) await pausa()
+      expect([lingua, passo, !!(await ui.find({ key: 'ese-guida-passo' }))]).toEqual([lingua, passo, true])
+      await controlla(passo)
+      await ui.press({ key: 'guida-salta' })
+    }
+    expect(await ui.find({ key: 'ese-guida-passo' })).toBeUndefined()
     await ui.unmount()
   }
 })

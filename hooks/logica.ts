@@ -1,5 +1,5 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
-import type { Azione, BoardProgetto, Chiamante, Consumo, Corsia, Destinazione, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo, Vita } from '../types'
+import type { Azione, BoardProgetto, Chiamante, Consumo, ControlloEsecuzione, Corsia, Destinazione, Fornitore, Limite, PassoEsecuzione, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo, Vita } from '../types'
 import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { GRIGIO, LIVELLO, STATO } from './tema'
@@ -507,6 +507,40 @@ export function impostazioniApiVietate(s: unknown): boolean {
   return env.some(k => /^ANTHROPIC_(.*_)?(BASE_URL|AUTH_TOKEN|API_KEY)$/.test(k) || /^(CLAUDE_CODE_USE_|ANTHROPIC_(BEDROCK|VERTEX|FOUNDRY)_)/.test(k) ||
       ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS'].includes(k)) ||
     Object.keys(o).some(k => k.startsWith('forceLogin') || ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'].includes(k))
+}
+
+/**
+ * F6.7: l'uscita di `stato-esecuzione` riletta campo per campo; tutto il resto si scarta (l'helper non fa uscire dati
+ * dell'account, e qui non passerebbero comunque). Una forma che non torna vale come controllo fallito.
+ */
+export function controlloDa(v: unknown): ControlloEsecuzione | undefined {
+  const o = v as { claude?: Record<string, unknown>; github?: Record<string, unknown>; fonti?: unknown }
+  if (!o || typeof o !== 'object' || !o.claude || !o.github || !Array.isArray(o.fonti)) return undefined
+  const NOMI = ['utente', 'progetto', 'locale', 'gestite', 'ambiente'] as const
+  const fonti: ControlloEsecuzione['fonti'] = []
+  for (const f of o.fonti as Record<string, unknown>[]) {
+    const nome = NOMI.find(n => n === f?.nome)
+    if (!nome) return undefined
+    fonti.push({ nome, ...(typeof f.file === 'string' && f.file.length < 500 && { file: f.file }) })
+  }
+  const metodo = o.claude.metodo
+  const host = o.github.host
+  return {
+    claude: { trovato: o.claude.trovato === true, loggedIn: o.claude.loggedIn === true, ...(typeof metodo === 'string' && /^[a-z._-]{1,20}$/i.test(metodo) && { metodo }) },
+    github: { trovato: o.github.trovato === true, loggedIn: o.github.loggedIn === true, remote: o.github.remote === true, ...(typeof host === 'string' && /^[a-z0-9.-]{1,100}$/i.test(host) && { host }) },
+    fonti,
+  }
+}
+
+/** F6.7: i passi che mancano, in ordine; senza controllo (non ancora fatto o fallito) i tre che ne dipendono non si sanno. */
+export function passiMancanti(c: ControlloEsecuzione | undefined, chiave: boolean, budget: boolean): PassoEsecuzione[] {
+  const p: PassoEsecuzione[] = []
+  if (c && !c.claude.loggedIn) p.push('claude')
+  if (c && !(c.github.loggedIn && c.github.remote)) p.push('github')
+  if (!chiave) p.push('chiave')
+  if (c?.fonti.length) p.push('fonti')
+  if (!budget) p.push('budget')
+  return p
 }
 
 /** Un consiglio di destinazione (F6.5): dove, e il perché in poche parole. */
@@ -1327,9 +1361,9 @@ export type ClasseProcesso = 'raccolta' | 'orchestrazione' | 'altri'
 // Le due classi sono elenchi chiusi (piano F5.3, giro 3). Raccolta: letture dei fornitori e cache Codex, git, piano,
 // board in scrittura e generazione. Orchestrazione: mutex e prenotazioni, configura*, pesi-*, gh, Explorer (o l'apri-
 // programma), codex, avvii di sessione. Ogni altro comando, anche nuovo o somigliante, è «non classificato».
-const RACCOLTA = new Set(['limiti', 'sessioni', 'git-log', 'git', 'leggi-piano', 'board-scrivi', 'board-prenota', 'board-finalizza'])
+const RACCOLTA = new Set(['limiti', 'sessioni', 'git-log', 'git', 'leggi-piano', 'board-scrivi', 'board-prenota', 'board-finalizza', 'stato-esecuzione'])
 const ORCHESTRAZIONE = new Set(['occupata', 'prenota', 'stato-cli', 'cas', 'configura', 'configura-utente', 'pesi-proponi', 'pesi-decidi',
-  'pesi-annulla', 'gh', 'explorer', 'apri', 'codex', 'lancia-cli', 'esegui-cli'])
+  'pesi-annulla', 'gh', 'explorer', 'apri', 'codex', 'lancia-cli', 'esegui-cli', 'accedi'])
 /** La classe di un comando (F5.3): raccolta, orchestrazione o non classificato. Vale anche per il registratore esterno. */
 export const classeProcesso = (comando: string): ClasseProcesso => (RACCOLTA.has(comando) ? 'raccolta' : ORCHESTRAZIONE.has(comando) ? 'orchestrazione' : 'altri')
 /** I processi per comando sommati per classe; ogni classe c'è sempre, anche a zero. */
