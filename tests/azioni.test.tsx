@@ -2267,7 +2267,18 @@ test('strumenti: descrizioni brevi (tetto in caratteri, non token); risorse_agen
 // Banco D7: 10 minuti simulati per pannello. Raccolta = helper fornitori (sessioni e limiti); orchestrazione = disco.cjs;
 // gh a parte. I tetti sono quelli del piano: 0,7 processi/min a riposo e nascosto, 3,2/min a schermo (raccolta).
 const banco = async ($: Parameters<TestBody>[0], on: Parameters<TestBody>[1], opz: { nascosto: boolean; pendente: boolean }) => {
-  const amb = ambiente(on, { nascosto: opz.nascosto })
+  // Ogni lettura delle sessioni risponde un dato diverso (il ramo porta il numero della lettura) e ogni lettura dei
+  // limiti una percentuale diversa: così il banco vede che le raccolte avvengono E che i dati arrivano nel pannello.
+  let letture = 0
+  let misure = 0
+  const amb = ambiente(on, {
+    nascosto: opz.nascosto,
+    fonte: cmd => cmd === 'sessioni'
+      ? { sessioni: [{ id: 'esempio-0007', cwd: 'X:/repo/.claude/worktrees/banco', ramo: `banco-${++letture}`, stato: 'chiuso', inCorso: false, attivita: new Date(Date.now() - 60_000).toISOString() }] }
+      : cmd === 'limiti'
+        ? { limiti: [{ id: 'codex-primary', fornitore: 'codex', nome: 'Codex piano · primaria', percentuale: 10 + ++misure, unita: '%', letto: new Date().toISOString(), fonte: 'banco' }], proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } }
+        : undefined,
+  })
   const clock = mock.clock(on)
   if (opz.pendente) amb.disco.set('X:/orch/azioni/a-banco001.json', JSON.stringify(base('a-banco001', 1, { repo: 'acme/progetto', stato: 'avviata', sessione: SID, tentativo: 'az-banco' })))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -2277,23 +2288,32 @@ const banco = async ($: Parameters<TestBody>[0], on: Parameters<TestBody>[1], op
   for (let i = 0; i < 30; i++) await clock.advance(20_000)
   const dopo = amb.processi.slice(n0)
   const conta = (f: (a: readonly string[]) => boolean) => dopo.filter(x => f(x.argv)).length
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  const ultimaSessione = !!(await ui.find({ type: 'Text', text: new RegExp(`^Codex · banco-${letture}$`) }))
+  await ui.press({ key: 'vista-carico' })
+  const ultimaMisura = !!(await ui.find({ type: 'Text', text: new RegExp(`Codex piano · primaria: ${10 + misure}% usato`) }))
+  await ui.unmount()
   return {
-    raccolta: conta(a => !!a[1]?.endsWith('/fornitori.cjs')),
+    sessioni: conta(a => !!a[1]?.endsWith('/fornitori.cjs') && a[2] === 'sessioni'),
+    limiti: conta(a => !!a[1]?.endsWith('/fornitori.cjs') && a[2] === 'limiti'),
     orchestrazione: conta(a => !!a[1]?.endsWith('/disco.cjs')),
     gh: conta(a => a[0] === 'gh'),
     app: amb.chiamate.length - c0,
+    ultimaSessione,
+    ultimaMisura,
   }
 }
 
-test('banco D7: a riposo e nascosto, raccolta entro 0,7 processi/min', async ($, on) => {
+test('banco D7: a riposo e nascosto, raccolta a 0,7 processi/min e dati aggiornati', async ($, on) => {
   const m = await banco($, on, { nascosto: true, pendente: false })
-  expect(m.raccolta).toBeLessThanOrEqual(7)
-  expect(m.orchestrazione).toBe(0)
+  // 10 minuti: sessioni ogni 2 minuti (5), limiti ogni 5 (2) = 7 processi di raccolta, nessuno di orchestrazione.
+  expect(m).toMatchObject({ sessioni: 5, limiti: 2, orchestrazione: 0, ultimaSessione: true, ultimaMisura: true })
 })
 
-test('banco D7: a schermo con lavoro in corso, raccolta entro 3,2 processi/min', async ($, on) => {
+test('banco D7: a schermo con lavoro in corso, raccolta a 3,2 processi/min e dati aggiornati', async ($, on) => {
   const m = await banco($, on, { nascosto: false, pendente: true })
-  expect(m.raccolta).toBeLessThanOrEqual(32)
+  // Sessioni ogni 20 s (30) e limiti ogni 5 minuti (2) = 32; l'azione in corso è Claude: la corsia Codex non si guarda.
+  expect(m).toMatchObject({ sessioni: 30, limiti: 2, orchestrazione: 0, ultimaSessione: true, ultimaMisura: true })
 })
 
 test('consumo: riga grigia della sessione; lo stato Codex ignoto non è in corso e si segna', () => {
