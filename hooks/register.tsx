@@ -143,6 +143,16 @@ async function codexOccupato($: Eng) {
 }
 
 /**
+ * Prima l'avviabilità, poi la corsia: si pianifica come se la corsia fosse libera e il processo che la guarda parte
+ * solo se il piano avvierebbe davvero un'azione Codex (non bloccata da dipendenze, regole o posti). Se è occupata si
+ * ripianifica. La guardia atomica resta quella della prenotazione e della corsia stessa.
+ */
+async function conCorsia($: Eng, piano: (codexOccupato: boolean) => Piano) {
+  const libero = piano(false)
+  return libero.avvia.some(a => a.esecutore === 'codex') && (await codexOccupato($)) ? piano(true) : libero
+}
+
+/**
  * Legge le azioni. Con `completa` rilegge una volta se un record non si legge (può essere un istante a
  * metà di un rename) e, se l'elenco resta incompleto, RIFIUTA: una decisione automatica (posti, corsia,
  * dipendenze, unicità dei task) presa senza un record può sbagliare.
@@ -451,8 +461,6 @@ async function decidi(
     const a = tutte.find(x => x.id === id)
     const ammessi = opz.qui ? ['proposta'] : ['proposta', 'accodata', 'fallita']
     if (!a || !ammessi.includes(a.stato)) return { nulla: a }
-    // La corsia della macchina conta solo per un'azione Codex: per le altre nessun processo in più.
-    const codex = a.esecutore === 'codex' ? await codexOccupato($) : false
     if (opz.approvata !== undefined && a.versione !== opz.approvata)
       throw new Error(`«${a.titolo}» è cambiata dopo la conferma: rivedila e riavviala`)
     if (a.esecutore === 'freellmapi' && opz.terzoApprovato !== a.versione) return { blocchi: ['FreeLLMAPI: serve conferma del testo di questa versione'] }
@@ -467,7 +475,7 @@ async function decidi(
     if (opz.manuale && (chi.lanciatore !== 'desktop' || a.esecutore === 'freellmapi')) blocchi.push('ripiego manuale disponibile solo per sessioni desktop Claude/Codex')
     if (blocchi.length) return { blocchi }
     // «qui» non occupa un posto di sessione nuova, ma la corsia Codex sì.
-    const piano = pianifica([a], lista, r, opz.qui ? Number.MAX_SAFE_INTEGER : maxParalleli(options), codex, x => violazioniAvvio(x, r, tutte, chi, opz.qui))
+    const piano = await conCorsia($, codex => pianifica([a], lista, r, opz.qui ? Number.MAX_SAFE_INTEGER : maxParalleli(options), codex, x => violazioniAvvio(x, r, tutte, chi, opz.qui)))
     if (piano.bloccate.length) return { blocchi: piano.bloccate[0]!.motivi }
     if (piano.coda.length) {
       const motivo = piano.coda[0]!.motivo
@@ -669,9 +677,9 @@ async function avviaTutte($: Eng, options: Record<string, unknown>) {
   const lista = delProgetto(tutte, chi)
   const max = maxParalleli(options)
   const proposte = lista.filter(a => a.stato === 'proposta')
-  const codex = proposte.some(a => a.esecutore === 'codex') ? await codexOccupato($) : false
   // Le violazioni della configurazione effettiva (chi avvia) entrano nel piano: una bloccata non consuma posti.
-  const piano: Piano = pianifica(proposte, lista, r, max, codex, a => violazioniAvvio(a, r, tutte, chi), (await read($, risorse)).limiti)
+  const limitiOra = (await read($, risorse)).limiti
+  const piano: Piano = await conCorsia($, codex => pianifica(proposte, lista, r, max, codex, a => violazioniAvvio(a, r, tutte, chi), limitiOra))
   if (!piano.avvia.length && !piano.coda.length) {
     if (piano.bloccate.length) throw new Error(`Nessuna può partire: ${piano.bloccate.length} bloccate dalle regole`)
     return
@@ -885,16 +893,8 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
   const r = await leggiRegole($)
   const accodate = adesso.filter(a => a.stato === 'accodata')
   if (!completa || !accodate.length) return
-  const pronte = pianifica(
-    accodate,
-    adesso,
-    r,
-    maxParalleli(options),
-    // Il processo che guarda la corsia parte solo se in coda c'è un'azione Codex.
-    accodate.some(a => a.esecutore === 'codex') ? await codexOccupato($) : false,
-    a => violazioniAvvio(a, r, tutteOra, chi),
-    (await read($, risorse)).limiti,
-  ).avvia
+  const limitiOra = (await read($, risorse)).limiti
+  const pronte = (await conCorsia($, codex => pianifica(accodate, adesso, r, maxParalleli(options), codex, a => violazioniAvvio(a, r, tutteOra, chi), limitiOra))).avvia
   for (const a of pronte) await avvia($, options, a.id).catch(() => undefined)
 }
 

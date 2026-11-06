@@ -2382,3 +2382,20 @@ test('battito: un lavoro che fallisce si riprova alla sua cadenza, senza ripetiz
   expect(conta('sessioni') - s0).toBe(18)
   expect(conta('limiti') - l0).toBe(1)
 })
+
+test('corsia Codex: interrogata solo se pianifica avvierebbe davvero un\'azione Codex (non per una bloccata da dipendenze)', async ($, on) => {
+  const amb = ambiente(on)
+  const clock = mock.clock(on)
+  const codex = { repo: 'acme/progetto', stato: 'accodata' as const, esecutore: 'codex' as const, revisore: 'claude' as const, modello: 'gpt-6-astra', corsia: 'R2' as const }
+  amb.disco.set('X:/orch/azioni/a-prima001.json', JSON.stringify(base('a-prima001', 1, { repo: 'acme/progetto', stato: 'avviata', sessione: SID, tentativo: 'az-prima' })))
+  amb.disco.set('X:/orch/azioni/a-codex001.json', JSON.stringify(base('a-codex001', 2, { ...codex, dipende: ['a-prima001'] })))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (let i = 0; i < 3; i++) await clock.advance(20_000)
+  const occupata = () => amb.processi.filter(x => x.argv.includes('occupata')).length
+  expect(occupata()).toBe(0)
+  // Senza la dipendenza parte: la corsia si guarda una volta per il piano e poi nella decisione.
+  amb.disco.set('X:/orch/azioni/a-codex002.json', JSON.stringify(base('a-codex002', 3, codex)))
+  await clock.advance(20_000)
+  expect(occupata()).toBeGreaterThan(0)
+  expect(['in-avvio', 'avviata']).toContain(amb.azione().find(a => a.id === 'a-codex002')?.stato)
+})
