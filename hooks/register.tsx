@@ -1058,29 +1058,30 @@ function valida(e: Record<string, unknown>, r: Regole, esistenti: readonly Azion
   }
 }
 
+// Una riga per proprietà, senza perdere vincoli: i dettagli stanno nei rifiuti di valida(), che l'agente legge quando sbaglia.
 const schemaSuggerisci = (r: Regole) => ({
   type: 'object',
   properties: {
-    titolo: { type: 'string', description: 'Sotto i 60 caratteri: diventa il titolo della sessione.' },
-    brief: { type: 'string', description: 'Mandato autoportante: compito, file, perimetro, cosa vuol dire finito.' },
-    background: { type: 'string', description: 'Contesto per chi non ha visto questa conversazione (facoltativo; non va mai al cloud).' },
-    esecutore: { type: 'string', enum: MOTORI, description: 'Chi scrive il codice. Default claude. Codex solo su corsie R1-R3 non sensibili.' },
-    revisore: { type: 'string', enum: REVISORI, description: 'Chi rivede il diff. Default: l\'altro motore. Obbligatorio sulle corsie sensibili.' },
+    titolo: { type: 'string', description: 'Sotto i 60 caratteri: titolo della sessione.' },
+    brief: { type: 'string', description: 'Mandato autoportante: compito, file, perimetro, quando è finito.' },
+    background: { type: 'string', description: 'Contesto facoltativo; mai al cloud.' },
+    esecutore: { type: 'string', enum: MOTORI, description: 'Default claude. Codex solo R1-R3 non sensibili.' },
+    revisore: { type: 'string', enum: REVISORI, description: 'Default l\'altro motore; obbligatorio sulle sensibili.' },
     modello: { type: 'string', description: `Claude: ${r.modelli.claude.join(', ')}. Codex: ${r.modelli.codex.join(', ')}.` },
     effort: { type: 'string', enum: r.effort },
-    corsia: { type: 'string', enum: CORSIE, description: 'Corsia del processo (R0–R5). Assente: R4 se il testo tocca superfici sensibili.' },
-    ordine: { type: 'integer', description: 'Posizione di avvio (1 = prima). Default: in fondo.' },
-    dipende: { type: 'array', items: { type: 'string' }, description: 'Id (esistenti) di azioni da completare e fondere prima di questa.' },
-    issue: { type: 'integer', description: 'Issue GitHub: lega l\'azione al registro dell\'orchestratore e alla milestone.' },
-    sensibile: { type: 'boolean', description: 'true se tocca auth, permessi, PII o moduli sensibili (corsia R4). false non annulla l\'evidenza nel testo.' },
-    permessi: { type: 'string', enum: PERMESSI_VALIDI, description: 'Modalità permessi della sessione. Assente: come chi avvia (sulle sensibili: accetta modifiche).' },
-    worktree: { type: 'boolean', description: 'Worktree proprio (default true) o cartella condivisa.' },
-    contesto: { type: 'string', enum: CONTESTI, description: 'fresh (default): solo il mandato; fork: tutta la conversazione di chi avvia.' },
-    destinazione: { type: 'string', enum: DESTINAZIONI, description: 'local (default) o cloud (solo fresh, mai su corsie sensibili né con dati locali).' },
-    ramo: { type: 'string', description: 'Nome breve del ramo del worktree ([a-z0-9-]).' },
-    base: { type: 'string', description: 'Ramo locale da cui tagliare il worktree (default: il ramo base della sessione che avvia, non quello corrente).' },
-    sveglia: { type: 'boolean', description: 'Risveglia la sessione che avvia anche se il mandato non arriva alla nuova sessione.' },
-    piano: { type: 'string', description: 'Piano del lavoro: percorso relativo alla radice del repo, .md o .txt (lo mostra la board di progetto).' },
+    corsia: { type: 'string', enum: CORSIE, description: 'Assente: R4 se il testo tocca superfici sensibili.' },
+    ordine: { type: 'integer', description: '1 = prima; default in fondo.' },
+    dipende: { type: 'array', items: { type: 'string' }, description: 'Id esistenti da completare e fondere prima.' },
+    issue: { type: 'integer', description: 'Issue GitHub: registro e milestone.' },
+    sensibile: { type: 'boolean', description: 'true se tocca auth, permessi, PII o moduli sensibili (R4); false non annulla il testo.' },
+    permessi: { type: 'string', enum: PERMESSI_VALIDI, description: 'Assente: come chi avvia (sensibili: accetta modifiche).' },
+    worktree: { type: 'boolean', description: 'Default true.' },
+    contesto: { type: 'string', enum: CONTESTI, description: 'fresh (default): solo il mandato; fork: la conversazione.' },
+    destinazione: { type: 'string', enum: DESTINAZIONI, description: 'cloud solo fresh, mai sensibili né con dati locali.' },
+    ramo: { type: 'string', description: 'Ramo del worktree, [a-z0-9-].' },
+    base: { type: 'string', description: 'Ramo locale di partenza; default il base di chi avvia.' },
+    sveglia: { type: 'boolean', description: 'Risveglia chi avvia anche se il mandato non arriva.' },
+    piano: { type: 'string', description: '.md o .txt relativo al repo; lo mostra la board.' },
   },
   required: ['titolo', 'brief'],
 })
@@ -1293,11 +1294,9 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'suggerisci_azione',
       description:
-        'Mette un\'azione nel pannello «chipManager» del committente invece di proporla in chat: ' +
-        'lui la rivede (ordine, esecutore Claude/Codex, revisore, modello, effort, corsia e le opzioni di sessione) e la avvia. ' +
-        'Una chiamata per azione, nell\'ordine di avvio; usa `dipende` con gli id restituiti per le catene. Restituisce l\'id. ' +
-        'Esecutore, modello ed effort che scegli restano tuoi; quelli che ometti li sceglie il pannello con i pesi e i margini del ' +
-        'progetto. Per decidere tu in base al lavoro, leggi prima `risorse_agenti`.',
+        'Mette un\'azione nel pannello «chipManager» invece di proporla in chat: il committente la rivede e la avvia. ' +
+        'Una chiamata per azione, in ordine di avvio; `dipende` con gli id restituiti per le catene. Restituisce l\'id. ' +
+        'Esecutore, modello ed effort omessi li sceglie il pannello; i margini sono in `risorse_agenti`.',
       inputSchema: schemaSuggerisci(r),
       isDeferred: false,
     })
@@ -1305,12 +1304,11 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'risorse_agenti',
       description:
-        'Sola lettura. Limiti e margini degli agenti (percentuali di piano, saldi, budget manuali: ognuno con fonte, istante ' +
-        'di lettura o motivo per cui manca), pesi di carico per fornitore/modello/effort, fornitori ammessi dal progetto, ' +
-        'livello d\'uso di FreeLLMAPI, modelli ed effort che le regole permettono. Usalo prima di proporre azioni per ' +
-        'distribuire il lavoro dove c\'è margine; un dato senza istante recente non è disponibilità attuale.',
+        'Sola lettura: limiti e margini degli agenti (con fonte e istante, o il motivo se mancano), pesi di carico, fornitori ' +
+        'ammessi, modelli ed effort permessi. Un dato senza istante recente non è disponibilità attuale.',
       inputSchema: { type: 'object', properties: {} },
-      isDeferred: false,
+      // Si carica solo quando serve (ToolSearch): non pesa sul contesto delle sessioni che non propongono azioni.
+      isDeferred: true,
     })
     await $.tool.register({
       name: 'aggiorna_azione',

@@ -491,7 +491,11 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
   })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('prompt.submit', (_, e) => ({ text: (e as { text: string }).text }))
-  on('tool.register', (_, e) => ({ value: { tool: e.name } }))
+  const registrati: { name: string; description: string; inputSchema: unknown; isDeferred?: boolean }[] = []
+  on('tool.register', (_, e) => {
+    registrati.push(e as never)
+    return { value: { tool: e.name } }
+  })
   on('command.register', () => ({ value: { command: 'chipmanager' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   const azione = () =>
@@ -504,7 +508,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
           return []
         }
       })
-  return { disco, chiamate, toast, processi, azione, modello, letti }
+  return { disco, chiamate, toast, processi, azione, modello, letti, registrati }
 }
 
 const PANE = (surface: 'desktop' | 'terminal') =>
@@ -2227,4 +2231,22 @@ test('battito: con lavoro pendente il giro resta a 20 s; si rileggono solo i rec
   expect(registro()).toBe(prima.registro + 1)
   // Proposte Claude soltanto: la corsia Codex non si interroga.
   expect(amb.processi.some(x => x.argv.includes('occupata'))).toBe(false)
+})
+
+test('strumenti: descrizioni brevi (tetto in caratteri, non token); risorse_agenti differito, suggerisci_azione no', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const caratteri = (nome: string) => {
+    const t = amb.registrati.find(x => x.name === nome)!
+    const props = Object.values((t.inputSchema as { properties?: Record<string, { description?: string }> }).properties ?? {})
+    return t.description.length + props.reduce((n, p) => n + (p.description?.length ?? 0), 0)
+  }
+  // 2.4.0: 2021 e 435 caratteri (descrizione dello strumento più quelle delle proprietà), con il routing d'esempio.
+  expect(caratteri('suggerisci_azione')).toBeLessThanOrEqual(1300)
+  expect(caratteri('risorse_agenti')).toBeLessThanOrEqual(250)
+  expect(amb.registrati.find(x => x.name === 'risorse_agenti')!.isDeferred).toBe(true)
+  expect(amb.registrati.find(x => x.name === 'suggerisci_azione')!.isDeferred).toBe(false)
+  // Anche la 2.4.0 ha la proprietà piano.
+  expect(Object.keys((amb.registrati.find(x => x.name === 'suggerisci_azione')!.inputSchema as { properties: object }).properties)).toContain('piano')
 })
