@@ -28,7 +28,7 @@ import {
   modalitaDi,
   controlloDa,
   passiMancanti,
-  impostazioniApiVietate,
+  chiaviApiVietate,
   consigliaDove,
   spesaDelMese,
   normalizza,
@@ -754,12 +754,8 @@ async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: 
   const fallisce = (m: Msg) => aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo ? { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', m) } : null)
   if (!api || !chiave) return fallisce(msg(!chiave ? 'v.apiChiave' : 'v.apiBudget'))
   // Le fonti di impostazioni come le espone l'host (la policy gestita compresa): nel dubbio si blocca.
-  const vietate: string[] = []
-  for (const source of ['user', 'project', 'local', 'flag', 'policy'] as const) {
-    const s = await $.settings.read({ source }).catch(() => null)
-    if (s === null || impostazioniApiVietate(s)) vietate.push(source)
-  }
-  if (vietate.length) return fallisce(msg('err.apiImpostazioni', { fonti: vietate.join(', ') }))
+  const vietate = await fontiHostVietate($)
+  if (vietate.length) return fallisce(msg('err.apiImpostazioni', { fonti: vietate.map(v => v.source).join(', ') }))
   const m = mandatoApi(a, r, strumenti($))
   const root = (await $.session.repo())?.root
   if (!root) throw new Error('repository root not available')
@@ -1032,9 +1028,25 @@ async function decidiLockApi($: Eng, azione: 'libera' | 'termina') {
 /** Le righe da copiare se un login non parte: fisse, come l'argv dell'helper (mai testo letto da un processo). */
 const RIGHE_ACCESSO: Record<TipoAccesso, string> = { claude: 'claude auth login', gh: 'gh auth login --web --hostname github.com --git-protocol https' }
 /** I ricontrolli dei login avviati da questo pannello: al più uno per tipo. */
-const ricontrolli = new Map<TipoAccesso, { cancel: () => void }>()
+const ricontrolli = new Map<TipoAccesso, { id: number; cancel: () => void }>()
+let ultimoRicontrollo = 0
 
-/** Lo stato ✓/✗ dall'helper (login Claude, GitHub e remote, fonti di impostazioni): solo sì/no, metodo e host. */
+/**
+ * F6.2/F6.7: le fonti di impostazioni dell'host che bloccano l'API, con le chiavi responsabili (mai i valori). Una fonte
+ * che non si legge o non è un oggetto blocca. È il controllo dell'avvio, e lo stesso mostra la sezione Esecuzione.
+ */
+async function fontiHostVietate($: Eng) {
+  const vietate: { source: 'user' | 'project' | 'local' | 'flag' | 'policy'; chiavi: string[] | null }[] = []
+  for (const source of ['user', 'project', 'local', 'flag', 'policy'] as const) {
+    const s = await $.settings.read({ source }).catch(() => null)
+    const chiavi = s === null ? null : chiaviApiVietate(s)
+    if (chiavi === null || chiavi.length) vietate.push({ source, chiavi })
+  }
+  return vietate
+}
+const NOME_FONTE = { user: 'utente', project: 'progetto', local: 'locale', flag: 'flag', policy: 'gestite' } as const
+
+/** Lo stato ✓/✗ (login Claude, GitHub e remote, fonti di impostazioni dell'helper e dell'host): solo sì/no, metodo, host, chiavi. */
 async function controllaEsecuzione($: Eng): Promise<ControlloEsecuzione | undefined> {
   await update($, esecuzione, s => ({ ...s, inCorso: true }))
   let controllo: ControlloEsecuzione | undefined
@@ -1042,6 +1054,15 @@ async function controllaEsecuzione($: Eng): Promise<ControlloEsecuzione | undefi
     const root = (await $.session.repo())?.root
     const r = root ? await helper($, ['stato-esecuzione', root]) : undefined
     controllo = r?.codice === 0 ? controlloDa(JSON.parse(r.testo)) : undefined
+    // Le fonti dell'host come le legge l'avvio: unite a quelle dell'helper (stesso file, stessa riga).
+    for (const v of controllo ? await fontiHostVietate($) : []) {
+      const nome = NOME_FONTE[v.source]
+      const c = controllo!.fonti.find(f => f.nome === nome)
+      const f = c ?? { nome }
+      if (!c) controllo!.fonti.push(f)
+      if (v.chiavi === null) f.illeggibile = true
+      else f.chiavi = [...new Set([...(f.chiavi ?? []), ...v.chiavi])]
+    }
   } catch {
     controllo = undefined
   }
@@ -1077,36 +1098,29 @@ async function accedi($: Eng, tipo: TipoAccesso) {
   })()
   const fino = (await $.clock.now()) + 180_000
   await update($, esecuzione, s => ({ ...s, copia: undefined, accessi: { ...s.accessi, [tipo]: { fino, ...(codice && { codice }) } } }))
-  ricontrolli.set(tipo, $.clock.every(5000, () => void ricontrolla($, tipo, fino).catch(() => {})))
+  const id = ++ultimoRicontrollo
+  const timer = $.clock.every(5000, () => void ricontrolla($, tipo, fino, id).catch(() => {}))
+  ricontrolli.set(tipo, { id, cancel: () => timer.cancel() })
 }
 
 /** Un battito del ricontrollo: si ferma a login fatto, a 3 minuti, o quando la sezione non è più a schermo. */
-async function ricontrolla($: Eng, tipo: TipoAccesso, fino: number) {
+async function ricontrolla($: Eng, tipo: TipoAccesso, fino: number, id: number) {
+  // Ogni ricontrollo ha la sua identità: un battito vecchio, tornato dopo un nuovo «Accedi», non tocca quello nuovo.
+  if (ricontrolli.get(tipo)?.id !== id) return
   const aSchermo = (await read($, vistaOra)) === 'impostazioni' && (await read($, impostazioni)).sezione === 'esecuzione' &&
     (await $.ui.panes().then(l => l.some(p => p.id === PANE && p.isShown)).catch(() => false))
   if (aSchermo && (await $.clock.now()) < fino) {
     const c = await controllaEsecuzione($)
-    if (!(tipo === 'claude' ? c?.claude.loggedIn : c?.github.loggedIn)) return
+    if (ricontrolli.get(tipo)?.id !== id || !(tipo === 'claude' ? c?.claude.loggedIn : c?.github.loggedIn)) return
   }
-  ricontrolli.get(tipo)?.cancel()
+  if (ricontrolli.get(tipo)?.id !== id) return
+  ricontrolli.get(tipo)!.cancel()
   ricontrolli.delete(tipo)
   await update($, esecuzione, s => {
-    const { [tipo]: _, ...altri } = s.accessi ?? {}
+    if (s.accessi?.[tipo]?.fino !== fino) return s
+    const { [tipo]: _, ...altri } = s.accessi
     return { ...s, accessi: altri }
   })
-}
-
-/** «Apri il file» di una fonte che blocca l'API: solo un file dell'ultimo controllo, con l'apriprogramma del sistema. */
-async function apriFileImpostazioni($: Eng, file: string) {
-  if (!(await read($, esecuzione)).controllo?.fonti.some(f => f.file === file)) throw errore('ese.fileIgnoto')
-  conta({ processi: 1 }, 'explorer')
-  if ((await $.env.get('OS')) === 'Windows_NT') return void (await $.process.run(['explorer.exe', file.replace(/\//g, '\\')], { timeoutMs: 10_000 }))
-  for (const apri of ['xdg-open', 'open']) {
-    conta({ processi: 1 }, 'apri')
-    const r = await $.process.run([apri, file], { timeoutMs: 10_000 }).catch(() => undefined)
-    if (r?.exitCode === 0) return
-  }
-  throw errore('ese.apriFallito', { file })
 }
 
 /** «Inserisci la chiave»: l'host non apre /config su una riga data, quindi si apre il menu e il pannello dice il percorso. */
@@ -2043,7 +2057,6 @@ export const register: Register = (on, options) => {
       terminaApi: () => decidiLockApi($, 'termina'),
       controllaEsecuzione: () => controllaEsecuzione($),
       accedi: tipo => accedi($, tipo),
-      apriFileImpostazioni: file => apriFileImpostazioni($, file),
       apriConfig: () => apriConfig($),
       installa: async passo => {
         let r = await leggiRegole($)

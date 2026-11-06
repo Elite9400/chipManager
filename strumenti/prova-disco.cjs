@@ -1559,11 +1559,11 @@ test('F6.7 stato-esecuzione: con eseguibili finti escono solo sì/no, metodo e h
   Object.assign(env, { PATH: finti, CLAUDE_CONFIG_DIR: casa })
   const r = spawnSync(process.execPath, [ENTRATA, 'stato-esecuzione', root], { encoding: 'utf8', env })
   assert.strictEqual(r.status, 0, r.stderr)
-  for (const segreto of ['persona@esempio.it', 'org-segreto-42', 'Ditta Segreta', 'utente-segreto', 'ghp_tokensegreto', 'acme']) assert.ok(!r.stdout.includes(segreto), segreto)
+  for (const segreto of ['persona@esempio.it', 'org-segreto-42', 'Ditta Segreta', 'utente-segreto', 'ghp_tokensegreto', 'acme', 'gw.example']) assert.ok(!r.stdout.includes(segreto), segreto)
   assert.deepStrictEqual(JSON.parse(r.stdout), {
     claude: { trovato: true, loggedIn: true, metodo: 'claude.ai' },
     github: { trovato: true, loggedIn: true, remote: true, host: 'github.com' },
-    fonti: [{ nome: 'progetto', file: path.join(root, '.claude', 'settings.json') }],
+    fonti: [{ nome: 'progetto', file: path.join(root, '.claude', 'settings.json'), chiavi: ['forceLoginGatewayUrl'] }],
   })
   // Un metodo che non è una parola semplice non passa; claude assente, gh scollegato, remote non GitHub.
   assert.strictEqual(API.statoEsecuzione(root, { fonti: [], env: {}, esegui: a => (a[0] === 'claude' ? { codice: 0, testo: '{"loggedIn":true,"authMethod":"api_key"}' } : null) }).claude.metodo, 'api_key')
@@ -1572,30 +1572,89 @@ test('F6.7 stato-esecuzione: con eseguibili finti escono solo sì/no, metodo e h
   assert.deepStrictEqual(JSON.parse(r2.stdout), { claude: { trovato: false }, github: { trovato: true, loggedIn: false, remote: false, host: 'gitlab.example.org' }, fonti: [] })
 })
 
-test('F6.7 accedi: un solo login per tipo; di GitHub esce solo il codice monouso e l\'output si cancella; spawn fallito → la riga da copiare', async () => {
-  const dm = tmp()
+test('F6.7 accedi: di GitHub esce solo il codice; l\'output del login non tocca mai il disco; un solo login finché vive, a qualunque età', async () => {
+  // Il nome dell'account si compone a runtime: nel sorgente del finto non compare intero.
   const finti = eseguibiliFinti({
-    gh: `console.log('! First copy your one-time code: AB12-CD34'); console.log('Logged in as utente-segreto'); setTimeout(() => {}, 4000)`,
+    gh: `console.log('! First copy your one-time code: AB12-CD34'); console.log('Logged in as ' + 'account-' + 'nascosto-gh7'); setTimeout(() => {}, 3000)`,
   })
+  const aperti = []
+  const openSync = fs.openSync
+  const writeFileSync = fs.writeFileSync
+  fs.openSync = (f, flag, ...resto) => (/[wa]/.test(String(flag ?? '')) && aperti.push(String(f)), openSync(f, flag, ...resto))
+  fs.writeFileSync = (f, ...resto) => (aperti.push(String(f)), writeFileSync(f, ...resto))
   const prima = process.env.PATH
   process.env.PATH = finti
   try {
-    const [codice, testo] = await API.accedi('gh', dm, { attese: 20 })
+    aperti.length = 0
+    const [codice, testo] = await API.accedi('gh', { attesaCodice: 10_000 })
     assert.deepStrictEqual([codice, JSON.parse(testo)], [0, { codice: 'AB12-CD34' }])
-    assert.strictEqual(fs.existsSync(path.join(dm, 'accesso-gh.log')), false)
-    assert.ok(!fs.readdirSync(dm).some(f => fs.readFileSync(path.join(dm, f), 'utf8').includes('utente-segreto')))
-    // Il primo è ancora vivo: un secondo clic non ne avvia un altro.
-    assert.deepStrictEqual(await API.accedi('gh', dm), [3, ''])
-    // claude non c'è: nessun processo, nessun segno, la riga da copiare.
-    assert.deepStrictEqual(await API.accedi('claude', dm), [1, JSON.stringify({ copia: 'claude auth login' })])
-    assert.strictEqual(fs.existsSync(path.join(dm, 'accesso-claude.json')), false)
-    assert.deepStrictEqual(await API.accedi('rm', dm), [2, ''])
+    // Da questo processo nessun file scritto; dal processo del login niente sotto la radice delle prove.
+    assert.deepStrictEqual(aperti, [])
+    // Solo cartelle e file veri: le giunzioni lasciate da altre prove non si seguono.
+    const tutti = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? tutti(path.join(d, e.name)) : e.isFile() ? [path.join(d, e.name)] : []))
+    assert.deepStrictEqual(tutti(radiceProve).filter(f => fs.readFileSync(f, 'utf8').includes('account-nascosto-gh7')), [])
+    // Il primo login vive ancora: un secondo clic non ne avvia un altro, anche oltre i 3 minuti del ricontrollo.
+    assert.deepStrictEqual(await API.accedi('gh', { adesso: () => Date.now() + 180_001 }), [3, ''])
+    // Finito il login, il mutex è libero e un nuovo clic riparte.
+    for (let i = 0; i < 100 && (await require(DISCO).conMutex('accesso-vivo:gh', 0, () => true)).occupato; i++) await new Promise(ok => setTimeout(ok, 100))
+    fs.writeFileSync(path.join(finti, 'gh.js'), `console.log('codice XY98-ZW76'); setTimeout(() => {}, 300)`)
+    aperti.length = 0
+    assert.deepStrictEqual((await API.accedi('gh', { attesaCodice: 10_000 }))[0], 0)
+    // claude non c'è: nessun processo, la riga da copiare.
+    assert.deepStrictEqual(await API.accedi('claude', {}), [1, JSON.stringify({ copia: 'claude auth login' })])
+    assert.deepStrictEqual(await API.accedi('rm', {}), [2, ''])
   } finally {
     process.env.PATH = prima
+    fs.openSync = openSync
+    fs.writeFileSync = writeFileSync
   }
-  // Scaduti i 3 minuti, un nuovo clic riparte anche se il vecchio processo vive ancora.
-  let avvii = 0
-  const avvia = () => { avvii++; const p = new Emettitore(); p.pid = 99; queueMicrotask(() => p.emit('spawn')); return p }
-  assert.strictEqual((await API.accedi('gh', dm, { avvia, attese: 0, adesso: () => Date.now() + 181_000 }))[0], 0)
-  assert.strictEqual(avvii, 1)
+})
+
+test('F6.2 rilievo 2 (giro 2): un campo del tipo sbagliato (mese in un elenco, numeri come testo) blocca le prenotazioni', async () => {
+  const mese = '2026-11'
+  for (const voce of [{ mese: [mese], tetto: 4, stato: 'prenotato' }, { mese, tetto: '4', stato: 'prenotato' }, { mese, tetto: [4], stato: 'prenotato' },
+    { mese, tetto: 2, stato: 'contato', costo: '0.5' }, { mese, tetto: 2, stato: ['contato'], costo: 1 }, [mese, 4]]) {
+    const dir = tmp()
+    fs.writeFileSync(path.join(dir, 'spesa-api.json'), JSON.stringify({ v: 1, voci: { 'az-vecchio02': voce } }))
+    assert.throws(() => API.prenotaSpesa(dir, 'az-nuovo0002', mese, 2, 5), undefined, JSON.stringify(voce))
+    recordApi(dir, 'a-api00018', 'az-api0018')
+    const [codice, testo] = await API.lanciaApi(dir, 'a-api00018', 'az-api0018', { ...ingressoApi(tmp()), budget: 5, tetto: 2 }, { dirMacchina: tmp(), fonti: fontiPulite(tmp()), env: {}, supervisore: supervisoreFinto([]) })
+    assert.deepStrictEqual([JSON.stringify(voce), codice, JSON.parse(testo)], [JSON.stringify(voce), 5, { registro: 'non valido' }])
+  }
+})
+
+test('F6.2 rilievo 6 (giro 2): l\'attesa degli stream parte dall\'uscita: dopo 31 s di lavoro il JSON arrivato dopo l\'uscita conta', async t => {
+  const dir = tmp()
+  const dm = tmp()
+  const root = tmp()
+  recordApi(dir, 'a-api00019', 'az-api0019')
+  assert.strictEqual((await API.lanciaApi(dir, 'a-api00019', 'az-api0019', ingressoApi(root), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }))[0], 0)
+  let p
+  const finito = API.eseguiApi(dir, 'a-api00019', 'az-api0019', ingressoApi(root), {
+    dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], env: {}, fontiCwd: () => fontiPulite(root),
+    avvia: () => {
+      // Da qui il tempo lo decide la prova: solo setTimeout, il resto (mutex, I/O) corre normale.
+      t.mock.timers.enable({ apis: ['setTimeout'] })
+      p = new Emettitore()
+      p.pid = 434345
+      p.stdout = new Emettitore()
+      p.stdin = new Emettitore()
+      p.stdin.end = () => {}
+      queueMicrotask(() => p.emit('spawn'))
+      return p
+    },
+  })
+  const giri = async n => { for (let i = 0; i < n; i++) await new Promise(ok => setImmediate(ok)) }
+  while (!p) await giri(1)
+  await giri(20)
+  t.mock.timers.tick(31_000)
+  p.emit('exit', 0)
+  await giri(20)
+  p.stdout.emit('data', Buffer.from(JSON.stringify({ is_error: false, total_cost_usd: 0.25, num_turns: 1 })))
+  p.emit('close', 0)
+  await finito
+  t.mock.timers.reset()
+  const esec = JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0019.json'), 'utf8'))
+  assert.deepStrictEqual([esec.stato, esec.costo, esec.incerto], ['consegnata', 0.25, undefined])
+  assert.strictEqual(API.leggiSpesa(dir).voci['az-api0019'].costo, 0.25)
 })

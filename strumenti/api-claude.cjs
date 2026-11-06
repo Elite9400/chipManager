@@ -19,6 +19,7 @@ const os = require('os')
 const path = require('path')
 const { spawn, spawnSync } = require('child_process')
 const d = require('./disco.cjs')
+const ACCESSO = path.join(__dirname, 'accesso.cjs')
 
 const MUTEX_API = 'api-claude:macchina'
 /** La cache di `apiKeyHelper` in `claude -p`: impostata in modo esplicito, così l'attesa dopo l'ultima consegna è nota. */
@@ -55,36 +56,41 @@ function fontiImpostazioni(root, env = process.env) {
  * fornitori cloud, un `apiKeyHelper` dell'utente, ogni login imposto (`forceLogin*`, `forceLoginGatewayUrl` compreso).
  * Una forma che non è un oggetto vale come vietata. Stessa regola del pannello per le fonti dell'host.
  */
-function impostazioniVietate(s) {
-  if (!s || typeof s !== 'object' || Array.isArray(s)) return true
-  if (s.env !== undefined && (!s.env || typeof s.env !== 'object' || Array.isArray(s.env))) return true
-  const env = Object.keys(s.env ?? {})
-  return env.some(k => /^ANTHROPIC_(.*_)?(BASE_URL|AUTH_TOKEN|API_KEY)$/.test(k) || /^(CLAUDE_CODE_USE_|ANTHROPIC_(BEDROCK|VERTEX|FOUNDRY)_)/.test(k) ||
-      ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS'].includes(k)) ||
-    Object.keys(s).some(k => k.startsWith('forceLogin') || ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'].includes(k))
+function chiaviVietate(s) {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return null
+  if (s.env !== undefined && (!s.env || typeof s.env !== 'object' || Array.isArray(s.env))) return null
+  const env = Object.keys(s.env ?? {}).filter(k => /^ANTHROPIC_(.*_)?(BASE_URL|AUTH_TOKEN|API_KEY)$/.test(k) || /^(CLAUDE_CODE_USE_|ANTHROPIC_(BEDROCK|VERTEX|FOUNDRY)_)/.test(k) ||
+    ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS'].includes(k)).map(k => `env.${k}`)
+  return [...env, ...Object.keys(s).filter(k => k.startsWith('forceLogin') || ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'].includes(k))]
 }
+/** Vietata se ha una di quelle chiavi o non ha la forma di un oggetto. */
+const impostazioniVietate = s => chiaviVietate(s)?.length !== 0
 
-/** Una fonte che cambierebbe chi paga o dove va la richiesta? Illeggibile = sì. */
-function fonteVietata(file) {
+/** Che cosa blocca una fonte: null se niente; le chiavi responsabili (mai i valori); `illeggibile` se non si legge. */
+function bloccoDi(file) {
   let testo
   try {
     testo = fs.readFileSync(file, 'utf8')
   } catch (e) {
-    return e.code !== 'ENOENT'
+    return e.code === 'ENOENT' ? null : { illeggibile: true }
   }
+  let chiavi
   try {
-    return impostazioniVietate(JSON.parse(testo))
+    chiavi = chiaviVietate(JSON.parse(testo))
   } catch {
-    return true
+    chiavi = null
   }
+  return chiavi === null ? { illeggibile: true } : chiavi.length ? { chiavi } : null
 }
 
-/** Le fonti che bloccano `api-claude` (solo i nomi, mai i valori); anche una chiave già nell'ambiente blocca. */
-function blocchiImpostazioni(fonti, env = process.env) {
-  const blocchi = fonti.filter(f => fonteVietata(f.file)).map(f => f.nome)
-  if (env.ANTHROPIC_API_KEY !== undefined) blocchi.push('ambiente')
+/** Le fonti che bloccano `api-claude`, con le chiavi responsabili; anche una chiave già nell'ambiente blocca. */
+function blocchiDettagliati(fonti, env = process.env) {
+  const blocchi = fonti.map(f => ({ nome: f.nome, file: f.file, ...bloccoDi(f.file) })).filter(b => b.chiavi || b.illeggibile)
+  if (env.ANTHROPIC_API_KEY !== undefined) blocchi.push({ nome: 'ambiente', chiavi: ['ANTHROPIC_API_KEY'] })
   return blocchi
 }
+/** Solo i nomi delle fonti che bloccano. */
+const blocchiImpostazioni = (fonti, env = process.env) => blocchiDettagliati(fonti, env).map(b => b.nome)
 
 // --- spesa: prenotazione e contabilizzazione per tentativo (§4) ----------------------------------------------
 
@@ -103,7 +109,8 @@ function leggiSpesa(dir) {
 }
 
 /** Una voce del registro: mese, tetto positivo, stato noto; il costo solo se contata (null = ignoto). */
-const voceValida = v => !!v && typeof v === 'object' && /^\d{4}-\d{2}$/.test(v.mese) && Number.isFinite(v.tetto) && v.tetto > 0 &&
+const voceValida = v => !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.mese === 'string' && /^\d{4}-\d{2}$/.test(v.mese) &&
+  typeof v.tetto === 'number' && Number.isFinite(v.tetto) && v.tetto > 0 &&
   (v.stato === 'prenotato' ? v.costo === undefined : v.stato === 'contato' && (v.costo === null || (Number.isFinite(v.costo) && v.costo >= 0)))
 
 /** Spesa del mese: contato = costo stimato (ignoto = tetto intero), prenotato = tetto intero. */
@@ -386,11 +393,8 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
         else pezzi.push(b)
         letti += b.length
       })
-      // La fine degli stream arriva dopo l'uscita: il costo si legge solo allora (al più 30 s dopo, poi vale quel che c'è).
-      const chiuso = new Promise(ok => {
-        p.once('close', ok)
-        setTimeout(ok, 30_000).unref?.()
-      })
+      // La fine degli stream arriva dopo l'uscita: il costo si legge solo allora (al più 30 s dopo l'uscita, poi vale quel che c'è).
+      const chiuso = new Promise(ok => p.once('close', ok))
       p.stdin.on('error', () => {})
       p.stdin.end(input.prompt)
       const codice = await new Promise(ok => p.once('exit', ok))
@@ -398,7 +402,7 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
       rec = { ...rec, uscita: { codice, fine: new Date().toISOString() } }
       rec.chiaveCancellata = cancellaChiave(dm, tentativo, deps)
       scriviLock(dm, rec)
-      await chiuso
+      await Promise.race([chiuso, new Promise(ok => setTimeout(ok, 30_000).unref?.())])
       const esito = troncato ? null : estraiEsito(Buffer.concat(pezzi).toString('utf8'))
       if (!esito) scrivi({ stato: 'avviata', ramo, incerto: true, costo: null, errore: 'esito API incerto: controlla il worktree prima di chiudere' })
       else scrivi({ stato: 'consegnata', ramo, costo: esito.costo, turni: esito.turni, errore: esito.errore || codice !== 0 ? 'esecuzione API terminata con errore: controlla il worktree prima di chiudere' : undefined })
@@ -451,61 +455,49 @@ function statoEsecuzione(root, deps = {}) {
   const gh = esegui(['gh', 'auth', 'status', '--hostname', 'github.com'], deps)
   const remote = esegui(['git', '-C', root, 'remote', 'get-url', 'origin'], deps)
   const host = remote && remote.codice === 0 ? hostGit(remote.testo) : undefined
-  const fonti = deps.fonti ?? fontiImpostazioni(root)
-  const vietate = blocchiImpostazioni(fonti, deps.env ?? process.env)
   return {
     claude,
     github: { trovato: !!gh, loggedIn: !!gh && gh.codice === 0, remote: host === 'github.com', ...(host && { host }) },
-    fonti: vietate.map(nome => ({ nome, ...(fonti.find(f => f.nome === nome) && { file: fonti.find(f => f.nome === nome).file }) })),
+    fonti: blocchiDettagliati(deps.fonti ?? fontiImpostazioni(root), deps.env ?? process.env),
   }
 }
 
 /**
- * «Accedi» (Claude) e «Collega GitHub»: il login dell'host come processo staccato, che apre da sé il browser. Al più uno
- * per tipo (3 minuti). Di GitHub serve il codice monouso: l'output passa da un file che si legge solo per quel codice e si
- * cancella subito (vi finirebbe il nome dell'account). Se il login non parte, la riga da copiare.
+ * «Accedi» (Claude) e «Collega GitHub»: il login dell'host lo tiene un processo staccato (`accesso.cjs`) che ne legge
+ * l'output solo in memoria e passa qui, su una pipe, «pronto» e il codice monouso di GitHub: niente output del login va
+ * mai su disco. Il processo tiene il mutex `accesso-vivo:<tipo>` finché il login vive: intanto nessun secondo login,
+ * a qualunque età. Se il comando non c'è o non parte, la riga da copiare.
  */
-async function accedi(tipo, dm, deps = {}) {
+async function accedi(tipo, deps = {}) {
   const argv = tipo === 'claude' ? ['claude', 'auth', 'login'] : tipo === 'gh' ? ['gh', 'auth', 'login', '--web', '--hostname', 'github.com', '--git-protocol', 'https'] : null
   if (!argv) return [2, '']
-  const segno = path.join(dm, `accesso-${tipo}.json`)
-  const uscita = path.join(dm, `accesso-${tipo}.log`)
-  const adesso = (deps.adesso ?? Date.now)()
+  const copia = [1, JSON.stringify({ copia: argv.join(' ') })]
+  try {
+    d.comandoReale(argv)
+  } catch {
+    return copia
+  }
   const r = await d.conMutex(`accesso:${tipo}`, 2000, async () => {
+    if ((await d.conMutex(`accesso-vivo:${tipo}`, 0, () => true)).occupato) return [3, '']
+    let p
     try {
-      const s = JSON.parse(fs.readFileSync(segno, 'utf8'))
-      if (adesso - s.inizio < 180_000 && (deps.vivo ?? d.vivo)(s.pid)) return [3, '']
-    } catch {
-      // nessun accesso in corso
-    }
-    fs.mkdirSync(dm, { recursive: true })
-    const fd = tipo === 'gh' ? fs.openSync(uscita, 'w', 0o600) : 'ignore'
-    try {
-      const p = deps.avvia ? deps.avvia(argv, fd) : (() => {
-        const [eseguibile, argomenti] = d.comandoReale(argv)
-        return spawn(eseguibile, argomenti, { stdio: ['ignore', fd, fd], detached: true, windowsHide: true })
-      })()
+      p = spawn(process.execPath, [ACCESSO, tipo, ...argv], { stdio: ['ignore', 'pipe', 'ignore'], detached: true, windowsHide: true })
       await new Promise((ok, ko) => { p.once('spawn', ok); p.once('error', ko) })
-      p.unref?.()
-      d.scriviAtomico(segno, JSON.stringify({ pid: p.pid, inizio: adesso }))
-      let codice
-      for (let i = 0; tipo === 'gh' && i < (deps.attese ?? 16) && !codice; i++) {
-        codice = /\b([A-Z0-9]{4}-[A-Z0-9]{4})\b/.exec(fs.readFileSync(uscita, 'utf8'))?.[1]
-        if (!codice) await new Promise(ok => setTimeout(ok, 500))
-      }
-      return [0, JSON.stringify(codice ? { codice } : {})]
     } catch {
-      return [1, JSON.stringify({ copia: argv.join(' ') })]
-    } finally {
-      if (typeof fd === 'number') {
-        fs.closeSync(fd)
-        try {
-          fs.rmSync(uscita, { force: true })
-        } catch {
-          // Tenuto aperto dal login (Windows senza condivisione in cancellazione): lo svuota il prossimo «Collega GitHub».
-        }
-      }
+      return copia
     }
+    let uscita = ''
+    p.stdout.on('data', b => { uscita = (uscita + b.toString('utf8')).slice(-200) })
+    const attendi = async (re, ms) => {
+      for (let t = 0; t < ms && !re.test(uscita); t += 100) await new Promise(ok => setTimeout(ok, 100))
+      return re.exec(uscita)
+    }
+    const stato = (await attendi(/^(pronto|errore|occupato)$/m, 5000))?.[1]
+    const codice = stato === 'pronto' && tipo === 'gh' ? (await attendi(/^codice ([A-Z0-9]{4}-[A-Z0-9]{4})$/m, deps.attesaCodice ?? 8000))?.[1] : undefined
+    if (stato !== 'pronto') p.kill()
+    p.stdout.destroy()
+    p.unref()
+    return stato === 'occupato' ? [3, ''] : stato === 'pronto' ? [0, JSON.stringify(codice ? { codice } : {})] : copia
   })
   return r.occupato ? [3, ''] : r.valore
 }
@@ -519,11 +511,11 @@ async function comando(cmd, a, stdin, opz = {}) {
   if (cmd === 'libera-api' && !a.length) return d.esci(0, JSON.stringify(await liberaApi(dm)))
   if (cmd === 'termina-api' && !a.length) return d.esci(0, JSON.stringify(await terminaApi(dm)))
   if (cmd === 'stato-esecuzione' && a.length === 1) return d.esci(0, JSON.stringify(statoEsecuzione(a[0])))
-  if (cmd === 'accedi' && a.length === 1) return d.esci(...(await accedi(a[0], dm)))
+  if (cmd === 'accedi' && a.length === 1) return d.esci(...(await accedi(a[0])))
   return d.esci(2, '')
 }
 
 module.exports = {
-  comando, lanciaApi, eseguiApi, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, prenotaSpesa, contaSpesa,
+  comando, lanciaApi, eseguiApi, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
   leggiSpesa, spesoNelMese, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
 }

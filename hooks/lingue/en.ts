@@ -871,9 +871,8 @@ const en = {
   "ese.chiavePercorso": "In /config, open chip-manager and paste the key in «Anthropic API (credits)». The value never goes through the panel.",
   "ese.fontiOk": "Settings compatible with API runs",
   "ese.fontiNo": { one: "{n} settings source blocks API runs", other: "{n} settings sources block API runs" },
-  "ese.fonteNo": "{fonte}: a setting changes who pays or where requests go. The mod never edits it: change it yourself.",
+  "ese.fonteNo": "{fonte}: the setting {chiavi} changes who pays or where requests go. The mod never edits it: change it yourself.",
   "ese.ambienteNo": "ANTHROPIC_API_KEY is set in this computer's environment: API runs stay blocked while it is there.",
-  "ese.apriFile": "Open the file",
   "ese.fonte.utente": "User settings",
   "ese.fonte.progetto": "Project settings",
   "ese.fonte.locale": "Local project settings",
@@ -886,8 +885,10 @@ const en = {
   "ese.guidaChiudi": "Close",
   "ese.guidaFatta": "Execution is set up: everything is ready",
   "ese.guidaBudget": "Write the monthly budget in «Monthly budget (USD)» below, then press Apply.",
-  "ese.fileIgnoto": "That file is not among the checked ones: check again",
-  "ese.apriFallito": "Could not open {file}",
+  "ese.fonteNonValida": "{fonte}: cannot be read or is not a valid settings object, so API runs stay blocked. The mod never edits it.",
+  "ese.fonte.flag": "Command-line settings (--settings)",
+  "ese.copiaPercorso": "Copy path",
+  "ese.percorsoCopiato": "Path copied",
   // ‹fine›
 } satisfies Record<string, Voce>
 

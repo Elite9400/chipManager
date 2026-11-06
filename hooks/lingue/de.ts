@@ -869,9 +869,8 @@ const de: Dizionario = {
   "ese.chiavePercorso": "Öffne in /config chip-manager und füge den Schlüssel in «Anthropic API (credits)» ein. Der Wert läuft nie über das Panel.",
   "ese.fontiOk": "Einstellungen mit API-Ausführungen vereinbar",
   "ese.fontiNo": { one: "{n} Einstellungsquelle blockiert API-Ausführungen", other: "{n} Einstellungsquellen blockieren API-Ausführungen" },
-  "ese.fonteNo": "{fonte}: eine Einstellung ändert, wer zahlt oder wohin Anfragen gehen. Die Mod ändert sie nie: ändere sie selbst.",
+  "ese.fonteNo": "{fonte}: die Einstellung {chiavi} ändert, wer zahlt oder wohin Anfragen gehen. Die Mod ändert sie nie: ändere sie selbst.",
   "ese.ambienteNo": "ANTHROPIC_API_KEY ist in der Umgebung dieses Computers gesetzt: API-Ausführungen bleiben blockiert, solange sie da ist.",
-  "ese.apriFile": "Datei öffnen",
   "ese.fonte.utente": "Benutzereinstellungen",
   "ese.fonte.progetto": "Projekteinstellungen",
   "ese.fonte.locale": "Lokale Projekteinstellungen",
@@ -884,8 +883,10 @@ const de: Dizionario = {
   "ese.guidaChiudi": "Schließen",
   "ese.guidaFatta": "Ausführung eingerichtet: alles bereit",
   "ese.guidaBudget": "Trage das Budget unten in «Monatsbudget (USD)» ein und drücke dann Anwenden.",
-  "ese.fileIgnoto": "Diese Datei gehört nicht zu den geprüften: erneut prüfen",
-  "ese.apriFallito": "{file} ließ sich nicht öffnen",
+  "ese.fonteNonValida": "{fonte}: nicht lesbar oder kein gültiges Einstellungsobjekt, daher bleiben API-Ausführungen blockiert. Die Mod ändert es nie.",
+  "ese.fonte.flag": "Einstellungen der Befehlszeile (--settings)",
+  "ese.copiaPercorso": "Pfad kopieren",
+  "ese.percorsoCopiato": "Pfad kopiert",
   // ‹fine›
 }
 

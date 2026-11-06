@@ -869,9 +869,8 @@ const pt: Dizionario = {
   "ese.chiavePercorso": "Em /config abra chip-manager e cole a chave em «Anthropic API (credits)». O valor nunca passa pelo painel.",
   "ese.fontiOk": "Configurações compatíveis com as execuções API",
   "ese.fontiNo": { one: "{n} fonte de configurações bloqueia as execuções API", other: "{n} fontes de configurações bloqueiam as execuções API" },
-  "ese.fonteNo": "{fonte}: uma configuração muda quem paga ou para onde vão as requisições. A mod nunca a altera: altere-a você.",
+  "ese.fonteNo": "{fonte}: a configuração {chiavi} muda quem paga ou para onde vão as requisições. A mod nunca a altera: altere-a você.",
   "ese.ambienteNo": "ANTHROPIC_API_KEY está definida no ambiente deste computador: as execuções API ficam bloqueadas enquanto existir.",
-  "ese.apriFile": "Abrir o arquivo",
   "ese.fonte.utente": "Configurações do usuário",
   "ese.fonte.progetto": "Configurações do projeto",
   "ese.fonte.locale": "Configurações locais do projeto",
@@ -884,8 +883,10 @@ const pt: Dizionario = {
   "ese.guidaChiudi": "Fechar",
   "ese.guidaFatta": "Execução configurada: tudo pronto",
   "ese.guidaBudget": "Escreva o orçamento em «Orçamento mensal (USD)» abaixo e depois pressione Aplicar.",
-  "ese.fileIgnoto": "Esse arquivo não está entre os verificados: verifique de novo",
-  "ese.apriFallito": "Não foi possível abrir {file}",
+  "ese.fonteNonValida": "{fonte}: não pode ser lido ou não é um objeto de configurações válido, então as execuções API ficam bloqueadas. A mod nunca o altera.",
+  "ese.fonte.flag": "Configurações da linha de comando (--settings)",
+  "ese.copiaPercorso": "Copiar caminho",
+  "ese.percorsoCopiato": "Caminho copiado",
   // ‹fine›
 }
 

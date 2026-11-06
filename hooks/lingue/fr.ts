@@ -869,9 +869,8 @@ const fr: Dizionario = {
   "ese.chiavePercorso": "Dans /config, ouvrez chip-manager et collez la clé dans « Anthropic API (credits) ». La valeur ne passe jamais par le panneau.",
   "ese.fontiOk": "Paramètres compatibles avec les exécutions API",
   "ese.fontiNo": { one: "{n} source de paramètres bloque les exécutions API", other: "{n} sources de paramètres bloquent les exécutions API" },
-  "ese.fonteNo": "{fonte} : un paramètre change qui paie ou où vont les requêtes. Le mod ne le modifie jamais : changez-le vous-même.",
+  "ese.fonteNo": "{fonte} : le paramètre {chiavi} change qui paie ou où vont les requêtes. Le mod ne le modifie jamais : changez-le vous-même.",
   "ese.ambienteNo": "ANTHROPIC_API_KEY est définie dans l'environnement de cet ordinateur : les exécutions API restent bloquées tant qu'elle y est.",
-  "ese.apriFile": "Ouvrir le fichier",
   "ese.fonte.utente": "Paramètres utilisateur",
   "ese.fonte.progetto": "Paramètres du projet",
   "ese.fonte.locale": "Paramètres locaux du projet",
@@ -884,8 +883,10 @@ const fr: Dizionario = {
   "ese.guidaChiudi": "Fermer",
   "ese.guidaFatta": "Exécution configurée : tout est prêt",
   "ese.guidaBudget": "Saisissez le budget dans « Budget mensuel (USD) » ci-dessous, puis appuyez sur Appliquer.",
-  "ese.fileIgnoto": "Ce fichier ne fait pas partie de ceux vérifiés : revérifiez",
-  "ese.apriFallito": "Impossible d'ouvrir {file}",
+  "ese.fonteNonValida": "{fonte} : illisible ou pas un objet de paramètres valide, donc les exécutions API restent bloquées. Le mod ne le modifie jamais.",
+  "ese.fonte.flag": "Paramètres de ligne de commande (--settings)",
+  "ese.copiaPercorso": "Copier le chemin",
+  "ese.percorsoCopiato": "Chemin copié",
   // ‹fine›
 }
 

@@ -736,10 +736,17 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       if (p === 'fonti')
         return (k?.fonti ?? []).map(f => (
           <Box key={`${pre}-fonte-${f.nome}`} flexDirection="column">
-            <Text key={`${pre}-fonte-${f.nome}-testo`} wrap="wrap">{f.nome === 'ambiente' ? T('ese.ambienteNo') : T('ese.fonteNo', { fonte: T(`ese.fonte.${f.nome}`) })}</Text>
-            {f.file ? <Text key={`${pre}-fonte-${f.nome}-file`} size="caption" dimColor wrap="truncate-middle">{f.file}</Text> : null}
-            {/* Un'etichetta per file: con più fonti bloccate i pulsanti restano distinti. */}
-            {f.file && f.nome !== 'ambiente' ? <Button key={`${pre}-fonte-${f.nome}-apri`} plain label={`${T('ese.apriFile')} · ${T(`ese.fonte.${f.nome}`)}`} onPress={() => void esegui('esecuzione', () => c.apriFileImpostazioni(f.file!), '')} /> : null}
+            <Text key={`${pre}-fonte-${f.nome}-testo`} wrap="wrap">
+              {f.nome === 'ambiente' ? T('ese.ambienteNo')
+                : f.illeggibile ? T('ese.fonteNonValida', { fonte: T(`ese.fonte.${f.nome}`) })
+                : T('ese.fonteNo', { fonte: T(`ese.fonte.${f.nome}`), chiavi: (f.chiavi ?? []).join(', ') })}
+            </Text>
+            {f.file ? <Text key={`${pre}-fonte-${f.nome}-file`} size="caption" dimColor wrap="wrap">{f.file}</Text> : null}
+            {/* Mai aperto con un'app esterna (potrebbe modificarlo): solo il percorso da copiare, un'etichetta per file. */}
+            {f.file && f.nome !== 'ambiente' ? (
+              <Button key={`${pre}-fonte-${f.nome}-copia`} plain label={`${T('ese.copiaPercorso')} · ${T(`ese.fonte.${f.nome}`)}`}
+                onPress={() => void $.ui.copy({ text: f.file! }).then(x => x.isCopied && $.ui.toast(T('ese.percorsoCopiato')))} />
+            ) : null}
           </Box>
         ))
       return [didascalia(`${pre}-budget-nota`, T('ese.guidaBudget'))]

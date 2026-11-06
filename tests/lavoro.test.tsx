@@ -576,9 +576,12 @@ test('F6.7 lingue: Esecuzione con tutto da fare e ogni passo della procedura gui
   const ESEC = JSON.stringify({
     claude: { trovato: true, loggedIn: false },
     github: { trovato: true, loggedIn: false, remote: false },
-    fonti: [{ nome: 'gestite', file: 'C:/Program Files/ClaudeCode/managed-settings.json' }, { nome: 'locale', file: 'X:/repo/.claude/settings.local.json' }, { nome: 'ambiente' }],
+    fonti: [{ nome: 'gestite', file: 'C:/Program Files/ClaudeCode/managed-settings.json', chiavi: ['forceLoginGatewayUrl', 'env.ANTHROPIC_BEDROCK_BASE_URL'] },
+      { nome: 'locale', file: 'X:/repo/.claude/settings.local.json', illeggibile: true }, { nome: 'ambiente', chiavi: ['ANTHROPIC_API_KEY'] }],
   })
   const amb = ambiente(on, [], [], { esecuzione: ESEC })
+  // Le fonti dell'host: la riga di comando con una chiave vietata, le altre pulite.
+  on('settings.read', (_, e) => ({ value: ((e as { source?: string }).source === 'flag' ? { apiKeyHelper: 'x' } : {}) as never }))
   mock.clock(on)
   const pausa = () => new Promise<void>(ok => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(ok, 5))
   for (const lingua of ['en', 'it', 'es', 'fr', 'de', 'pt']) {

@@ -500,13 +500,17 @@ export function destinazioniPer(a: Azione, regole: Regole, lista: readonly Azion
  * che non è un oggetto vale come vietata.
  */
 export function impostazioniApiVietate(s: unknown): boolean {
-  if (!s || typeof s !== 'object' || Array.isArray(s)) return true
+  return chiaviApiVietate(s)?.length !== 0
+}
+
+/** F6.7: le chiavi responsabili (`env.NOME` per l'ambiente), mai i valori; null se la forma non è un oggetto. */
+export function chiaviApiVietate(s: unknown): string[] | null {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return null
   const o = s as Record<string, unknown>
-  if (o.env !== undefined && (!o.env || typeof o.env !== 'object' || Array.isArray(o.env))) return true
-  const env = Object.keys((o.env as Record<string, unknown> | undefined) ?? {})
-  return env.some(k => /^ANTHROPIC_(.*_)?(BASE_URL|AUTH_TOKEN|API_KEY)$/.test(k) || /^(CLAUDE_CODE_USE_|ANTHROPIC_(BEDROCK|VERTEX|FOUNDRY)_)/.test(k) ||
-      ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS'].includes(k)) ||
-    Object.keys(o).some(k => k.startsWith('forceLogin') || ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'].includes(k))
+  if (o.env !== undefined && (!o.env || typeof o.env !== 'object' || Array.isArray(o.env))) return null
+  const env = Object.keys((o.env as Record<string, unknown> | undefined) ?? {}).filter(k => /^ANTHROPIC_(.*_)?(BASE_URL|AUTH_TOKEN|API_KEY)$/.test(k) ||
+    /^(CLAUDE_CODE_USE_|ANTHROPIC_(BEDROCK|VERTEX|FOUNDRY)_)/.test(k) || ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS'].includes(k))
+  return [...env.map(k => `env.${k}`), ...Object.keys(o).filter(k => k.startsWith('forceLogin') || ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'].includes(k))]
 }
 
 /**
@@ -516,12 +520,13 @@ export function impostazioniApiVietate(s: unknown): boolean {
 export function controlloDa(v: unknown): ControlloEsecuzione | undefined {
   const o = v as { claude?: Record<string, unknown>; github?: Record<string, unknown>; fonti?: unknown }
   if (!o || typeof o !== 'object' || !o.claude || !o.github || !Array.isArray(o.fonti)) return undefined
-  const NOMI = ['utente', 'progetto', 'locale', 'gestite', 'ambiente'] as const
+  const NOMI = ['utente', 'progetto', 'locale', 'gestite', 'flag', 'ambiente'] as const
   const fonti: ControlloEsecuzione['fonti'] = []
   for (const f of o.fonti as Record<string, unknown>[]) {
     const nome = NOMI.find(n => n === f?.nome)
     if (!nome) return undefined
-    fonti.push({ nome, ...(typeof f.file === 'string' && f.file.length < 500 && { file: f.file }) })
+    const chiavi = Array.isArray(f.chiavi) ? f.chiavi.filter((k): k is string => typeof k === 'string' && /^[A-Za-z0-9_.]{1,80}$/.test(k)).slice(0, 20) : []
+    fonti.push({ nome, ...(typeof f.file === 'string' && f.file.length < 500 && { file: f.file }), ...(chiavi.length && { chiavi }), ...(f.illeggibile === true && { illeggibile: true }) })
   }
   const metodo = o.claude.metodo
   const host = o.github.host

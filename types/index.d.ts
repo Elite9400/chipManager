@@ -251,8 +251,11 @@ export type LockApi = { motivo: 'in-corso' | 'senza-pid' | 'discendenti' | 'chia
 export type ControlloEsecuzione = {
   claude: { trovato: boolean; loggedIn?: boolean; metodo?: string }
   github: { trovato: boolean; loggedIn: boolean; remote: boolean; host?: string }
-  /** Le fonti di impostazioni che bloccano `api-claude` (nome e file; `ambiente` è la variabile ANTHROPIC_API_KEY). */
-  fonti: { nome: 'utente' | 'progetto' | 'locale' | 'gestite' | 'ambiente'; file?: string }[]
+  /**
+   * Le fonti che bloccano `api-claude`, dallo stesso controllo dell'avvio (file dell'helper e fonti dell'host): il file, le
+   * chiavi di impostazione responsabili (mai i valori), o `illeggibile`. `ambiente` è la variabile ANTHROPIC_API_KEY.
+   */
+  fonti: { nome: 'utente' | 'progetto' | 'locale' | 'gestite' | 'flag' | 'ambiente'; file?: string; chiavi?: string[]; illeggibile?: boolean }[]
 }
 export type TipoAccesso = 'claude' | 'gh'
 export type PassoEsecuzione = 'claude' | 'github' | 'chiave' | 'fonti' | 'budget'

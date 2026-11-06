@@ -86,10 +86,9 @@ export type Ctx = {
   configura: (campi: Record<string, unknown>, attese: RisorseProgetto) => Promise<unknown>
   peso: (peso: Peso, attese: RisorseProgetto) => Promise<unknown>
   installa: (passo: number) => Promise<unknown>
-  /** F6.7: il controllo ✓/✗ della sezione Esecuzione, i login a un clic, i file delle impostazioni, il menu /config. */
+  /** F6.7: il controllo ✓/✗ della sezione Esecuzione, i login a un clic, il menu /config. */
   controllaEsecuzione: () => Promise<unknown>
   accedi: (tipo: TipoAccesso) => Promise<unknown>
-  apriFileImpostazioni: (file: string) => Promise<unknown>
   apriConfig: () => Promise<unknown>
   /** F6.2: «Libera» e «Termina» del lock della corsia API, ciascuno con il suo popup. */
   liberaApi: () => Promise<unknown>

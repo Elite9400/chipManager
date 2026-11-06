@@ -187,6 +187,10 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   const esec = {
     stato: (): string | null => JSON.stringify({ claude: { trovato: true, loggedIn: true }, github: { trovato: true, loggedIn: true, remote: true, host: 'github.com' }, fonti: [] }),
     accedi: (_tipo: string): [number, string] => [0, '{}'],
+    /** Le fonti di impostazioni dell'host (`$.settings.read`); null = non si legge. */
+    impostazioni: (_source: string): unknown => ({}),
+    /** La prossima risposta di `stato-esecuzione` resta sospesa finché questa promessa non dà il testo. */
+    sospesa: undefined as Promise<string> | undefined,
     controlli: 0,
     accessi: [] as string[],
   }
@@ -292,6 +296,9 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
       }) as never
     if (cmd === 'stato-esecuzione') {
       esec.controlli++
+      const sospesa = esec.sospesa
+      esec.sospesa = undefined
+      if (sospesa) return sospesa.then(t => fine(0, t)) as never
       const t = esec.stato()
       return t === null ? fine(2) : fine(0, t)
     }
@@ -300,6 +307,11 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
       return fine(...esec.accedi(String(file)))
     }
     return fine(cmd === 'occupata' ? 0 : 2)
+  })
+  on('settings.read', (_, e) => {
+    const v = esec.impostazioni(String((e as { source?: string }).source))
+    if (v === null) throw new Error('non leggibile')
+    return { value: v as never }
   })
   on('mcp.call', (_, e) => ({
     value: { isError: false, content: [{ type: 'text', text: e.tool === 'get_session' ? JSON.stringify({ model: 'claude-opus-5-5', effort: 'xhigh', permissionMode: 'auto' }) : '{}' }] } as never,
@@ -1178,9 +1190,11 @@ test('F6.7 stato: righe ✓/✗ calcolate dall\'helper; email, organizzazione e 
   amb.esec.stato = () => JSON.stringify({
     claude: { trovato: true, loggedIn: false, email: 'persona@esempio.it', orgName: 'Ditta Segreta' },
     github: { trovato: true, loggedIn: false, remote: false, host: 'gitlab.example.org', utente: 'utente-segreto' },
-    fonti: [{ nome: 'progetto', file: FILE_PROGETTO }, { nome: 'ambiente' }],
+    fonti: [{ nome: 'progetto', file: FILE_PROGETTO, chiavi: ['forceLoginMethod'] }, { nome: 'ambiente', chiavi: ['ANTHROPIC_API_KEY'] }],
     account: { email: 'persona@esempio.it' },
   })
+  // Una policy dell'host che l'avvio blocca: la sezione la mostra con la chiave responsabile, mai il valore.
+  amb.esec.impostazioni = source => (source === 'policy' ? { forceLoginGatewayUrl: 'https://gw.segreto.example' } : {})
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
@@ -1188,15 +1202,21 @@ test('F6.7 stato: righe ✓/✗ calcolate dall\'helper; email, organizzazione e 
   await ui.press({ key: 'sezione-esecuzione-premi' })
   await finoA(() => amb.esec.controlli > 0)
   await ui.press({ key: 'ese-ricontrolla' })
-  for (const t of ['Accesso a Claude non fatto', 'GitHub non collegato', 'Nessuna chiave impostata', '2 fonti di impostazioni bloccano le esecuzioni API', 'Budget del mese non impostato'])
+  for (const t of ['Accesso a Claude non fatto', 'GitHub non collegato', 'Nessuna chiave impostata', '3 fonti di impostazioni bloccano le esecuzioni API', 'Budget del mese non impostato'])
     expect([t, await ui.find({ type: 'Text', text: new RegExp(`${t}$`) })]).toEqual([t, expect.anything()])
-  expect(await ui.find({ type: 'Text', text: /^Impostazioni del progetto: un'impostazione cambia chi paga/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Impostazioni del progetto: l'impostazione forceLoginMethod cambia chi paga/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Impostazioni gestite \(policy\): l'impostazione forceLoginGatewayUrl cambia chi paga/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^ANTHROPIC_API_KEY è impostata nell'ambiente/ })).toBeDefined()
-  for (const k of ['ese-accedi-claude', 'ese-accedi-gh', 'ese-chiave-vai', 'ese-fonte-progetto-apri', 'ese-guida']) expect([k, await ui.find({ key: k })]).toEqual([k, expect.anything()])
+  for (const k of ['ese-accedi-claude', 'ese-accedi-gh', 'ese-chiave-vai', 'ese-fonte-progetto-copia', 'ese-guida']) expect([k, await ui.find({ key: k })]).toEqual([k, expect.anything()])
   const disegno = JSON.stringify(await ui.drawn())
-  for (const segreto of ['persona@esempio.it', 'Ditta Segreta', 'utente-segreto']) expect([segreto, disegno.includes(segreto)]).toEqual([segreto, false])
-  // Tutto a posto: solo ✓, nessuna azione, il metodo di accesso (mai l'account).
+  for (const segreto of ['persona@esempio.it', 'Ditta Segreta', 'utente-segreto', 'gw.segreto']) expect([segreto, disegno.includes(segreto)]).toEqual([segreto, false])
+  // Una fonte dell'host che non si legge blocca anche qui, come all'avvio.
   amb.esec.stato = () => JSON.stringify(ESEC_OK)
+  amb.esec.impostazioni = source => (source === 'flag' ? null : {})
+  await ui.press({ key: 'ese-ricontrolla' })
+  expect(await ui.find({ type: 'Text', text: /^Impostazioni da riga di comando \(--settings\): non si legge/ })).toBeDefined()
+  // Tutto a posto: solo ✓, nessuna azione, il metodo di accesso (mai l'account).
+  amb.esec.impostazioni = () => ({})
   await ui.press({ key: 'ese-ricontrolla' })
   expect(await ui.find({ type: 'Text', text: /Accesso a Claude fatto · claude\.ai$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /GitHub collegato e progetto su github\.com$/ })).toBeDefined()
@@ -1262,9 +1282,9 @@ test('F6.7 Accedi: un solo login per clic; ricontrollo ogni 5 s che si ferma a l
   await ui.unmount()
 })
 
-test('F6.7 Copia: se il login non parte la riga si copia; la chiave apre /config; «Apri il file» non scrive niente', async ($, on) => {
+test('F6.7 Copia: se il login non parte la riga si copia; la chiave apre /config; il file che blocca si copia, mai aperto con un\'app', async ($, on) => {
   const amb = ambiente(on)
-  amb.esec.stato = () => JSON.stringify({ ...ESEC_OK, claude: { trovato: true, loggedIn: false }, fonti: [{ nome: 'progetto', file: FILE_PROGETTO }] })
+  amb.esec.stato = () => JSON.stringify({ ...ESEC_OK, claude: { trovato: true, loggedIn: false }, fonti: [{ nome: 'progetto', file: FILE_PROGETTO, chiavi: ['apiKeyHelper'] }] })
   amb.esec.accedi = () => [1, '{"copia":"altro testo"}']
   const copiati: string[] = []
   on('ui.copy', (_, e) => (copiati.push(e.text), { value: { isCopied: true } as never }))
@@ -1286,10 +1306,11 @@ test('F6.7 Copia: se il login non parte la riga si copia; la chiave apre /config
   await ui.press({ key: 'ese-chiave-vai' })
   expect(comandi).toEqual(['config'])
   expect(await ui.find({ type: 'Text', text: /^In \/config apri chip-manager e incolla la chiave in «Anthropic API \(credits\)»/ })).toBeDefined()
-  const prima = amb.disco.get(FILE_PROGETTO)
-  await ui.press({ key: 'ese-fonte-progetto-apri' })
-  expect(amb.processi.filter(p => p[0] === 'xdg-open')).toEqual([['xdg-open', FILE_PROGETTO]])
-  expect(amb.disco.get(FILE_PROGETTO)).toBe(prima)
+  expect(await ui.find({ type: 'Text', text: FILE_PROGETTO })).toBeDefined()
+  await ui.press({ key: 'ese-fonte-progetto-copia' })
+  expect(copiati.at(-1)).toBe(FILE_PROGETTO)
+  expect(amb.toast.at(-1)).toBe('Percorso copiato')
+  expect(amb.processi.filter(p => ['xdg-open', 'open', 'explorer.exe'].includes(p[0]!))).toEqual([])
   await ui.unmount()
 })
 
@@ -1324,3 +1345,35 @@ test('F6.7 procedura guidata: i passi mancanti uno alla volta, ognuno si salta; 
   expect(await ui.find({ key: 'ese-guida-passo' })).toBeUndefined()
   await ui.unmount()
 })
+
+test('F6.7 ricontrollo: una risposta vecchia, tornata dopo un nuovo «Accedi», non ferma il ricontrollo nuovo', async ($, on) => {
+  const amb = ambiente(on)
+  amb.esec.stato = () => JSON.stringify({ ...ESEC_OK, github: { trovato: true, loggedIn: false, remote: true } })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  await finoA(() => amb.esec.controlli > 0)
+  await ui.press({ key: 'ese-ricontrolla' })
+  await ui.press({ key: 'ese-accedi-gh' })
+  for (let t = 0; t < 170_000; t += 5000) await clock.advance(5000)
+  // Il battito dei 175 s resta sospeso; a 180 s il ricontrollo scade e si preme di nuovo «Collega GitHub».
+  let rispondi!: (t: string) => void
+  amb.esec.sospesa = new Promise<string>(ok => (rispondi = ok))
+  await clock.advance(5000)
+  await clock.advance(5000)
+  await ui.press({ key: 'ese-accedi-gh' })
+  expect(amb.esec.accessi).toEqual(['gh', 'gh'])
+  // La risposta vecchia arriva ora, con l'accesso fatto: non tocca il ricontrollo nuovo, che al battito dopo ricontrolla.
+  rispondi(JSON.stringify(ESEC_OK))
+  for (let i = 0; i < 400 && !(await ui.find({ type: 'Text', text: /GitHub collegato e progetto su github\.com$/ })); i++) {
+    let giri = 0
+    await finoA(() => ++giri > 1)
+  }
+  const prima = amb.esec.controlli
+  await clock.advance(5000)
+  expect(amb.esec.controlli).toBe(prima + 1)
+  await ui.unmount()
+})
+
