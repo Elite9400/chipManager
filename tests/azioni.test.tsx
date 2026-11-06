@@ -2,6 +2,12 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 import {
+  CADENZA_INIZIALE,
+  contaConsumo,
+  diagnosticaHelper,
+  passoCadenza,
+  segnaLavori,
+  sommaSecchi,
   COLORE_EFFORT,
   bilancia,
   cartellaDati,
@@ -320,7 +326,7 @@ test('codex senza corsia, o routing senza la regola: bloccato', () => {
 // --- il pannello contro un engine finto --------------------------------------------------------------
 
 /** Engine finto: disco in memoria, helper (lock/CAS) e `gh` emulati, servizio di sessione scriptabile. */
-function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown } = {}) {
+function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown } = {}) {
   const disco = new Map<string, string>()
   const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
   const chiamate: { server: string; tool: string; args: Record<string, unknown> }[] = []
@@ -335,12 +341,22 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
   on('tool.list', () => ({ value: [...(opz.cli ? [] : [{ name: 'mcp__ccd_session__start_session' }]), ...(opz.strumenti ?? []).map(name => ({ name }))] as never }))
   on('session.repo', () => ({ value: { root: 'X:/repo', remote: 'https://github.com/acme/progetto.git', internal: false, repo: null } as never }))
   on('fs.exists', (_, e) => ({ value: [...disco.keys()].some(k => k === p(e.path) || k.startsWith(`${p(e.path)}/`)) }))
+  // Data e dimensione seguono il contenuto, come sul disco vero: la mod rilegge solo i file cambiati.
+  const impronta = (t: string) => [...t].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7)
   on('fs.list', (_, e) => ({
     value: [...disco.keys()]
       .filter(k => k.startsWith(`${p(e.path)}/`) && !k.slice(p(e.path).length + 1).includes('/'))
-      .map(k => ({ name: k.slice(p(e.path).length + 1), kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false })),
+      .map(k => ({ name: k.slice(p(e.path).length + 1), kind: 'file' as const, size: disco.get(k)!.length, mtimeMs: impronta(disco.get(k)!), isLink: false })),
   }))
+  on('fs.stat', (_, e) => {
+    const t = disco.get(p(e.path))
+    if (t === undefined) throw new Error('ENOENT')
+    return { value: { kind: 'file' as const, size: t.length, mtimeMs: impronta(t), isLink: false } }
+  })
+  on('ui.panes', () => ({ value: opz.nascosto ? [] : [{ id: 'chipManager', title: 'chipManager', isShown: true, isFocused: false, isPlaced: true }] }))
+  const letti: string[] = []
   on('fs.read', (_, e) => {
+    letti.push(p(e.path))
     const t = disco.get(p(e.path))
     if (t === undefined) throw new Error('ENOENT')
     return { value: t }
@@ -488,7 +504,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
           return []
         }
       })
-  return { disco, chiamate, toast, processi, azione, modello }
+  return { disco, chiamate, toast, processi, azione, modello, letti }
 }
 
 const PANE = (surface: 'desktop' | 'terminal') =>
@@ -2109,4 +2125,106 @@ test('2.3.1: piano letto senza finestre dopo l\'uso extra al 99%: l\'extra esce 
   expect(await ui.find({ type: 'Text', text: /^Nessun limite collegato · vai a Impostazioni$/ })).toBeDefined()
   await ui.press({ key: 'vista-lavoro' })
   await ui.unmount()
+})
+
+// --- 2.4.2 sobrietà: cadenza a tempo simulato e contatori ---------------------------------------------------
+
+test('cadenza: giro veloce solo con lavoro pendente; sessioni a 20 s solo a schermo, subito al ritorno', () => {
+  let c = segnaLavori(CADENZA_INIZIALE, ['giro', 'sessioni', 'traguardi', 'risorse'], 0)
+  const passo = (t: number, s: { pendente: boolean; aSchermo: boolean }) => {
+    const r = passoCadenza(c, t, s)
+    c = r.cadenza
+    return r.fare
+  }
+  // Nascosto e a riposo: a 20 e 40 s niente; a 60 s il giro; a 120 s le sessioni (0,5/min).
+  expect(passo(20_000, { pendente: false, aSchermo: false })).toEqual([])
+  expect(passo(40_000, { pendente: false, aSchermo: false })).toEqual([])
+  expect(passo(60_000, { pendente: false, aSchermo: false })).toEqual(['giro'])
+  expect(passo(120_000, { pendente: false, aSchermo: false })).toEqual(['giro', 'sessioni'])
+  // Compare lavoro pendente: il giro torna a 20 s; le sessioni restano lente finché non si è a schermo.
+  expect(passo(140_000, { pendente: true, aSchermo: false })).toEqual(['giro'])
+  // Torna a schermo: sessioni subito, poi ogni 20 s.
+  expect(passo(160_000, { pendente: true, aSchermo: true })).toEqual(['giro', 'sessioni'])
+  expect(passo(180_000, { pendente: true, aSchermo: true })).toEqual(['giro', 'sessioni'])
+  // Il lavoro sparisce: giro a 60 s.
+  expect(passo(200_000, { pendente: false, aSchermo: true })).toEqual(['sessioni'])
+  expect(passo(240_000, { pendente: false, aSchermo: true })).toEqual(['giro', 'sessioni'])
+  // Un battito in leggero anticipo vale.
+  expect(passo(259_500, { pendente: false, aSchermo: true })).toEqual(['sessioni'])
+  // Traguardi e risorse a 5 minuti.
+  expect(passo(300_000, { pendente: false, aSchermo: true })).toEqual(['giro', 'sessioni', 'traguardi', 'risorse'])
+})
+
+test('cadenza: dopo una sospensione un solo giro di recupero; dopo un errore si riprova alla cadenza normale', () => {
+  let c = segnaLavori(CADENZA_INIZIALE, ['giro', 'sessioni', 'traguardi', 'risorse'], 0)
+  // La macchina dorme un'ora: al risveglio ogni lavoro una volta, non uno per battito perso.
+  let r = passoCadenza(c, 3_600_000, { pendente: true, aSchermo: true })
+  expect(r.fare).toEqual(['giro', 'sessioni', 'traguardi', 'risorse'])
+  c = r.cadenza
+  r = passoCadenza(c, 3_600_500, { pendente: true, aSchermo: true })
+  expect(r.fare).toEqual([])
+  // Il lavoro è segnato quando parte: se fallisce, il battito dopo non lo ripete prima della sua cadenza.
+  r = passoCadenza(r.cadenza, 3_610_000, { pendente: true, aSchermo: true })
+  expect(r.fare).toEqual([])
+  expect(passoCadenza(r.cadenza, 3_620_000, { pendente: true, aSchermo: true }).fare).toEqual(['giro', 'sessioni'])
+  // Un orologio tornato indietro non blocca nulla.
+  expect(passoCadenza(r.cadenza, 1_000, { pendente: false, aSchermo: false }).fare).toEqual(['giro', 'sessioni', 'traguardi', 'risorse'])
+})
+
+test('consumo: finestra mobile di 10 minuti a secchi, memoria limitata; diagnostica dell’helper validata', () => {
+  let secchi = contaConsumo([], 0, { processi: 1 })
+  for (let m = 1; m <= 30; m++) secchi = contaConsumo(secchi, m * 60_000, { processi: 2, app: 1, byte: 1000, salti: 0 })
+  expect(secchi.length).toBeLessThanOrEqual(10)
+  const tot = sommaSecchi(secchi, 30 * 60_000, 0)
+  expect(tot).toEqual({ processi: 20, app: 10, byte: 10_000, byteLimiti: 0, salti: 0, da: 20 * 60_000 })
+  expect(sommaSecchi(secchi, 60 * 60_000, 0).processi).toBe(0)
+  expect(diagnosticaHelper({ diagnostica: { byte: 5, byteLimiti: 2, salti: 1, testo: 'x' } })).toEqual({ byte: 5, byteLimiti: 2, salti: 1 })
+  expect(diagnosticaHelper({ diagnostica: { byte: '5', salti: -1 } })).toEqual({ byte: 0, byteLimiti: 0, salti: 0 })
+  expect(diagnosticaHelper([])).toEqual({})
+})
+
+test('battito: pannello nascosto e niente da fare = sessioni ogni 2 minuti, giro ogni 60 s, mai la corsia Codex', async ($, on) => {
+  const amb = ambiente(on, { nascosto: true })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const sessioni = () => amb.processi.filter(x => x.argv[1]?.endsWith('/fornitori.cjs') && x.argv[2] === 'sessioni').length
+  const giri = () => amb.letti.filter(f => f.endsWith('/registro.json')).length
+  amb.disco.set('X:/orch/registro.json', '{"task":[],"prova":"nascosto"}')
+  const visti: number[][] = []
+  for (let i = 0; i < 5; i++) {
+    await clock.advance(20_000)
+    visti.push([sessioni(), giri()])
+  }
+  // Fino a 100 s: una sola lettura delle sessioni (quella dell'apertura) e un solo giro (al primo battito).
+  expect(visti).toEqual([[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]])
+  await clock.advance(20_000)
+  expect(sessioni()).toBe(2)
+  // A 120 s il secondo giro (60 s dopo il primo), con registro.json invariato: non si rilegge.
+  expect(giri()).toBe(1)
+  expect(amb.processi.some(x => x.argv.includes('occupata'))).toBe(false)
+})
+
+test('battito: con lavoro pendente il giro resta a 20 s; si rileggono solo i record e il registro cambiati', async ($, on) => {
+  const amb = ambiente(on)
+  const clock = mock.clock(on)
+  const uno = base('a-uno0001', 1, { repo: 'acme/progetto' })
+  amb.disco.set('X:/orch/azioni/a-uno0001.json', JSON.stringify(uno))
+  amb.disco.set('X:/orch/azioni/a-due0001.json', JSON.stringify(base('a-due0001', 2, { repo: 'acme/progetto' })))
+  amb.disco.set('X:/orch/registro.json', '{"task":[]}')
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(20_000)
+  const record = () => amb.letti.filter(f => f.startsWith('X:/orch/azioni/a-'))
+  const registro = () => amb.letti.filter(f => f.endsWith('/registro.json')).length
+  const prima = { record: record().length, registro: registro() }
+  await clock.advance(20_000)
+  // Nessun file cambiato: nessuna rilettura, ma il giro c'è stato (proposte = lavoro pendente).
+  expect(record().length).toBe(prima.record)
+  expect(registro()).toBe(prima.registro)
+  amb.disco.set('X:/orch/azioni/a-uno0001.json', JSON.stringify({ ...uno, versione: 1, titolo: 'Titolo cambiato altrove' }))
+  amb.disco.set('X:/orch/registro.json', '{"task":[],"nota":"cambiato"}')
+  await clock.advance(20_000)
+  expect(record().slice(prima.record)).toEqual(['X:/orch/azioni/a-uno0001.json'])
+  expect(registro()).toBe(prima.registro + 1)
+  // Proposte Claude soltanto: la corsia Codex non si interroga.
+  expect(amb.processi.some(x => x.argv.includes('occupata'))).toBe(false)
 })

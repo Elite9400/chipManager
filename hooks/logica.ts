@@ -1,5 +1,5 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
-import type { Azione, BoardProgetto, Chiamante, Corsia, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo, Vita } from '../types'
+import type { Azione, BoardProgetto, Chiamante, Consumo, Corsia, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo, Vita } from '../types'
 
 // --- regole (routing.json) ---------------------------------------------------------------------
 
@@ -1088,4 +1088,70 @@ export function sessioniCodex(json: unknown, radice: string, adesso: number): Se
       modello: testoBreve(s.modello, 60), effort: testoBreve(s.effort, 20), stato: s.inCorso === true ? ('in-corso' as const) : ('ferma' as const),
       contesto: token !== undefined && finestra ? Math.min(100, Math.round((token / finestra) * 100)) : undefined, token, attivita }]
   })
+}
+
+// --- cadenza dei lavori di sorveglianza e consumo di questa sessione (2.4.2) ---------------------------------
+
+export type Lavoro = 'giro' | 'sessioni' | 'traguardi' | 'risorse'
+export type Cadenza = { ultimi: Record<Lavoro, number>; aSchermo: boolean }
+// Mai fatti: al primo battito è tutto dovuto, qualunque sia l'orologio.
+export const CADENZA_INIZIALE: Cadenza = { ultimi: { giro: -Infinity, sessioni: -Infinity, traguardi: -Infinity, risorse: -Infinity }, aSchermo: false }
+/** Stati che tengono il giro veloce: l'orchestrazione non deve rallentare mentre c'è lavoro pendente. */
+export const STATI_PENDENTI: readonly StatoAzione[] = ['proposta', 'accodata', 'in-avvio', 'avviata', 'consegnata']
+// Il battito arriva ogni 20 s, mai esattamente: un lavoro da 20 s è dovuto anche a 19,5 s.
+const MARGINE_MS = 1_000
+
+/**
+ * Un battito: quali lavori fare adesso. Il giro va ogni 20 s con lavoro pendente, altrimenti ogni 60 s; le sessioni ogni
+ * 20 s con il pannello a schermo, altrimenti ogni 2 minuti, e subito quando torna a schermo; traguardi e risorse ogni 5
+ * minuti. Un lavoro si segna quando parte, riuscito o no: dopo un errore o una sospensione si riprova alla cadenza normale,
+ * una volta sola, senza raffiche. Un orologio tornato indietro rende tutto dovuto.
+ */
+export function passoCadenza(c: Cadenza, adesso: number, s: { pendente: boolean; aSchermo: boolean }): { cadenza: Cadenza; fare: Lavoro[] } {
+  const ogni: Record<Lavoro, number> = { giro: s.pendente ? 20_000 : 60_000, sessioni: s.aSchermo ? 20_000 : 120_000, traguardi: 300_000, risorse: 300_000 }
+  const tornato = s.aSchermo && !c.aSchermo
+  const fare = (Object.keys(ogni) as Lavoro[]).filter(k => adesso < c.ultimi[k] || adesso - c.ultimi[k] >= ogni[k] - MARGINE_MS || (k === 'sessioni' && tornato))
+  return { cadenza: segnaLavori({ ...c, aSchermo: s.aSchermo }, fare, adesso), fare }
+}
+
+/** Segna i lavori fatti fuori dal battito (apertura, «Aggiorna»): il battito non li ripete subito. */
+export function segnaLavori(c: Cadenza, fatti: readonly Lavoro[], adesso: number): Cadenza {
+  const ultimi = { ...c.ultimi }
+  for (const k of fatti) ultimi[k] = adesso
+  return { ...c, ultimi }
+}
+
+/** Contatori a minuti: al più 11 secchi, la memoria non cresce con la durata della sessione. */
+export type Secchi = { minuto: number; v: Omit<Consumo, 'da'> }[]
+const FINESTRA_MIN = 10
+
+export function contaConsumo(secchi: Secchi, adesso: number, delta: Partial<Omit<Consumo, 'da'>>): Secchi {
+  const minuto = Math.floor(adesso / 60_000)
+  const tenuti = secchi.filter(x => x.minuto > minuto - FINESTRA_MIN && x.minuto <= minuto)
+  let ultimo = tenuti[tenuti.length - 1]
+  if (!ultimo || ultimo.minuto !== minuto) tenuti.push((ultimo = { minuto, v: { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0 } }))
+  else tenuti[tenuti.length - 1] = ultimo = { minuto, v: { ...ultimo.v } }
+  for (const [k, n] of Object.entries(delta) as [keyof Omit<Consumo, 'da'>, number][]) if (Number.isFinite(n) && n > 0) ultimo.v[k] += n
+  return tenuti
+}
+
+/** Somma degli ultimi 10 minuti; `da` è l'inizio della finestra, o l'avvio della mod se più recente. */
+export function sommaSecchi(secchi: Secchi, adesso: number, avvio: number): Consumo {
+  const minuto = Math.floor(adesso / 60_000)
+  const tot: Consumo = { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, da: Math.max(avvio, adesso - FINESTRA_MIN * 60_000) }
+  for (const x of secchi) if (x.minuto > minuto - FINESTRA_MIN && x.minuto <= minuto) for (const k of ['processi', 'app', 'byte', 'byteLimiti', 'salti'] as const) tot[k] += x.v[k]
+  return tot
+}
+
+// I contatori di QUESTA sessione: in memoria, mai su disco. Ogni punto che avvia un processo o chiama l'app li tocca.
+const AVVIO = Date.now()
+let secchi: Secchi = []
+export const conta = (delta: Partial<Omit<Consumo, 'da'>>) => void (secchi = contaConsumo(secchi, Date.now(), delta))
+export const sommaConsumo = () => sommaSecchi(secchi, Date.now(), AVVIO)
+
+/** I contatori che l'helper restituisce (`diagnostica`), validati: tutto ciò che non è un numero non conta. */
+export function diagnosticaHelper(json: unknown): Partial<Omit<Consumo, 'da'>> {
+  const d = (json as { diagnostica?: Record<string, unknown> } | null)?.diagnostica
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e12 ? v : 0)
+  return d && typeof d === 'object' ? { byte: n(d.byte), byteLimiti: n(d.byteLimiti), salti: n(d.salti) } : {}
 }

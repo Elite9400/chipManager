@@ -1,6 +1,6 @@
 import type { EngineInterface } from 'claude-code'
 import type { Limite, Regole, Risorse } from '../types'
-import { FORNITORI } from './logica'
+import { conta, diagnosticaHelper, FORNITORI } from './logica'
 
 export const RISORSE_VUOTE: Risorse = { limiti: [], proxy: 'non verificato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } }
 export const FREE_COMMIT = 'fb07845faf7cf986ea9f3692e055076035dd8739'
@@ -17,11 +17,15 @@ export async function fonte($: EngineInterface, options: Record<string, unknown>
   if (typeof options.deepseekKey === 'string' && options.deepseekKey) env.CHIPMANAGER_DEEPSEEK_KEY = options.deepseekKey
   if (typeof options.freellmapiKey === 'string' && options.freellmapiKey) env.CHIPMANAGER_FREELLMAPI_KEY = options.freellmapiKey
   try {
+    conta({ processi: 1 })
     const r = await $.process.run(['node', `${$.plugin.root.replace(/\\/g, '/')}/strumenti/fornitori.cjs`, comando],
       { stdin: JSON.stringify(input), env, timeoutMs: comando === 'completa' ? 35_000 : 20_000 })
     if (r.exitCode !== 0 || r.isStdoutTruncated) throw new Error('fonte non disponibile')
     if (Object.values(env).some(k => r.stdout.includes(k))) throw new Error('risposta non utilizzabile')
-    return JSON.parse(r.stdout) as unknown
+    const json = JSON.parse(r.stdout) as unknown
+    // Byte letti e salti dell'helper Codex: solo numeri, per la diagnostica di questa sessione.
+    conta(diagnosticaHelper(json))
+    return json
   } catch { throw new Error('Fonte non disponibile: nessun dettaglio delle credenziali viene registrato') }
 }
 
@@ -115,6 +119,7 @@ export async function osservaRisorse($: EngineInterface, options: Record<string,
       const disponibile = (await $.tool.list()).some(t => t.name === 'mcp__ccd_session_mgmt__get_usage')
       const m = disponibile ? await new Promise<Awaited<ReturnType<EngineInterface['mcp']['call']>> | null>(ok => {
         const timer = $.clock.after(4000, () => ok(null))
+        conta({ app: 1 })
         void $.mcp.call('ccd_session_mgmt', 'get_usage', {}).then(risposta => { timer.cancel(); ok(risposta) }, () => { timer.cancel(); ok(null) })
       }) : null
       if (m && !m.isError) {

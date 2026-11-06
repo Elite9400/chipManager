@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Azione, BoardProgetto, Chiamante, Contesto, Corsia, Destinazione, Limite, Motore, Permessi, Peso, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
+import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Limite, Motore, Permessi, Peso, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
 import {
   attive,
   bilancia,
@@ -38,13 +38,19 @@ import {
   sensibile,
   sessioniClaude,
   sessioniCodex,
+  CADENZA_INIZIALE,
+  conta,
+  passoCadenza,
+  segnaLavori,
+  sommaConsumo,
+  STATI_PENDENTI,
   traguardiDa,
   TRANSIZIONI,
   transizione,
   violazioni,
   violazioniAvvio,
 } from './logica'
-import type { Piano, Strumenti } from './logica'
+import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
 import { board, hash, improntaBoard, testoRiassunto } from './board'
 import type { Piano as PianoBoard } from './board'
 import { disegna } from './pannello'
@@ -67,6 +73,7 @@ const risorse = atom({ plugin: 'chip-manager', key: 'risorse' } as const, RISORS
 const ultimeMisure = atom({ plugin: 'chip-manager', key: 'ultimeMisure' } as const, {} as Record<string, Limite>, { shape: 'misure-1' })
 const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { lista: [] } as Sessioni, { shape: 'sessioni-1' })
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
+const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, da: 0 } as Consumo, { shape: 'consumo-1' })
 
 const PANE = 'chipManager'
 const TITOLO = 'chipManager'
@@ -79,6 +86,7 @@ class Conflitto extends Error {}
 
 // Gettoni dei tentativi la cui chiamata a start_session è ancora in corso in questo processo.
 const inVolo = new Set<string>()
+
 
 // --- disco: un file per azione, scritto solo dall'helper (mutex del sistema operativo + CAS) ------
 
@@ -123,6 +131,7 @@ const ora = () => new Date().toISOString()
 const gettone = () => `az-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 7)}`
 
 async function helper($: Eng, args: string[], stdin?: string) {
+  conta({ processi: 1 })
   const r = await $.process.run(['node', strumenti($).disco, ...args], { stdin, timeoutMs: 20_000 })
   return { codice: r.exitCode, testo: r.stdout.trim(), errore: r.stderr.trim() }
 }
@@ -147,19 +156,30 @@ async function carica($: Eng, opz: { completa?: boolean } = {}): Promise<Letti> 
   return ancora
 }
 
+/** Ultima lettura riuscita di ogni record (percorso → data, dimensione, azione): un file invariato non si rilegge. */
+const letture = new Map<string, { mtimeMs: number; size: number; a: Azione }>()
+
 async function leggiTutte($: Eng): Promise<Letti> {
   const dir = await cartella($)
   const voci = (await $.fs.exists(dir)) ? await $.fs.list(dir) : []
   const rotte: { nome: string; motivo: string }[] = []
+  const visti = new Set<string>()
   const lette = await Promise.all(
     voci
       .filter(v => v.kind === 'file' && /^a-[a-z0-9]+\.json$/.test(v.name))
       .map(async v => {
+        const f = `${dir}/${v.name}`
+        visti.add(f)
+        const prima = letture.get(f)
+        // Le scritture passano da un file nuovo e una rinomina: data o dimensione cambiano a ogni versione.
+        if (prima && prima.mtimeMs === v.mtimeMs && prima.size === v.size) return prima.a
         try {
-          const a = normalizza(JSON.parse((await $.fs.read(`${dir}/${v.name}`)) as string))
+          const a = normalizza(JSON.parse((await $.fs.read(f)) as string))
           if (typeof a === 'string') throw new Error(a)
+          letture.set(f, { mtimeMs: v.mtimeMs, size: v.size, a })
           return a
         } catch (err) {
+          letture.delete(f)
           // Un record illeggibile NON è un record assente: si mostra (nome e motivo), una dipendenza che
           // punta a lui resta bloccata, e le decisioni automatiche si fermano (`carica({ completa })`).
           rotte.push({ nome: v.name, motivo: String((err as Error)?.message ?? err).slice(0, 80) })
@@ -167,6 +187,7 @@ async function leggiTutte($: Eng): Promise<Letti> {
         }
       }),
   )
+  for (const f of letture.keys()) if (!visti.has(f)) letture.delete(f)
   // L'insieme dei file visti viaggia con la lista: la prenotazione lo fa ricontrollare sotto mutex,
   // così una proposta comparsa dopo la lettura invalida la decisione.
   const lista: Letti = Object.assign(
@@ -238,6 +259,7 @@ async function chiSonoIo($: Eng): Promise<Chiamante> {
     c.lanciatore = (await $.tool.list()).some(t => t.name === 'mcp__ccd_session__start_session') ? 'desktop' : 'cli'
   } catch { /* capacità ignota: non si tenta un effetto per scoprirla */ }
   try {
+    conta({ app: 1 })
     const s = JSON.parse(testoMcp(await $.mcp.call('ccd_session_mgmt', 'get_session', { session_id: 'self' }))) as {
       model?: unknown
       effort?: unknown
@@ -302,6 +324,7 @@ const dettagli = new Map<string, { letto: number; d: Pick<SessioneProgetto, 'mod
 const MAX_DETTAGLI = 8
 
 async function chiamaApp($: Eng, tool: string, args: Record<string, unknown>) {
+  conta({ app: 1 })
   const r = await $.mcp.call('ccd_session_mgmt', tool, args)
   if (r.isError) throw new Error(`${tool} non disponibile`)
   return JSON.parse(testoMcp(r)) as unknown
@@ -331,6 +354,8 @@ async function leggiSessioni($: Eng) {
   // Le sonde dell'app (get_usage) seguono la politica del progetto come i limiti: regole illeggibili o solo locale = niente.
   const sonde = r.lette && !r.risorse.soloLocale && r.risorse.fornitori.includes('claude')
   const daLeggere = desktop ? [io, ...claude.sort((x, y) => Number(y.stato === 'in-corso') - Number(x.stato === 'in-corso')).slice(0, MAX_DETTAGLI - 1)] : []
+  // Escono le sessioni non più nell'elenco: la mappa non cresce con la vita della sessione.
+  for (const k of dettagli.keys()) if (k !== io.id && !claude.some(s => s.id === k)) dettagli.delete(k)
   await Promise.all(
     daLeggere.map(async s => {
       const c = dettagli.get(s.id)
@@ -412,10 +437,12 @@ async function decidi(
   opz: { approvata?: number; qui?: boolean; cloudApprovato?: number; terzoApprovato?: number; manuale?: boolean } = {},
 ): Promise<Decisione> {
   for (let prova = 0; prova < 3; prova++) {
-    const [tutte, r, chi, codex] = await Promise.all([carica($, { completa: true }), leggiRegole($), chiSonoIo($), codexOccupato($)])
+    const [tutte, r, chi] = await Promise.all([carica($, { completa: true }), leggiRegole($), chiSonoIo($)])
     const a = tutte.find(x => x.id === id)
     const ammessi = opz.qui ? ['proposta'] : ['proposta', 'accodata', 'fallita']
     if (!a || !ammessi.includes(a.stato)) return { nulla: a }
+    // La corsia della macchina conta solo per un'azione Codex: per le altre nessun processo in più.
+    const codex = a.esecutore === 'codex' ? await codexOccupato($) : false
     if (opz.approvata !== undefined && a.versione !== opz.approvata)
       throw new Error(`«${a.titolo}» è cambiata dopo la conferma: rivedila e riavviala`)
     if (a.esecutore === 'freellmapi' && opz.terzoApprovato !== a.versione) return { blocchi: ['FreeLLMAPI: serve conferma del testo di questa versione'] }
@@ -514,6 +541,7 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
   inVolo.add(presa.tentativo!)
   try {
     try {
+      conta({ app: 1 })
       risposta = await $.mcp.call('ccd_session', 'start_session', args)
     } catch (err) {
       // Errore di trasporto: la sessione può essere partita lo stesso. Esito incerto, nessun secondo avvio:
@@ -570,6 +598,7 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
  * associa, più stretta è la finestra in cui il task può chiudersi senza che il pannello lo sappia suo.
  */
 async function associaSubito($: Eng, a: Azione) {
+  conta({ app: 1 })
   const s = JSON.parse(testoMcp(await $.mcp.call('ccd_session_mgmt', 'get_session', { session_id: a.sessione }))) as { branch?: unknown }
   if (typeof s.branch !== 'string' || !s.branch) return
   const registro = await $.fs
@@ -626,10 +655,11 @@ async function chiediQui($: Eng, options: Record<string, unknown>, id: string) {
 
 /** «Avvia tutte»: piano, conferma con il riepilogo, poi ogni avvio ridecide sotto controllo atomico. */
 async function avviaTutte($: Eng, options: Record<string, unknown>) {
-  const [tutte, r, chi, codex] = await Promise.all([carica($, { completa: true }), leggiRegole($), chiSonoIo($), codexOccupato($)])
+  const [tutte, r, chi] = await Promise.all([carica($, { completa: true }), leggiRegole($), chiSonoIo($)])
   const lista = delProgetto(tutte, chi)
   const max = maxParalleli(options)
   const proposte = lista.filter(a => a.stato === 'proposta')
+  const codex = proposte.some(a => a.esecutore === 'codex') ? await codexOccupato($) : false
   // Le violazioni della configurazione effettiva (chi avvia) entrano nel piano: una bloccata non consuma posti.
   const piano: Piano = pianifica(proposte, lista, r, max, codex, a => violazioniAvvio(a, r, tutte, chi), (await read($, risorse)).limiti)
   if (!piano.avvia.length && !piano.coda.length) {
@@ -678,6 +708,7 @@ async function avviaTutte($: Eng, options: Record<string, unknown>) {
 async function ritrova($: Eng, a: Azione): Promise<string | undefined | 'errore'> {
   try {
     const LIMITE = 200
+    conta({ app: 1 })
     const r = await $.mcp.call('ccd_session_mgmt', 'list_sessions', { linked: true, include_archived: true, limit: LIMITE })
     if (r.isError) return 'errore'
     const l = JSON.parse(testoMcp(r)) as { sessionId?: unknown; name?: unknown }[]
@@ -692,6 +723,18 @@ async function ritrova($: Eng, a: Azione): Promise<string | undefined | 'errore'
 }
 
 let giroInCorso: Promise<void> | null = null
+
+/** registro.json riletto solo se cambiano data o dimensione; illeggibile o assente = undefined. */
+let registroLetto: { file: string; mtimeMs: number; size: number; json: unknown } | undefined
+async function leggiRegistro($: Eng) {
+  const file = `${await baseOrch($)}/registro.json`
+  const st = await $.fs.stat(file).catch(() => null)
+  if (!st || st.kind !== 'file') return (registroLetto = undefined)
+  if (registroLetto?.file === file && registroLetto.mtimeMs === st.mtimeMs && registroLetto.size === st.size) return registroLetto.json
+  const json = await $.fs.read(file).then(t => JSON.parse(t as string) as unknown).catch(() => undefined)
+  registroLetto = json === undefined ? undefined : { file, mtimeMs: st.mtimeMs, size: st.size, json }
+  return json
+}
 
 /**
  * Un giro alla volta: il timer e «Aggiorna» che coincidono condividono lo stesso giro, così due giri non
@@ -713,10 +756,7 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
   const chi = await chiSonoIo($)
   const lista = delProgetto(tutte, chi)
   const prima = await read($, vive)
-  const registro = await $.fs
-    .read(`${await baseOrch($)}/registro.json`)
-    .then(t => JSON.parse(t as string) as unknown)
-    .catch(() => undefined)
+  const registro = await leggiRegistro($)
   const chiudi = async (a: Azione) => {
     if (!completa) return
     await aggiorna($, a.id, x => (['avviata', 'consegnata'].includes(x.stato) ? transizione(x, 'completata', ora()) : null)).catch(() => undefined)
@@ -784,6 +824,7 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
       continue
     }
     try {
+      conta({ app: 1 })
       const r = await $.mcp.call('ccd_session_mgmt', 'get_session', { session_id: a.sessione })
       if (r.isError) {
         if (prima[a.id]) stati[a.id] = prima[a.id]!
@@ -828,17 +869,48 @@ async function giroVero($: Eng, options: Record<string, unknown>) {
   // atomico, quindi due pannelli non avviano la stessa azione.
   const tutteOra = await read($, azioni)
   const adesso = delProgetto(tutteOra, chi)
+  // Le regole si rileggono a ogni giro anche senza code: il pannello mostra quelle correnti.
   const r = await leggiRegole($)
+  const accodate = adesso.filter(a => a.stato === 'accodata')
+  if (!completa || !accodate.length) return
   const pronte = pianifica(
-    adesso.filter(a => a.stato === 'accodata'),
+    accodate,
     adesso,
     r,
     maxParalleli(options),
-    await codexOccupato($),
+    // Il processo che guarda la corsia parte solo se in coda c'è un'azione Codex.
+    accodate.some(a => a.esecutore === 'codex') ? await codexOccupato($) : false,
     a => violazioniAvvio(a, r, tutteOra, chi),
     (await read($, risorse)).limiti,
   ).avvia
-  if (completa) for (const a of pronte) await avvia($, options, a.id).catch(() => undefined)
+  for (const a of pronte) await avvia($, options, a.id).catch(() => undefined)
+}
+
+let cadenza: Cadenza = CADENZA_INIZIALE
+
+/** Segna i lavori appena fatti fuori dal battito (apertura, «Aggiorna»), così il battito non li ripete subito. */
+async function segna($: Eng, fatti: Lavoro[]) {
+  cadenza = segnaLavori(cadenza, fatti, await $.clock.now())
+}
+
+/**
+ * Un solo battito da 20 s decide cosa fare: il giro resta veloce finché c'è lavoro pendente, le sessioni seguono il
+ * pannello a schermo (`isShown` dice che è a schermo, non che qualcuno lo guarda: è il segnale migliore che l'host dà).
+ */
+async function battito($: Eng, opz: Record<string, unknown>) {
+  const adesso = await $.clock.now()
+  const pendente = delProgetto(await read($, azioni), await read($, contesto)).some(a => STATI_PENDENTI.includes(a.stato))
+  const aSchermo = await $.ui.panes().then(l => l.some(p => p.id === PANE && p.isShown)).catch(() => false)
+  const passo = passoCadenza(cadenza, adesso, { pendente, aSchermo })
+  cadenza = passo.cadenza
+  const lavori: Record<Lavoro, () => Promise<unknown>> = {
+    giro: () => giro($, opz),
+    sessioni: () => leggiSessioni($),
+    traguardi: () => leggiTraguardi($),
+    risorse: () => aggiornaRisorse($, opz),
+  }
+  for (const k of passo.fare) void lavori[k]().catch(() => {})
+  await update($, consumo, () => sommaConsumo())
 }
 
 /** Milestone aperte del repo della sessione, da GitHub (con il `gh` di chi usa il pannello). */
@@ -849,6 +921,7 @@ async function leggiTraguardi($: Eng) {
   if (!repo) return update($, traguardi, () => null)
   const letto = ora()
   const gh = async (args: string[]) => {
+    conta({ processi: 1 })
     const r = await $.process.run(['gh', ...args], { timeoutMs: 20_000 })
     if (r.exitCode !== 0) throw new Error(r.stderr.trim().split('\n')[0]?.slice(0, 120) || `gh uscito con ${r.exitCode}`)
     return JSON.parse(r.stdout) as unknown
@@ -1198,8 +1271,10 @@ async function apriBoard($: Eng) {
   const percorso = percorsoBoard((await read($, statoBoard)).percorso ?? '')
   if (!percorso || !(await $.fs.exists(percorso))) throw new Error('La board non c\'è ancora: aspetta la prossima generazione')
   // explorer.exe esce con 1 anche quando apre: l'esito non si legge dal codice.
+  conta({ processi: 1 })
   if ((await $.env.get('OS')) === 'Windows_NT') return void (await $.process.run(['explorer.exe', percorso.replace(/\//g, '\\')], { timeoutMs: 10_000 }))
   for (const apri of ['xdg-open', 'open']) {
+    conta({ processi: 1 })
     const r = await $.process.run([apri, percorso], { timeoutMs: 10_000 }).catch(() => undefined)
     if (r?.exitCode === 0) return
   }
@@ -1265,12 +1340,11 @@ export const register: Register = (on, options) => {
     void $.ui.open({ id: PANE, title: TITOLO })
     void chiediSenzaProgetto($).catch(() => {})
     void leggiSessioni($).catch(() => {})
-    $.clock.every(20_000, () => void giro($, opz).catch(() => {}))
-    $.clock.every(20_000, () => void leggiSessioni($).catch(() => {}))
     // Le milestone cambiano di rado: ogni 5 minuti, e a mano con «Aggiorna».
     void leggiTraguardi($).catch(() => {})
-    $.clock.every(300_000, () => void leggiTraguardi($).catch(() => {}))
-    $.clock.every(300_000, () => void aggiornaRisorse($, opz).catch(() => {}))
+    // Risorse, sessioni e traguardi appena letti: il battito parte da qui (giro al primo battito, come prima).
+    await segna($, ['sessioni', 'traguardi', 'risorse'])
+    $.clock.every(20_000, () => void battito($, opz).catch(() => {}))
     // Board di progetto: ciclo proprio ogni 30 s, riassunti ogni 60 s; spenta, nessuno dei due fa nulla.
     void cicloBoard($).catch(() => {})
     $.clock.every(30_000, () => void cicloBoard($).catch(() => {}))
@@ -1406,8 +1480,8 @@ export const register: Register = (on, options) => {
     return { result: `Azione ${id}: ${fatta.stato}${rev ? `, revisione «${String(rev.esito)}» riferita` : ''}.` }
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) =>
-    disegna($, $.ui.resolve(e), e.surface, {
+  on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => {
+    return disegna($, $.ui.resolve(e), e.surface, {
       max: maxParalleli(opz),
       fai: fn => fai($, fn),
       salva: a => salva($, a),
@@ -1415,7 +1489,10 @@ export const register: Register = (on, options) => {
       faiQui: a => faiQui($, opz, a.id),
       chiediQui: a => chiediQui($, opz, a.id),
       avviaTutte: () => avviaTutte($, opz),
-      giro: () => Promise.all([giro($, opz), leggiTraguardi($), aggiornaRisorse($, opz), leggiSessioni($)]),
+      giro: async () => {
+        await segna($, ['giro', 'sessioni', 'traguardi', 'risorse'])
+        return Promise.all([giro($, opz), leggiTraguardi($), aggiornaRisorse($, opz), leggiSessioni($)])
+      },
       configura: (campi, attese) => configura($, opz, campi, attese),
       board: (modo, attese) => impostaBoard($, opz, modo, attese),
       apriBoard: () => apriBoard($),
@@ -1432,6 +1509,7 @@ export const register: Register = (on, options) => {
         if (await $.ui.ask(`Eseguo questo comando? Può scaricare ed eseguire codice FreeLLMAPI e creare un volume Docker locale.\n\n${comando.join(' ')}\n\nNessun privilegio elevato viene richiesto.`, { options: ['Esegui comando', 'Annulla'], header: 'Installazione' }) !== 'Esegui comando') return
         r = await leggiRegole($)
         if (!r.lette || r.risorse.soloLocale || !r.risorse.fornitori.includes('freellmapi')) throw new Error('politica cambiata durante la conferma')
+        conta({ processi: 1 })
         const esito = await $.process.run(comando, { timeoutMs: 600_000 })
         if (esito.exitCode !== 0) throw new Error('Comando Docker non riuscito; verifica Docker e il container chipmanager-freellmapi. Nessuna risorsa esistente viene rimossa')
         await aggiornaRisorse($, opz)
@@ -1472,12 +1550,13 @@ export const register: Register = (on, options) => {
         await update($, annullabile, () => null)
       },
       apri: async sessione => {
+        conta({ app: 1 })
         const r = await $.mcp.call('ccd_window', 'open_session_in', { session_id: sessione, target: 'split' })
         const t = testoMcp(r)
         if (r.isError) throw new Error(t.slice(0, 200) || 'la sessione non si apre da qui: aprila dalla barra laterale')
         // L'app risponde anche quando non cambia nulla (questa sessione non è a schermo): lo si dice.
         if (/nothing|no-op|not on screen|changes nothing/i.test(t)) $.ui.toast('La sessione non si è aperta: questa sessione non è a schermo')
       },
-    }, e.props.bodyColumns),
-  )
+    }, e.props.bodyColumns)
+  })
 }
