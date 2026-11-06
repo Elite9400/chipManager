@@ -262,7 +262,7 @@ test('corsia Codex: il battito ricrea la voce di una revisione viva tolta per er
 })
 
 const fonti = require('./fornitori.cjs')
-const { configura, lanciaCli } = require(DISCO)
+const { configura, configuraUtente, lanciaCli } = require(DISCO)
 const politica = { fornitori: ['claude', 'codex'], soloLocale: false, freellmapi: { livello: 'niente', endpoint: 'http://localhost:3001/v1' } }
 
 test('2.0 fonti: parser stretti e timestamp originario, nessuna conversazione emessa', () => {
@@ -554,6 +554,24 @@ test('2.0 config: CAS preserva altri progetti e rifiuta configurazione corrotta'
   assert.strictEqual(await configura(file, { atteso: prima, repo: 'acme/repo', campi: { fornitori: ['freellmapi'] } }), 4)
   fs.writeFileSync(file, '{"rotto":')
   await assert.rejects(configura(file, { atteso: '{"rotto":', repo: 'acme/repo', campi: { pesi: [] } }))
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"rotto":')
+})
+
+test('lingua: configura-utente scrive solo campi utente validi, senza repo, con lo stesso CAS; i progetti restano', async () => {
+  const dir = tmp()
+  const file = path.join(dir, 'config.json')
+  assert.strictEqual(await configuraUtente(file, { atteso: null, campi: { lingua: 'de' } }), 0)
+  const prima = fs.readFileSync(file, 'utf8')
+  assert.deepStrictEqual(JSON.parse(prima), { lingua: 'de' })
+  assert.strictEqual(await configura(file, { atteso: prima, repo: 'esempio/demo', campi: { fornitori: ['claude'] } }), 0)
+  const dopo = fs.readFileSync(file, 'utf8')
+  assert.strictEqual(await configuraUtente(file, { atteso: prima, campi: { lingua: 'it' } }), 4)
+  for (const campi of [{ lingua: 'zh' }, { lingua: 'IT' }, { progetti: {} }, { lingua: 'it', fornitori: [] }, {}, null, ['lingua']])
+    assert.strictEqual(await configuraUtente(file, { atteso: dopo, campi }), 2)
+  assert.strictEqual(await configuraUtente(file, { atteso: dopo, campi: { lingua: 'pt' } }), 0)
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { lingua: 'pt', progetti: { 'esempio/demo': { fornitori: ['claude'] } } })
+  fs.writeFileSync(file, '{"rotto":')
+  await assert.rejects(configuraUtente(file, { atteso: '{"rotto":', campi: { lingua: 'en' } }))
   assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"rotto":')
 })
 

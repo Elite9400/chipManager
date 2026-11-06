@@ -26,6 +26,8 @@ import {
 import type { Profilo } from './bilanciamento'
 import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, piuPieno, sogliaDi } from './logica'
 import type { Dati } from './pannello'
+import { LINGUE, NOMI_LINGUE } from './lingua'
+import type { Lingua } from './lingua'
 import { INSTALLAZIONE } from './risorse'
 import { GRIGIO, LIVELLO, STATO } from './tema'
 import { componenti } from './ui'
@@ -47,11 +49,12 @@ const SEZIONI: { valore: Sezione; testo: string }[] = [
   { valore: 'progetto', testo: 'Progetto' },
   { valore: 'board', testo: 'Board' },
   { valore: 'avanzate', testo: 'Avanzate' },
+  { valore: 'lingua', testo: 'Lingua' },
 ]
 const TIPO = (t: string) => t[0]!.toUpperCase() + t.slice(1)
 
 export async function vistaImpostazioni($: EngineInterface, d: Dati) {
-  const { c, Input, regoleOra, adesso, capacita, sb, configura, nota1, NOME_FORNITORE, MOTORI, motore, ultime, io } = d
+  const { T, c, Input, regoleOra, adesso, capacita, sb, configura, nota1, NOME_FORNITORE, MOTORI, motore, ultime, io } = d
   const { Box, Text, Button } = d.el
   const terminale = !d.conVelo
   const u = componenti(d.el, terminale ? 'terminal' : 'desktop')
@@ -512,8 +515,28 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     })
   }
 
+  // --- Lingua ------------------------------------------------------------------------------------------
+  // Dell'utente, non del progetto: ogni lingua col suo nome, così chi non capisce quella attuale ritrova la sua.
+  const lingua = () =>
+    u.Sezione({
+      chiave: 'pagina-lingua',
+      titolo: T('imp.sezione.lingua'),
+      descrizione: T('imp.lingua.descrizione'),
+      stato: NOMI_LINGUE[T.lingua],
+      figli: [
+        u.GruppoChip({
+          chiave: 'lingua', etichetta: T('imp.lingua.etichetta'), modo: 'scelta', valore: T.lingua,
+          voci: LINGUE.map(l => ({ valore: l, testo: NOMI_LINGUE[l] })),
+          onCambia: v => void esegui('lingua', () => c.lingua(v as Lingua), ''),
+        }),
+        errore('lingua'),
+        didascalia('lingua-nota', T('imp.lingua.nota')),
+      ],
+    })
+
   const corpo =
-    vista.sezione === 'soglie' ? soglie()
+    vista.sezione === 'lingua' ? lingua()
+      : vista.sezione === 'soglie' ? soglie()
       : vista.sezione === 'bilanciamento' ? bilanciamento()
         : vista.sezione === 'progetto' ? await progetto()
           : vista.sezione === 'board' ? board()

@@ -5,6 +5,7 @@ import type { TestBody } from 'claude-code/testing'
 
 import { ACCENTO, contrasto, GRIGIO, ICONA, MOTORE, SFONDI, sopra, STATO } from '../hooks/tema'
 import type { Azione, Limite } from '../types'
+import { DiscoIt } from './disco-it'
 
 type On = Parameters<TestBody>[1]
 const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
@@ -41,7 +42,7 @@ const az = (id: string, ordine: number, extra: Partial<Azione> = {}): Azione => 
 /** Engine finto ridotto: disco in memoria, prenotazione atomica dell'helper, avvio desktop che riesce. */
 function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexOccupato?: boolean } = {}) {
   const toast: string[] = []
-  const disco = new Map<string, string>()
+  const disco = new DiscoIt()
   disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING))
   disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': {} } }))
   for (const a of azioni) disco.set(`${DIR}/${a.id}.json`, JSON.stringify(a))

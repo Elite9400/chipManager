@@ -54,6 +54,8 @@ import {
 import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
 import { board, hash, improntaBoard, testoRiassunto } from './board'
 import type { Piano as PianoBoard } from './board'
+import { linguaDa, t } from './lingua'
+import type { Lingua } from './lingua'
 import { disegna } from './pannello'
 import { fonte, INSTALLAZIONE, osservaRisorse, RISORSE_VUOTE } from './risorse'
 
@@ -76,6 +78,7 @@ const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { li
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, da: 0 } as Consumo, { shape: 'consumo-1' })
 const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
+const lingua = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
 
 const PANE = 'chipManager'
 const TITOLO = 'chipManager'
@@ -105,6 +108,29 @@ async function leggiConfig($: Eng): Promise<unknown> {
   } catch {
     throw new Error('config.json illeggibile')
   }
+}
+
+/** La lingua dell'utente dal config (assente, rotto o non ammessa = inglese); ridisegna solo se cambia. */
+async function leggiLingua($: Eng) {
+  const l = linguaDa(((await leggiConfig($).catch(() => null)) as { lingua?: unknown } | null)?.lingua)
+  if ((await read($, lingua)) !== l) await update($, lingua, () => l)
+  return l
+}
+
+/** Scrive la lingua al primo livello del config: helper `configura-utente`, stesso mutex e CAS, nessun progetto. */
+async function scegliLingua($: Eng, l: Lingua) {
+  const f = await fileConfig($)
+  const atteso = (await $.fs.exists(f)) ? ((await $.fs.read(f)) as string) : null
+  if (atteso !== null) {
+    try {
+      JSON.parse(atteso)
+    } catch {
+      throw new Error(t(await read($, lingua), 'errore.configIlleggibile'))
+    }
+  }
+  const esito = await helper($, ['configura-utente', f], JSON.stringify({ atteso, campi: { lingua: l } }))
+  if (esito.codice !== 0) throw new Error(t(await read($, lingua), 'errore.configCambiata'))
+  await leggiLingua($)
 }
 
 /** Il progetto della sessione: `owner/repo` dal remote GitHub, altrimenti la radice locale. */
@@ -991,6 +1017,8 @@ async function battito($: Eng, opz: Record<string, unknown>) {
     risorse: () => aggiornaRisorse($, opz),
   }
   for (const k of passo.fare) void lavori[k]().catch(() => {})
+  // La lingua scelta in un altro pannello: un file piccolo, nessun processo.
+  await leggiLingua($).catch(() => {})
   await update($, consumo, () => sommaConsumo())
 }
 
@@ -1440,6 +1468,7 @@ export const register: Register = (on, options) => {
       },
     })
     await carica($).catch(() => [] as Azione[])
+    await leggiLingua($).catch(() => {})
     void $.ui.open({ id: PANE, title: TITOLO })
     void chiediSenzaProgetto($).catch(() => {})
     void leggiSessioni($).catch(() => {})
@@ -1629,6 +1658,7 @@ export const register: Register = (on, options) => {
       annullaPesi: p => annullaPesi($, opz, p),
       board: (modo, attese) => impostaBoard($, opz, modo, attese),
       apriBoard: () => apriBoard($),
+      lingua: l => scegliLingua($, l),
       peso: async (peso: Peso, attese: RisorseProgetto) => {
         const r = await leggiRegole($)
         if (!r.lette) throw new Error('regole non lette')

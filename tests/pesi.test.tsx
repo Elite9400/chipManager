@@ -21,6 +21,7 @@ import {
 } from '../hooks/bilanciamento'
 import { bilancia, MOLTIPLICATORE_CORSIA, pianifica, profiloDi, punteggio, regoleDa, risorseDa, RISORSE_DEFAULT, radiceProgetto, sessioniCodex } from '../hooks/logica'
 import type { Azione, Chiamante, Corsia, Peso, Regole, SessioneProgetto } from '../types'
+import { DiscoIt } from './disco-it'
 
 // Dati d'esempio: nessun progetto reale.
 const ROUTING = {
@@ -220,7 +221,7 @@ type On = Parameters<TestBody>[1]
  * vera, con concorrenza e recupero, la provano le prove del disco): qui si controlla che la mod li chiami bene.
  */
 function ambiente(on: On, progetto: Record<string, unknown> = { fornitori: ['claude', 'codex'] }) {
-  const disco = new Map<string, string>()
+  const disco = new DiscoIt()
   const toast: string[] = []
   const processi: string[][] = []
   const stdin: unknown[] = []

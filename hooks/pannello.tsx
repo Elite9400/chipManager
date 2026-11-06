@@ -28,6 +28,8 @@ import {
   transizione,
   velo,
 } from './logica'
+import { traduttore } from './lingua'
+import type { Lingua } from './lingua'
 import { RISORSE_VUOTE } from './risorse'
 import { ACCENTO, ALFA_VELO, GRIGIO, STATO } from './tema'
 import { classeDi, componenti } from './ui'
@@ -56,6 +58,7 @@ const tutteSessioni = atom({ plugin: 'chip-manager', key: 'tutteSessioni' } as c
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, da: 0 } as Consumo, { shape: 'consumo-1' })
 const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
+const lingua = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
 
 type Eng = EngineInterface
 
@@ -84,6 +87,8 @@ export type Ctx = {
   /** Applica o rifiuta una proposta di pesi alla versione vista; l'helper rifiuta se è cambiata. */
   decidiPesi: (p: PropostaPesi, esito: 'applica' | 'rifiuta') => Promise<unknown>
   annullaPesi: (p: PropostaPesi) => Promise<unknown>
+  /** La lingua dell'interfaccia, per l'utente (tutti i progetti). */
+  lingua: (l: Lingua) => Promise<unknown>
 }
 
 const MOTORI = ['claude', 'codex', 'freellmapi'] as const
@@ -105,6 +110,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const classe = classeDi(colonne)
   const ui = componenti(el, surface)
 
+  const T = traduttore(await read($, lingua))
   const io = await read($, contesto)
   const lette = await read($, azioni)
   // Solo le azioni di questo progetto: quelle senza progetto non si mostrano più da nessuna parte.
@@ -278,7 +284,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
     )
 
   return {
-    el, c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, vistaOra, tutteLeSessioni, regoleOra, testoFiltro,
+    el, T, c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, vistaOra, tutteLeSessioni, regoleOra, testoFiltro,
     lista, visibili, espansa, motiviAperti, stati, nota, scartata, rotte, tr, adesso, capacita, sb, boardPronta, ultime, configura, fai, modifica,
     completa, apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, attese, titoloSezione, righe,
     alLavoro, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, oraDi, consumoOra,

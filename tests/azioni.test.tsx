@@ -57,6 +57,7 @@ import {
   violazioniAvvio,
 } from '../hooks/logica'
 import type { Azione, Chiamante, Limite } from '../types'
+import { DiscoIt } from './disco-it'
 import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
 import { hash, testoRiassunto } from '../hooks/board'
 import { GRIGIO, LIVELLO, STATO } from '../hooks/tema'
@@ -328,7 +329,7 @@ test('codex senza corsia, o routing senza la regola: bloccato', () => {
 /** Engine finto: disco in memoria, helper (lock/CAS) e `gh` emulati, servizio di sessione scriptabile. */
 function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown } = {}) {
   // Come un disco vero: la data è quella della scrittura, al millisecondo; due scritture nello stesso istante la condividono.
-  class Disco extends Map<string, string> {
+  class Disco extends DiscoIt {
     mtime = new Map<string, number>()
     override set(k: string, v: string) {
       this.mtime?.set(k, Date.now())

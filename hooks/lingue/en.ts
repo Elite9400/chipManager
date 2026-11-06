@@ -6,6 +6,15 @@ export type Voce = string | Forme
 const en = {
   'data.mesi': 'Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec',
   'data.formato': '{mese} {giorno}, {ora}',
+  // Errors shared by the panel
+  "errore.configIlleggibile": "config.json cannot be read: fix it before changing settings",
+  "errore.configCambiata": "Settings changed elsewhere or cannot be written: refresh and try again",
+  "salvato": "Saved",
+  // Settings — Language
+  "imp.sezione.lingua": "Language",
+  "imp.lingua.descrizione": "The language of the panel and the board, for all your projects.",
+  "imp.lingua.etichetta": "Interface language",
+  "imp.lingua.nota": "English and Italian are written by hand; the other languages are machine-translated. Corrections are welcome.",
   // ‹fine›
 } satisfies Record<string, Voce>
 

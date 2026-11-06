@@ -309,6 +309,29 @@ async function configura(file, richiesta) {
   return r.occupato ? 3 : r.valore
 }
 
+/** I campi di primo livello che appartengono all'utente, non a un progetto, e come devono essere. */
+const CAMPI_UTENTE = { lingua: v => ['en', 'it', 'es', 'fr', 'de', 'pt'].includes(v) }
+
+/**
+ * Come `configura`, ma per i campi dell'utente: stesso file, stesso mutex, stesso CAS sul testo intero, nessun `repo`
+ * (funziona anche fuori da un repository). Scrive solo i campi di `CAMPI_UTENTE`, validati; i progetti restano intatti.
+ */
+async function configuraUtente(file, richiesta) {
+  const campi = richiesta?.campi
+  if (!campi || typeof campi !== 'object' || Array.isArray(campi) || !Object.keys(campi).length ||
+      Object.entries(campi).some(([k, v]) => !Object.hasOwn(CAMPI_UTENTE, k) || !CAMPI_UTENTE[k](v))) return 2
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const r = await conMutex(mutexConfig(file), 8000, () => {
+    const prima = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null
+    if (prima !== richiesta.atteso) return 4
+    const c = prima === null ? {} : JSON.parse(prima)
+    if (!c || typeof c !== 'object' || Array.isArray(c)) return 2
+    scriviAtomico(file, JSON.stringify({ ...c, ...campi }, null, 2))
+    return 0
+  })
+  return r.occupato ? 3 : r.valore
+}
+
 // --- board di progetto -------------------------------------------------------------------------------
 // Tutti i comandi `board-*` prendono il mutex di `configura` e rileggono sotto lock modo e generazione:
 // un lavoro avviato prima di un cambio di modo (anche spento → acceso) non si pubblica mai.
@@ -985,6 +1008,7 @@ async function main(argv, { mutexCodex = MUTEX_CODEX } = {}) {
   const [cmd, ...a] = argv
   const stdin = () => JSON.parse(fs.readFileSync(0, 'utf8'))
   if (cmd === 'configura' && a.length === 1) return esci(await configura(a[0], stdin()))
+  if (cmd === 'configura-utente' && a.length === 1) return esci(await configuraUtente(a[0], stdin()))
   if (cmd === 'lancia-cli' && a.length === 3) return esci(await lanciaCli(...a, stdin()))
   if (cmd === 'esegui-cli' && a.length === 3) return esci(await eseguiCli(...a, stdin()))
   if (cmd === 'stato-cli' && a.length === 2 && tentativoValido(a[1])) {
@@ -1019,4 +1043,4 @@ function esci(codice, testo) {
 }
 
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))
-module.exports = { main, conMutex, scriviAtomico, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla }
+module.exports = { main, conMutex, scriviAtomico, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla }

@@ -271,7 +271,7 @@ export type Vista = 'lavoro' | 'carico' | 'impostazioni'
 export type StatoBoard = { percorso?: string; motivo?: string; riassunti?: string }
 /** La vista Impostazioni: sezione aperta, ultimo errore in linea e procedure guidate fatte in linea (popup rifiutato). */
 export type StatoImpostazioni = {
-  sezione: 'connessioni' | 'soglie' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate'
+  sezione: 'connessioni' | 'soglie' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate' | 'lingua'
   errore?: { dove: string; testo: string }
   guida?: Fornitore
   bozza?: { fornitore?: Fornitore; tipo?: string }
@@ -307,6 +307,8 @@ declare module 'claude-code' {
       impostazioni: Shaped<StatoImpostazioni>
       /** Le proposte di pesi di questo progetto, lette dal file dell'helper. */
       proposte: Shaped<PropostaPesi[]>
+      /** La lingua dell'interfaccia: dell'utente (primo livello del config), non del progetto. */
+      lingua: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
     }
   }
 }

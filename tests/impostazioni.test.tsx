@@ -18,6 +18,7 @@ import {
 } from '../hooks/bilanciamento'
 import { bilancia, regoleDa, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
 import type { Azione, Chiamante, Peso } from '../types'
+import { DiscoIt } from './disco-it'
 
 // Dati d'esempio: nessun progetto reale.
 const ROUTING = {
@@ -168,7 +169,7 @@ type On = Parameters<TestBody>[1]
 
 /** Engine finto ridotto: config e helper `configura` (CAS) in memoria, sonda dei limiti, toast e popup scriptabili. */
 function ambiente(on: On, progetto: Record<string, unknown> = {}) {
-  const disco = new Map<string, string>()
+  const disco = new DiscoIt()
   const toast: string[] = []
   const processi: string[][] = []
   const domande: string[] = []
@@ -212,6 +213,14 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
       disco.set(p(file), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: { ...c.progetti?.[input.repo], ...input.campi } } }))
       return fine(0)
     }
+    if (cmd === 'configura-utente') {
+      // Come l'helper vero: stesso CAS, solo campi dell'utente al primo livello.
+      const input = JSON.parse(e.init!.stdin!)
+      const prima = disco.get(p(file)) ?? null
+      if (prima !== input.atteso) return fine(4)
+      disco.set(p(file), JSON.stringify({ ...(prima === null ? {} : JSON.parse(prima)), ...input.campi }))
+      return fine(0)
+    }
     return fine(cmd === 'occupata' ? 0 : 2)
   })
   on('mcp.call', (_, e) => ({
@@ -246,7 +255,42 @@ const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
     requestId: 'chipManager',
     props: { title: 'chipManager', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
   }) as const
-const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate'] as const
+const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'lingua'] as const
+
+test('lingua: config assente = inglese; la scelta va con configura-utente (CAS) e il pannello cambia subito', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.lingua = undefined
+  amb.disco.delete(CONFIG)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-lingua-premi' })
+  expect(await ui.find({ type: 'Text', text: 'Language' })).toBeDefined()
+  expect(String((await ui.find({ key: 'lingua-en-premi' }))?.props.label)).toMatch(/^● English/)
+  await ui.press({ key: 'lingua-de-premi' })
+  expect(JSON.parse(amb.disco.get(CONFIG)!)).toEqual({ lingua: 'de' })
+  expect(await ui.find({ type: 'Text', text: 'Sprache' })).toBeDefined()
+  expect(String((await ui.find({ key: 'lingua-de-premi' }))?.props.label)).toMatch(/^● Deutsch/)
+  await ui.unmount()
+})
+
+test('lingua: scelta in un altro pannello (config cambiato su disco) arriva al battito; un codice ignoto vale inglese', async ($, on) => {
+  const amb = ambiente(on)
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-lingua-premi' })
+  expect(await ui.find({ type: 'Text', text: 'Lingua' })).toBeDefined()
+  amb.disco.set(CONFIG, JSON.stringify({ lingua: 'fr', progetti: { 'esempio/demo': {} } }))
+  await clock.advance(20_000)
+  expect(await ui.find({ type: 'Text', text: 'Langue' })).toBeDefined()
+  amb.disco.set(CONFIG, JSON.stringify({ lingua: 'klingon', progetti: { 'esempio/demo': {} } }))
+  await clock.advance(20_000)
+  expect(await ui.find({ type: 'Text', text: 'Language' })).toBeDefined()
+  await ui.unmount()
+})
 
 test('impostazioni: profilo illeggibile nel config (un elenco) non rompe il disegno e vale come assente', async ($, on) => {
   ambiente(on, { profilo: ['qualita'] })
@@ -278,7 +322,7 @@ test('impostazioni: in ogni sezione le etichette dei pulsanti sono uniche (prese
       const etichette = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label))
       expect([s, etichette.filter((e, i) => etichette.indexOf(e) !== i)]).toEqual([s, []])
     }
-    expect(String((await ui.find({ key: 'sezione-avanzate-premi' }))?.props.label)).toBe('● Avanzate, selezionato')
+    expect(String((await ui.find({ key: 'sezione-lingua-premi' }))?.props.label)).toBe('● Lingua, selezionato')
     await ui.press({ key: 'sezione-soglie-premi' })
     expect(String((await ui.find({ key: 'soglia-codex-70/90-premi' }))?.props.label)).toBe('● Codex, 70/90 (predefinita), selezionato')
     await ui.unmount()
