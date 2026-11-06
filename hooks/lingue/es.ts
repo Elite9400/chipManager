@@ -805,6 +805,10 @@ const es: Dizionario = {
   "pop.terminaApi": "¿Terminar {n} procesos dejados por la última ejecución API Claude (PID {pid})?",
   "api.liberata": "Carril API Claude liberado",
   "api.nonLiberata": "No liberado: aún falta una condición (ver la nota)",
+  // F6.4 money rows
+  "car.apiRiga": "API Claude: {speso} USD de {budget} USD (estimado, este mes)",
+  "car.apiIlleggibile": "API Claude: presupuesto {budget} USD, gasto no legible",
+  "car.notaCloud": "La nube de Claude usa los mismos límites del plan que el trabajo local: su porcentaje es el del plan. No está documentado si los créditos extra valen en la nube: compruébalo en tu cuenta.",
   // ‹fine›
 }
 

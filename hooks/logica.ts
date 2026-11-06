@@ -16,6 +16,25 @@ export const BACKGROUND_GENERICO =
  * ogni avvio: le regole non si allentano mai in silenzio.
  */
 export const SOGLIA_PREDEFINITA: Soglia = { attenzione: 70, critica: 90 }
+/**
+ * F6.4: la spesa a crediti API del mese, dal registro dell'helper (`spesa-api.json`): contato = costo stimato (ignoto =
+ * tetto), prenotato = tetto. null se il registro non ha la forma attesa. Stessa somma dell'helper che prenota.
+ */
+export function spesaDelMese(s: unknown, mese: string): number | null {
+  if (!s || typeof s !== 'object' || (s as { v?: unknown }).v !== 1) return null
+  const voci = (s as { voci?: unknown }).voci
+  if (!voci || typeof voci !== 'object') return null
+  let tot = 0
+  for (const v of Object.values(voci as Record<string, unknown>)) {
+    if (!v || typeof v !== 'object') return null
+    const x = v as { mese?: unknown; tetto?: unknown; costo?: unknown; stato?: unknown }
+    if (x.mese !== mese) continue
+    if (typeof x.tetto !== 'number' || !Number.isFinite(x.tetto)) return null
+    tot += x.stato === 'contato' && typeof x.costo === 'number' && Number.isFinite(x.costo) ? x.costo : x.tetto
+  }
+  return Math.round(tot * 100) / 100
+}
+
 /** F6.2: il tetto predefinito di spesa per tentativo (`--max-budget-usd`), in USD; può essere superato. */
 export const TETTO_API_PREDEFINITO = 2
 export const RISORSE_DEFAULT: RisorseProgetto = {

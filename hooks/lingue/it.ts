@@ -805,6 +805,10 @@ const it: Dizionario = {
   "pop.terminaApi": "Terminare {n} processi lasciati dall'ultima esecuzione API Claude (PID {pid})?",
   "api.liberata": "Corsia API Claude liberata",
   "api.nonLiberata": "Non liberata: manca ancora una condizione (vedi la nota)",
+  // F6.4 money rows
+  "car.apiRiga": "API Claude: {speso} USD di {budget} USD (stimato, questo mese)",
+  "car.apiIlleggibile": "API Claude: budget {budget} USD, spesa non leggibile",
+  "car.notaCloud": "Il cloud di Claude consuma gli stessi limiti del piano del lavoro in locale: la sua percentuale è quella del piano. Che i crediti extra valgano nel cloud non è documentato: verifica sul tuo account.",
   // ‹fine›
 }
 

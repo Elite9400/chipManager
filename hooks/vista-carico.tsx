@@ -20,7 +20,7 @@ import { ACCENTO, STATO } from './tema'
 
 export function vistaCarico(d: Dati) {
   const { T, conVelo, classe, tutte, regoleOra, lista, adesso, capacita, nota1, titoloSezione,
-    righe, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, consumoOra, ui } = d
+    righe, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, consumoOra, ui, spesaApiOra } = d
   const { Box, Text } = d.el
 
   const parolaSoglia = (s: Soglia | null) => (s ? T('car.soglie', { attenzione: s.attenzione, critica: s.critica }) : T('car.nessunaSoglia'))
@@ -62,6 +62,25 @@ export function vistaCarico(d: Dati) {
     )
   }
 
+  /** F6.4: la spesa a crediti API del mese contro il budget in USD; solo se l'API è configurata. Stimata, mai un saldo. */
+  const apiRiga = () => {
+    const api = regoleOra.risorse.apiClaude
+    if (!api) return null
+    const speso = spesaApiOra?.speso
+    const livello = speso === undefined || speso === null ? undefined : livelloDi(Math.min(100, (speso / api.budgetUsd) * 100), sogliaDi(regoleOra.risorse, 'claude'))
+    return (
+      <Box key="api-claude" flexDirection="column">
+        <Text wrap="wrap">
+          {livello && livello !== 'ok' ? <Text color={COLORE_LIVELLO[livello]}>{'▲ '}</Text> : ''}
+          {speso === undefined || speso === null
+            ? T('car.apiIlleggibile', { budget: T.numero(api.budgetUsd) })
+            : T('car.apiRiga', { speso: T.numero(speso, 2), budget: T.numero(api.budgetUsd) })}
+        </Text>
+        {speso !== undefined && speso !== null && ui.Barra({ chiave: 'api-claude-barra', pct: (speso / api.budgetUsd) * 100, colore: livello ? COLORE_LIVELLO[livello] : ACCENTO, celle: classe === 'stretta' ? 10 : 20 })}
+      </Box>
+    )
+  }
+
   const controlloLimiti = (
     <Box key="limiti" flexDirection="column" gap={1}>
       {titoloSezione('t-limiti', T('car.limiti'))}
@@ -75,6 +94,9 @@ export function vistaCarico(d: Dati) {
           {limiti.filter(l => l.fornitore === f).map(rigaLimite)}
         </Box>
       ))}
+      {apiRiga()}
+      {/* F6.4: il cloud consuma gli stessi limiti del piano del locale; nessuna promessa sui crediti extra nel cloud. */}
+      {lista.some(a => a.destinazione === 'cloud') && <Text size="caption" dimColor wrap="wrap">{T('car.notaCloud')}</Text>}
       {fornitoriInUso.length > 0 && <Text size="caption" dimColor>{T('car.notaSaldi')}</Text>}
       {capacita.proxy === 'proxy.helper' && <Text dimColor>{T('car.nonLetti', { motivo: T.k(capacita.proxy) })}</Text>}
     </Box>

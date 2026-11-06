@@ -325,6 +325,8 @@ declare module 'claude-code' {
       selezionate: Shaped<string[]>
       /** F6.2: il lock della corsia API della macchina, se resta tenuto (null = libero). */
       lockApi: Shaped<LockApi | null>
+      /** F6.4: la spesa a crediti API del mese (stimata), dal registro dell'helper; null = non configurata o illeggibile. */
+      spesaApi: Shaped<{ mese: string; speso: number | null } | null>
       vive: Shaped<Record<string, Vita>>
       /** L'ultimo errore di un pulsante: codice del dizionario (si traduce) o testo esterno. */
       avviso: Messaggio | null

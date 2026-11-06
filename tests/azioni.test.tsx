@@ -5,6 +5,7 @@ import {
   CADENZA_INIZIALE,
   rigaConsumo,
   modalitaDi,
+  spesaDelMese,
   classeProcesso,
   classiDi,
   contaConsumo,
@@ -953,6 +954,31 @@ test('F6.2 lock: tenuto dopo un\'esecuzione, il pannello dice perché; «Termina
   expect(comandi).toContain('libera-api')
   expect(amb.toast.at(-1)).toBe('Corsia API Claude liberata')
   expect(await ui.find({ key: 'lock-api' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('F6.4 Carico: la spesa API del mese (stimata) contro il budget in USD; senza API configurata nessuna riga; nota sul cloud', async ($, on) => {
+  const mese = new Date().toISOString().slice(0, 7)
+  expect(spesaDelMese({ v: 1, voci: { a: { mese, tetto: 2, stato: 'contato', costo: 3.2 }, b: { mese, tetto: 2, stato: 'prenotato' }, c: { mese: '2000-01', tetto: 9, stato: 'prenotato' }, d: { mese, tetto: 2, stato: 'contato', costo: null } } }, mese)).toBe(7.2)
+  expect(spesaDelMese({ v: 2 }, mese)).toBeNull()
+  const amb = ambiente(on)
+  amb.disco.set('X:/orch/azioni/spesa-api.json', JSON.stringify({ v: 1, voci: { 'az-spesa001': { mese, tetto: 2, stato: 'contato', costo: 3.2 }, 'az-spesa002': { mese, tetto: 2, stato: 'prenotato' } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /^API Claude:/ })).toBeUndefined()
+  amb.disco.set(CONFIG, CONFIG_API)
+  const cloud = { ...base('a-cloud0f6', 1, { repo: AUTORE.repo!, destinazione: 'cloud', revisore: 'claude' }) }
+  amb.disco.set(`X:/orch/azioni/${cloud.id}.json`, JSON.stringify(cloud))
+  // La spesa si legge all'inizio del giro, con le regole del giro prima: la riga compare dal giro dopo il cambio.
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: 'ricarica' })
+  expect(await ui.find({ type: 'Text', text: 'API Claude: 5,20 USD di 20 USD (stimato, questo mese)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Il cloud di Claude consuma gli stessi limiti del piano/ })).toBeDefined()
+  amb.disco.set('X:/orch/azioni/spesa-api.json', '{ rotto')
+  await ui.press({ key: 'ricarica' })
+  expect(await ui.find({ type: 'Text', text: 'API Claude: budget 20 USD, spesa non leggibile' })).toBeDefined()
   await ui.unmount()
 })
 

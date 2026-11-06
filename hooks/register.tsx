@@ -26,6 +26,7 @@ import {
   mandato,
   mandatoApi,
   modalitaDi,
+  spesaDelMese,
   normalizza,
   parametriAvvio,
   PERMESSI,
@@ -84,6 +85,7 @@ const ultimeMisure = atom({ plugin: 'chip-manager', key: 'ultimeMisure' } as con
 const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { lista: [] } as Sessioni, { shape: 'sessioni-1' })
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
 const lockApi = atom({ plugin: 'chip-manager', key: 'lockApi' } as const, null as LockApi | null, { shape: 'lock-api-1' })
+const spesaApi = atom({ plugin: 'chip-manager', key: 'spesaApi' } as const, null as { mese: string; speso: number | null } | null, { shape: 'spesa-api-1' })
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: 0 } as Consumo, { shape: 'consumo-2' })
 const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
 const lingua = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
@@ -996,8 +998,28 @@ async function decidiLockApi($: Eng, azione: 'libera' | 'termina') {
   }
 }
 
+/** F6.4: la spesa del mese a crediti API, solo se l'API è configurata (la vista Carico la mostra contro il budget). */
+async function aggiornaSpesaApi($: Eng) {
+  const r = await read($, regole)
+  let nuova: { mese: string; speso: number | null } | null = null
+  if (r?.risorse.apiClaude) {
+    const mese = ora().slice(0, 7)
+    const f = `${await cartella($)}/spesa-api.json`
+    const testo = (await $.fs.exists(f).catch(() => false)) ? await $.fs.read(f).catch(() => null) : '{"v":1,"voci":{}}'
+    nuova = { mese, speso: (() => {
+      try {
+        return spesaDelMese(JSON.parse(String(testo)), mese)
+      } catch {
+        return null
+      }
+    })() }
+  }
+  if (!uguale(await read($, spesaApi), nuova)) await update($, spesaApi, () => nuova)
+}
+
 async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti) {
   await aggiornaLockApi($)
+  await aggiornaSpesaApi($)
   // R4: le azioni appena lette dal battito valgono; senza (Aggiorna, apertura) si leggono qui.
   let tutte = lette && !lette.rotte?.length ? lette : await carica($)
   if (tutte.rotte?.length) tutte = await carica($)

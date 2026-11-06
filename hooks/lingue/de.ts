@@ -805,6 +805,10 @@ const de: Dizionario = {
   "pop.terminaApi": "{n} Prozesse der letzten API-Claude-Ausführung beenden (PID {pid})?",
   "api.liberata": "Spur API Claude freigegeben",
   "api.nonLiberata": "Nicht freigegeben: eine Bedingung fehlt noch (siehe Hinweis)",
+  // F6.4 money rows
+  "car.apiRiga": "API Claude: {speso} USD von {budget} USD (geschätzt, diesen Monat)",
+  "car.apiIlleggibile": "API Claude: Budget {budget} USD, Ausgaben nicht lesbar",
+  "car.notaCloud": "Die Claude-Cloud nutzt dieselben Planlimits wie lokale Arbeit: ihr Prozentsatz ist der des Plans. Ob Extra-Guthaben in der Cloud gelten, ist nicht dokumentiert: prüf es in deinem Konto.",
   // ‹fine›
 }
 

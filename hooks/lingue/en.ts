@@ -807,6 +807,10 @@ const en = {
   "pop.terminaApi": "End {n} processes left by the last API Claude run (PID {pid})?",
   "api.liberata": "API Claude lane released",
   "api.nonLiberata": "Not released: a condition is still missing (see the note)",
+  // F6.4 money rows
+  "car.apiRiga": "Claude API: {speso} USD of {budget} USD (estimated, this month)",
+  "car.apiIlleggibile": "Claude API: budget {budget} USD, spend not readable",
+  "car.notaCloud": "The Claude cloud uses the same plan limits as local work: its percentage is the plan's. Whether extra credits apply in the cloud is not documented: check on your account.",
   // ‹fine›
 } satisfies Record<string, Voce>
 
