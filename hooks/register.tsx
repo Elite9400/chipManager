@@ -911,7 +911,10 @@ async function segna($: Eng, fatti: Lavoro[]) {
  */
 async function battito($: Eng, opz: Record<string, unknown>) {
   const adesso = await $.clock.now()
-  const pendente = delProgetto(await read($, azioni), await read($, contesto)).some(a => STATI_PENDENTI.includes(a.stato))
+  // Dal disco, non dall'atomo: una coda comparsa da un'altra sessione si vede a questo battito. Solo $.fs, solo i file
+  // cambiati: nessun processo. Se l'elenco non si legge, si resta veloci.
+  const lette = await carica($).catch(() => null)
+  const pendente = !lette || delProgetto(lette, await read($, contesto)).some(a => STATI_PENDENTI.includes(a.stato))
   const aSchermo = await $.ui.panes().then(l => l.some(p => p.id === PANE && p.isShown)).catch(() => false)
   const passo = passoCadenza(cadenza, adesso, { pendente, aSchermo })
   cadenza = passo.cadenza

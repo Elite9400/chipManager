@@ -2354,3 +2354,31 @@ test('carica: una riscrittura nello stesso istante si vede al più alla rilettur
   expect(letture(f)).toBeGreaterThan(n[0]!)
   expect(letture('X:/orch/registro.json')).toBeGreaterThan(n[1]!)
 })
+
+test('battito: una coda comparsa da fuori si vede al battito dopo, non al giro lento di 60 s', async ($, on) => {
+  const amb = ambiente(on, { nascosto: true })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(20_000)
+  // Un'altra sessione mette in coda un'azione: niente era pendente, il giro era passato a 60 s.
+  amb.disco.set('X:/orch/azioni/a-fuori001.json', JSON.stringify(base('a-fuori001', 1, { repo: 'acme/progetto', stato: 'accodata' })))
+  await clock.advance(20_000)
+  expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(1)
+})
+
+test('battito: un lavoro che fallisce si riprova alla sua cadenza, senza ripetizioni ravvicinate', async ($, on) => {
+  const amb = ambiente(on, {
+    fonte: cmd => {
+      throw new Error(`${cmd} non disponibile`)
+    },
+  })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const conta = (cmd: string) => amb.processi.filter(x => x.argv[1]?.endsWith('/fornitori.cjs') && x.argv[2] === cmd).length
+  await clock.advance(1)
+  const [s0, l0] = [conta('sessioni'), conta('limiti')]
+  for (let i = 0; i < 18; i++) await clock.advance(20_000)
+  // A schermo: sessioni ogni 20 s anche se falliscono (18 battiti = 18 tentativi); limiti una volta in 6 minuti.
+  expect(conta('sessioni') - s0).toBe(18)
+  expect(conta('limiti') - l0).toBe(1)
+})
