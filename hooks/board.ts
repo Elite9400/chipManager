@@ -15,7 +15,7 @@ import {
   mandato,
 } from './logica'
 import type { Strumenti } from './logica'
-import { giorno, letto, ora, traduttore } from './lingua'
+import { giorno, LEGENDA, letto, ora, traduttore } from './lingua'
 import type { Lingua, T } from './lingua'
 
 export type Commit = { sha: string; data: string; oggetto: string }
@@ -212,6 +212,7 @@ ${gruppo(T('board.prossimi'), 'prossimo', prossimi, T('board.vuotoProssimi'))}
 <section><h2><span class="segno">✓</span> ${esc(T('board.fatto'))} (${recenti.length})</h2>${recenti.map(a => scheda(T, a, d, tutte, 'fatto')).join('\n')}${vecchie ? `<p class="tenue">${esc(T('board.vecchie', { n: vecchie }))}</p>` : ''}${commit}${!recenti.length && !commit ? `<p class="tenue">${esc(T('board.ancoraNiente'))}</p>` : ''}</section>
 ${traguardi}
 </main>
+<details id="legenda"><summary>${esc(T('imp.sezione.legenda'))}</summary>${(['corsie', 'termini'] as const).map(g => `<h4>${esc(T(`legenda.${g}`))}</h4><ul>${LEGENDA[g].map(k => `<li>${esc(T(k))}</li>`).join('')}</ul>`).join('')}</details>
 <footer><p>${esc(T('board.legenda', { segni: Object.values(SEGNI).map(([s, p]) => `${s} ${T(p)}`).join(' · ') }))}</p><p>${esc(T('boa.file', { percorso: d.percorso }))}</p></footer>
 </body></html>
 `

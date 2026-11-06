@@ -13,6 +13,11 @@ export type Lingua = 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
 export const LINGUE: readonly Lingua[] = ['en', 'it', 'es', 'fr', 'de', 'pt']
 export const DIZIONARI: Record<Lingua, Record<Chiave, Voce>> = { en, it, es, fr, de, pt }
 /** Ogni lingua col suo nome, uguale in tutte le interfacce: chi non capisce la lingua attuale ritrova la sua. */
+/** La legenda (F5.1): una sola fonte per pannello e board; i README la ricopiano e prova-disco li confronta. */
+export const LEGENDA = {
+  corsie: ['legenda.r0', 'legenda.r1', 'legenda.r2', 'legenda.r3', 'legenda.r4', 'legenda.r5'],
+  termini: ['legenda.effort', 'legenda.worktree', 'legenda.fork', 'legenda.fusione', 'legenda.registro', 'legenda.mcp', 'legenda.pii', 'legenda.soglie', 'legenda.contesto', 'legenda.token', 'legenda.condivisa', 'legenda.cloud'],
+} as const satisfies Record<string, readonly Chiave[]>
 export const NOMI_LINGUE: Record<Lingua, string> = { en: 'English', it: 'Italiano', es: 'Español', fr: 'Français', de: 'Deutsch', pt: 'Português (Brasil)' }
 
 /** Il valore salvato, se è un codice ammesso; altrimenti l'inglese (anche config assente o rotto). */

@@ -26,7 +26,7 @@ import {
 import type { Profilo } from './bilanciamento'
 import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, piuPieno, sogliaDi } from './logica'
 import type { Dati } from './pannello'
-import { Errore, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
+import { Errore, LEGENDA, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
 import type { Chiave, Lingua } from './lingua'
 import { INSTALLAZIONE, nomeLimiteIn, unitaIn } from './risorse'
 import { GRIGIO, LIVELLO, STATO } from './tema'
@@ -50,6 +50,7 @@ const SEZIONI: { valore: Sezione; testo: Chiave }[] = [
   { valore: 'board', testo: 'imp.sezione.board' },
   { valore: 'avanzate', testo: 'imp.sezione.avanzate' },
   { valore: 'lingua', testo: 'imp.sezione.lingua' },
+  { valore: 'legenda', testo: 'imp.sezione.legenda' },
 ]
 const TIPO = (t: string) => t[0]!.toUpperCase() + t.slice(1)
 
@@ -306,6 +307,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           {PROFILI.map(p => didascalia(`profilo-${p.id}-descrizione`, `${T(p.nome)}: ${T(p.descrizione)}`))}
         </Box>,
         didascalia('profili-nota', T('bil.profiliNota')),
+        didascalia('legenda-rimando', T('legenda.rimando')),
         errore('profilo'),
         ...simulazione(),
         didascalia('simulazione-nota', T('bil.simulazioneNota')),
@@ -538,8 +540,28 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     })
   }
 
+  // --- Legenda -----------------------------------------------------------------------------------------
+  // Una voce per riga, dallo stesso dizionario della board; le fasi di sviluppo stanno solo nei README.
+  const legenda = () =>
+    u.Sezione({
+      chiave: 'pagina-legenda',
+      titolo: T('imp.sezione.legenda'),
+      descrizione: T('legenda.descrizione'),
+      figli: (['corsie', 'termini'] as const).map(g => (
+        <Box key={`legenda-${g}`} flexDirection="column">
+          <Text key={`legenda-${g}-titolo`} bold>{T(`legenda.${g}`)}</Text>
+          {LEGENDA[g].map(k => (
+            <Text key={k} wrap="wrap">
+              {T(k)}
+            </Text>
+          ))}
+        </Box>
+      )),
+    })
+
   const corpo =
-    vista.sezione === 'lingua' ? lingua()
+    vista.sezione === 'legenda' ? legenda()
+      : vista.sezione === 'lingua' ? lingua()
       : vista.sezione === 'soglie' ? soglie()
       : vista.sezione === 'bilanciamento' ? bilanciamento()
         : vista.sezione === 'progetto' ? await progetto()

@@ -3,6 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { board, chiaveRiassunto, esc, hash, improntaBoard, oscura, testoRiassunto } from '../hooks/board'
 import type { DatiBoard, IngressiBoard } from '../hooks/board'
 import { normalizza, pianoValido, regoleDa, risorseDa, transizione } from '../hooks/logica'
+import { LEGENDA, t } from '../hooks/lingua'
 import type { Azione, Chiamante } from '../types'
 
 // Dati d'esempio: nessun progetto reale.
@@ -47,8 +48,9 @@ test('board: quattro gruppi, un <details> per ogni chip mostrata, fallita fra «
   const html = board(dati(insieme(), { vive: { 'a-ferm0001': { stato: 'ferma' }, 'a-avv00001': { stato: 'in-corso', fase: 'rapporto' } } }))
   for (const g of ['Aspetta il committente', 'In corso', 'Prossimi', 'Fatto']) expect(html).toContain(`${g} (`)
   // 2 prossimi + fallita + ferma + avviata + consegnata + 1 completata recente; vecchia e scartata no.
-  expect((html.match(/<details /g) ?? []).length).toBe(7)
-  expect((html.match(/<\/details>/g) ?? []).length).toBe(7)
+  // Più la Legenda in fondo.
+  expect((html.match(/<details /g) ?? []).length).toBe(8)
+  expect((html.match(/<\/details>/g) ?? []).length).toBe(8)
   expect(html).not.toContain('id="t-a-scar0001"')
   expect(html).not.toContain('id="t-a-vecc0001"')
   expect(html).toContain('1 completata da più di 30 giorni')
@@ -58,6 +60,20 @@ test('board: quattro gruppi, un <details> per ogni chip mostrata, fallita fra «
   expect(attesa).toContain('Errore')
   expect(html.slice(html.indexOf('In corso ('), html.indexOf('Prossimi ('))).toContain('<strong>● rapporto</strong>')
   expect(html.slice(html.indexOf('Prossimi ('))).toContain('limite di 3 sessioni in parallelo')
+})
+
+test('board: «Legenda» in fondo, chiusa, dallo stesso dizionario del pannello; testo escapato', () => {
+  const html = board(dati(insieme()))
+  const i = html.indexOf('<details id="legenda">')
+  expect(i).toBeGreaterThan(html.lastIndexOf('</section>'))
+  expect(i).toBeLessThan(html.indexOf('<footer>'))
+  expect(html).not.toContain('<details id="legenda" open')
+  const legenda = html.slice(i, html.indexOf('</details>', i))
+  expect(legenda).toContain('<summary>Legenda</summary>')
+  for (const k of [...LEGENDA.corsie, ...LEGENDA.termini]) expect(legenda).toContain(`<li>${esc(t('it', k))}</li>`)
+  // L'apostrofo di «l'effort» arriva escapato.
+  expect(legenda).toContain('l&#39;effort')
+  expect(board(dati([], { lingua: 'en' }))).toContain('<summary>Legend</summary>')
 })
 
 test('board: escape di ogni testo; nessuno script, nessun href, nessuna risorsa esterna; CSP', () => {
@@ -71,7 +87,7 @@ test('board: escape di ogni testo; nessuno script, nessun href, nessuna risorsa 
   // Nessun attributo che carichi o colleghi qualcosa; il testo escapato può contenere «src=», ma mai dentro un tag.
   expect(html).not.toMatch(/<[^>]*\s(href|src|on[a-z]+)\s*=/i)
   expect(html).not.toMatch(/url\(|@import/i)
-  expect((html.match(/<\/details>/g) ?? []).length).toBe(1)
+  expect((html.match(/<\/details>/g) ?? []).length).toBe(2)
   expect(html).toContain('&lt;script&gt;')
   expect(html).toContain('<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">')
   expect(esc('<a href="x">\'&')).toBe('&lt;a href=&quot;x&quot;&gt;&#39;&amp;')

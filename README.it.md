@@ -403,6 +403,34 @@ condivisa. Un record per tentativo nasce prima del processo; l'uscita del proces
 - **Board** — la scrive l'helper sotto il lock della configurazione, solo se modo e generazione sono ancora quelli
   attesi; rifiuta link, junction, marcatori d'identità di altri progetti e cartelle dati dentro un working tree.
 
+## Legenda
+
+Lo stesso testo della sezione **Legenda** delle Impostazioni e del fondo della board, così chi è nuovo trova ogni sigla senza uscire dal pannello.
+
+### Corsie
+
+- R0 — banale, solo testo o documentazione. Claude, o FreeLLMAPI se abilitato; l'effort alto vale meno.
+- R1 — modifica piccola e a basso rischio. Claude, Codex se routing.json lo ammette, FreeLLMAPI se abilitato.
+- R2 — lavoro ordinario. Claude o Codex, come dice routing.json.
+- R3 — modifica ampia o trasversale. Claude o Codex all'effort fissato da routing.json, con un revisore Claude.
+- R4 — sensibile: auth, permessi, PII o i termini del progetto. Solo Claude (Opus o Fable), revisione Claude, effort almeno high.
+- R5 — rischio massimo, stesse guardie di R4. Restano entrambe a Claude: serve una revisione avversariale su questo computer, quindi niente Codex, proxy, cloud o bypass.
+
+### Termini
+
+- effort — quanto ragionamento spende il modello: low, medium, high, xhigh. Di più è più lento e costa di più.
+- worktree — un checkout separato su un ramo suo: la sessione lavora lì senza toccare il tuo.
+- fork — una sessione nuova che parte da una copia di questa conversazione invece che dal solo mandato.
+- fusione — il ramo entra nel ramo base. Solo la fusione chiude una chip: consegnata non vuol dire fatta.
+- registro — il registro.json dell'orchestratore, che segue i task per ramo. Quando il task di una chip è fuso, la chip si chiude.
+- MCP — gli strumenti che chiamano gli agenti: suggerisci_azione mette una chip qui, risorse_agenti legge limiti e margini.
+- PII — dati personali. Un mandato che li contiene resta in locale e va su una corsia sensibile.
+- soglie — uso di attenzione e di critica di un limite del fornitore. Oltre la critica, le scelte aperte vanno a un altro fornitore ammesso.
+- contesto — quanto della finestra di contesto di una sessione è già usato.
+- token — l'unità di testo che contano i modelli. Limiti e contesto si misurano in token.
+- cartella condivisa — la sessione lavora nel tuo checkout, senza worktree. Il registro non la collega: chiudila tu.
+- cloud — una sessione nuova nel cloud. Riceve solo titolo e mandato, mai il contesto locale, e mai sulle corsie sensibili.
+
 ## Struttura
 
 | Percorso | Che cosa |
@@ -453,6 +481,10 @@ No. Senza, le azioni si fermano a *consegnata* e le chiudi tu con **Segna comple
 
 Sì: nel terminale usa il lanciatore CLI descritto in [Terminale](#terminale).
 </details>
+
+## Storia dello sviluppo
+
+Il lavoro è stato pianificato in fasi F0–F5 e blocchi B1–B10, che nel pannello non compaiono. I piani sono in [`docs/`](docs/): [panoramica 2.2](docs/PIANO-2.2.md) (fasi e blocchi), [board](docs/PIANO-board.md), [grafica](docs/PIANO-grafica.md), [carico con più sessioni](docs/PIANO-sobrieta.md), [pesi F4](docs/PIANO-F4.md), [lingue](docs/PIANO-I18N.md) e [rifinitura F5](docs/PIANO-F5.md).
 
 ## Licenza
 

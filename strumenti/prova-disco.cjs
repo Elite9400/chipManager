@@ -860,6 +860,25 @@ test('lingue: nessuna frase italiana nei letterali dei hooks (interfaccia, agent
   assert.deepStrictEqual(trovati, [])
 })
 
+test('legenda: i README ricopiano la legenda del dizionario voce per voce (en e it), più la storia dello sviluppo', () => {
+  const radice = path.join(__dirname, '..')
+  const intestazioni = ['legenda.descrizione', 'legenda.corsie', 'legenda.termini', 'legenda.rimando']
+  const dizionario = l =>
+    [...fs.readFileSync(path.join(radice, 'hooks', 'lingue', `${l}.ts`), 'utf8').matchAll(/^\s*"(legenda\.[a-z0-9]+)": (".*"),\r?$/gm)]
+      .filter(m => !intestazioni.includes(m[1]))
+      .map(m => JSON.parse(m[2]))
+  for (const [file, l, titolo, storia] of [['README.md', 'en', 'Legend', 'Development history'], ['README.it.md', 'it', 'Legenda', 'Storia dello sviluppo']]) {
+    const md = fs.readFileSync(path.join(radice, file), 'utf8').replace(/\r\n/g, '\n')
+    const da = md.indexOf(`\n## ${titolo}\n`)
+    assert.ok(da >= 0, `${file}: manca «## ${titolo}»`)
+    const sezione = md.slice(da + 1, md.indexOf('\n## ', da + 1))
+    const voci = dizionario(l)
+    assert.strictEqual(voci.length, 18, `${l}: voci della legenda`)
+    assert.deepStrictEqual([...sezione.matchAll(/^- (.*)$/gm)].map(m => m[1]), voci, file)
+    assert.match(md, new RegExp(`\\n## ${storia}\\n[^]*?\\(docs/`), `${file}: «${storia}» rimanda a docs/`)
+  }
+})
+
 test('2.4 date: ogni cambio di stato di un\'azione passa da transizione()', () => {
   // Ogni sorgente dei hooks, così un file nuovo (una vista, un modulo) non esce dal controllo.
   const cartella = path.join(__dirname, '..', 'hooks')

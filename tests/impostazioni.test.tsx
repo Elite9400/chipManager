@@ -17,7 +17,7 @@ import {
   simula,
 } from '../hooks/bilanciamento'
 import { bilancia, regoleDa, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
-import { LINGUE, t } from '../hooks/lingua'
+import { LEGENDA, LINGUE, t } from '../hooks/lingua'
 import type { Azione, Chiamante, Peso } from '../types'
 import { DiscoIt } from './disco-it'
 
@@ -262,7 +262,7 @@ const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
     requestId: 'chipManager',
     props: { title: 'chipManager', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
   }) as const
-const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'lingua'] as const
+const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'lingua', 'legenda'] as const
 
 test('lingua: config assente = inglese; la scelta va con configura-utente (CAS) e il pannello cambia subito', async ($, on) => {
   const amb = ambiente(on)
@@ -329,7 +329,7 @@ test('impostazioni: in ogni sezione le etichette dei pulsanti sono uniche (prese
       const etichette = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label))
       expect([s, etichette.filter((e, i) => etichette.indexOf(e) !== i)]).toEqual([s, []])
     }
-    expect(String((await ui.find({ key: 'sezione-lingua-premi' }))?.props.label)).toBe('● Lingua, selezionato')
+    expect(String((await ui.find({ key: 'sezione-legenda-premi' }))?.props.label)).toBe('● Legenda, selezionato')
     await ui.press({ key: 'sezione-soglie-premi' })
     expect(String((await ui.find({ key: 'soglia-codex-70/90-premi' }))?.props.label)).toBe('● Codex, 70/90 (predefinita), selezionato')
     await ui.unmount()
@@ -351,6 +351,28 @@ test('impostazioni: chip di sezione in cima, una sezione alla volta, la scelta s
     await ui.press({ key: 'sezione-connessioni-premi' })
     await ui.unmount()
   }
+})
+
+test('legenda: ultima sezione, chiusa all\'apertura; corsie e termini una voce per riga; rimando R0–R5 solo nel Bilanciamento', async ($, on) => {
+  ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  expect(await ui.find({ key: 'pagina-legenda' })).toBeUndefined()
+  const sezioni = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.key)).filter(k => /^sezione-.*-premi$/.test(k))
+  expect(sezioni.at(-1)).toBe('sezione-legenda-premi')
+  await ui.press({ key: 'sezione-legenda-premi' })
+  expect(await ui.find({ key: 'pagina-legenda' })).toBeDefined()
+  // Una voce per riga: ogni voce è un Text a sé con il testo intero del dizionario.
+  for (const k of [...LEGENDA.corsie, ...LEGENDA.termini]) expect([k, !!(await ui.find({ type: 'Text', text: t('it', k) }))]).toEqual([k, true])
+  expect(LEGENDA.corsie).toEqual(['legenda.r0', 'legenda.r1', 'legenda.r2', 'legenda.r3', 'legenda.r4', 'legenda.r5'])
+  expect(t('it', 'legenda.r5')).toContain('Claude')
+  // Il rimando testuale sta solo nella sezione dei pesi.
+  expect(await ui.find({ type: 'Text', text: 'R0–R5: vedi Legenda.' })).toBeUndefined()
+  await ui.press({ key: 'sezione-bilanciamento-premi' })
+  expect(await ui.find({ type: 'Text', text: 'R0–R5: vedi Legenda.' })).toBeDefined()
+  await ui.unmount()
 })
 
 test('impostazioni: ogni controllo salva da sé con il toast; profilo e pesi in una sola configura', async ($, on) => {
