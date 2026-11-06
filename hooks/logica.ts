@@ -260,6 +260,8 @@ export const MOLTIPLICATORE_CORSIA: Readonly<Record<string, number>> = { high: 0
 const CORSIE_LEGGERE = ['R0', 'R1']
 /** La corsia adatta la scelta solo con il profilo Automatico e su una corsia leggera. */
 const corsiaAdatta = (a: Azione, r: Regole) => profiloDi(r.risorse) === 'automatico' && CORSIE_LEGGERE.includes(corsiaDi(a, r) ?? '')
+/** La corsia cambia davvero il punteggio di questa chip (effort high o xhigh). */
+const corsiaPenalizza = (a: Azione, r: Regole) => corsiaAdatta(a, r) && MOLTIPLICATORE_CORSIA[effortDi(a, r)] !== undefined
 
 /**
  * Peso = preferenza, mai autorizzazione. Quote sconosciute non equivalgono a 100% libero.
@@ -589,9 +591,11 @@ export function pianifica(
   let occupate = lista.filter(occupa).length
   let codex = codexOccupato || lista.some(tieneCodex)
   const ids = new Set(candidate.map(a => a.id))
-  // L'ordine scelto dall'utente vale finché non configura pesi: solo allora il punteggio riordina il massivo.
+  // L'ordine scelto dall'utente vale finché non configura pesi o non opera la corsia (Automatico su una chip R0–R1 a
+  // effort alto): solo allora il punteggio riordina il massivo. L'ordinamento è stabile: a pari punteggio resta il suo.
   const ordinate = attive(lista).filter(x => ids.has(x.id))
-  if (regole.risorse.pesi.length) ordinate.sort((a, b) => punteggio(b, regole, limiti, lista) - punteggio(a, regole, limiti, lista))
+  if (regole.risorse.pesi.length || ordinate.some(a => corsiaPenalizza(a, regole)))
+    ordinate.sort((a, b) => punteggio(b, regole, limiti, lista) - punteggio(a, regole, limiti, lista))
   for (const a of ordinate) {
     const motivi = [...violazioni(a, regole, lista), ...extra(a)]
     if (motivi.length) piano.bloccate.push({ a, motivi })

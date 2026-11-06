@@ -81,6 +81,20 @@ test('corsia: una chip di documentazione in R1 senza effort va a medium invece c
   expect(bilancia(b, { esecutore: 'claude', modello: 'claude-sonnet-5-5' }, r, [], [b], CHI).effort).toBe('high')
 })
 
+test('corsia nel massivo, caso predefinito: Automatico senza nessun peso salvato, la R1 a xhigh scende sotto la R3', () => {
+  const r = conRisorse({})
+  expect(r.risorse.pesi).toEqual([])
+  const leggera = azione('a-massa101', 'R1', { effort: 'xhigh', revisore: 'claude', modello: 'claude-sonnet-5-5' })
+  const pesante = azione('a-massa102', 'R3', { effort: 'xhigh', revisore: 'claude', modello: 'claude-sonnet-5-5', ordine: 2 })
+  expect(punteggio(leggera, r, [], [])).toBeLessThan(punteggio(pesante, r, [], []))
+  expect(pianifica([leggera, pesante], [leggera, pesante], r, 1).avvia[0]!.id).toBe(pesante.id)
+  // Nessuna chip toccata dalla corsia (R1 a medium): senza pesi l'ordine resta quello dell'utente, anche a margini diversi.
+  const media = { ...leggera, effort: 'medium' }
+  const codexPieno = { id: 'claude-weekly', fornitore: 'claude' as const, nome: 'settimanale', fonte: 'app', letto: new Date().toISOString(), percentuale: 95 }
+  const altra = { ...pesante, esecutore: 'codex' as const, modello: 'gpt-6.1-sol', effort: 'xhigh' }
+  expect(pianifica([media, altra], [media, altra], r, 1, false, () => [], [codexPieno]).avvia[0]!.id).toBe(media.id)
+})
+
 test('corsia nel massivo: con Automatico e pesi la chip R1 a xhigh scende sotto la R3 a xhigh', () => {
   const r = conRisorse({ profilo: 'automatico', pesi: [MODELLO] })
   const leggera = azione('a-massa001', 'R1', { effort: 'xhigh', revisore: 'claude', modello: 'claude-sonnet-5-5' })
@@ -448,4 +462,23 @@ test('P2 scadenza: oltre 24 ore una proposta ancora «attesa» nel file compare 
   expect(TESTI_PESI.registro(p, dopo)).toMatch(/^Scaduta il /)
   expect(decisaIl(p, dopo)).toBe(Date.parse(ORA) + 24 * 3_600_000)
   expect(proposteBrevi([p], dopo)[0]!.stato).toBe('scaduta')
+})
+
+test('registro: applica A, poi rifiuta B: il registro dice B e tiene «Annulla» per A, ancora annullabile', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__proponi_pesi', motivo: 'Prima', profilo: 'risparmio' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__proponi_pesi', motivo: 'Seconda', profilo: 'qualita' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'lavoro-pesi-p-esempio01-applica' })
+  await ui.press({ key: 'lavoro-pesi-p-esempio02-rifiuta' })
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /^Rifiutata il .*: Qualità$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Applicata il .*: Risparmio$/ })).toBeDefined()
+  await ui.press({ key: 'carico-pesi-registro-annulla' })
+  expect(amb.comandi('pesi-annulla')[0]!.slice(4, 6)).toEqual(['esempio/demo', 'p-esempio01'])
+  expect(amb.progettoOra()).toMatchObject({ pesi: [], pesiRevisione: 2 })
+  expect(await ui.find({ key: 'carico-pesi-registro-annulla' })).toBeUndefined()
+  await ui.unmount()
 })

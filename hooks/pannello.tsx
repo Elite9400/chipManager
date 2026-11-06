@@ -255,14 +255,23 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
       )}
     </Box>
   )
-  /** L'ultima decisione, con Annulla finché il config porta ancora quell'applicazione. */
+  // L'applicazione ancora annullabile (revisione e origine del config sono le sue): al più una, cercata a parte, perché
+  // una decisione successiva che non tocca il config (un rifiuto, una scadenza) non toglie la possibilità di annullarla.
+  const daAnnullare = tutteProposte.find(p => pesiAnnullabili(p, regoleOra.risorse))
+  const vocePesi = (dove: string, p: PropostaPesi) => (
+    <Box key={`${dove}-${p.id}`} flexDirection="row" flexWrap="wrap" gap={1} alignItems="center">
+      <Text size="caption" wrap="wrap">{TESTI_PESI.registro(p, adesso)}</Text>
+      {p === daAnnullare && (
+        <Button key={`${dove}-annulla`} plain label={`${TESTI_PESI.annulla} la proposta applicata`} onPress={fai(() => c.annullaPesi(p))} />
+      )}
+    </Box>
+  )
+  /** L'ultima decisione e, se è un'altra, l'applicazione ancora annullabile, con il suo Annulla. */
   const registroPesi = (dove: string) =>
     ultimaDecisa ? (
-      <Box key={`${dove}-registro`} flexDirection="row" flexWrap="wrap" gap={1} alignItems="center">
-        <Text size="caption" wrap="wrap">{TESTI_PESI.registro(ultimaDecisa, adesso)}</Text>
-        {pesiAnnullabili(ultimaDecisa, regoleOra.risorse) && (
-          <Button key={`${dove}-registro-annulla`} plain label={`${TESTI_PESI.annulla} la proposta applicata`} onPress={fai(() => c.annullaPesi(ultimaDecisa))} />
-        )}
+      <Box key={`${dove}-registro`} flexDirection="column">
+        {vocePesi(`${dove}-registro`, ultimaDecisa)}
+        {daAnnullare && daAnnullare !== ultimaDecisa && vocePesi(`${dove}-registro`, daAnnullare)}
       </Box>
     ) : (
       <Text key={`${dove}-registro`} size="caption" dimColor>{TESTI_PESI.nessunaDecisione}</Text>
