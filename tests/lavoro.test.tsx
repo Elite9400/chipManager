@@ -449,6 +449,25 @@ test('F6.1 Dove…: la stessa destinazione a più chip scelte; quelle non ammess
   await ui.unmount()
 })
 
+test('F6 rilievo 8: «Dove…» su più chip aspetta ogni scrittura; una in conflitto non si conta e resta scelta con il motivo', { options: { anthropicApiKey: 'sk-ant-prova' } }, async ($, on) => {
+  const amb = ambiente(on, [az('a-dove0007', 1, { revisore: 'claude' }), az('a-dove0008', 2, { revisore: 'claude' })])
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', CONFIG_API)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 130))
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: 'sel-a-dove0007' })
+  await ui.press({ key: 'sel-a-dove0008' })
+  // Un altro pannello cambia la seconda dopo che questo l'ha disegnata: la sua scrittura CAS fallisce.
+  amb.disco.set(`${DIR}/a-dove0008.json`, JSON.stringify({ ...amb.azione('a-dove0008'), versione: 5, titolo: 'Cambiata altrove' }))
+  await ui.press({ key: 'dove-tutte-cloud' })
+  expect(amb.azione('a-dove0007').destinazione).toBe('cloud')
+  expect(amb.azione('a-dove0008').destinazione).toBeUndefined()
+  expect(amb.toast.at(-1)).toMatch(/^1 chip spostata in cloud · «Esempio a-dove0008» resta: /)
+  expect(await ui.find({ type: 'Text', text: '1 chip scelta · dove:' })).toBeDefined()
+  await ui.unmount()
+})
+
 test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazioni) non hanno parole italiane, a ogni larghezza', async ($, on) => {
   const amb = ambiente(on, MATRICE_EN)
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', progetti: { 'acme/progetto': {} } }))

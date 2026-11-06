@@ -28,9 +28,11 @@ export function spesaDelMese(s: unknown, mese: string): number | null {
   for (const v of Object.values(voci as Record<string, unknown>)) {
     if (!v || typeof v !== 'object') return null
     const x = v as { mese?: unknown; tetto?: unknown; costo?: unknown; stato?: unknown }
+    // Una voce non valida rende illeggibile tutto il registro (l'helper, per lo stesso motivo, non prenota più).
+    if (typeof x.mese !== 'string' || !/^\d{4}-\d{2}$/.test(x.mese) || typeof x.tetto !== 'number' || !Number.isFinite(x.tetto) || x.tetto <= 0) return null
+    if (x.stato === 'prenotato' ? x.costo !== undefined : x.stato !== 'contato' || !(x.costo === null || (typeof x.costo === 'number' && Number.isFinite(x.costo) && x.costo >= 0))) return null
     if (x.mese !== mese) continue
-    if (typeof x.tetto !== 'number' || !Number.isFinite(x.tetto)) return null
-    tot += x.stato === 'contato' && typeof x.costo === 'number' && Number.isFinite(x.costo) ? x.costo : x.tetto
+    tot += x.stato === 'contato' && typeof x.costo === 'number' ? x.costo : x.tetto
   }
   return Math.round(tot * 100) / 100
 }
@@ -485,9 +487,26 @@ export const conDestinazione = (a: Azione, d: Destinazione): Azione => ({ ...a, 
  * F6.1: ogni destinazione con, se non è ammessa, il primo motivo che aggiunge rispetto al locale (le guardie sono quelle
  * di `violazioni`, per la modalità effettiva). Il locale non ha motivi suoi: i blocchi comuni li dice già la chip.
  */
-export function destinazioniPer(a: Azione, regole: Regole, lista: readonly Azione[] = []): { d: Destinazione; motivo?: Msg }[] {
-  const comuni = new Set(violazioni(conDestinazione(a, 'local'), regole, lista).map(m => JSON.stringify(m)))
-  return DESTINAZIONI.map(d => ({ d, motivo: violazioni(conDestinazione(a, d), regole, lista).find(m => !comuni.has(JSON.stringify(m))) }))
+export function destinazioniPer(a: Azione, regole: Regole, lista: readonly Azione[] = [], contestoReale = false): { d: Destinazione; motivo?: Msg }[] {
+  // contestoReale: si cambia SOLO la destinazione (il consigliere): una chip fork resta fork e il cloud o l'API la escludono.
+  const sposta = (d: Destinazione) => (contestoReale ? { ...a, destinazione: d } : conDestinazione(a, d))
+  const comuni = new Set(violazioni(sposta('local'), regole, lista).map(m => JSON.stringify(m)))
+  return DESTINAZIONI.map(d => ({ d, motivo: violazioni(sposta(d), regole, lista).find(m => !comuni.has(JSON.stringify(m))) }))
+}
+
+/**
+ * F6.2: impostazioni che cambierebbero chi paga o dove vanno le richieste di `claude -p` (stessa regola dell'helper):
+ * credenziali o instradamenti nell'`env`, gateway e fornitori cloud, un `apiKeyHelper`, ogni login imposto. Una forma
+ * che non è un oggetto vale come vietata.
+ */
+export function impostazioniApiVietate(s: unknown): boolean {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return true
+  const o = s as Record<string, unknown>
+  if (o.env !== undefined && (!o.env || typeof o.env !== 'object' || Array.isArray(o.env))) return true
+  const env = Object.keys((o.env as Record<string, unknown> | undefined) ?? {})
+  return env.some(k => /^ANTHROPIC_(.*_)?(BASE_URL|AUTH_TOKEN|API_KEY)$/.test(k) || /^(CLAUDE_CODE_USE_|ANTHROPIC_(BEDROCK|VERTEX|FOUNDRY)_)/.test(k) ||
+      ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS'].includes(k)) ||
+    Object.keys(o).some(k => k.startsWith('forceLogin') || ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'].includes(k))
 }
 
 /** Un consiglio di destinazione (F6.5): dove, e il perché in poche parole. */
@@ -507,7 +526,7 @@ export type Consiglio = { d: Destinazione; motivi: Msg[] }
 export function consigliaDove(a: Azione, regole: Regole, limiti: readonly Limite[], lista: readonly Azione[], spesaApi?: number | null, adesso = Date.now()): Consiglio | null {
   if (a.destinazione !== undefined || a.esecutore === 'freellmapi') return null
   if (sensibile(a, regole)) return { d: 'local', motivi: [msg('cons.sensibile')] }
-  const ammesse = destinazioniPer(a, regole, lista).filter(x => !x.motivo).map(x => x.d)
+  const ammesse = destinazioniPer(a, regole, lista, true).filter(x => !x.motivo).map(x => x.d)
   const pct = (f: Fornitore) => piuPieno(limiti, f, adesso)?.percentuale
   const livello = (f: Fornitore) => (pct(f) === undefined ? 'ok' : livelloDi(pct(f)!, sogliaDi(regole.risorse, f)))
   const piano = livello('claude')

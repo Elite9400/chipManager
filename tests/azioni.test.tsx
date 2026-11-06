@@ -7,6 +7,7 @@ import {
   modalitaDi,
   spesaDelMese,
   consigliaDove,
+  impostazioniApiVietate,
   classeProcesso,
   classiDi,
   contaConsumo,
@@ -338,7 +339,7 @@ test('codex senza corsia, o routing senza la regola: bloccato', () => {
 // --- il pannello contro un engine finto --------------------------------------------------------------
 
 /** Engine finto: disco in memoria, helper (lock/CAS) e `gh` emulati, servizio di sessione scriptabile. */
-function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown; attesa?: (cmd: string) => Promise<void> | undefined; api?: (cmd: string, a: string[], stdin: string | undefined) => [number, string] | undefined } = {}) {
+function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown; attesa?: (cmd: string) => Promise<void> | undefined; api?: (cmd: string, a: string[], stdin: string | undefined) => [number, string] | undefined; impostazioni?: (source?: string) => unknown } = {}) {
   // Come un disco vero: la data è quella della scrittura, al millisecondo; due scritture nello stesso istante la condividono.
   class Disco extends DiscoIt {
     mtime = new Map<string, number>()
@@ -391,6 +392,8 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
     disco.set(p(e.path), e.text)
     return { value: undefined }
   })
+  // Le fonti di impostazioni come le espone l'host: vuote salvo diversa indicazione della prova.
+  on('settings.read', (_, e) => ({ value: (opz.impostazioni?.((e as { source?: string }).source) ?? {}) as never }))
   on('process.run', (_, e) => {
     const [exe, , cmd, ...a] = e.argv
     const fine = (exitCode: number, stdout = '') => ({ value: { exitCode, stdout, stderr: '' } as never })
@@ -1048,6 +1051,60 @@ test('F6 risorse_agenti: destinazioni configurate e margini in inglese, dentro i
     advisor: 'suggerisci',
   })
   expect(String(d.destinazioni.cloud)).toMatch(/^Claude cloud: same plan limits as local/)
+  await ui.unmount()
+})
+
+test('F6 rilievo 4: le fonti dell\'host (policy compresa) con un login o un gateway imposto bloccano l\'avvio API; una fonte che non si legge blocca', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  let fonte = (source?: string): unknown => (source === 'policy' ? { forceLoginGatewayUrl: 'https://gw.example' } : {})
+  const chiamate: string[] = []
+  const amb = ambiente(on, { impostazioni: source => fonte(source), api: cmd => (chiamate.push(cmd), [0, '']) })
+  amb.disco.set(CONFIG, CONFIG_API)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  for (const [i, attesa] of [[0, 'policy'], [1, 'project']] as const) {
+    if (i === 1) fonte = source => { if (source === 'project') throw new Error('non leggibile'); return {} }
+    const a = chipApi(`a-apifon0${i}`)
+    amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+    await ui.press({ key: 'ricarica' })
+    await ui.press({ key: `avvia-${a.id}` })
+    const r = JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione
+    expect([r.stato, r.erroreCodice, r.erroreParametri]).toEqual(['fallita', 'err.apiImpostazioni', { fonti: attesa }])
+  }
+  expect(chiamate.filter(c => c === 'lancia-api')).toEqual([])
+  expect(impostazioniApiVietate({ permissions: {} })).toBe(false)
+  await ui.unmount()
+})
+
+test('F6 rilievo 2: un registro della spesa non valido chiude il tentativo con il suo motivo, non con un budget inventato', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  const amb = ambiente(on, { api: cmd => (cmd === 'lancia-api' ? [5, '{"registro":"non valido"}'] : undefined) })
+  amb.disco.set(CONFIG, CONFIG_API)
+  const a = chipApi('a-apireg01')
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+  expect(spesaDelMese({ v: 1, voci: { x: { mese: '2026-11', stato: 'prenotato' } } }, '2026-11')).toBeNull()
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: `avvia-${a.id}` })
+  expect((JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione).erroreCodice).toBe('err.apiRegistro')
+  await ui.unmount()
+})
+
+test('F6 rilievo 7: una chip fork non riceve consigli cloud o API; «Applica» scrive solo la destinazione e la chip resta fork', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  const RA: Regole = { ...R, chiaveApi: true, risorse: { ...R.risorse, apiClaude: { budgetUsd: 20, tetto: 2 }, consigliere: 'applica' } }
+  const fork = base('a-consfk01', 1, { repo: AUTORE.repo!, revisore: 'claude', corsia: 'R3', contesto: 'fork', origineFork: 'sessione-master' })
+  const piano = [{ ...LIMITE, percentuale: 82, letto: new Date().toISOString() }]
+  expect(consigliaDove(fork, RA, piano, [fork], 3)?.d).toBe('local')
+  const amb = ambiente(on)
+  amb.disco.set(`X:/orch/azioni/${fork.id}.json`, JSON.stringify(fork))
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 }, consigliere: 'applica' } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: 'ricarica' })
+  expect(JSON.parse(amb.disco.get(`X:/orch/azioni/${fork.id}.json`)!)).toMatchObject({ destinazione: 'local', contesto: 'fork' })
   await ui.unmount()
 })
 

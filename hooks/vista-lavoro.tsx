@@ -32,7 +32,7 @@ import {
   velo,
   violazioniAvvio,
 } from './logica'
-import { letto, msg, salvato } from './lingua'
+import { letto, msg, msgDi, salvato } from './lingua'
 import type { Msg } from './lingua'
 import type { Dati } from './pannello'
 import { GRIGIO, MOTORE, STATO } from './tema'
@@ -545,15 +545,22 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const scelteOra = tutte.filter(a => scelte.includes(a.id))
     let spostate = 0
     const restano: string[] = []
+    const fallite: string[] = []
     for (const a of scelteOra) {
       const motivo = !['proposta', 'accodata', 'fallita'].includes(a.stato) ? msg('dove.statoFisso') : destinazioniPer(a, regoleOra, tutte).find(x => x.d === d)?.motivo
       if (motivo) restano.push(T('dove.resta', { titolo: corto(a.titolo, 32), motivo: T.m(motivo) }))
       else if ((a.destinazione ?? 'local') !== d) {
-        await modifica(a, conDestinazione(a, d))()
-        spostate++
+        // La scrittura CAS di ogni chip si aspetta: conta solo quella riuscita; una fallita resta scelta, con il motivo.
+        try {
+          await c.salva({ ...a, ...conDestinazione(a, d) })
+          spostate++
+        } catch (err) {
+          fallite.push(a.id)
+          restano.push(T('dove.resta', { titolo: corto(a.titolo, 32), motivo: T.m(msgDi(err)) }))
+        }
       }
     }
-    await update($, selezionate, () => [])
+    await update($, selezionate, () => fallite)
     $.ui.toast([T('dove.esito', { n: spostate, dove: T(BREVE_DOVE[d]) }), ...restano].join(' · '))
   }
   /** F6.2: il lock della corsia API resta tenuto: perché, e «Libera» o «Termina» quando servono. */

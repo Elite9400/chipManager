@@ -26,8 +26,8 @@ import {
   mandato,
   mandatoApi,
   modalitaDi,
+  impostazioniApiVietate,
   consigliaDove,
-  conDestinazione,
   spesaDelMese,
   normalizza,
   parametriAvvio,
@@ -748,6 +748,13 @@ async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: 
   const chiave = typeof options.anthropicApiKey === 'string' ? options.anthropicApiKey.trim() : ''
   const fallisce = (m: Msg) => aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo ? { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', m) } : null)
   if (!api || !chiave) return fallisce(msg(!chiave ? 'v.apiChiave' : 'v.apiBudget'))
+  // Le fonti di impostazioni come le espone l'host (la policy gestita compresa): nel dubbio si blocca.
+  const vietate: string[] = []
+  for (const source of ['user', 'project', 'local', 'flag', 'policy'] as const) {
+    const s = await $.settings.read({ source }).catch(() => null)
+    if (s === null || impostazioniApiVietate(s)) vietate.push(source)
+  }
+  if (vietate.length) return fallisce(msg('err.apiImpostazioni', { fonti: vietate.join(', ') }))
   const m = mandatoApi(a, r, strumenti($))
   const root = (await $.session.repo())?.root
   if (!root) throw new Error('repository root not available')
@@ -756,12 +763,13 @@ async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: 
   const esito = await helper($, ['lancia-api', await cartella($), a.id, a.tentativo!], JSON.stringify(ingresso))
   const dettaglio = (() => {
     try {
-      return JSON.parse(esito.testo || '{}') as { motivo?: string; fonti?: string[]; speso?: number; budget?: number }
+      return JSON.parse(esito.testo || '{}') as { motivo?: string; fonti?: string[]; speso?: number; budget?: number; registro?: string }
     } catch {
       return {}
     }
   })()
   if (esito.codice === 3) return fallisce(msg('err.apiOccupata'))
+  if (esito.codice === 5 && dettaglio.registro) return fallisce(msg('err.apiRegistro'))
   if (esito.codice === 5) return fallisce(msg('err.apiBudget', { speso: Number(dettaglio.speso ?? 0), budget: api.budgetUsd, tetto: api.tetto }))
   if (esito.codice === 6) return fallisce(msg('err.apiImpostazioni', { fonti: (dettaglio.fonti ?? []).map(f => String(f).slice(0, 12)).join(', ') }))
   if (esito.codice !== 0) throw new Error('API outcome to be checked')
@@ -1054,7 +1062,7 @@ async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti)
     for (const a of lista) {
       if (a.stato !== 'proposta' || a.destinazione !== undefined) continue
       const cons = consigliaDove(a, r, limitiOra, lista, speso)
-      if (cons) await aggiorna($, a.id, x => (x.stato === 'proposta' && x.destinazione === undefined ? { destinazione: cons.d, contesto: conDestinazione(x, cons.d).contesto } : null)).catch(() => undefined)
+      if (cons) await aggiorna($, a.id, x => (x.stato === 'proposta' && x.destinazione === undefined ? { destinazione: cons.d } : null)).catch(() => undefined)
     }
   }
   const prima = await read($, vive)

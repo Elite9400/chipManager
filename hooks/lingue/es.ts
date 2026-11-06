@@ -843,6 +843,8 @@ const es: Dizionario = {
   "ese.suggerisci": "Sugerir",
   "ese.applica": "Aplicar a chips sin destino",
   "ese.consigliereNota": "El consejero solo elige dónde (este equipo, nube, API); pesos y perfiles siguen eligiendo modelo y effort. Las elecciones explícitas nunca se cambian.",
+  // F6 review fixes
+  "err.apiRegistro": "API Claude: el registro de gasto (spesa-api.json) no es válido, así que no se reserva ninguna ejecución nueva. Corrige o quita la entrada errónea.",
   // ‹fine›
 }
 

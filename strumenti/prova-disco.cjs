@@ -1244,6 +1244,7 @@ const claudeFinto = (uscita, codice = 0, durante = () => {}) => (argv, opzioni) 
     await durante(argv, opzioni)
     p.stdout.emit('data', Buffer.from(uscita))
     p.emit('exit', codice)
+    p.emit('close', codice)
   })
   queueMicrotask(() => p.emit('spawn'))
   return p
@@ -1331,7 +1332,7 @@ test('F6.2 supervisore: niente chiave nell\'ambiente o su argv; helper con TTL e
   let visto
   const uscita = JSON.stringify({ type: 'result', is_error: false, total_cost_usd: 0.42, num_turns: 3, result: `Fatto. La chiave era ${CHIAVE_PROVA}` })
   const codice = await API.eseguiApi(dir, 'a-api00003', 'az-api0003', ingressoApi(root), {
-    dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [],
+    dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], fontiCwd: () => fontiPulite(root),
     env: { PATH: process.env.PATH, ANTHROPIC_BASE_URL: 'http://altrove', ANTHROPIC_AUTH_TOKEN: 'token', CLAUDECODE: '1' },
     avvia: claudeFinto(uscita, 0, (argv, opzioni) => {
       visto = { argv, env: opzioni.env }
@@ -1365,7 +1366,7 @@ test('F6.2 supervisore: un esito illeggibile o troncato è incerto e conta il te
   const root = tmp()
   recordApi(dir, 'a-api00004', 'az-api0004')
   assert.strictEqual((await API.lanciaApi(dir, 'a-api00004', 'az-api0004', ingressoApi(root), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }))[0], 0)
-  await API.eseguiApi(dir, 'a-api00004', 'az-api0004', ingressoApi(root), { dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], env: {}, avvia: claudeFinto('{"type":"result","total_c') })
+  await API.eseguiApi(dir, 'a-api00004', 'az-api0004', ingressoApi(root), { dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], fontiCwd: () => fontiPulite(root), env: {}, avvia: claudeFinto('{"type":"result","total_c') })
   const esec = JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0004.json'), 'utf8'))
   assert.deepStrictEqual([esec.stato, esec.incerto, esec.costo], ['avviata', true, null])
   assert.strictEqual(API.spesoNelMese(API.leggiSpesa(dir).voci, '2026-11'), 2)
@@ -1407,4 +1408,126 @@ test('F6.2 lock: uscita registrata ma un discendente vivo: resta bloccato finch�
   const r = await API.statoApi(dm, { elenco: () => [{ pid: '6161', ppid: '4242', creato: 3000 }] })
   assert.deepStrictEqual([r.libero, r.motivo], [false, 'discendenti'])
   assert.deepStrictEqual(await API.statoApi(dm, { elenco: () => [] }), { libero: true, liberato: 'az-api0006' })
+})
+
+// --- F6.2, revisione: nel dubbio si blocca ------------------------------------------------------------------------
+
+test('F6.2 rilievo 1: spawn fallito e cancellazione in EPERM: chiave presente, lock tenuto; la verifica dopo la ritenta e solo allora libera', async () => {
+  const dir = tmp()
+  const dm = tmp()
+  const root = tmp()
+  recordApi(dir, 'a-api00011', 'az-api0011')
+  assert.strictEqual((await API.lanciaApi(dir, 'a-api00011', 'az-api0011', ingressoApi(root), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }))[0], 0)
+  await API.eseguiApi(dir, 'a-api00011', 'az-api0011', ingressoApi(root), {
+    dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], env: {}, fontiCwd: () => fontiPulite(root),
+    avvia: () => { throw Object.assign(new Error('spawn claude ENOENT'), { code: 'ENOENT' }) },
+    rm: () => { throw Object.assign(new Error('EPERM'), { code: 'EPERM' }) },
+  })
+  assert.strictEqual(fs.existsSync(API.fileChiave(dm, 'az-api0011')), true)
+  assert.strictEqual(fs.existsSync(API.fileLock(dm)), true)
+  assert.strictEqual((await API.statoApi(dm, { elenco: () => [], adesso: () => Date.now() + API.TTL_MS + 1000, rm: () => { throw new Error('EPERM') } })).motivo, 'chiave')
+  assert.deepStrictEqual(await API.statoApi(dm, { elenco: () => [], adesso: () => Date.now() + API.TTL_MS + 1000 }), { libero: true, liberato: 'az-api0011' })
+  assert.strictEqual(fs.existsSync(API.fileChiave(dm, 'az-api0011')), false)
+})
+
+test('F6.2 rilievo 1: supervisore caduto senza uscita registrata: con il processo verificato morto la chiave si cancella; il lock resta per «Libera»', async () => {
+  const dm = tmp()
+  fs.mkdirSync(path.dirname(API.fileChiave(dm, 'az-api0012')), { recursive: true })
+  fs.writeFileSync(API.fileChiave(dm, 'az-api0012'), CHIAVE_PROVA)
+  fs.writeFileSync(API.fileLock(dm), JSON.stringify({ tentativo: 'az-api0012', istante: new Date(0).toISOString(), pid: 4242, creato: 1000, avvio: 1000 }))
+  // Identità ignota con quel PID vivo: niente si tocca.
+  const ignota = JSON.parse(fs.readFileSync(API.fileLock(dm), 'utf8'))
+  fs.writeFileSync(API.fileLock(dm), JSON.stringify({ ...ignota, creato: undefined }))
+  assert.strictEqual((await API.statoApi(dm, { elenco: () => [{ pid: '4242', ppid: '1', creato: 1000 }] })).motivo, 'in-corso')
+  assert.strictEqual(fs.existsSync(API.fileChiave(dm, 'az-api0012')), true)
+  // Identità nota, processo morto e nessun discendente: la chiave va via, il lock no.
+  fs.writeFileSync(API.fileLock(dm), JSON.stringify(ignota))
+  assert.strictEqual((await API.statoApi(dm, { elenco: () => [] })).motivo, 'in-corso')
+  assert.strictEqual(fs.existsSync(API.fileChiave(dm, 'az-api0012')), false)
+  assert.strictEqual(fs.existsSync(API.fileLock(dm)), true)
+})
+
+test('F6.2 rilievo 2: una voce del registro senza tetto, con importi o stati non validi blocca le prenotazioni con il motivo', async () => {
+  const mese = '2026-11'
+  for (const voce of [{ mese, stato: 'prenotato' }, { mese, tetto: -1, stato: 'prenotato' }, { mese, tetto: 2, stato: 'boh' }, { mese, tetto: 2, stato: 'contato', costo: 'molto' }, { mese: 'ieri', tetto: 2, stato: 'prenotato' }]) {
+    const dir = tmp()
+    fs.writeFileSync(path.join(dir, 'spesa-api.json'), JSON.stringify({ v: 1, voci: { 'az-vecchio01': voce } }))
+    assert.throws(() => API.prenotaSpesa(dir, 'az-nuovo0001', mese, 2, 1))
+    recordApi(dir, 'a-api00013', 'az-api0013')
+    const [codice, testo] = await API.lanciaApi(dir, 'a-api00013', 'az-api0013', { ...ingressoApi(tmp()), budget: 1, tetto: 0.5 }, { dirMacchina: tmp(), fonti: fontiPulite(tmp()), env: {}, supervisore: supervisoreFinto([]) })
+    assert.deepStrictEqual([JSON.stringify(voce), codice, JSON.parse(testo)], [JSON.stringify(voce), 5, { registro: 'non valido' }])
+  }
+})
+
+test('F6.2 rilievo 3: senza identità registrata, un processo vivo con quel PID tiene il lock (mai «morto»); «Termina» non lo chiude', async () => {
+  const dm = tmp()
+  fs.writeFileSync(API.fileLock(dm), JSON.stringify({ tentativo: 'az-api0014', istante: new Date(0).toISOString(), pid: 4242, avvio: 1000, uscita: { codice: 0, fine: new Date(0).toISOString() } }))
+  const r = await API.statoApi(dm, { elenco: () => [{ pid: '4242', ppid: '1', creato: 5000 }] })
+  assert.deepStrictEqual([r.libero, r.motivo, r.discendenti], [false, 'discendenti', ['4242']])
+  const uccisi = []
+  assert.deepStrictEqual(await API.terminaApi(dm, { elenco: () => [{ pid: '4242', ppid: '1', creato: 5000 }], uccidi: p => uccisi.push(p) }), { chiusi: 0 })
+  assert.strictEqual((await API.liberaApi(dm, { elenco: () => [{ pid: '4242', ppid: '1', creato: 5000 }], adesso: () => Date.now() + API.TTL_MS })).libero, false)
+})
+
+test('F6.2 rilievo 4: forceLoginGatewayUrl, ogni forceLogin*, gateway e fornitori cloud bloccano; una forma non valida blocca', () => {
+  for (const s of [{ forceLoginGatewayUrl: 'https://gw' }, { forceLoginAnything: 1 }, { env: { ANTHROPIC_BEDROCK_BASE_URL: 'x' } }, { env: { ANTHROPIC_VERTEX_PROJECT_ID: 'x' } },
+    { env: { ANTHROPIC_FOUNDRY_API_KEY: 'x' } }, { env: { CLAUDE_CODE_USE_FOUNDRY: '1' } }, { env: { ANTHROPIC_CUSTOM_HEADERS: 'x' } }, { awsAuthRefresh: 'x' }, { env: 'x' }, [], null])
+    assert.strictEqual(API.impostazioniVietate(s), true, JSON.stringify(s))
+  assert.strictEqual(API.impostazioniVietate({ permissions: { allow: [] }, env: { NODE_OPTIONS: '' } }), false)
+})
+
+test('F6.2 rilievo 5: impostazioni vietate solo nel worktree: niente chiave né spawn, tentativo fallito, lock e spesa liberati', async () => {
+  const dir = tmp()
+  const dm = tmp()
+  const root = tmp()
+  recordApi(dir, 'a-api00015', 'az-api0015')
+  assert.strictEqual((await API.lanciaApi(dir, 'a-api00015', 'az-api0015', ingressoApi(root), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }))[0], 0)
+  let avvii = 0
+  await API.eseguiApi(dir, 'a-api00015', 'az-api0015', ingressoApi(root), {
+    dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], env: {},
+    fontiCwd: cwd => {
+      fs.mkdirSync(path.join(cwd, '.claude'), { recursive: true })
+      fs.writeFileSync(path.join(cwd, '.claude', 'settings.json'), JSON.stringify({ forceLoginGatewayUrl: 'https://gw' }))
+      return [{ nome: 'progetto', file: path.join(cwd, '.claude', 'settings.json') }]
+    },
+    avvia: () => { avvii++ },
+  })
+  assert.strictEqual(avvii, 0)
+  assert.strictEqual(fs.existsSync(API.fileChiave(dm, 'az-api0015')), false)
+  const esec = JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0015.json'), 'utf8'))
+  assert.deepStrictEqual([esec.stato, /progetto/.test(esec.errore)], ['fallita', true])
+  assert.strictEqual(fs.existsSync(API.fileLock(dm)), false)
+  assert.strictEqual(API.leggiSpesa(dir).voci['az-api0015'].costo, 0)
+})
+
+test('F6.2 rilievo 6: il JSON finale arrivato dopo l\'uscita si legge alla chiusura degli stream; la chiave va via subito all\'uscita', async () => {
+  const dir = tmp()
+  const dm = tmp()
+  const root = tmp()
+  recordApi(dir, 'a-api00016', 'az-api0016')
+  assert.strictEqual((await API.lanciaApi(dir, 'a-api00016', 'az-api0016', ingressoApi(root), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }))[0], 0)
+  let chiaveDopoUscita
+  await API.eseguiApi(dir, 'a-api00016', 'az-api0016', ingressoApi(root), {
+    dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], env: {}, fontiCwd: () => fontiPulite(root),
+    avvia: () => {
+      const p = new Emettitore()
+      p.pid = 434343
+      p.stdout = new Emettitore()
+      p.stdin = new Emettitore()
+      p.stdin.end = () => setImmediate(() => {
+        p.emit('exit', 0)
+        setImmediate(() => {
+          chiaveDopoUscita = fs.existsSync(API.fileChiave(dm, 'az-api0016'))
+          p.stdout.emit('data', Buffer.from(JSON.stringify({ is_error: false, total_cost_usd: 0.25, num_turns: 1 })))
+          p.emit('close', 0)
+        })
+      })
+      queueMicrotask(() => p.emit('spawn'))
+      return p
+    },
+  })
+  assert.strictEqual(chiaveDopoUscita, false)
+  const esec = JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0016.json'), 'utf8'))
+  assert.deepStrictEqual([esec.stato, esec.costo], ['consegnata', 0.25])
+  assert.strictEqual(API.leggiSpesa(dir).voci['az-api0016'].costo, 0.25)
 })

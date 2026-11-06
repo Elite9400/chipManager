@@ -845,6 +845,8 @@ const en = {
   "ese.suggerisci": "Suggest",
   "ese.applica": "Apply to chips with no destination",
   "ese.consigliereNota": "The advisor picks only where (this computer, cloud, API); weights and profiles still pick model and effort. Explicit choices are never changed.",
+  // F6 review fixes
+  "err.apiRegistro": "API Claude: the spend log (spesa-api.json) is not valid, so no new run is reserved. Fix or remove the entry that is wrong.",
   // ‹fine›
 } satisfies Record<string, Voce>
 

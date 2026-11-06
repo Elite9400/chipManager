@@ -50,6 +50,20 @@ function fontiImpostazioni(root, env = process.env) {
   ]
 }
 
+/**
+ * Impostazioni che cambierebbero chi paga o dove vanno le richieste: credenziali o instradamenti nell'`env`, gateway e
+ * fornitori cloud, un `apiKeyHelper` dell'utente, ogni login imposto (`forceLogin*`, `forceLoginGatewayUrl` compreso).
+ * Una forma che non è un oggetto vale come vietata. Stessa regola del pannello per le fonti dell'host.
+ */
+function impostazioniVietate(s) {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return true
+  if (s.env !== undefined && (!s.env || typeof s.env !== 'object' || Array.isArray(s.env))) return true
+  const env = Object.keys(s.env ?? {})
+  return env.some(k => /^ANTHROPIC_(.*_)?(BASE_URL|AUTH_TOKEN|API_KEY)$/.test(k) || /^(CLAUDE_CODE_USE_|ANTHROPIC_(BEDROCK|VERTEX|FOUNDRY)_)/.test(k) ||
+      ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS'].includes(k)) ||
+    Object.keys(s).some(k => k.startsWith('forceLogin') || ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'].includes(k))
+}
+
 /** Una fonte che cambierebbe chi paga o dove va la richiesta? Illeggibile = sì. */
 function fonteVietata(file) {
   let testo
@@ -58,16 +72,11 @@ function fonteVietata(file) {
   } catch (e) {
     return e.code !== 'ENOENT'
   }
-  let s
   try {
-    s = JSON.parse(testo)
+    return impostazioniVietate(JSON.parse(testo))
   } catch {
     return true
   }
-  if (!s || typeof s !== 'object' || Array.isArray(s)) return true
-  const env = s.env && typeof s.env === 'object' ? s.env : {}
-  return ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY'].some(k => k in env) || Object.keys(env).some(k => k.startsWith('CLAUDE_CODE_USE_')) ||
-    'apiKeyHelper' in s || 'forceLoginMethod' in s || 'forceLoginOrgUUID' in s
 }
 
 /** Le fonti che bloccano `api-claude` (solo i nomi, mai i valori); anche una chiave già nell'ambiente blocca. */
@@ -88,9 +97,14 @@ function leggiSpesa(dir) {
     throw e
   }
   const s = JSON.parse(testo)
-  if (s?.v !== 1 || !s.voci || typeof s.voci !== 'object') throw new Error('registro della spesa illeggibile')
+  if (s?.v !== 1 || !s.voci || typeof s.voci !== 'object' || Array.isArray(s.voci) || !Object.entries(s.voci).every(([t, v]) => d.tentativoValido(t) && voceValida(v)))
+    throw new Error('registro della spesa non valido')
   return s
 }
+
+/** Una voce del registro: mese, tetto positivo, stato noto; il costo solo se contata (null = ignoto). */
+const voceValida = v => !!v && typeof v === 'object' && /^\d{4}-\d{2}$/.test(v.mese) && Number.isFinite(v.tetto) && v.tetto > 0 &&
+  (v.stato === 'prenotato' ? v.costo === undefined : v.stato === 'contato' && (v.costo === null || (Number.isFinite(v.costo) && v.costo >= 0)))
 
 /** Spesa del mese: contato = costo stimato (ignoto = tetto intero), prenotato = tetto intero. */
 const spesoNelMese = (voci, mese) =>
@@ -148,7 +162,11 @@ function discendenti(rec, deps = {}) {
   }
   const lista = (deps.elenco ?? d.elencoProcessi)()
   if (!lista) return [{ pid: '?' }]
-  return d.alberoVivo(lista, [{ pid: String(rec.pid), creato: rec.creato ?? NaN }, ...(rec.noti ?? [])], rec.avvio ?? 0)
+  const vivi = d.alberoVivo(lista, [{ pid: String(rec.pid), creato: rec.creato ?? NaN }, ...(rec.noti ?? [])], rec.avvio ?? 0)
+  // Identità della radice sconosciuta (censimento fallito all'avvio): un processo con quel PID vale vivo, mai morto.
+  const radice = lista.find(p => p.pid === String(rec.pid))
+  if (radice && !Number.isFinite(rec.creato) && !vivi.some(p => p.pid === radice.pid)) vivi.push({ ...radice, ignoto: true })
+  return vivi
 }
 
 /** L'istante dell'ultima consegna della chiave (o, senza consegne, dell'uscita o della prenotazione). */
@@ -190,7 +208,12 @@ function verificaLock(dm, adesso, deps = {}) {
   const rec = leggiLock(dm)
   if (!rec) return { libero: true }
   if (rec === 'illeggibile') return { libero: false, motivo: 'illeggibile' }
-  if (!rec.uscita) return { libero: false, motivo: rec.pid ? 'in-corso' : 'senza-pid', tentativo: rec.tentativo }
+  if (!rec.uscita) {
+    // Supervisore caduto con il processo verificato morto (identità nota, nessun discendente): la chiave si toglie già;
+    // il lock resta finché l'utente non sceglie «Libera».
+    if (rec.pid && Number.isFinite(rec.creato) && !discendenti(rec, deps).length) cancellaChiave(dm, rec.tentativo, deps)
+    return { libero: false, motivo: rec.pid ? 'in-corso' : 'senza-pid', tentativo: rec.tentativo }
+  }
   const c = condizioni(dm, rec, adesso, deps)
   if (c.motivo) return { libero: false, tentativo: rec.tentativo, ...c }
   fs.rmSync(fileLock(dm), { force: true })
@@ -227,7 +250,7 @@ async function terminaApi(dm, deps = {}) {
   const rec = leggiLock(dm)
   if (!rec || rec === 'illeggibile') return { chiusi: 0 }
   let chiusi = 0
-  for (const p of discendenti(rec, deps))
+  for (const p of discendenti(rec, deps).filter(x => !x.ignoto && x.pid !== '?'))
     try {
       ;(deps.uccidi ?? (pid => process.kill(Number(pid))))(p.pid)
       chiusi++
@@ -260,7 +283,13 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
       fs.rmSync(dirChiavi(dm), { recursive: true, force: true })
       const blocchi = blocchiImpostazioni(deps.fonti ?? fontiImpostazioni(input.root), deps.env ?? process.env)
       if (blocchi.length) return [6, JSON.stringify({ fonti: blocchi })]
-      if (!prenotaSpesa(dir, tentativo, input.mese, input.tetto, input.budget)) return [5, JSON.stringify({ speso: spesoNelMese(leggiSpesa(dir).voci, input.mese), budget: input.budget })]
+      let prenotata
+      try {
+        prenotata = prenotaSpesa(dir, tentativo, input.mese, input.tetto, input.budget)
+      } catch {
+        return [5, JSON.stringify({ registro: 'non valido' })]
+      }
+      if (!prenotata) return [5, JSON.stringify({ speso: spesoNelMese(leggiSpesa(dir).voci, input.mese), budget: input.budget })]
       fs.mkdirSync(dm, { recursive: true })
       scriviLock(dm, { tentativo, id, dir, istante: new Date((deps.adesso ?? Date.now)()).toISOString(), stato: 'in-avvio' })
       fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -324,6 +353,9 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
     try {
       if (!ingressoValido(input)) throw new Error('parametri non validi')
       const { cwd, ramo } = d.preparaWorktree(input, tentativo, deps, fuori)
+      // Il processo parte nel worktree, che può avere impostazioni sue: si ricontrolla lì, prima della chiave e dello spawn.
+      const vietate = blocchiImpostazioni(deps.fontiCwd?.(cwd) ?? fontiImpostazioni(cwd, deps.env ?? process.env), deps.env ?? process.env)
+      if (vietate.length) throw Object.assign(new Error('impostazioni vietate'), { fonti: vietate })
       fs.mkdirSync(dirChiavi(dm), { recursive: true })
       // Il file-chiave nasce subito prima dello spawn, leggibile solo dall'utente, e muore all'uscita.
       fs.writeFileSync(fileChiave(dm, tentativo), input.chiave, { mode: 0o600, flag: 'wx' })
@@ -354,6 +386,11 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
         else pezzi.push(b)
         letti += b.length
       })
+      // La fine degli stream arriva dopo l'uscita: il costo si legge solo allora (al più 30 s dopo, poi vale quel che c'è).
+      const chiuso = new Promise(ok => {
+        p.once('close', ok)
+        setTimeout(ok, 30_000).unref?.()
+      })
       p.stdin.on('error', () => {})
       p.stdin.end(input.prompt)
       const codice = await new Promise(ok => p.once('exit', ok))
@@ -361,15 +398,19 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
       rec = { ...rec, uscita: { codice, fine: new Date().toISOString() } }
       rec.chiaveCancellata = cancellaChiave(dm, tentativo, deps)
       scriviLock(dm, rec)
+      await chiuso
       const esito = troncato ? null : estraiEsito(Buffer.concat(pezzi).toString('utf8'))
       if (!esito) scrivi({ stato: 'avviata', ramo, incerto: true, costo: null, errore: 'esito API incerto: controlla il worktree prima di chiudere' })
       else scrivi({ stato: 'consegnata', ramo, costo: esito.costo, turni: esito.turni, errore: esito.errore || codice !== 0 ? 'esecuzione API terminata con errore: controlla il worktree prima di chiudere' : undefined })
       await contaSpesa(dir, tentativo, esito?.costo ?? null)
-    } catch {
+    } catch (e) {
       if (!partito) {
-        scrivi({ stato: 'fallita', ramo: fuori.ramo, errore: 'API non avviata: verifica comando e worktree; nessun file eliminato' })
-        cancellaChiave(dm, tentativo, deps)
-        fs.rmSync(fileLock(dm), { force: true })
+        scrivi({ stato: 'fallita', ramo: fuori.ramo,
+          errore: e?.fonti ? `API non avviata: impostazioni vietate nel worktree (${e.fonti.join(', ')})` : 'API non avviata: verifica comando e worktree; nessun file eliminato' })
+        // Il lock si toglie solo se il file-chiave non c'è più; altrimenti resta, con l'uscita registrata, e la
+        // prossima verifica ritenta la cancellazione prima di liberarlo.
+        if (cancellaChiave(dm, tentativo, deps)) fs.rmSync(fileLock(dm), { force: true })
+        else scriviLock(dm, { ...rec, uscita: { codice: null, fine: new Date().toISOString() }, chiaveCancellata: false })
         await contaSpesa(dir, tentativo, 0).catch(() => {})
       } else scrivi({ stato: 'avviata', ramo: fuori.ramo, incerto: true, costo: null, errore: 'esito API incerto: controlla il processo e il worktree' })
     }
@@ -389,6 +430,6 @@ async function comando(cmd, a, stdin, opz = {}) {
 }
 
 module.exports = {
-  comando, lanciaApi, eseguiApi, statoApi, liberaApi, terminaApi, blocchiImpostazioni, fontiImpostazioni, prenotaSpesa, contaSpesa,
+  comando, lanciaApi, eseguiApi, statoApi, liberaApi, terminaApi, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, prenotaSpesa, contaSpesa,
   leggiSpesa, spesoNelMese, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
 }

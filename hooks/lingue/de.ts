@@ -843,6 +843,8 @@ const de: Dizionario = {
   "ese.suggerisci": "Vorschlagen",
   "ese.applica": "Auf Chips ohne Ziel anwenden",
   "ese.consigliereNota": "Der Berater wählt nur, wo (dieser Rechner, Cloud, API); Gewichte und Profile wählen weiter Modell und effort. Explizite Entscheidungen werden nie geändert.",
+  // F6 review fixes
+  "err.apiRegistro": "API Claude: das Ausgabenprotokoll (spesa-api.json) ist ungültig, daher wird keine neue Ausführung reserviert. Korrigiere oder entferne den falschen Eintrag.",
   // ‹fine›
 }
 
