@@ -7,10 +7,10 @@
 [![Claude Code mod](https://img.shields.io/badge/Claude%20Code-mod-D97757)](#installazione)
 [![versione](https://img.shields.io/badge/versione-2.1.0-00BFFF)](#)
 [![superfici](https://img.shields.io/badge/superfici-desktop%20%C2%B7%20terminale-555)](#immagini)
-[![test](https://img.shields.io/badge/test-67%20%2B%2026%20verdi-059669)](#collaudo)
+[![test](https://img.shields.io/badge/test-287%20%2B%20100%20verdi-059669)](#collaudo)
 [![licenza](https://img.shields.io/badge/licenza-MIT-blue)](LICENSE)
 
-**[Perché](#perché)** · **[Funzioni](#funzioni)** · **[Immagini](#immagini)** · **[Installazione](#installazione)** · **[Primi passi](#primi-passi)** · **[Come funziona](#come-funziona)** · **[Configurazione](#configurazione)** · **[Limiti e pesi](#limiti-e-bilanciamento)** · **[FreeLLMAPI](#freellmapi)** · **[Lingue](#lingue)** · **[Terminale](#terminale)** · **[Sicurezza](#sicurezza-e-guardie)** · **[Domande](#domande)**
+**[Perché](#perché)** · **[Funzioni](#funzioni)** · **[Immagini](#immagini)** · **[Installazione](#installazione)** · **[Primi passi](#primi-passi)** · **[Come funziona](#come-funziona)** · **[Dove eseguire](#dove-eseguire)** · **[Chi lavora](#chi-lavora)** · **[Auditor](#auditor-advisor)** · **[Impostazioni](#impostazioni)** · **[Configurazione](#configurazione)** · **[Limiti e pesi](#limiti-e-bilanciamento)** · **[FreeLLMAPI](#freellmapi)** · **[Lingue](#lingue)** · **[Terminale](#terminale)** · **[Aspetto](#aspetto)** · **[Sicurezza](#sicurezza-e-guardie)** · **[Domande](#domande)**
 
 </div>
 
@@ -31,35 +31,49 @@ decidere come usarli nel progetto in cui lavora. Tutto ciò che è proprio di un
 
 ## Funzioni
 
-- **Una sola coda per il lavoro suggerito** — le sessioni chiamano `suggerisci_azione` invece di scrivere chip.
-- **Revisione prima dell'avvio** — ordine, esecutore (Claude / Codex), revisore, modello, effort, corsia (R0–R5),
-  contesto fork o nuovo, worktree, ramo, permessi. Tutto pre-impostato da chi propone, tutto modificabile.
-- **Avvio massivo nell'ordine giusto** — prima le dipendenze, un tetto di sessioni in parallelo, una sola corsia
-  Codex per macchina.
-- **Chi fa cosa, adesso** — la prima vista mette in tabella tutte le sessioni del progetto, anche quelle aperte a mano
-  e quelle Codex: lavoro, motore, modello, effort, stato, contesto usato e ultima attività. Sopra, una riga di
-  sintesi («3 al lavoro · 1 aspetta te · Claude 49% · Codex 41%»); sotto, aspettano te · da avviare e in coda · da
-  fondere, con avviso al primo blocco.
-- **Limiti degli agenti a colpo d'occhio** — piano Claude, piano Codex, spesa API, saldi e budget manuali, ognuno
-  con **fonte ed età**. Ignoto vuol dire ignoto: nessun numero inventato.
-- **Avviare una chip sola, subito** — ogni chip pronta ha **▶ Avvia** sempre nello stesso punto, **Avvia la
-  prossima** (`n`) avvia la prima che il piano farebbe partire adesso, e una chip bloccata dice perché.
-- **Responsive su desktop e terminale** — i titoli vanno a capo, le azioni scendono sotto quando manca spazio e
-  l'impaginazione segue la larghezza vera del pannello su ogni superficie.
-- **Impostazioni a sezioni** — Connessioni, Soglie, Bilanciamento, Progetto, Board e Avanzate, fatte di chip e di
-  `−`/`+` invece che di numeri liberi; le modifiche restano in una bozza finché non premi **Applica** (una sola scrittura) o **Annulla modifiche**.
-- **Pesi di carico** — scegli un profilo (Automatico, Risparmio, Qualità, Velocità) o regola fornitori, modelli ed
-  effort su cinque posizioni; il pannello sceglie sempre e solo fra le combinazioni che le tue regole ammettono.
-- **FreeLLMAPI, su richiesta** — installazione Docker guidata di una versione fissata, rilevamento automatico e
-  livelli d'uso per sgravare i compiti testuali brevi e a basso impatto.
-- **Desktop e terminale** — lo stesso pannello nell'app Claude Code e nella CLI, con un lanciatore da terminale
-  dove il servizio delle sessioni desktop non c'è.
-- **Avanzamento delle milestone** — milestone GitHub aperte con percentuale e stima d'arrivo dal ritmo recente.
-- **Board di progetto, su richiesta** — una pagina HTML locale con la linea dello sviluppo e, per ogni task, piano,
-  mandato, processo, a chi è affidato, effort e revisione. Generata senza modello; i riassunti di una frase con il
-  modello più leggero sono una scelta a parte.
-- **Guardie che falliscono chiuse** — il lavoro sensibile è sempre rivisto da Claude, una prenotazione atomica
-  impedisce gli avvii doppi, le regole si rileggono prima di ogni decisione, i segreti non stanno mai in chiaro.
+In ordine di quanto le userai.
+
+- **Una sola coda per il lavoro suggerito** — le sessioni chiamano `suggerisci_azione` invece di scrivere chip in
+  chat; tu le rivedi, le instradi e le avvii da un solo pannello.
+- **Chi fa cosa, adesso** — la vista **Lavoro** elenca tutte le sessioni del progetto, anche quelle aperte a mano e
+  quelle Codex: lavoro, motore, modello, effort, stato, contesto usato e ultima attività. Sopra, una riga di sintesi
+  («3 al lavoro · 1 aspetta te · Claude 76% usato»); sotto, aspettano te · da avviare e in coda · da fondere.
+- **Avvia una chip o tutte** — **▶ Avvia** su ogni chip pronta, **Avvia la prossima** (`n`), **Avvia tutte** (`a`)
+  nell'ordine delle dipendenze, un tetto alle sessioni in parallelo, una corsia Codex per macchina; una chip bloccata
+  dice perché.
+- **Chi lavora, a colpo d'occhio** — ogni chip mostra motore · modello · effort, poi auditor · revisore · corsia, con
+  il motivo della scelta consigliata. I preset (**Consigliato**, **Economico**, **Qualità**) si vedono in anteprima
+  prima di applicarli, «modificato a mano» arriva con **Ripristina consigliato**, e le scelte complete stanno in
+  **Dettagli**. Vedi [Chi lavora](#chi-lavora).
+- **Dove eseguire** — su questo computer, nel cloud di Claude o **qui a crediti API**, con un budget mensile e un
+  tetto per esecuzione. Un consigliere di destinazione può suggerire o applicare dove gira ogni chip. Vedi
+  [Dove eseguire](#dove-eseguire).
+- **Configurazione con un clic** — la sezione **Esecuzione** controlla da sola che cosa è pronto (accesso a Claude,
+  GitHub, la chiave API, impostazioni compatibili, budget) e offre l'unica azione che sistema ogni pezzo mancante,
+  oppure la procedura **Configura Esecuzione**. Niente terminale.
+- **Cambiare una sessione in corso** — **Cambia modello** e **Cambia effort** sulle sessioni desktop avviate da questo
+  pannello, con una conferma e le stesse guardie dell'avvio.
+- **Auditor (advisor)** — affianca a una chip un modello più forte che Claude Code consulta mentre lavora, controllato
+  sulle coppie documentate. Vedi [Auditor](#auditor-advisor).
+- **Limiti degli agenti a colpo d'occhio** — piano Claude, piano Codex, spesa API, saldi e budget manuali, ciascuno con
+  **fonte ed età**; le percentuali dicono sempre quanto è **usato** («76% usato»), mai quanto resta. Ignoto vuol dire
+  ignoto.
+- **Impostazioni con Applica** — ogni modifica aspetta in una bozza finché **Applica** la scrive in un colpo solo; una
+  modifica di un'altra sessione sullo stesso campo chiede prima di sovrascrivere. Le sessioni possono **proporre**
+  impostazioni o pesi; decidi tu.
+- **Pesi di carico e profili** — Automatico, Risparmio, Qualità, Velocità, oppure fornitori, modelli ed effort
+  regolati su una scala di cinque passi; il pannello sceglie solo fra le combinazioni che le tue regole ammettono.
+- **Stile developer** — stati come glifo + parola, dati in monospazio, barre a blocchi, l'accento solo per la
+  grafica, lo stesso aspetto su desktop e terminale. Vedi [Aspetto](#aspetto).
+- **Sei lingue** — inglese per difetto, più italiano, spagnolo, francese, tedesco e portoghese brasiliano.
+- **Board di progetto, a richiesta** — una pagina HTML locale con la linea di lavoro e, per ogni compito, piano,
+  mandato, processo, responsabile, effort e revisione. Costruita senza modelli; i riassunti di una frase sono una
+  scelta a parte.
+- **FreeLLMAPI, a richiesta** — installazione Docker guidata di una versione fissata, per scaricare compiti testuali
+  brevi e a basso impatto.
+- **Avanzamento delle milestone** — milestone GitHub aperte con percentuale e una stima dal ritmo di chiusura recente.
+- **Guardie fail-closed** — il lavoro sensibile è sempre rivisto da Claude, una prenotazione atomica perché niente
+  parta due volte, regole rilette prima di ogni decisione, segreti mai salvati in chiaro.
 
 ## Immagini
 
@@ -75,7 +89,7 @@ decidere come usarli nel progetto in cui lavora. Tutto ciò che è proprio di un
 </tr>
 </table>
 
-<sub>Dati d'esempio. Le immagini desktop riproducono contenuto e colori reali del pannello; quella del terminale è una cattura reale.</sub>
+<sub>Dati d'esempio. Queste immagini sono precedenti alla 2.2.0 e saranno sostituite da catture di questa versione: il pannello ora si apre in inglese (l'italiano si sceglie in Impostazioni), con lo [stile developer](#aspetto) descritto più sotto.</sub>
 
 ## Installazione
 
@@ -119,10 +133,12 @@ L'installazione da cartella legge dalla cartella: non spostarla. Dopo una modifi
    [Configurazione](#configurazione)). Senza regole il pannello mostra tutto ma non avvia niente.
 3. **Chiedi al modello** di pianificare nel pannello: *«Dividi il lavoro in azioni e suggeriscile in chipManager»*.
    Chiama `suggerisci_azione` una volta per azione, con le dipendenze, e può leggere prima `risorse_agenti`.
-4. **Rivedi e avvia**: apri **Dettagli** su una riga per cambiare ciò che vuoi, poi **Avvia** o **Avvia tutte**.
+4. **Rivedi e avvia**: apri **Dettagli** su una chip per vedere chi ci lavora e cambiare ciò che vuoi, poi
+   **▶ Avvia**, o **Avvia tutte** per l'intera coda.
 
 Il pannello ha tre viste: **Lavoro** (chi fa cosa, la coda, quello che aspetta te), **Carico** (limiti e budget) e
-**Impostazioni**. I tasti `1` `2` `3` le scelgono anche da tastiera.
+**Impostazioni**. I tasti `1` `2` `3` le scelgono anche da tastiera. La lingua si cambia in
+**Impostazioni → Lingua** (le etichette qui sotto sono quelle italiane).
 
 ## Come funziona
 
@@ -160,9 +176,126 @@ stateDiagram-v2
 
 | Strumento | Per | Che cosa fa |
 |---|---|---|
-| `suggerisci_azione` | il modello che propone | mette un'azione nel pannello con titolo, mandato autoportante, ordine, dipendenze e pre-impostazioni |
-| `risorse_agenti` | il modello che propone | sola lettura: limiti con fonte ed età, pesi, fornitori ammessi, livello FreeLLMAPI, modelli ed effort ammessi; delle chiavi solo impostata / mancante |
+| `suggerisci_azione` | il modello che propone | mette un'azione nel pannello con titolo, mandato autoportante, ordine, dipendenze e pre-impostazioni (motore, modello, effort, corsia, destinazione) |
+| `risorse_agenti` | il modello che propone | sola lettura: limiti con fonte ed età, pesi, fornitori, modelli ed effort ammessi, le destinazioni con i loro margini e le impostazioni correnti che una sessione può proporre; delle chiavi solo impostata / mancante |
 | `aggiorna_azione` | le sessioni avviate | segna l'azione *consegnata* (o *fallita*) con il gettone di tentativo scritto nel mandato; riferisce l'esito della revisione (`revisione`), anche senza stato |
+| `proponi_pesi` | una sessione, su richiesta | propone un profilo di bilanciamento o regolazioni dei pesi; il titolare la applica o la rifiuta dal pannello, e può annullarla |
+| `proponi_impostazioni` | una sessione, solo quando lo chiedi tu | propone impostazioni; una proposta valida riempie la bozza delle Impostazioni, non cambia niente finché non premi **Applica** |
+
+## Dove eseguire
+
+Ogni chip ha una destinazione, scelta in **Dettagli → Come parte la sessione → Dove**, o per più chip insieme con le
+caselle di selezione e la barra **→ locale / cloud / API Claude**. Una destinazione che una chip non può usare si
+vede con il suo motivo, mai nascosta in silenzio.
+
+| Destinazione | Che cosa gira | Limiti e costo |
+|---|---|---|
+| **Su questo computer** | una nuova sessione desktop (o il lanciatore CLI nel terminale) | i limiti del tuo piano |
+| **Nel cloud** (solo sessione nuova) | una sessione cloud di Claude dal ramo pubblicato | i limiti del tuo piano; serve un repository GitHub |
+| **Qui a crediti API (Claude)** | `claude -p` su questo computer, nel suo worktree, con la chiave API | i tuoi crediti API, entro un budget mensile |
+
+**API Claude (crediti).**
+
+- **La chiave** va solo nelle opzioni del plugin (**/config → chip-manager → Anthropic API (credits)**), custodita
+  nell'archivio sicuro dell'host, mai in un file, in un mandato o nel pannello. Il pannello controlla solo che ci sia.
+- **Usa una chiave dedicata.** Crea una chiave solo per la mod, in un workspace della Console con un limite di spesa
+  mensile basso: è l'unico tetto che nessun processo locale può superare, e la mod non può verificarlo.
+- **Che cosa una chiave può e non può proteggere.** Durante un'esecuzione la chiave è raggiungibile dall'agente e dai
+  suoi strumenti, come qualunque chiave data a un agente. Dopo, il file-chiave viene cancellato e la copia in memoria
+  di Claude scade entro 5 minuti; questo non revoca la chiave. Se pensi che sia stata copiata, revocala dalla Console
+  e creane una nuova: con una chiave dedicata alla mod puoi farlo senza toccare le altre.
+- **Budget e tetto.** Ogni esecuzione prenota il suo tetto sul budget del mese prima di partire e si ferma lì
+  (`--max-budget-usd`); il tetto può comunque essere superato di poco, e la spesa è una stima. Un'esecuzione con esito
+  incerto conta il tetto intero. La vista **Carico** mostra la spesa del mese rispetto al budget.
+- **Un'esecuzione per macchina.** Un lock della macchina tiene le esecuzioni API una alla volta; se un'esecuzione
+  lascia qualcosa, il pannello dice che cosa e offre **Libera** o **Termina i processi**.
+- **Le impostazioni che cambiano chi paga** (un gateway, un metodo di accesso, un `apiKeyHelper`, credenziali o URL
+  base in `env`) bloccano la corsia, in qualunque fonte di impostazioni; il pannello nomina il file e l'impostazione
+  e non li modifica mai.
+
+**Cloud di Claude.** Servono un piano idoneo (Pro, Max, Ultra, Team o Enterprise), il login claude.ai, il repository
+collegato su claude.ai/code e un ambiente cloud. Usa i limiti del piano, e ogni chip nel cloud chiede la conferma del
+testo intero. I crediti extra nel cloud non sono documentati: verifica sul tuo account.
+
+**Consigliere di destinazione.** In **Impostazioni → Esecuzione → Consiglia dove eseguire**: *Spento*, *Suggerisci*
+(una riga su ogni chip) o *Applica alle chip senza destinazione*. Sceglie solo dove (questo computer, cloud, API);
+pesi e profili scelgono ancora modello ed effort, e le scelte esplicite non si toccano mai.
+
+**Configurazione con un clic.** **Impostazioni → Esecuzione → Che cosa è pronto** controlla da sola, quando la apri e
+con **Ricontrolla**:
+
+- l'accesso a Claude (solo se c'è o no, mai l'account) — **Accedi** apre il login nel browser;
+- GitHub e il remoto del progetto — **Collega GitHub** apre il login nel browser;
+- la chiave API, presente o no — **Inserisci la chiave** apre `/config` e mostra dove incollarla;
+- fonti di impostazioni compatibili con le esecuzioni API — un file che blocca si vede con la sua impostazione e
+  **Copia percorso**;
+- budget e tetto.
+
+Dopo un accesso il pannello ricontrolla ogni 5 secondi, fino a 3 minuti, finché la sezione è aperta. Se un accesso non
+può partire, il pannello mostra il comando con **Copia**. **Configura Esecuzione** percorre i passi mancanti uno alla
+volta, ognuno si può saltare, e si chiude quando è tutto pronto.
+
+## Chi lavora
+
+Ogni chip mostra chi farà il lavoro, in una sintesi in stile developer:
+
+```
+Claude · Opus 5.5 · ▰▰▰▱ high
+auditor Fable 5.1 · rev Codex · R3
+consigliato: corsia R3 · profilo Automatico · piano Claude usato al 42%
+```
+
+- **Preset** — **Consigliato** (quello che sceglierebbe il bilanciamento), **Economico** (più economico: Claude di rango
+  più basso a parità di punteggio, non aggiunge mai un auditor) e **Qualità** (effort più alto, può aggiungere un
+  auditor sulle corsie alte, con il costo detto). Un preset mostra prima un'anteprima nella sintesi; **Applica** lo
+  scrive. Corsia, revisore e destinazione non si toccano mai, e un auditor scelto da te resta finché è ancora una
+  coppia valida.
+- **«modificato a mano»** compare quando le tue scelte differiscono da quelle consigliate, con
+  **Ripristina consigliato**.
+- **Dettagli** (chiuso per difetto) contiene motore, modello, effort, auditor, revisore e corsia, con la legenda della
+  corsia. Le scelte non ammesse non si offrono, e il motivo si vede.
+- **Le sessioni in corso** mostrano la stessa sintesi, in sola lettura. Sulle sessioni desktop avviate da questo
+  pannello con Claude, **Cambia modello** e **Cambia effort** cambiano la sessione dal turno successivo, dopo una
+  conferma. Il pannello ricontrolla sessione, tentativo e regole della corsia, rifiuta un cambio che altererebbe il
+  revisore già nominato nel mandato, e verifica il risultato; se non può, dice *incerto* con **Ricontrolla**, senza
+  mai ritentare da solo.
+
+## Auditor (advisor)
+
+L'**advisor** di Claude Code permette al modello al lavoro di consultare un modello più forte quando lo ritiene utile.
+chipManager lo chiama **auditor** e te lo fa scegliere per ogni chip: *nessuno*, Sonnet, Opus, Fable o un id di
+modello completo.
+
+- **Solo coppie documentate.** Le coppie vengono dalla tabella dell'advisor di Claude Code, tenuta in un solo punto con
+  fonte e data. Una coppia fuori tabella non si può scegliere e blocca l'avvio (Claude Code la ignorerebbe in
+  silenzio); nemmeno gli id di modello sconosciuti si possono scegliere. L'auditor funziona solo con Claude come
+  esecutore, e mai nel cloud.
+- **API Claude: per sessione.** Sulla corsia API l'auditor passa con `--advisor` solo a quell'esecuzione. Dopo, la chip
+  dice che cosa è successo: applicato, ereditato dalle impostazioni, nessuno o spento. Se all'avvio l'advisor non è
+  disponibile (consenso per Fable, `availableModels`), la chip lo dice e offre **Riavvia senza auditor**, che imposta
+  `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` solo per quell'esecuzione, a meno che un file di impostazioni non lo scavalchi.
+- **Sessioni desktop e terminale: a mano.** Lì non c'è un'impostazione per sessione. La chip ti dice di scrivere
+  `/advisor <modello>` in quella sessione, con **Copia**: cambia **il tuo default per tutte le sessioni** (tranne
+  Remote Control e i worker remoti), quindi scrivi `/advisor off` quando hai finito. La mod non scrive mai
+  `advisorModel` da sola, e quello che una sessione eredita non si verifica.
+- **Fable** come auditor richiede, su alcuni piani, un consenso una tantum che dai tu con `/model fable` in una sessione
+  interattiva; la mod non lo dà mai. L'uso di Fable può essere addebitato ai crediti d'uso.
+
+## Impostazioni
+
+La vista **Impostazioni** mostra una sezione alla volta: Connessioni, Soglie, Bilanciamento, Progetto, Board,
+Avanzate, Esecuzione, Lingua e Legenda.
+
+- **Applica.** Ogni modifica va in una bozza e si valida subito (l'errore resta sotto il controllo). **Applica** scrive
+  l'intera bozza con un solo compare-and-swap; **Annulla modifiche** la scarta. Se un'altra sessione ha cambiato uno
+  degli stessi campi non si scrive niente, e un popup offre **Ricarica e riapplica la mia bozza** o
+  **Scarta la mia bozza**. Uscire dalle Impostazioni con una bozza chiede Applica, Annulla o Resta.
+- **Proposte dalle sessioni.** Una sessione può proporre impostazioni con `proponi_impostazioni`, ma solo quando glielo
+  chiedi tu. Può toccare profilo, soglie, board, consigliere di destinazione, budget e tetto API, e lingua; qualunque
+  altro campo (chiavi, guardie, permessi, fornitori, destinazioni) rifiuta l'intera proposta. Una proposta valida
+  riempie la bozza sotto un banner «Proposta da una sessione»; non cambia niente finché non premi **Applica**. Con una
+  bozza già aperta aspetta, una alla volta. Le proposte di pesi (`proponi_pesi`) compaiono come una riga nella vista
+  Lavoro con **Rivedi**, **Applica**, **Rifiuta** e, dopo l'applicazione, **Annulla**.
 
 ## Configurazione
 
@@ -188,7 +321,11 @@ Tutto ciò che è proprio di un progetto sta in un file locale, fuori da ogni re
       "limitiManuali": [
         { "id": "budget-api", "fornitore": "claude", "nome": "Budget API", "valore": 200, "unita": "EUR", "letto": "2026-11-05T08:00:00Z" }
       ],
-      "soglie": { "claude": { "attenzione": 70, "critica": 90 }, "codex": { "attenzione": 80, "critica": 95 } }
+      "soglie": { "claude": { "attenzione": 70, "critica": 90 }, "codex": { "attenzione": 80, "critica": 95 } },
+      "profilo": "automatico",
+      "board": { "modo": "spenta" },
+      "apiClaude": { "budgetUsd": 20, "tetto": 2 },
+      "consigliere": "suggerisci"
     }
   }
 }
@@ -207,10 +344,15 @@ Tutto ciò che è proprio di un progetto sta in un file locale, fuori da ogni re
 | `pesi` | incremento percentuale e/o assoluto per fornitore, modello o effort | nessuno |
 | `limitiManuali` | piani, budget o percentuali che dichiari tu, con istante originale e unità | nessuno |
 | `soglie` | per fornitore, `attenzione` e `critica` in percentuale (la prima sotto la seconda); `null` = nessuna soglia | 70 / 90 |
+| `profilo` | profilo di bilanciamento: `automatico`, `risparmio`, `qualita`, `velocita`, `personalizzato` | automatico |
+| `board` | modo della board di progetto: `spenta`, `accesa`, `riassunti` | spenta |
+| `apiClaude` | corsia API Claude: `budgetUsd` mensile e `tetto` per esecuzione, in USD | spenta |
+| `consigliere` | consigliere di destinazione: `suggerisci` o `applica` | spento |
 
 Configurazione e `routing.json` si rileggono prima di ogni decisione: se uno dei due è illeggibile o non valido
-non parte niente e il pannello dice perché. Le impostazioni si modificano anche dalla vista **Impostazioni**; il
-salvataggio è un compare-and-swap sul file intero, preserva gli altri progetti e rifiuta un editor diventato vecchio.
+non parte niente e il pannello dice perché. Di rado serve toccare il file: la vista **Impostazioni** lo scrive
+attraverso una bozza e **Applica** (vedi [Impostazioni](#impostazioni)), con un compare-and-swap sul file intero che
+preserva gli altri progetti. La chiave API non sta qui: vive nelle opzioni del plugin (`/config`).
 
 Le azioni salvate da una versione precedente senza progetto non si vedono in nessun progetto. All'apertura, una volta
 per sessione, un popup chiede se assegnarle al progetto corrente o scartarle (lo scarto si annulla); se il popup non
@@ -246,7 +388,7 @@ Un file parziale non conta come letto: al pannello servono tutte le sezioni che 
 
 ## Board di progetto
 
-Spenta per difetto. In **Impostazioni → Board di progetto** scegli *Accesa* o *Accesa con riassunti*. Il pannello
+Spenta per difetto. In **Impostazioni → Board** scegli *Accesa* o *Con riassunti*. Il pannello
 scrive allora `<cartella dati>/board/<progetto>-<hash>/index.html` ogni 30 secondi, se qualcosa è cambiato, e
 **Apri board** nell'intestazione la apre nel browser.
 
@@ -254,7 +396,8 @@ scrive allora `<cartella dati>/board/<progetto>-<hash>/index.html` ogni 30 secon
   d'avvio) · fatto (ultimi 30 giorni e ultimi 15 commit del ramo base). Ogni task apre una scheda con il piano
   (`piano`, un percorso `.md`/`.txt` nel repo), il mandato ricostruito con le regole attuali, mandato e background
   originali, corsia e passi, esecutore, modello, effort, permessi, worktree, il revisore previsto e l'esito riferito
-  da una sessione («riferita da», mai «verificata»), date e legami.
+  da una sessione («riferita da», mai «verificata»), date e legami. Segue il tema chiaro o scuro del sistema, con gli
+  stessi token dei colori del pannello.
 - **Costo** — la pagina la scrive il codice, zero token. I riassunti, se li accendi, costano circa 700 token in
   ingresso e 120 in uscita per task cambiato con `haiku`, al più 5 al minuto e 100 al giorno. Mandano a Claude solo
   titolo, mandato e titoli delle dipendenze, e non girano mai con *Solo rete locale* o con Claude vietato.
@@ -268,7 +411,8 @@ effort (sessioni al lavoro in inchiostro, chip in coda in grigio), i limiti ragg
 rapporto vero e i due estremi, il contesto usato da ogni sessione al lavoro con il totale di token per modello, e i
 pesi in uso detti a parole con gli avvii delle ultime 24 ore per fornitore.
 
-Ogni riga mostra **fonte, età e unità**. Le barre diventano ambra alla soglia di attenzione e rosse alla critica del
+Ogni riga mostra **fonte, età e unità**. Le percentuali dicono sempre quanto è **usato** («76% usato»), mai quanto
+resta, sia nella riga di sintesi sia nelle barre. Le barre diventano ambra alla soglia di attenzione e rosse alla critica del
 loro fornitore (predefinite 70% e 90%, `soglie` nella configurazione). Dopo cinque minuti, dopo
 il reset o in caso d'errore, un valore misurato non è più capacità fresca. I valori manuali dicono quando li hai
 inseriti e non contano mai come margine automatico. *Non disponibile* non vuol dire zero uso.
@@ -370,7 +514,8 @@ testo CJK vanno a capo e si accorciano come prima, senza allineamento delle colo
 
 ## Terminale
 
-Lo stesso pannello e gli stessi tasti funzionano nella CLI: `1` `2` `3` le viste, `r` aggiorna, `a` avvia tutte. Sotto
+Lo stesso pannello e gli stessi tasti funzionano nella CLI: `1` `2` `3` le viste, `r` aggiorna, `n` avvia la
+prossima, `a` avvia tutte. Sotto
 gli 80 caratteri la tabella delle sessioni lascia cadere contesto e attività e unisce modello ed effort. La
 capacità d'avvio si verifica con `tool.list` **prima** di prenotare: dove c'è `start_session` si usa l'app desktop,
 altrove il lanciatore CLI. Una risposta desktop persa non diventa mai un secondo avvio.
@@ -381,27 +526,55 @@ modello, effort e permessi espliciti, prompt su stdin, senza shell. Permessi: `d
 (predefinito sulle sensibili) o `plan`; `auto` e bypass sono rifiutati, quindi i comandi che chiedono
 un'approvazione fuori dalla tua lista si fermano — controlla il worktree. Dalla CLI niente fork, cloud o cartella
 condivisa. Un record per tentativo nasce prima del processo; l'uscita del processo vuol dire *consegnata*, mai
-*fusa*. I worktree non vengono mai eliminati da soli.
+*fusa*. I worktree non vengono mai eliminati da soli. La corsia API Claude gira allo stesso modo, con la chiave passata
+attraverso un file `apiKeyHelper` che si cancella a fine esecuzione.
+
+## Aspetto
+
+Il pannello segue uno stile developer, uguale su desktop e terminale:
+
+- **Gli stati sono un glifo e una parola**, mai il solo colore: `● In corso`, `○ In coda`, `◐ In avvio`,
+  `? Avvio incerto`, `✓ Consegnata`, `✗ Avvio fallito`, `⏸ Ferma`.
+- **Dati in monospazio** (modelli, effort, orari, rami), l'effort come barre (`▰▰▱▱ medium`), l'uso come barre a
+  blocchi `▕██████▍     ▏` con i due estremi scritti.
+- **Le scelte si vedono, non si leggono**: la chip o la vista scelta ha il bordo e il velo dell'accento ed è il
+  pulsante primario; le altre sono attenuate. Le etichette dicono solo il nome (niente suffissi «scelto»/«non
+  scelto»). È un limite di accessibilità noto, accettato per questa versione.
+- **Il colore ha un compito**: il testo usa l'inchiostro e il tenue dell'host; l'accento (`#0A86C9`) segna solo la
+  grafica — bordi, barre, glifi e veli; ambra e rosso compaiono solo per attenzione e critica. Ogni colore e opacità
+  viene da un solo file di token, e la grafica tiene almeno 3:1 sugli sfondi chiaro e scuro di riferimento.
+- **Hover**: sul desktop la riga sotto il puntatore prende un velo leggero dell'accento, e le azioni secondarie
+  attenuate tornano piene sotto il puntatore o con il fuoco della tastiera. Niente si raggiunge solo con l'hover; il
+  terminale non ha hover e mostra ogni azione.
+- **La board** usa gli stessi token come variabili CSS, segue il tema chiaro o scuro del sistema, e le sue coppie di
+  testo sono controllate a 4,5:1.
 
 ## Sicurezza e guardie
 
-- **Lavoro sensibile (R4/R5)** — testo che tocca auth, permessi, PII o i tuoi termini configurati: autore Opus o
-  Fable, revisore Claude obbligatorio, effort almeno high; mai Codex, proxy, cloud o bypass dei permessi.
-- **Un solo avvio** — prenotazione atomica sotto un mutex del sistema operativo (un socket su 127.0.0.1 liberato
-  alla morte del processo): due pannelli non avviano mai la stessa azione.
-- **Una sola corsia Codex** — occupata finché vive il comando Codex o un suo discendente; le revisioni in attesa
-  passano davanti e provano di essere vive con un battito ogni 2 s.
-- **Cloud** — solo titolo e mandato, mai il background, mai su corsie sensibili o con dati locali.
-- **Chiusura** — solo dal task del registro legato per ramo **e** issue, mai in cartella condivisa; altrimenti
-  l'azione resta *consegnata* finché non la chiudi tu.
-- **Segreti** — le chiavi Anthropic Admin, DeepSeek e FreeLLMAPI stanno nei campi `userConfig` sicuri di Claude
-  Code (`/config`) o nell'ambiente (`ANTHROPIC_ADMIN_KEY`, `DEEPSEEK_API_KEY`, `FREELLMAPI_KEY`). Arrivano
-  all'helper solo nel suo ambiente, mai negli argomenti; stato, pannello e messaggi dicono solo *impostata* /
-  *mancante*.
-- **Fallire chiusi** — regole, configurazione o file d'azione illeggibili bloccano avvii e chiusure automatiche
-  invece di tirare a indovinare.
-- **Board** — la scrive l'helper sotto il lock della configurazione, solo se modo e generazione sono ancora quelli
-  attesi; rifiuta link, junction, marcatori d'identità di altri progetti e cartelle dati dentro un working tree.
+- **Lavoro sensibile (R4/R5)** — testo che tocca auth, permessi, PII o i termini che configuri: autore Opus o Fable,
+  revisore Claude obbligatorio, effort almeno high; mai Codex, un proxy, il cloud o un bypass dei permessi.
+- **Un avvio solo** — prenotazione atomica sotto un mutex del sistema operativo (un socket su 127.0.0.1 che si libera
+  quando il processo muore): due pannelli non avviano mai la stessa azione.
+- **Una corsia Codex** — tenuta finché vive il comando Codex o un suo discendente; le revisioni in attesa passano
+  prima e provano di essere vive con un battito ogni 2 s.
+- **Un'esecuzione API per macchina** — un lock della macchina, liberato solo quando l'esecuzione, i suoi discendenti
+  e il suo file-chiave non ci sono più; la spesa del mese si prenota prima dell'avvio, e un esito incerto conta il
+  tetto intero.
+- **Cloud** — solo titolo e mandato, mai il background, mai sulle corsie sensibili o con schemi di dati locali.
+- **Chiusura** — solo da un compito del registro collegato per ramo **e** issue, mai in una cartella condivisa;
+  altrimenti l'azione resta *consegnata* finché non la segni tu.
+- **Segreti** — la chiave Anthropic API (crediti), la chiave Admin, le chiavi DeepSeek e FreeLLMAPI vivono nei campi
+  sicuri `userConfig` di Claude Code (`/config`); le ultime tre possono venire anche dall'ambiente
+  (`ANTHROPIC_ADMIN_KEY`, `DEEPSEEK_API_KEY`, `FREELLMAPI_KEY`). Non passano mai in argv, record, log o mandati;
+  pannello e messaggi mostrano solo *impostata* / *mancante*. I controlli di accesso dicono solo se c'è o no, mai
+  un'email o un id di account.
+- **Nessuna impostazione riscritta** — la mod non modifica mai i tuoi file di impostazioni di Claude Code;
+  un'impostazione che blocca una corsia si nomina, con il suo file, perché la cambi tu.
+- **Fail-closed** — regole, configurazione, file delle azioni o impostazioni illeggibili bloccano gli avvii e la
+  chiusura automatica invece di tirare a indovinare.
+- **Board** — scritta dall'helper sotto il lock della configurazione, solo se modo e generazione sono ancora quelli
+  attesi; collegamenti, junction, marcatori d'identità estranei e cartelle dati dentro un working tree sono
+  rifiutati.
 
 ## Legenda
 
@@ -435,15 +608,19 @@ Lo stesso testo della sezione **Legenda** delle Impostazioni e del fondo della b
 
 | Percorso | Che cosa |
 |---|---|
-| `hooks/register.tsx` | eventi, strumenti MCP, avvio delle sessioni, sorveglianza |
-| `hooks/pannello.tsx` | il pannello, desktop e terminale |
-| `hooks/logica.ts` | logica pura: regole, pianificazione, transizioni, pesi, colori |
+| `hooks/register.tsx` | eventi, strumenti MCP, avvio delle sessioni, sorveglianza, corsia API, proposte di impostazioni |
+| `hooks/pannello.tsx` | i dati condivisi e l'intestazione del pannello |
+| `hooks/vista-lavoro.tsx`, `hooks/vista-carico.tsx`, `hooks/vista-impostazioni.tsx` | le viste Lavoro, Carico e Impostazioni |
+| `hooks/ui.tsx`, `hooks/tema.ts` | componenti condivisi (chip, righe, barre) e i token dei colori |
+| `hooks/logica.ts` | logica pura: regole, pianificazione, transizioni, destinazioni, coppie dell'auditor |
+| `hooks/bilanciamento.ts` | pesi, profili, preset, la bozza delle Impostazioni e le proposte |
 | `hooks/board.ts` | generatore puro della board di progetto (HTML) |
 | `hooks/lingua.ts`, `hooks/lingue/` | lingue: dizionari tipizzati (l'inglese è la fonte), plurali, date, numeri, glossario |
 | `hooks/risorse.ts`, `strumenti/fornitori.cjs` | fonti dei limiti, trasporto limitato, installazione guidata, proxy testuale |
 | `strumenti/disco.cjs` | helper Node: mutex del sistema, compare-and-swap, corsia Codex, lanciatore CLI, board e lettura dei piani |
+| `strumenti/api-claude.cjs`, `strumenti/chiave-api.cjs`, `strumenti/accesso.cjs` | corsia API Claude, consegna della chiave, accesso con un clic |
 | `types/index.d.ts` | contratto dei tipi e dello stato |
-| `docs/ANALISI-2.0.md` | analisi avversaria e design della 2.0 |
+| `docs/` | i piani di sviluppo, vedi [Storia dello sviluppo](#storia-dello-sviluppo) |
 
 ## Collaudo
 
@@ -459,8 +636,10 @@ claude plugin test .
 node --test strumenti/prova-disco.cjs
 ```
 
-83 test del modulo su un motore finto (due superfici, politica, pesi, conferme, segreti, CLI, sessioni) e 27 test
-dell'helper con processi veri per mutex, prenotazione e corsia Codex. Nessuna chiamata HTTP reale nei test.
+287 test del modulo su un motore finto (due superfici, sei lingue a 60 colonne, politica, pesi, bozza delle
+Impostazioni, destinazioni, auditor, segreti, CLI, sessioni) e 100 test dell'helper con processi veri per mutex,
+prenotazione, corsia Codex e corsia API. Nessuna chiamata HTTP reale e nessuna chiamata a pagamento nei test:
+`claude -p`, `gh` e `git` sono finti dove serve.
 
 ## Domande
 
@@ -470,6 +649,19 @@ La mod di suo non manda testo del progetto: le sonde dei limiti portano solo le 
 Le sessioni che avvii lavorano con Claude o Codex come sempre; i fornitori terzi (DeepSeek, FreeLLMAPI) non
 ricevono niente finché non li abiliti per quel progetto, e poi solo titolo e mandato confermati. `soloLocale`
 spegne ogni effetto esterno della mod.
+</details>
+
+<details><summary><b>In che lingua è il pannello?</b></summary>
+
+In inglese per difetto; puoi passare a italiano, spagnolo, francese, tedesco o portoghese brasiliano in
+**Impostazioni → Lingua**. Vedi [Lingue](#lingue).
+</details>
+
+<details><summary><b>Eseguire a crediti API costa?</b></summary>
+
+Sì: le esecuzioni API Claude si pagano con i crediti della chiave API, entro il budget mensile e il tetto per
+esecuzione che imposti. Usa una chiave dedicata con un limite di spesa basso nella Console; le esecuzioni locali e nel
+cloud usano invece i limiti del tuo piano.
 </details>
 
 <details><summary><b>Serve il registro dell'orchestratore?</b></summary>
@@ -484,7 +676,18 @@ Sì: nel terminale usa il lanciatore CLI descritto in [Terminale](#terminale).
 
 ## Storia dello sviluppo
 
-Il lavoro è stato pianificato in fasi F0–F5 e blocchi B1–B10, che nel pannello non compaiono. I piani sono in [`docs/`](docs/): [panoramica 2.2](docs/PIANO-2.2.md) (fasi e blocchi), [board](docs/PIANO-board.md), [grafica](docs/PIANO-grafica.md), [carico con più sessioni](docs/PIANO-sobrieta.md), [pesi F4](docs/PIANO-F4.md), [lingue](docs/PIANO-I18N.md) e [rifinitura F5](docs/PIANO-F5.md).
+Il lavoro è stato pianificato in fasi e blocchi, che nel pannello non compaiono. I piani sono in [`docs/`](docs/):
+
+- **F0–F3** — [panoramica](docs/PIANO-2.2.md) (fasi e blocchi B1–B10): le viste Lavoro e Carico, la
+  [board di progetto](docs/PIANO-board.md), le Impostazioni riprogettate, la [grafica](docs/PIANO-grafica.md) e il
+  [carico con più sessioni](docs/PIANO-sobrieta.md).
+- **F4** — [pesi e profili](docs/PIANO-F4.md), con le proposte dalle sessioni.
+- **Lingue** — [sei lingue](docs/PIANO-I18N.md).
+- **F5** — [rifinitura](docs/PIANO-F5.md): stile developer, Impostazioni con Applica, la Legenda.
+- **F6** — [dove eseguire](docs/PIANO-F6.md): cloud, crediti API Claude, consigliere di destinazione, configurazione
+  con un clic.
+- **F7** — [sessioni e mod](docs/PIANO-F7.md): proposte di impostazioni, «Cambia», auditor, «Chi lavora».
+- **F8** — [revisione grafica](docs/PIANO-F8.md): etichette di stato, hover, token dei colori, rifinitura di «Chi lavora».
 
 ## Licenza
 
