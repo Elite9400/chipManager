@@ -588,7 +588,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         {COL.effort && cella(`c-eff-${r.id}`, COL.effort, r.effort
           ? <Text>{`${barreEffort(r.effort)} ${r.effort}`}</Text>
           : <Text dimColor>—</Text>)}
-        {cella(`c-st-${r.id}`, COL.stato, <Text><Text color={r.colore}>{`${r.segno} `}</Text>{r.parola}</Text>)}
+        {cella(`c-st-${r.id}`, COL.stato, <Text dimColor={r.stato === 'ignota'}><Text color={r.colore}>{`${r.segno} `}</Text>{r.parola}</Text>)}
         {COL.contesto && cella(`c-ctx-${r.id}`, COL.contesto, <Text tabular dimColor={r.contesto === undefined}>{r.contesto === undefined ? '—' : `${r.contesto}%`}</Text>, true)}
         {COL.attivita && cella(`c-att-${r.id}`, COL.attivita, <Text tabular dimColor>{r.qui ? 'adesso' : quando(r.attivita)}</Text>, true)}
       </Box>,

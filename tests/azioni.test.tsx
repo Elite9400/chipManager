@@ -2302,8 +2302,8 @@ test('consumo: riga grigia della sessione; lo stato Codex ignoto non è in corso
   expect(rigaConsumo({ ...c, byteLimiti: 0, salti: 1, processi: 1 }, 3 * 60_000)).toBe("Questa sessione, ultimi 3 min: 1 processo · 1 chiamata all'app · 3,0 MB letti dall'helper Codex · 1 salto d'arretrato")
   const adesso = Date.parse('2026-11-05T12:00:00Z')
   const s = (stato: string, inCorso: boolean) => sessioniCodex([{ id: 'esempio-0001', cwd: 'X:/repo', attivita: '2026-11-05T11:59:00Z', stato, inCorso }], radiceProgetto('X:/repo'), adesso)[0]!
-  expect(s('ignoto', false)).toMatchObject({ stato: 'ferma', ignota: true })
-  expect(s('chiuso', false).ignota).toBeUndefined()
+  expect(s('ignoto', false).stato).toBe('ignota')
+  expect(s('chiuso', false).stato).toBe('ferma')
   expect(s('aperto', true)).toMatchObject({ stato: 'in-corso' })
 })
 
@@ -2398,4 +2398,20 @@ test('corsia Codex: interrogata solo se pianifica avvierebbe davvero un\'azione 
   await clock.advance(20_000)
   expect(occupata()).toBeGreaterThan(0)
   expect(['in-avvio', 'avviata']).toContain(amb.azione().find(a => a.id === 'a-codex002')?.stato)
+})
+
+test('sessioni: una sessione Codex con stato ignoto mostra «—», né in corso né ferma, e non conta fra quelle al lavoro', async ($, on) => {
+  const clock = mock.clock(on)
+  ambiente(on, {
+    fonte: cmd => (cmd === 'sessioni'
+      ? { sessioni: [{ id: 'esempio-0009', cwd: 'X:/repo/.claude/worktrees/ramo-ignoto', ramo: 'ramo-ignoto', stato: 'ignoto', inCorso: false, attivita: new Date(Date.now() - 60_000).toISOString() }] }
+      : undefined),
+  })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(20_000)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  expect(await ui.find({ type: 'Text', text: /^Codex · ramo-ignoto$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^○ —$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^1 al lavoro/ })).toBeDefined()
+  await ui.unmount()
 })

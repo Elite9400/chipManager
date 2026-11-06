@@ -29,6 +29,7 @@ import {
   velo,
 } from './logica'
 import { RISORSE_VUOTE } from './risorse'
+import { GRIGIO } from './tema'
 import { vistaCarico } from './vista-carico'
 import { vistaImpostazioni } from './vista-impostazioni'
 import { vistaLavoro } from './vista-lavoro'
@@ -181,7 +182,9 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const righe: Riga[] = ses.lista.map(s => {
     const a = avviate.find(x => (s.motore === 'claude' && x.sessione === s.id) || (s.motore === 'codex' && x.esecutore === 'codex' && !!s.ramo && stati[x.id]?.ramo === s.ramo))
     const fermaOra = a ? ferma(a) : s.stato === 'ferma'
-    return { ...s, azione: a, titolo: a?.titolo ?? s.titolo, parola: !a && s.ignota ? '—' : fermaOra ? 'Ferma' : 'In corso', segno: fermaOra ? '◐' : '●', colore: fermaOra ? COLORE_STATO.ferma : COLORE_STATO.inCorso }
+    // Stato non noto: né in corso né ferma, come un dato mancante.
+    if (!a && s.stato === 'ignota') return { ...s, titolo: s.titolo, parola: '—', segno: '○', colore: GRIGIO }
+    return { ...s, azione: a, titolo: a?.titolo ?? s.titolo, parola: fermaOra ? 'Ferma' : 'In corso', segno: fermaOra ? '◐' : '●', colore: fermaOra ? COLORE_STATO.ferma : COLORE_STATO.inCorso }
   })
   for (const a of avviate)
     if (!righe.some(r => r.azione?.id === a.id)) {

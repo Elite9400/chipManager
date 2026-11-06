@@ -1085,8 +1085,7 @@ export function sessioniCodex(json: unknown, radice: string, adesso: number): Se
     const finestra = typeof s.finestra === 'number' && Number.isFinite(s.finestra) && s.finestra > 0 ? s.finestra : undefined
     const ramo = testoBreve(s.ramo, 80)
     return [{ id: `codex-${s.id}`, motore: 'codex' as const, titolo: ramo ? `Codex · ${ramo}` : 'Sessione Codex', ramo,
-      modello: testoBreve(s.modello, 60), effort: testoBreve(s.effort, 20), stato: s.inCorso === true ? ('in-corso' as const) : ('ferma' as const),
-      ...(s.stato === 'ignoto' && s.inCorso !== true ? { ignota: true as const } : {}),
+      modello: testoBreve(s.modello, 60), effort: testoBreve(s.effort, 20), stato: s.inCorso === true ? ('in-corso' as const) : s.stato === 'ignoto' ? ('ignota' as const) : ('ferma' as const),
       contesto: token !== undefined && finestra ? Math.min(100, Math.round((token / finestra) * 100)) : undefined, token, attivita }]
   })
 }
