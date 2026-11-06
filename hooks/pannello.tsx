@@ -301,7 +301,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
           {nota1('nota', COLORE_STATO.fallita, '!', nota)}
         </Box>
       )}
-      {vistaOra === 'carico' ? vistaCarico(d) : vistaOra === 'impostazioni' ? vistaImpostazioni(d) : vistaLavoro($, d)}
+      {vistaOra === 'carico' ? vistaCarico(d) : vistaOra === 'impostazioni' ? await vistaImpostazioni($, d) : vistaLavoro($, d)}
     </Box>
   )
 }
