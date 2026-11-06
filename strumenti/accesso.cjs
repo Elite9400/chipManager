@@ -1,12 +1,12 @@
 // F6.7: tiene in vita il login dell'host (`claude auth login` o `gh auth login --web`) avviato da «Accedi».
-// Uso: node accesso.cjs <claude|gh> <comando...>. Senza shell; l'output del login si legge solo in memoria (di gh solo il
+// Uso: node accesso.cjs <mutex> <claude|gh> <comando...> (il mutex lo sceglie l'helper: in produzione `accesso-vivo:<tipo>`). Senza shell; l'output del login si legge solo in memoria (di gh solo il
 // codice monouso) e non si scrive mai su disco. Su stdout, per chi l'ha avviato: «pronto», «errore» o «occupato», poi
 // «codice XXXX-XXXX». Il mutex `accesso-vivo:<tipo>` resta tenuto finché il login vive: un secondo «Accedi» lo vede.
 'use strict'
 const { spawn } = require('child_process')
 const d = require('./disco.cjs')
 
-const [tipo, ...argv] = process.argv.slice(2)
+const [vivo, tipo, ...argv] = process.argv.slice(2)
 process.stdout.on('error', () => {})
 const dici = riga => {
   try {
@@ -16,7 +16,7 @@ const dici = riga => {
   }
 }
 
-d.conMutex(`accesso-vivo:${tipo}`, 0, () => new Promise(fine => {
+d.conMutex(vivo, 0, () => new Promise(fine => {
   let figlio
   try {
     const [eseguibile, argomenti] = d.comandoReale(argv)

@@ -1231,7 +1231,18 @@ test('R11: il comando sessioni scrive l\'istantanea versionata e atomica accanto
 })
 
 // --- F6.2: corsia «API Claude» (nessuna chiamata a pagamento: processi finti) -------------------------------------
-const API = require('./api-claude.cjs')
+// Ogni chiamata della corsia API prende mutex propri di questo processo (lock della macchina e accesso): nessuna contesa
+// con un pannello vero o con un'altra prova sulla stessa macchina. Solo qui; la produzione usa i nomi di sempre.
+const ISOLA = { mutexApi: `prova:api-${process.pid}`, mutexAccesso: `prova:accesso-${process.pid}` }
+const API_VERA = require('./api-claude.cjs')
+const API = new Proxy(API_VERA, {
+  get(m, k) {
+    const f = m[k]
+    if (!['lanciaApi', 'eseguiApi', 'statoApi', 'liberaApi', 'terminaApi', 'accedi'].includes(k)) return f
+    // Il deps è l'argomento dopo i posizionali (f.length conta quelli senza valore predefinito).
+    return (...a) => f(...a.slice(0, f.length), { ...ISOLA, ...(a[f.length] ?? {}) })
+  },
+})
 const CHIAVE_PROVA = 'sk-ant-prova-0123456789'
 const { EventEmitter: Emettitore } = require('node:events')
 /** Un `claude -p` finto: emette lo spawn, accetta il prompt, scrive `uscita` su stdout ed esce con `codice`. */
@@ -1601,7 +1612,7 @@ test('F6.7 accedi: di GitHub esce solo il codice; l\'output del login non tocca 
       t.mock.timers.reset()
     }
     // Finito il login, il mutex è libero e un nuovo clic riparte.
-    for (let i = 0; i < 100 && (await require(DISCO).conMutex('accesso-vivo:gh', 0, () => true)).occupato; i++) await new Promise(ok => setTimeout(ok, 100))
+    for (let i = 0; i < 100 && (await require(DISCO).conMutex(`${ISOLA.mutexAccesso}-vivo:gh`, 0, () => true)).occupato; i++) await new Promise(ok => setTimeout(ok, 100))
     fs.writeFileSync(path.join(finti, 'gh.js'), `console.log('codice XY98-ZW76'); setTimeout(() => {}, 300)`)
     aperti.length = 0
     assert.deepStrictEqual((await API.accedi('gh', { attesaCodice: 10_000 }))[0], 0)
@@ -1880,3 +1891,27 @@ test('F8.3 nessun colore né opacità scritti a mano nelle viste: solo tema.ts (
   }
   assert.deepStrictEqual(trovati, [])
 })
+
+// --- corsia API isolata nelle prove -------------------------------------------------------------------------------------
+
+test('corsia API: le prove usano mutex propri; il lock della macchina tenuto da un altro processo non le ferma', async () => {
+  // Un altro processo (un pannello vero, un'altra prova) tiene il mutex di produzione della corsia API.
+  const tenitore = spawn(process.execPath, ['-e',
+    `require(${JSON.stringify(DISCO)}).conMutex('api-claude:macchina', 1000, () => { process.stdout.write('preso'); return new Promise(() => {}) })`])
+  await new Promise(r => tenitore.stdout.once('data', r))
+  try {
+    const dir = tmp()
+    const root = tmp()
+    recordApi(dir, 'a-iso00001', 'az-iso00001')
+    const inizio = Date.now()
+    const [codice] = await API.lanciaApi(dir, 'a-iso00001', 'az-iso00001', ingressoApi(root), { dirMacchina: tmp(), fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) })
+    assert.deepStrictEqual([codice, Date.now() - inizio < 4000], [0, true])
+    assert.strictEqual((await API.statoApi(tmp())).libero, true)
+    // La produzione no: senza i mutex delle prove lo stesso lock la ferma (stesso nome di sempre).
+    assert.strictEqual((await API_VERA.statoApi(tmp(), { adesso: () => Date.now() })).motivo, 'mutex')
+  } finally {
+    tenitore.kill('SIGKILL')
+    await new Promise(r => tenitore.on('exit', r))
+  }
+})
+

@@ -22,6 +22,11 @@ const d = require('./disco.cjs')
 const ACCESSO = path.join(__dirname, 'accesso.cjs')
 
 const MUTEX_API = 'api-claude:macchina'
+/**
+ * Il mutex del lock della macchina. `deps.mutexApi` lo passa solo l'entrypoint delle prove, per non contendere con un
+ * pannello vero o con un'altra prova sulla stessa macchina: `comando` (il percorso di produzione) non lo passa mai.
+ */
+const mutexApi = deps => deps.mutexApi ?? MUTEX_API
 /** La cache di `apiKeyHelper` in `claude -p`: impostata in modo esplicito, così l'attesa dopo l'ultima consegna è nota. */
 const TTL_MS = 300_000
 const TETTO_STDOUT = 1024 * 1024
@@ -229,7 +234,7 @@ function verificaLock(dm, adesso, deps = {}) {
 }
 
 async function statoApi(dm, deps = {}) {
-  const r = await d.conMutex(MUTEX_API, 8000, () => verificaLock(dm, (deps.adesso ?? Date.now)(), deps))
+  const r = await d.conMutex(mutexApi(deps), 8000, () => verificaLock(dm, (deps.adesso ?? Date.now)(), deps))
   return r.occupato ? { libero: false, motivo: 'mutex' } : r.valore
 }
 
@@ -238,7 +243,7 @@ async function statoApi(dm, deps = {}) {
  * File-chiave cancellato, nessun discendente e 5 minuti dall'ultima consegna restano obbligatori; il costo è il tetto.
  */
 async function liberaApi(dm, deps = {}) {
-  const r = await d.conMutex(MUTEX_API, 8000, async () => {
+  const r = await d.conMutex(mutexApi(deps), 8000, async () => {
     const rec = leggiLock(dm)
     if (!rec) return { libero: true }
     if (rec === 'illeggibile') return { libero: false, motivo: 'illeggibile' }
@@ -361,7 +366,7 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
     if (a.stato !== 'in-avvio' || a.lanciatore !== 'api-claude' || a.tentativo !== tentativo) return [4, '']
     const file = d.fileEsecuzione(dir, tentativo)
     if (fs.existsSync(file)) return [4, '']
-    const m = await d.conMutex(MUTEX_API, 8000, async () => {
+    const m = await d.conMutex(mutexApi(deps), 8000, async () => {
       const stato = verificaLock(dm, (deps.adesso ?? Date.now)(), deps)
       if (!stato.libero) return [3, JSON.stringify({ motivo: stato.motivo })]
       // Lock libero: nessuna esecuzione attiva, quindi ogni file-chiave rimasto è di un crash e si cancella.
@@ -586,11 +591,14 @@ async function accedi(tipo, deps = {}) {
   } catch {
     return copia
   }
-  const r = await d.conMutex(`accesso:${tipo}`, 2000, async () => {
-    if ((await d.conMutex(`accesso-vivo:${tipo}`, 0, () => true)).occupato) return [3, '']
+  // Come per l'API: `deps.mutexAccesso` (un prefisso) lo passa solo l'entrypoint delle prove; in produzione «accesso».
+  const prefisso = deps.mutexAccesso ?? 'accesso'
+  const vivo = `${prefisso}-vivo:${tipo}`
+  const r = await d.conMutex(`${prefisso}:${tipo}`, 2000, async () => {
+    if ((await d.conMutex(vivo, 0, () => true)).occupato) return [3, '']
     let p
     try {
-      p = spawn(process.execPath, [ACCESSO, tipo, ...argv], { stdio: ['ignore', 'pipe', 'ignore'], detached: true, windowsHide: true })
+      p = spawn(process.execPath, [ACCESSO, vivo, tipo, ...argv], { stdio: ['ignore', 'pipe', 'ignore'], detached: true, windowsHide: true })
       await new Promise((ok, ko) => { p.once('spawn', ok); p.once('error', ko) })
     } catch {
       return copia
