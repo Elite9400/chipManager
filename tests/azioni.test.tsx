@@ -65,6 +65,7 @@ import {
   violazioniAvvio,
 } from '../hooks/logica'
 import type { Azione, Chiamante, Consumo, Limite, Regole } from '../types'
+import { TETTO_RISORSE } from '../hooks/bilanciamento'
 import type { Consiglio } from '../hooks/logica'
 import { DiscoIt } from './disco-it'
 import { chiaveOTesto } from '../hooks/lingua'
@@ -1026,6 +1027,27 @@ test('F6.5 consigliere: «Suggerisci» mostra dove e perché sulla proposta; «A
   await ui.press({ key: 'ricarica' })
   await ui.press({ key: 'ricarica' })
   expect(JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!).destinazione).toBe('local')
+  await ui.unmount()
+})
+
+test('F6 risorse_agenti: destinazioni configurate e margini in inglese, dentro il tetto; della chiave solo la presenza', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 }, consigliere: 'suggerisci' } } }))
+  amb.disco.set('X:/orch/azioni/spesa-api.json', JSON.stringify({ v: 1, voci: { 'az-spesa009': { mese: new Date().toISOString().slice(0, 7), tetto: 2, stato: 'contato', costo: 1.5 } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: 'ricarica' })
+  const r = (await $.tool.call({ tool: 'mcp__chip-manager__risorse_agenti' } as never)) as { result: string }
+  expect(r.result.length).toBeLessThanOrEqual(TETTO_RISORSE)
+  expect(r.result).not.toContain(CHIAVE_API)
+  const d = JSON.parse(r.result) as { destinazioni: Record<string, unknown> }
+  expect(d.destinazioni).toMatchObject({
+    'api-claude': { budgetUsd: 20, capPerRunUsd: 2, spentThisMonthUsd: 1.5, estimated: true, lane: 'free' },
+    advisor: 'suggerisci',
+  })
+  expect(String(d.destinazioni.cloud)).toMatch(/^Claude cloud: same plan limits as local/)
   await ui.unmount()
 })
 

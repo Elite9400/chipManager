@@ -977,6 +977,20 @@ async function aggiornaLockApi($: Eng) {
   if (!uguale(await read($, lockApi), tenuto)) await update($, lockApi, () => tenuto)
 }
 
+/** F6: le destinazioni per `risorse_agenti`, in inglese: locale, cloud (stesso piano, serve GitHub), API con budget e lock. */
+async function destinazioniPerAgenti($: Eng, r: Regole, chi: Chiamante) {
+  const api = r.risorse.apiClaude
+  const spesa = await read($, spesaApi)
+  const lock = await read($, lockApi)
+  return {
+    local: 'this computer: plan limits',
+    cloud: /^[^/\s]+\/[^/\s]+$/.test(chi.repo ?? '') ? 'Claude cloud: same plan limits as local, model chosen by the cloud, confirmed per chip' : 'not available: no GitHub repository',
+    'api-claude': !api ? 'not configured' : !r.chiaveApi ? 'no key in the mod options'
+      : { budgetUsd: api.budgetUsd, capPerRunUsd: api.tetto, spentThisMonthUsd: spesa?.speso ?? 'unknown', estimated: true, lane: lock ? `busy (${lock.motivo})` : 'free' },
+    advisor: r.risorse.consigliere ?? 'off',
+  }
+}
+
 /** «Libera» (dopo il popup sul rischio) o «Termina» (su conferma) della corsia API; poi si rilegge lo stato. */
 async function decidiLockApi($: Eng, azione: 'libera' | 'termina') {
   const T = await lingue($)
@@ -1798,6 +1812,8 @@ export const register: Register = (on, options) => {
         alLavoro: alLavoroDa(ses.lista, attive(lista), r),
         contesto: contestoPerModello(ses.lista, adesso),
         proposte: proposteBrevi(await read($, propostePesi), adesso),
+        // F6: dove può girare una chip di questo progetto e con che margine; della chiave API solo se c'è.
+        destinazioni: await destinazioniPerAgenti($, r, chi),
       }),
     }
   })
