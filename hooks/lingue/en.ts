@@ -774,6 +774,19 @@ const en = {
   "v.apiBudget": "API Claude: no monthly USD budget set (Settings → Execution)",
   "v.r4Api": "a sensitive chip runs only locally and interactively, with human review: not on API credits",
   "v.apiQui": "API Claude runs in a process of its own, not in this session",
+  // F6.1 where to run
+  "ed.apiClaude": "Here on API credits (Claude)",
+  "op.apiClaude": "API Claude",
+  "dove.no": "{dove}: not available — {motivo}",
+  "az.dove": "Where: {dove}",
+  "az.seleziona": "Select",
+  "az.deseleziona": "Unselect",
+  "dove.scelte": { one: "1 chip chosen · where:", other: "{n} chips chosen · where:" },
+  "dove.verso": "→ {dove}",
+  "dove.pulisci": "Clear choice",
+  "dove.esito": { one: "1 chip moved to {dove}", other: "{n} chips moved to {dove}" },
+  "dove.resta": "«{titolo}» stays: {motivo}",
+  "dove.statoFisso": "already started or closed",
   // ‹fine›
 } satisfies Record<string, Voce>
 

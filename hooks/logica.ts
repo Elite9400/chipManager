@@ -1,5 +1,5 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
-import type { Azione, BoardProgetto, Chiamante, Consumo, Corsia, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo, Vita } from '../types'
+import type { Azione, BoardProgetto, Chiamante, Consumo, Corsia, Destinazione, Fornitore, Limite, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo, Vita } from '../types'
 import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { GRIGIO, LIVELLO, STATO } from './tema'
@@ -454,6 +454,19 @@ export function revisoreConcreto(a: Azione, regole: Regole): string | undefined 
 export type Modalita = 'local' | 'cloud' | 'api-claude' | 'esterno'
 /** La modalità effettiva: una sola funzione per pannello, strumenti e coda, da cui dipendono le guardie. */
 export const modalitaDi = (a: Pick<Azione, 'esecutore' | 'destinazione'>): Modalita => (a.esecutore === 'freellmapi' ? 'esterno' : (a.destinazione ?? 'local'))
+
+/** Le destinazioni della 2.2.0 (F6): API Codex e Codex cloud restano fuori. */
+export const DESTINAZIONI: readonly Destinazione[] = ['local', 'cloud', 'api-claude']
+/** L'azione spostata in `d`: fuori da questa macchina o a crediti API non c'è una conversazione da copiare. */
+export const conDestinazione = (a: Azione, d: Destinazione): Azione => ({ ...a, destinazione: d, ...(d !== 'local' && a.contesto === 'fork' && { contesto: 'fresh' as const }) })
+/**
+ * F6.1: ogni destinazione con, se non è ammessa, il primo motivo che aggiunge rispetto al locale (le guardie sono quelle
+ * di `violazioni`, per la modalità effettiva). Il locale non ha motivi suoi: i blocchi comuni li dice già la chip.
+ */
+export function destinazioniPer(a: Azione, regole: Regole, lista: readonly Azione[] = []): { d: Destinazione; motivo?: Msg }[] {
+  const comuni = new Set(violazioni(conDestinazione(a, 'local'), regole, lista).map(m => JSON.stringify(m)))
+  return DESTINAZIONI.map(d => ({ d, motivo: violazioni(conDestinazione(a, d), regole, lista).find(m => !comuni.has(JSON.stringify(m))) }))
+}
 
 /** Perché un'azione non può partire così com'è: vuoto = può partire. */
 export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] = []): Msg[] {

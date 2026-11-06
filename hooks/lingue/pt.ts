@@ -772,6 +772,19 @@ const pt: Dizionario = {
   "v.apiBudget": "API Claude: nenhum orçamento mensal em USD definido (Configurações → Execução)",
   "v.r4Api": "um chip sensível só roda localmente e de forma interativa, com revisão humana: não com créditos de API",
   "v.apiQui": "API Claude roda em um processo próprio, não nesta sessão",
+  // F6.1 where to run
+  "ed.apiClaude": "Aqui com créditos de API (Claude)",
+  "op.apiClaude": "API Claude",
+  "dove.no": "{dove}: indisponível — {motivo}",
+  "az.dove": "Onde: {dove}",
+  "az.seleziona": "Escolher",
+  "az.deseleziona": "Tirar da seleção",
+  "dove.scelte": { one: "1 chip escolhido · onde:", other: "{n} chips escolhidos · onde:" },
+  "dove.verso": "→ {dove}",
+  "dove.pulisci": "Limpar seleção",
+  "dove.esito": { one: "1 chip movido para {dove}", other: "{n} chips movidos para {dove}" },
+  "dove.resta": "«{titolo}» fica: {motivo}",
+  "dove.statoFisso": "já iniciada ou fechada",
   // ‹fine›
 }
 

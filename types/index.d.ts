@@ -316,6 +316,8 @@ declare module 'claude-code' {
     'chip-manager': {
       azioni: Shaped<Azione[]>
       aperta: string | null
+      /** F6.1: le chip scelte per «Dove…» su più chip insieme (id). */
+      selezionate: Shaped<string[]>
       vive: Shaped<Record<string, Vita>>
       /** L'ultimo errore di un pulsante: codice del dizionario (si traduce) o testo esterno. */
       avviso: Messaggio | null

@@ -8,8 +8,10 @@ import {
   BASE_RE,
   blocca,
   CORSIE,
+  conDestinazione,
   corsiaDi,
   cartellaCondivisa,
+  destinazioniPer,
   dipendenze,
   durata,
   effortDi,
@@ -38,14 +40,18 @@ import { GRIGIO, MOTORE, STATO } from './tema'
 const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as Msg | string | null)
 const filtro = atom({ plugin: 'chip-manager', key: 'filtro' } as const, '')
 const tutteSessioni = atom({ plugin: 'chip-manager', key: 'tutteSessioni' } as const, false)
+const selezionate = atom({ plugin: 'chip-manager', key: 'selezionate' } as const, [] as string[], { shape: 'selezionate-1' })
 
 const REVISORI = ['claude', 'codex', 'nessuno'] as const
+const DESTINAZIONI_UI: readonly Destinazione[] = ['local', 'cloud', 'api-claude']
+const NOME_DOVE: Record<Destinazione, 'ed.locale' | 'ed.cloud' | 'ed.apiClaude'> = { local: 'ed.locale', cloud: 'ed.cloud', 'api-claude': 'ed.apiClaude' }
+const BREVE_DOVE: Record<Destinazione, 'op.locale' | 'op.cloud' | 'op.apiClaude'> = { local: 'op.locale', cloud: 'op.cloud', 'api-claude': 'op.apiClaude' }
 const corto = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
 // `$` resta un argomento: lo scanner non lo vuole dentro un oggetto.
 export function vistaLavoro($: EngineInterface, d: Dati) {
   const { T, c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, tutteLeSessioni, regoleOra,
-    testoFiltro, lista, visibili, espansa, motiviAperti, stati, tr, adesso, capacita, boardPronta, fai, modifica, completa,
+    testoFiltro, lista, visibili, espansa, motiviAperti, scelte, stati, tr, adesso, capacita, boardPronta, fai, modifica, completa,
     apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, titoloSezione, righe,
     alLavoro, cella, MOTORI, motore, oraDi } = d
   const { Box, Text, Button } = d.el
@@ -125,14 +131,24 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
           ),
         ])}
         {gruppo(`g-ses-${a.id}`, T('ed.comeParte'), [
+          // F6.1: le destinazioni ammesse si scelgono; le altre si mostrano sotto, ciascuna con il suo motivo.
           scelta(
             a,
             'dest',
             T('ed.dove'),
             a.destinazione ?? 'local',
-            [{ value: 'local', label: T('ed.locale') }, ...(sensibile(a, regoleOra) ? [] : [{ value: 'cloud', label: T('ed.cloud') }])],
-            v => ({ destinazione: v as Destinazione, contesto: v === 'cloud' ? 'fresh' : a.contesto }),
+            destinazioniPer(a, regoleOra, tutte)
+              .filter(x => !x.motivo || x.d === (a.destinazione ?? 'local'))
+              .map(x => ({ value: x.d, label: T(NOME_DOVE[x.d]) })),
+            v => ({ destinazione: v as Destinazione, contesto: conDestinazione(a, v as Destinazione).contesto }),
           ),
+          ...destinazioniPer(a, regoleOra, tutte)
+            .filter(x => x.motivo && x.d !== (a.destinazione ?? 'local'))
+            .map(x => (
+              <Text key={`dove-no-${x.d}-${a.id}`} size="caption" dimColor wrap="wrap">
+                {T('dove.no', { dove: T(NOME_DOVE[x.d]), motivo: T.m(x.motivo!) })}
+              </Text>
+            )),
           scelta(
             a,
             'ctx',
@@ -251,7 +267,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
   const opzioni = (a: Azione) =>
     [
       corsiaDi(a, regoleOra) ? T('op.corsia', { corsia: corsiaDi(a, regoleOra)! }) : undefined,
-      T(a.destinazione === 'cloud' ? 'op.cloud' : 'op.locale'),
+      T(BREVE_DOVE[a.destinazione ?? 'local']),
       a.destinazione === 'cloud' ? undefined : a.contesto === 'fork' ? 'fork' : T('op.nuova'),
       a.destinazione === 'cloud' || a.contesto === 'fork'
         ? undefined
@@ -482,8 +498,27 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     </Button>
   )
   function spostaScarta(a: Azione) {
+    // F6.1: accesso rapido a «Dove» (passa alla prossima destinazione ammessa) e scelta della chip per «Dove…» su più chip.
+    const ora = a.destinazione ?? 'local'
+    const ammesse = destinazioniPer(a, regoleOra, tutte).filter(x => !x.motivo).map(x => x.d)
+    const prossima = ammesse.length > 1 ? ammesse[(ammesse.indexOf(ora) + 1) % ammesse.length] : undefined
+    const scelta = scelte.includes(a.id)
     return (
       <Box key={`ordine-${a.id}`} flexDirection="row" flexWrap="wrap" columnGap={1}>
+        {prossima && (
+          <Button key={`dove-${a.id}`} plain dimColor label={`${T('az.dove', { dove: T(BREVE_DOVE[ora]) })} ${breve(a)}`} onPress={modifica(a, conDestinazione(a, prossima))}>
+            {T('az.dove', { dove: T(BREVE_DOVE[ora]) })}
+          </Button>
+        )}
+        <Button
+          key={`sel-${a.id}`}
+          plain
+          dimColor={!scelta}
+          label={`${T(scelta ? 'az.deseleziona' : 'az.seleziona')} ${breve(a)}`}
+          onPress={() => void update($, selezionate, s => (s.includes(a.id) ? s.filter(x => x !== a.id) : [...s, a.id]))}
+        >
+          {scelta ? '☑' : '☐'}
+        </Button>
         <Button key={`su-${a.id}`} plain dimColor label={`↑ ${breve(a)}`} onPress={fai(() => c.riordina(a.id, -1))}>
           ↑
         </Button>
@@ -493,6 +528,38 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         <Button key={`scarta-${a.id}`} plain dimColor label={`${T('az.scarta')} ${breve(a)}`} onPress={fai(() => c.scarta(a))}>
           {T('az.scarta')}
         </Button>
+      </Box>
+    )
+  }
+  /**
+   * F6.1 «Dove…» su più chip: la stessa destinazione a tutte le scelte modificabili. Quelle per cui non è ammessa restano
+   * dove sono, e lo si dice con il motivo. Ogni cambio è una scrittura CAS del record: le conferme già date decadono.
+   */
+  async function doveTutte(d: Destinazione) {
+    const scelteOra = tutte.filter(a => scelte.includes(a.id))
+    let spostate = 0
+    const restano: string[] = []
+    for (const a of scelteOra) {
+      const motivo = !['proposta', 'accodata', 'fallita'].includes(a.stato) ? msg('dove.statoFisso') : destinazioniPer(a, regoleOra, tutte).find(x => x.d === d)?.motivo
+      if (motivo) restano.push(T('dove.resta', { titolo: corto(a.titolo, 32), motivo: T.m(motivo) }))
+      else if ((a.destinazione ?? 'local') !== d) {
+        await modifica(a, conDestinazione(a, d))()
+        spostate++
+      }
+    }
+    await update($, selezionate, () => [])
+    $.ui.toast([T('dove.esito', { n: spostate, dove: T(BREVE_DOVE[d]) }), ...restano].join(' · '))
+  }
+  function barraScelte() {
+    const n = tutte.filter(a => scelte.includes(a.id)).length
+    if (!n) return null
+    return (
+      <Box key="dove-scelte" flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
+        <Text key="dove-scelte-n">{T('dove.scelte', { n })}</Text>
+        {DESTINAZIONI_UI.map(d => (
+          <Button key={`dove-tutte-${d}`} plain label={T('dove.verso', { dove: T(BREVE_DOVE[d]) })} onPress={() => void doveTutte(d)} />
+        ))}
+        <Button key="dove-pulisci" plain dimColor label={T('dove.pulisci')} onPress={() => void update($, selezionate, () => [])} />
       </Box>
     )
   }
@@ -853,6 +920,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
             proposte > 0 && <Button key="tutte" variant="primary" hotkey="a" label={T('az.tutte', { n: proposte })} onPress={fai(c.avviaTutte)} />,
           ],
         })}
+        {barraScelte()}
         {nessunaParte.length > 0 && nota1('nessuna-parte', STATO.attesa, '◔', T('err.nessunaParte', { motivi: nessunaParte.join(' · ') }))}
         {daAvviare.length === 0 ? (
           <Text dimColor>

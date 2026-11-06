@@ -392,6 +392,63 @@ test('F5.2: stato con glifo e parola (✗ errore, ○ in coda); i dati (modello,
   await ui.unmount()
 })
 
+// --- F6.1: dove gira una chip --------------------------------------------------------------------------------
+const CONFIG_API = JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 } } } })
+
+test('F6.1 Dove: l\'editor offre le destinazioni ammesse; le altre compaiono col motivo; una sensibile solo in locale', { options: { anthropicApiKey: 'sk-ant-prova' } }, async ($, on) => {
+  const amb = ambiente(on, [az('a-dove0001', 1, { revisore: 'claude' }), az('a-dove0002', 2, { corsia: 'R4', revisore: 'claude' })])
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', CONFIG_API)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 130))
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: 'mod-a-dove0001' })
+  expect(((await ui.find({ key: 'dest-a-dove0001' }))?.props.options as { value: string }[]).map(o => o.value)).toEqual(['local', 'cloud', 'api-claude'])
+  await ui.press({ key: 'mod-a-dove0001' })
+  await ui.press({ key: 'mod-a-dove0002' })
+  expect(((await ui.find({ key: 'dest-a-dove0002' }))?.props.options as { value: string }[]).map(o => o.value)).toEqual(['local'])
+  expect(await ui.find({ type: 'Text', text: /^Nel cloud \(solo sessione nuova\): non disponibile — / })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Qui a crediti API \(Claude\): non disponibile — una chip sensibile/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('F6.1 Dove: l\'accesso rapido sulla riga passa alla prossima destinazione ammessa, con una scrittura CAS che fa decadere le conferme', { options: { anthropicApiKey: 'sk-ant-prova' } }, async ($, on) => {
+  const amb = ambiente(on, [az('a-dove0003', 1, { revisore: 'claude' })])
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', CONFIG_API)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 130))
+  await ui.press({ key: 'ricarica' })
+  const prima = amb.azione('a-dove0003').versione
+  await ui.press({ key: 'dove-a-dove0003' })
+  expect(amb.azione('a-dove0003')).toMatchObject({ destinazione: 'cloud', versione: prima + 1 })
+  await ui.press({ key: 'dove-a-dove0003' })
+  expect(amb.azione('a-dove0003').destinazione).toBe('api-claude')
+  await ui.press({ key: 'dove-a-dove0003' })
+  expect(amb.azione('a-dove0003').destinazione).toBe('local')
+  await ui.unmount()
+})
+
+test('F6.1 Dove…: la stessa destinazione a più chip scelte; quelle non ammesse restano e lo si dice', { options: { anthropicApiKey: 'sk-ant-prova' } }, async ($, on) => {
+  const amb = ambiente(on, [az('a-dove0004', 1), az('a-dove0005', 2, { corsia: 'R4', revisore: 'claude' }), az('a-dove0006', 3)])
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', CONFIG_API)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 130))
+  await ui.press({ key: 'ricarica' })
+  expect(await ui.find({ key: 'dove-scelte' })).toBeUndefined()
+  await ui.press({ key: 'sel-a-dove0004' })
+  await ui.press({ key: 'sel-a-dove0005' })
+  expect(await ui.find({ type: 'Text', text: '2 chip scelte · dove:' })).toBeDefined()
+  await ui.press({ key: 'dove-tutte-api-claude' })
+  expect(amb.azione('a-dove0004').destinazione).toBe('api-claude')
+  expect(amb.azione('a-dove0005').destinazione).toBeUndefined()
+  expect(amb.azione('a-dove0006').destinazione).toBeUndefined()
+  expect(amb.toast.at(-1)).toMatch(/^1 chip spostata in API Claude · «Esempio a-dove0005» resta: /)
+  expect(await ui.find({ key: 'dove-scelte' })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazioni) non hanno parole italiane, a ogni larghezza', async ($, on) => {
   const amb = ambiente(on, MATRICE_EN)
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', progetti: { 'acme/progetto': {} } }))

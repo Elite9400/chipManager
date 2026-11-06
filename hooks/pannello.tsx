@@ -40,6 +40,7 @@ import { vistaLavoro } from './vista-lavoro'
 // Copia identica degli atomi di register.tsx (lo scanner li vuole nel file che li usa).
 const azioni = atom({ plugin: 'chip-manager', key: 'azioni' } as const, [] as Azione[], { shape: 'azioni-5' })
 const aperta = atom({ plugin: 'chip-manager', key: 'aperta' } as const, null as string | null)
+const selezionate = atom({ plugin: 'chip-manager', key: 'selezionate' } as const, [] as string[], { shape: 'selezionate-1' })
 const vive = atom({ plugin: 'chip-manager', key: 'vive' } as const, {} as Record<string, Vita>, { shape: 'vive-2' })
 const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as Msg | string | null)
 const traguardi = atom({ plugin: 'chip-manager', key: 'traguardi' } as const, null as Traguardi | null, { shape: 'traguardi-3' })
@@ -130,6 +131,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   // «Perché» (i motivi di una chip bloccata) usa lo stesso atomo dei dettagli con un prefisso: una cosa aperta alla volta.
   const apertaOra = await read($, aperta)
   const espansa = apertaOra?.startsWith('perche:') ? null : apertaOra
+  const scelte = await read($, selezionate)
   const motiviAperti = apertaOra?.startsWith('perche:') ? apertaOra.slice('perche:'.length) : null
   const consumoOra = await read($, consumo)
   const stati = await read($, vive)
@@ -293,7 +295,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
 
   return {
     el, T, fonteRegole, c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, vistaOra, tutteLeSessioni, regoleOra, testoFiltro,
-    lista, visibili, espansa, motiviAperti, stati, nota, scartata, rotte, tr, adesso, capacita, sb, boardPronta, ultime, configura, fai, modifica,
+    lista, visibili, espansa, motiviAperti, scelte, stati, nota, scartata, rotte, tr, adesso, capacita, sb, boardPronta, ultime, configura, fai, modifica,
     completa, apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, attese, titoloSezione, righe,
     alLavoro, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, oraDi: T.ora, consumoOra,
     proposteAperte, rigaProposta, registroPesi,
