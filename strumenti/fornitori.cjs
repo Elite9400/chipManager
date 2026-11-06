@@ -118,27 +118,33 @@ function elencoCodex(home, adesso) {
   return { sessioni, limiti }
 }
 
-/** Una voce della cache con i soli campi ammessi, validati; null se qualcosa non vale. */
+/**
+ * Una voce della cache con i soli campi ammessi, validati. Un campo non valido o estraneo invalida la voce INTERA:
+ * il file si rilegge da capo, così nessuna misura resta persa a metà.
+ */
 function vocePulita(v) {
   const n = x => typeof x === 'number' && Number.isFinite(x) && x >= 0
-  if (!v || typeof v !== 'object' || !n(v.dimensione) || !n(v.mtimeMs) || !n(v.ino) || !n(v.offset) || v.offset > v.dimensione) return null
-  let meta = null
-  if (v.meta) {
-    const id = testo(v.meta.id, 64)
-    const cwd = testo(v.meta.cwd, 400)
-    if (!id || !cwd) return null
-    meta = { id, cwd, ramo: testo(v.meta.ramo, 80), figlia: v.meta.figlia === true }
-  }
-  const pt = v.primoTurno ?? {}
-  const u = v.ultimo ?? {}
-  if (!['aperto', 'chiuso', 'ignoto'].includes(u.stato) || !Array.isArray(v.limiti ?? [])) return null
-  const limiti = (v.limiti ?? []).slice(0, 2).flatMap(l => /^codex-(primary|secondary)$/.test(l?.id) && numero(l.percentuale) && l.percentuale <= 100 && data(l.letto) &&
-    (l.reset === undefined || (typeof l.reset === 'string' && Number.isFinite(Date.parse(l.reset)))) ? [{ id: l.id, percentuale: l.percentuale, letto: l.letto, reset: l.reset }] : [])
+  const solo = (o, chiavi) => !!o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).every(k => chiavi.includes(k))
+  const forse = (x, ok) => x === undefined || ok(x)
+  const t = max => x => testo(x, max) === x
+  const istante = x => typeof x === 'string' && Number.isFinite(Date.parse(x))
+  if (!solo(v, ['dimensione', 'mtimeMs', 'ino', 'offset', 'meta', 'primoTurno', 'ultimo', 'limiti']) ||
+    !n(v.dimensione) || !n(v.mtimeMs) || !n(v.ino) || !n(v.offset) || v.offset > v.dimensione) return null
+  const m = v.meta
+  if (m !== null && !(solo(m, ['id', 'cwd', 'ramo', 'figlia']) && t(64)(m.id) && t(400)(m.cwd) && forse(m.ramo, t(80)) && typeof m.figlia === 'boolean')) return null
+  const pt = v.primoTurno
+  const u = v.ultimo
+  if (!solo(pt, ['modello', 'effort']) || !forse(pt.modello, t(60)) || !forse(pt.effort, t(20))) return null
+  if (!solo(u, ['modello', 'effort', 'token', 'finestra', 'stato']) || !forse(u.modello, t(60)) || !forse(u.effort, t(20)) ||
+    !forse(u.token, numero) || !forse(u.finestra, numero) || !['aperto', 'chiuso', 'ignoto'].includes(u.stato)) return null
+  if (!Array.isArray(v.limiti) || v.limiti.length > 2 || !v.limiti.every(l => solo(l, ['id', 'percentuale', 'letto', 'reset']) &&
+    /^codex-(primary|secondary)$/.test(l.id) && numero(l.percentuale) && l.percentuale <= 100 && data(l.letto) && forse(l.reset, istante))) return null
   return {
-    dimensione: v.dimensione, mtimeMs: v.mtimeMs, ino: v.ino, offset: v.offset, meta,
-    primoTurno: { modello: testo(pt.modello, 60), effort: testo(pt.effort, 20) },
-    ultimo: { modello: testo(u.modello, 60), effort: testo(u.effort, 20), token: numero(u.token) ? u.token : undefined, finestra: numero(u.finestra) ? u.finestra : undefined, stato: u.stato },
-    limiti,
+    dimensione: v.dimensione, mtimeMs: v.mtimeMs, ino: v.ino, offset: v.offset,
+    meta: m && { id: m.id, cwd: m.cwd, ramo: m.ramo, figlia: m.figlia },
+    primoTurno: { modello: pt.modello, effort: pt.effort },
+    ultimo: { modello: u.modello, effort: u.effort, token: u.token, finestra: u.finestra, stato: u.stato },
+    limiti: v.limiti.map(l => ({ id: l.id, percentuale: l.percentuale, letto: l.letto, reset: l.reset })),
   }
 }
 
@@ -172,13 +178,14 @@ function aggiornaVoce(f, st, c, diag) {
   const inizioCoda = Math.max(da, st.size - CODA)
   if (inizioCoda > da) {
     diag.salti += 1
-    // Lo stato di prima del salto non si eredita mai.
-    v.ultimo.stato = 'ignoto'
+    // Niente di prima del salto si eredita: tutti gli ultimi campi vengono dalla sola coda, come a cache fredda.
+    v.ultimo = { stato: 'ignoto' }
   }
-  let metaVisto = !daCapo
+  // I metadati si cercano finché mancano, anche a cache calda: un session_meta può arrivare in due scritture.
+  let metaVisto = v.meta !== null
   const esamina = (riga, inizio) => {
     const inCoda = inizio >= inizioCoda
-    const inTesta = daCapo && inizio < TESTA && (!metaVisto || !v.primoTurno.modello) && (riga.includes('"session_meta"') || riga.includes('"turn_context"'))
+    const inTesta = inizio < TESTA && ((!metaVisto && riga.includes('"session_meta"')) || (!v.primoTurno.modello && riga.includes('"turn_context"')))
     if (!inCoda && !inTesta && !riga.includes('rate_limits')) return
     let e
     try { e = JSON.parse(riga.toString('utf8')) } catch { return }

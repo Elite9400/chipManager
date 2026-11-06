@@ -874,3 +874,44 @@ test('2.4.2 corsia Codex: in produzione il mutex della macchina è uno solo, nes
     { env: { ...process.env, CHIPMANAGER_PROVA_MUTEX_CODEX: 'prova:altro' }, encoding: 'utf8' })
   assert.strictEqual(r.stdout, 'codex:corsia-della-macchina')
 })
+
+test('2.4.2 cache Codex: session_meta scritto in due tempi, anche come prima riga, si acquisisce a cache calda', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs.slice(0, 30))
+  assert.deepStrictEqual((await fonti.sessioniCodexLocali(home)).sessioni, [])
+  fs.appendFileSync(f, metaEs.slice(30) + avvio)
+  const s = await unaSessione(home)
+  assert.strictEqual(s?.id, 'sessione-esempio')
+  assert.strictEqual(s.stato, 'aperto')
+})
+
+test('2.4.2 cache Codex: una voce con un campo non valido (limite al 101%) si scarta intera e si ricostruisce', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs + limite(37, '2026-11-05T10:00:00Z'))
+  assert.strictEqual((await fonti.codexLocale(home))[0].percentuale, 37)
+  const cache = JSON.parse(fs.readFileSync(fonti.fileCache(home), 'utf8'))
+  for (const v of Object.values(cache.voci)) v.limiti[0].percentuale = 101
+  fs.writeFileSync(fonti.fileCache(home), JSON.stringify(cache))
+  assert.strictEqual((await fonti.codexLocale(home))[0]?.percentuale, 37)
+  // Anche un campo estraneo invalida la voce.
+  const pulita = JSON.parse(fs.readFileSync(fonti.fileCache(home), 'utf8'))
+  for (const v of Object.values(pulita.voci)) v.testo = 'privato'
+  fs.writeFileSync(fonti.fileCache(home), JSON.stringify(pulita))
+  const r = await fonti.sessioniCodexLocali(home)
+  assert.strictEqual(r.diagnostica.aperti, 1)
+  assert.ok(!fs.readFileSync(fonti.fileCache(home), 'utf8').includes('privato'))
+})
+
+test('2.4.2 cache Codex: dopo un salto tutti gli ultimi campi vengono dalla sola coda, come a cache fredda', async () => {
+  const { home, f } = codexDiProva()
+  fs.writeFileSync(f, metaEs + ev('turn_context', { model: 'modello-a', effort: 'high' }) + avvio +
+    ev('event_msg', { type: 'token_count', info: { last_token_usage: { total_tokens: 5000 }, model_context_window: 100_000 } }))
+  assert.strictEqual((await unaSessione(home)).token, 5000)
+  fs.appendFileSync(f, riempi(600))
+  const calda = await unaSessione(home)
+  fs.rmSync(fonti.fileCache(home))
+  const fredda = await unaSessione(home)
+  assert.deepStrictEqual(calda, fredda)
+  assert.strictEqual(calda.token, undefined)
+  assert.strictEqual(calda.modello, 'modello-a', 'il primo turno della testa resta')
+})
