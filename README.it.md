@@ -10,7 +10,7 @@
 [![test](https://img.shields.io/badge/test-67%20%2B%2026%20verdi-059669)](#collaudo)
 [![licenza](https://img.shields.io/badge/licenza-MIT-blue)](LICENSE)
 
-**[Perché](#perché)** · **[Funzioni](#funzioni)** · **[Immagini](#immagini)** · **[Installazione](#installazione)** · **[Primi passi](#primi-passi)** · **[Come funziona](#come-funziona)** · **[Configurazione](#configurazione)** · **[Limiti e pesi](#limiti-e-bilanciamento)** · **[FreeLLMAPI](#freellmapi)** · **[Terminale](#terminale)** · **[Sicurezza](#sicurezza-e-guardie)** · **[Domande](#domande)**
+**[Perché](#perché)** · **[Funzioni](#funzioni)** · **[Immagini](#immagini)** · **[Installazione](#installazione)** · **[Primi passi](#primi-passi)** · **[Come funziona](#come-funziona)** · **[Configurazione](#configurazione)** · **[Limiti e pesi](#limiti-e-bilanciamento)** · **[FreeLLMAPI](#freellmapi)** · **[Lingue](#lingue)** · **[Terminale](#terminale)** · **[Sicurezza](#sicurezza-e-guardie)** · **[Domande](#domande)**
 
 </div>
 
@@ -335,6 +335,39 @@ confermati per intero. Non ricevono mai background, repository, strumenti o file
 fork e cartelle condivise sono bloccati. Il risultato è una **bozza**, mai applicata da sola, e serve la revisione
 di Claude. *Gratis* non è una promessa di costo zero: limiti e fatturazione dipendono dai fornitori del proxy.
 
+## Lingue
+
+Il pannello, la board, i popup e le notifiche parlano sei lingue:
+
+| Codice | Lingua |
+|---|---|
+| `en` | English (predefinita) |
+| `it` | Italiano |
+| `es` | Español |
+| `fr` | Français |
+| `de` | Deutsch |
+| `pt` | Português (Brasil) |
+
+Si sceglie in **Impostazioni → Lingua**. Ogni lingua compare con il suo nome, così la ritrovi qualunque sia quella
+attiva. La scelta è tua, non di un progetto: si salva come `lingua` al primo livello di
+`~/.claude/chipmanager/config.json` e vale per tutti i progetti. Un valore assente, sconosciuto o illeggibile vale
+inglese. Gli altri pannelli aperti la prendono entro un battito (20 s); la board si riscrive al giro successivo,
+nella stessa lingua.
+
+Date, plurali e separatori decimali vengono dai dizionari della mod (`hooks/lingue/`), non dal runtime, così sono
+uguali ovunque. Le unità dei budget si scrivono in una qualunque delle sei lingue (`500 requests`,
+`500 richieste`, `500 Anfragen`…).
+
+Restano in inglese i testi per gli agenti (descrizioni degli strumenti, rifiuti, il mandato delle sessioni nuove)
+e il manifest. Non si traduce mai il tuo contenuto, come titoli e mandati delle chip, né i nomi di modelli, rami e
+file.
+
+Inglese e italiano sono scritti a mano. Spagnolo, francese, tedesco e portoghese (Brasile) sono tradotti
+automaticamente: le correzioni sono benvenute. I termini comuni stanno in
+[`hooks/lingue/glossario.md`](hooks/lingue/glossario.md). Cinese, giapponese e coreano non ci sono ancora: i
+caratteri a doppia larghezza chiedono prima di rifare le tabelle del terminale. I contenuti personali con emoji o
+testo CJK vanno a capo e si accorciano come prima, senza allineamento delle colonne.
+
 ## Terminale
 
 Lo stesso pannello e gli stessi tasti funzionano nella CLI: `1` `2` `3` le viste, `r` aggiorna, `a` avvia tutte. Sotto
@@ -378,6 +411,7 @@ condivisa. Un record per tentativo nasce prima del processo; l'uscita del proces
 | `hooks/pannello.tsx` | il pannello, desktop e terminale |
 | `hooks/logica.ts` | logica pura: regole, pianificazione, transizioni, pesi, colori |
 | `hooks/board.ts` | generatore puro della board di progetto (HTML) |
+| `hooks/lingua.ts`, `hooks/lingue/` | lingue: dizionari tipizzati (l'inglese è la fonte), plurali, date, numeri, glossario |
 | `hooks/risorse.ts`, `strumenti/fornitori.cjs` | fonti dei limiti, trasporto limitato, installazione guidata, proxy testuale |
 | `strumenti/disco.cjs` | helper Node: mutex del sistema, compare-and-swap, corsia Codex, lanciatore CLI, board e lettura dei piani |
 | `types/index.d.ts` | contratto dei tipi e dello stato |

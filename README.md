@@ -10,7 +10,7 @@
 [![tests](https://img.shields.io/badge/tests-67%20%2B%2026%20passing-059669)](#testing)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[Why](#why)** · **[Features](#features)** · **[Screenshots](#screenshots)** · **[Install](#install)** · **[Quick start](#quick-start)** · **[How it works](#how-it-works)** · **[Configuration](#configuration)** · **[Limits & balancing](#limits--load-balancing)** · **[FreeLLMAPI](#freellmapi)** · **[Terminal](#terminal)** · **[Security](#security--guards)** · **[FAQ](#faq)**
+**[Why](#why)** · **[Features](#features)** · **[Screenshots](#screenshots)** · **[Install](#install)** · **[Quick start](#quick-start)** · **[How it works](#how-it-works)** · **[Configuration](#configuration)** · **[Limits & balancing](#limits--load-balancing)** · **[FreeLLMAPI](#freellmapi)** · **[Languages](#languages)** · **[Terminal](#terminal)** · **[Security](#security--guards)** · **[FAQ](#faq)**
 
 </div>
 
@@ -334,6 +334,38 @@ confirmed in full. They never get background, repository, tools or files; sensit
 shared folders are blocked. The result is a **draft**, never applied automatically, and a Claude review is
 required. *Free* is not a promise of zero cost: limits and billing depend on the proxy's providers.
 
+## Languages
+
+The panel, the board, popups and notifications speak six languages:
+
+| Code | Language |
+|---|---|
+| `en` | English (default) |
+| `it` | Italiano |
+| `es` | Español |
+| `fr` | Français |
+| `de` | Deutsch |
+| `pt` | Português (Brasil) |
+
+Pick yours in **Settings → Language**. Each language is listed by its own name, so you can find yours from any
+of them. The choice belongs to you, not to a project: it is saved as `lingua` at the top level of
+`~/.claude/chipmanager/config.json` and applies to every project. A missing, unknown or unreadable value means
+English. Other open panels pick up the change within one heartbeat (20 s); the board is rewritten on its next
+round, in the same language.
+
+Dates, plurals and decimal separators come from the mod's own dictionaries (`hooks/lingue/`), not from the
+runtime, so they look the same everywhere. Budget units can be typed in any of the six languages (`500 requests`,
+`500 richieste`, `500 Anfragen`…).
+
+What stays in English: the texts written for agents (tool descriptions, refusals, the brief sent to new sessions)
+and the manifest. What is never translated: your own content, such as chip titles and briefs, and names of models,
+branches and files.
+
+English and Italian are written by hand. Spanish, French, German and Brazilian Portuguese are machine-translated:
+corrections are welcome. The shared terms are in [`hooks/lingue/glossario.md`](hooks/lingue/glossario.md).
+Chinese, Japanese and Korean are not available yet: double-width characters need the terminal tables reworked
+first. Personal content with emoji or CJK text wraps and truncates as before, without column alignment.
+
 ## Terminal
 
 The same panel and keys work in the CLI: `1` `2` `3` the views, `r` refresh, `a` launch all. Below 80 columns the
@@ -375,6 +407,7 @@ are never deleted automatically.
 | `hooks/pannello.tsx` | the panel, desktop and terminal |
 | `hooks/logica.ts` | pure logic: rules, planning, transitions, weights, colours |
 | `hooks/board.ts` | pure generator of the project board (HTML) |
+| `hooks/lingua.ts`, `hooks/lingue/` | languages: typed dictionaries (English is the source), plurals, dates, numbers, glossary |
 | `hooks/risorse.ts`, `strumenti/fornitori.cjs` | limit sources, bounded transport, guided install, text proxy |
 | `strumenti/disco.cjs` | Node helper: OS mutex, compare-and-swap, Codex lane, CLI worker, board and plan reading |
 | `types/index.d.ts` | types and state contract |
