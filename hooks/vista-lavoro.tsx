@@ -41,8 +41,6 @@ const REVISORI = ['claude', 'codex', 'nessuno'] as const
 const MESI = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic']
 const giornoDi = (d: Date) => `${d.getDate()} ${MESI[d.getMonth()]} ${d.getFullYear()}`
 const corto = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
-/** Il titolo nelle etichette dei pulsanti: corto, perché il desktop può disegnare l'etichetta; resta unica nell'elenco. */
-const breve = (titolo: string) => corto(titolo, 24)
 
 // `$` resta un argomento: lo scanner non lo vuole dentro un oggetto.
 export function vistaLavoro($: EngineInterface, d: Dati) {
@@ -52,6 +50,14 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     alLavoro, cella, MOTORI, motore, oraDi } = d
   const { Box, Text, Button } = d.el
   type Riga = Dati['righe'][number]
+  /**
+   * La chip nelle etichette dei pulsanti: il numero d'ordine, che la distingue anche da un titolo con lo stesso inizio,
+   * e il titolo corto, perché il desktop può disegnare l'etichetta al posto del testo del pulsante.
+   */
+  const breve = (a: Azione) => {
+    const n = lista.findIndex(x => x.id === a.id) + 1
+    return `${n || a.id} · ${corto(a.titolo, 24)}`
+  }
 
   const scelta = (
     a: Azione,
@@ -423,42 +429,42 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         <Box flexDirection="row" gap={1} flexWrap="wrap" justifyContent="space-between" alignItems="center">
           <Box flexDirection="row" gap={1} flexWrap="wrap">
             {a.stato === 'proposta' && blocchi.length === 0 && (
-              <Button key={`avvia-${a.id}`} variant="secondary" label={`${dip.chiuse ? '▶ Avvia' : '▶ Accoda'} ${breve(a.titolo)}`} onPress={fai(() => c.avvia(a))}>
+              <Button key={`avvia-${a.id}`} variant="secondary" label={`${dip.chiuse ? '▶ Avvia' : '▶ Accoda'} ${breve(a)}`} onPress={fai(() => c.avvia(a))}>
                 {dip.chiuse ? '▶ Avvia' : '▶ Accoda'}
               </Button>
             )}
             {a.stato === 'proposta' && dip.chiuse && bloccatoQui.length === 0 && (
-              <Button key={`qui-${a.id}`} plain label={`Fallo qui ${breve(a.titolo)}`} onPress={fai(() => c.faiQui(a))}>Fallo qui</Button>
+              <Button key={`qui-${a.id}`} plain label={`Fallo qui ${breve(a)}`} onPress={fai(() => c.faiQui(a))}>Fallo qui</Button>
             )}
             {a.stato === 'fallita' && blocchi.length === 0 && (
-              <Button key={`riprova-${a.id}`} variant="secondary" label={`▶ Riprova ${breve(a.titolo)}`} onPress={fai(() => c.avvia(a))}>
+              <Button key={`riprova-${a.id}`} variant="secondary" label={`▶ Riprova ${breve(a)}`} onPress={fai(() => c.avvia(a))}>
                 ▶ Riprova
               </Button>
             )}
             {a.stato === 'fallita' && blocchi.length === 0 && io?.lanciatore !== 'cli' && a.esecutore !== 'freellmapi' && (
-              <Button key={`chiedi-${a.id}`} plain label={`Chiedi a questa sessione ${breve(a.titolo)}`} onPress={fai(() => c.chiediQui(a))}>Chiedi a questa sessione</Button>
+              <Button key={`chiedi-${a.id}`} plain label={`Chiedi a questa sessione ${breve(a)}`} onPress={fai(() => c.chiediQui(a))}>Chiedi a questa sessione</Button>
             )}
             {tentativoAnnullabile(a) && (
-              <Button key={`annullaT-${a.id}`} plain label={`Annulla il tentativo ${breve(a.titolo)}`} onPress={fai(() => c.annullaTentativo(a))}>Annulla il tentativo</Button>
+              <Button key={`annullaT-${a.id}`} plain label={`Annulla il tentativo ${breve(a)}`} onPress={fai(() => c.annullaTentativo(a))}>Annulla il tentativo</Button>
             )}
             {a.stato === 'accodata' && (
               <Button
                 key={`annulla-${a.id}`}
                 variant="secondary"
-                label={`Togli dalla coda ${breve(a.titolo)}`}
+                label={`Togli dalla coda ${breve(a)}`}
                 onPress={modifica(a, { ...transizione(a, 'proposta', new Date(adesso).toISOString()), motivoCoda: undefined })}
               >
                 Togli dalla coda
               </Button>
             )}
             {(a.stato === 'avviata' || a.stato === 'consegnata') && a.sessione && mia && (
-              <Button key={`vedi-${a.id}`} variant="secondary" label={`Apri ${breve(a.titolo)}`} onPress={fai(() => c.apri(a.sessione!))}>Apri</Button>
+              <Button key={`vedi-${a.id}`} variant="secondary" label={`Apri ${breve(a)}`} onPress={fai(() => c.apri(a.sessione!))}>Apri</Button>
             )}
             {(a.stato === 'avviata' || a.stato === 'consegnata') && (
-              <Button key={`fatta-${a.id}`} plain label={`Segna completata ${breve(a.titolo)}`} onPress={completa(a)}>Segna completata</Button>
+              <Button key={`fatta-${a.id}`} plain label={`Segna completata ${breve(a)}`} onPress={completa(a)}>Segna completata</Button>
             )}
             {boardPronta && <Button key={`board-${a.id}`} plain label="Nella board" onPress={fai(c.apriBoard)} />}
-            {modificabile && <Button key={`mod-${a.id}`} plain label={`${aperto ? 'Chiudi' : 'Modifica'} ${breve(a.titolo)}`} onPress={apriChiudi(a.id)}>{aperto ? 'Chiudi' : 'Modifica'}</Button>}
+            {modificabile && <Button key={`mod-${a.id}`} plain label={`${aperto ? 'Chiudi' : 'Modifica'} ${breve(a)}`} onPress={apriChiudi(a.id)}>{aperto ? 'Chiudi' : 'Modifica'}</Button>}
           </Box>
           {modificabile && spostaScarta(a)}
         </Box>
@@ -471,20 +477,20 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
   // Una scheda compatta per ogni chip; «Dettagli» apre al suo posto la scheda completa (con l'editor, se si può modificare).
   // Stessa chiave del «Modifica» della scheda: lo stesso controllo, chiusa o aperta.
   const dettagli = (a: Azione) => (
-    <Button key={`mod-${a.id}`} plain label={`Dettagli ${breve(a.titolo)}`} onPress={apriChiudi(a.id)}>
+    <Button key={`mod-${a.id}`} plain label={`Dettagli ${breve(a)}`} onPress={apriChiudi(a.id)}>
       Dettagli
     </Button>
   )
   function spostaScarta(a: Azione) {
     return (
       <Box key={`ordine-${a.id}`} flexDirection="row" flexWrap="wrap" columnGap={1}>
-        <Button key={`su-${a.id}`} plain dimColor label={`↑ ${breve(a.titolo)}`} onPress={fai(() => c.riordina(a.id, -1))}>
+        <Button key={`su-${a.id}`} plain dimColor label={`↑ ${breve(a)}`} onPress={fai(() => c.riordina(a.id, -1))}>
           ↑
         </Button>
-        <Button key={`giu-${a.id}`} plain dimColor label={`↓ ${breve(a.titolo)}`} onPress={fai(() => c.riordina(a.id, 1))}>
+        <Button key={`giu-${a.id}`} plain dimColor label={`↓ ${breve(a)}`} onPress={fai(() => c.riordina(a.id, 1))}>
           ↓
         </Button>
-        <Button key={`scarta-${a.id}`} plain dimColor label={`Scarta ${breve(a.titolo)}`} onPress={fai(() => c.scarta(a))}>
+        <Button key={`scarta-${a.id}`} plain dimColor label={`Scarta ${breve(a)}`} onPress={fai(() => c.scarta(a))}>
           Scarta
         </Button>
       </Box>
@@ -520,38 +526,38 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const avviata = a.stato === 'avviata' || a.stato === 'consegnata'
     const pulsanti = [
       a.stato === 'proposta' && !bloccata && (
-        <Button key={`avvia-${a.id}`} variant="secondary" label={`${dip.chiuse ? '▶ Avvia' : '▶ Accoda'} ${breve(a.titolo)}`} onPress={fai(() => c.avvia(a))}>
+        <Button key={`avvia-${a.id}`} variant="secondary" label={`${dip.chiuse ? '▶ Avvia' : '▶ Accoda'} ${breve(a)}`} onPress={fai(() => c.avvia(a))}>
           {dip.chiuse ? '▶ Avvia' : '▶ Accoda'}
         </Button>
       ),
       a.stato === 'fallita' && !bloccata && (
-        <Button key={`riprova-${a.id}`} variant="secondary" label={`▶ Riprova ${breve(a.titolo)}`} onPress={fai(() => c.avvia(a))}>
+        <Button key={`riprova-${a.id}`} variant="secondary" label={`▶ Riprova ${breve(a)}`} onPress={fai(() => c.avvia(a))}>
           ▶ Riprova
         </Button>
       ),
       // «Fallo qui» ha la sua guardia: resta anche su una chip che non può partire come sessione nuova.
-      a.stato === 'proposta' && dip.chiuse && bloccatoQui.length === 0 && <Button key={`qui-${a.id}`} plain label={`Fallo qui ${breve(a.titolo)}`} onPress={fai(() => c.faiQui(a))}>Fallo qui</Button>,
+      a.stato === 'proposta' && dip.chiuse && bloccatoQui.length === 0 && <Button key={`qui-${a.id}`} plain label={`Fallo qui ${breve(a)}`} onPress={fai(() => c.faiQui(a))}>Fallo qui</Button>,
       a.stato === 'fallita' && !bloccata && io?.lanciatore !== 'cli' && a.esecutore !== 'freellmapi' && (
-        <Button key={`chiedi-${a.id}`} plain label={`Chiedi a questa sessione ${breve(a.titolo)}`} onPress={fai(() => c.chiediQui(a))}>Chiedi a questa sessione</Button>
+        <Button key={`chiedi-${a.id}`} plain label={`Chiedi a questa sessione ${breve(a)}`} onPress={fai(() => c.chiediQui(a))}>Chiedi a questa sessione</Button>
       ),
       bloccata && (
         <Button
           key={`perche-${a.id}`}
           plain
-          label={`${motiviAperti === a.id ? 'Nascondi i motivi' : 'Perché'} ${breve(a.titolo)}`}
+          label={`${motiviAperti === a.id ? 'Nascondi i motivi' : 'Perché'} ${breve(a)}`}
           onPress={apriPerche(a.id)}
         >
           {motiviAperti === a.id ? 'Nascondi i motivi' : 'Perché'}
         </Button>
       ),
-      tentativoAnnullabile(a) && <Button key={`annullaT-${a.id}`} plain label={`Annulla il tentativo ${breve(a.titolo)}`} onPress={fai(() => c.annullaTentativo(a))}>Annulla il tentativo</Button>,
+      tentativoAnnullabile(a) && <Button key={`annullaT-${a.id}`} plain label={`Annulla il tentativo ${breve(a)}`} onPress={fai(() => c.annullaTentativo(a))}>Annulla il tentativo</Button>,
       a.stato === 'accodata' && (
-        <Button key={`annulla-${a.id}`} plain label={`Togli dalla coda ${breve(a.titolo)}`} onPress={modifica(a, { ...transizione(a, 'proposta', new Date(adesso).toISOString()), motivoCoda: undefined })}>
+        <Button key={`annulla-${a.id}`} plain label={`Togli dalla coda ${breve(a)}`} onPress={modifica(a, { ...transizione(a, 'proposta', new Date(adesso).toISOString()), motivoCoda: undefined })}>
           Togli dalla coda
         </Button>
       ),
-      avviata && a.sessione && mia && <Button key={`vedi-${a.id}`} variant="secondary" label={`Apri ${breve(a.titolo)}`} onPress={fai(() => c.apri(a.sessione!))}>Apri</Button>,
-      avviata && <Button key={`fatta-${a.id}`} plain label={`Segna completata ${breve(a.titolo)}`} onPress={completa(a)}>Segna completata</Button>,
+      avviata && a.sessione && mia && <Button key={`vedi-${a.id}`} variant="secondary" label={`Apri ${breve(a)}`} onPress={fai(() => c.apri(a.sessione!))}>Apri</Button>,
+      avviata && <Button key={`fatta-${a.id}`} plain label={`Segna completata ${breve(a)}`} onPress={completa(a)}>Segna completata</Button>,
       dettagli(a),
       modificabile && spostaScarta(a),
     ]
@@ -630,10 +636,10 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const a = r.azione && !aspettaTe(r.azione) ? r.azione : undefined
     const altri = [
       a?.stato === 'avviata' && (
-        <Button key={`fatta-${a.id}`} plain label={`Segna completata ${breve(a.titolo)}`} onPress={completa(a)}>Segna completata</Button>
+        <Button key={`fatta-${a.id}`} plain label={`Segna completata ${breve(a)}`} onPress={completa(a)}>Segna completata</Button>
       ),
       a && (sessioneChip || apribile) && (
-        <Button key={`mod-${a.id}`} plain dimColor label={`Dettagli ${breve(a.titolo)}`} onPress={apriChiudi(a.id)}>Dettagli</Button>
+        <Button key={`mod-${a.id}`} plain dimColor label={`Dettagli ${breve(a)}`} onPress={apriChiudi(a.id)}>Dettagli</Button>
       ),
     ]
     return { titolo, altri }

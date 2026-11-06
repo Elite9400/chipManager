@@ -30,8 +30,8 @@ const ROUTING = {
   },
 }
 
-/** Come le etichette dei pulsanti: il titolo accorciato a 24 caratteri. */
-const breve = (t: string) => (t.length > 24 ? `${t.slice(0, 23)}…` : t)
+/** Come le etichette dei pulsanti: il numero d'ordine (le rende uniche) e il titolo accorciato a 24 caratteri. */
+const breve = (n: number, t: string) => `${n} · ${t.length > 24 ? `${t.slice(0, 23)}…` : t}`
 const LUNGO = 'Filtro di ricerca per le liste lunghe, con paginazione lato server e conteggio dei risultati in testata'
 const az = (id: string, ordine: number, extra: Partial<Azione> = {}): Azione => ({
   id, versione: 0, titolo: `Esempio ${id}`, brief: 'Frase d\'esempio.', ordine, dipende: [], esecutore: 'claude', revisore: 'codex',
@@ -134,6 +134,9 @@ const MATRICE = [
   az('a-coda0001', 3, { titolo: 'Guida d\'esempio in coda', stato: 'accodata', motivoCoda: 'limite di 3 sessioni in parallelo' }),
   az('a-fallit01', 4, { titolo: 'Esportazione d\'esempio fallita', stato: 'fallita', errore: 'la sessione non è partita' }),
   az('a-avviat01', 6, { titolo: 'Indici di esempio al lavoro', stato: 'avviata', sessione: 'local_22345678-1234-1234-1234-123456789abc', lanciataDa: 'sessione-master', avviataIl: '2026-11-05T10:00:00Z' }),
+  // Due titoli con lo stesso inizio: accorciati coincidono, le etichette no.
+  az('a-docapi01', 7, { titolo: 'Aggiorna documentazione API' }),
+  az('a-doccli01', 8, { titolo: 'Aggiorna documentazione CLI' }),
   az('a-conseg01', 5, { titolo: 'Legenda d\'esempio consegnata', stato: 'consegnata', sessione: SID, lanciataDa: 'sessione-master', avviataIl: '2026-11-05T10:00:00Z' }),
 ]
 /** Le azioni che ogni stato della matrice deve offrire sulla riga, per chiave del pulsante. */
@@ -169,13 +172,16 @@ test('C1: a 60, 90 e 130 colonne, desktop e terminale: titoli interi, «▶ Avvi
       const avvia = await ui.find({ key: 'avvia-a-avviab01' })
       // Sempre il primo pulsante della sua riga: si vede «▶ Avvia», l'etichetta dice anche quale chip.
       expect(avvia?.text).toBe('▶ Avvia')
-      expect(avvia?.props.label).toBe(`▶ Avvia ${breve(LUNGO)}`)
-      expect((await ui.find({ key: 'su-a-avviab01' }))?.props.label).toBe(`↑ ${breve(LUNGO)}`)
+      expect(avvia?.props.label).toBe(`▶ Avvia ${breve(1, LUNGO)}`)
+      expect((await ui.find({ key: 'su-a-avviab01' }))?.props.label).toBe(`↑ ${breve(1, LUNGO)}`)
+      expect((await ui.find({ key: 'scarta-a-doccli01' }))?.props.label).toBe(`Scarta ${breve(8, 'Aggiorna documentazione CLI')}`)
       const tutti = pulsanti(await ui.drawn())
       const etichette = tutti.map(b => b.label ?? '')
-      for (const b of tutti.filter(b => AZIONI_RIGA.test(b.key ?? ''))) {
-        if ((b.label ?? '').length > 50) throw new Error(`${b.key}: etichetta lunga «${b.label}»`)
-        if (etichette.filter(l => l === b.label).length > 1) throw new Error(`${b.key}: etichetta ripetuta «${b.label}»`)
+      // Ogni etichetta dell'albero è unica; quelle delle azioni di riga anche corte.
+      for (const b of tutti) {
+        if (etichette.filter(l => l === (b.label ?? '')).length > 1) throw new Error(`${b.key}: etichetta ripetuta «${b.label}»`)
+        // Verbo, numero d'ordine e al più 24 caratteri di titolo.
+        if (AZIONI_RIGA.test(b.key ?? '') && (b.label ?? '').length > 60) throw new Error(`${b.key}: etichetta lunga «${b.label}»`)
       }
       for (const [id, chiavi] of Object.entries(AZIONI_PER_STATO))
         for (const k of chiavi) if (!(await ui.find({ key: `${k}-${id}` }))) throw new Error(`${surface} ${colonne}: manca ${k}-${id}`)
