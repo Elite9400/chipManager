@@ -275,11 +275,11 @@ test('lingua: config assente = inglese; la scelta va con configura-utente (CAS) 
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-lingua-premi' })
   expect(await ui.find({ type: 'Text', text: 'Language' })).toBeDefined()
-  expect(String((await ui.find({ key: 'lingua-en-premi' }))?.props.label)).toMatch(/^● English/)
+  expect((await ui.find({ key: 'lingua-en-premi' }))?.props).toMatchObject({ label: 'English', variant: 'primary' })
   await ui.press({ key: 'lingua-de-premi' })
   expect(JSON.parse(amb.disco.get(CONFIG)!)).toEqual({ lingua: 'de' })
   expect(await ui.find({ type: 'Text', text: 'Sprache' })).toBeDefined()
-  expect(String((await ui.find({ key: 'lingua-de-premi' }))?.props.label)).toMatch(/^● Deutsch/)
+  expect((await ui.find({ key: 'lingua-de-premi' }))?.props).toMatchObject({ label: 'Deutsch', variant: 'primary' })
   await ui.unmount()
 })
 
@@ -307,7 +307,7 @@ test('impostazioni: profilo illeggibile nel config (un elenco) non rompe il dise
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-bilanciamento-premi' })
-  expect(String((await ui.find({ key: 'profilo-automatico-premi' }))?.props.label)).toMatch(/, selezionato$/)
+  expect((await ui.find({ key: 'profilo-automatico-premi' }))?.props.variant).toBe('primary')
   await ui.unmount()
 })
 
@@ -330,9 +330,9 @@ test('impostazioni: in ogni sezione le etichette dei pulsanti sono uniche (prese
       const etichette = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label))
       expect([s, etichette.filter((e, i) => etichette.indexOf(e) !== i)]).toEqual([s, []])
     }
-    expect(String((await ui.find({ key: 'sezione-legenda-premi' }))?.props.label)).toBe('● Legenda, selezionato')
+    expect((await ui.find({ key: 'sezione-legenda-premi' }))?.props).toMatchObject({ label: 'Legenda', variant: 'primary' })
     await ui.press({ key: 'sezione-soglie-premi' })
-    expect(String((await ui.find({ key: 'soglia-codex-70/90-premi' }))?.props.label)).toBe('● Codex, 70/90 (predefinita), selezionato')
+    expect((await ui.find({ key: 'soglia-codex-70/90-premi' }))?.props).toMatchObject({ label: 'Codex, 70/90 (predefinita)', variant: 'primary' })
     await ui.unmount()
   }
 })
@@ -347,7 +347,7 @@ test('impostazioni: chip di sezione in cima, una sezione alla volta, la scelta s
     for (const s of SEZIONI) {
       await ui.press({ key: `sezione-${s}-premi` })
       for (const altra of SEZIONI) expect([altra, !!(await ui.find({ key: `pagina-${altra}` }))]).toEqual([altra, altra === s])
-      expect(String((await ui.find({ key: `sezione-${s}-premi` }))?.props.label)).toMatch(/, selezionato$/)
+      expect((await ui.find({ key: `sezione-${s}-premi` }))?.props.variant).toBe('primary')
     }
     await ui.press({ key: 'sezione-connessioni-premi' })
     await ui.unmount()

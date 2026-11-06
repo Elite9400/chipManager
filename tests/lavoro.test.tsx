@@ -194,8 +194,9 @@ test('C1: a 60, 90 e 130 colonne, desktop e terminale: titoli interi, «▶ Avvi
         expect(await ui.find({ type: 'Text', text: testo })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /Secondo paragrafo/ })).toBeUndefined()
       // Le viste come chip di scelta, con i tasti di sempre.
-      expect((await ui.find({ key: 'vista-lavoro' }))?.props.label).toBe('● Vista Lavoro, selezionato')
-      expect((await ui.find({ key: 'vista-carico' }))?.props.label).toBe('○ Vista Carico, non selezionato')
+      // F5.8: il solo nome; la scelta sta nel colore, il tasto resta.
+      expect((await ui.find({ key: 'vista-lavoro' }))?.props).toMatchObject({ label: 'Lavoro', variant: 'primary', hotkey: '1' })
+      expect((await ui.find({ key: 'vista-carico' }))?.props).toMatchObject({ label: 'Carico', plain: true, dimColor: true, hotkey: '2' })
       await ui.unmount()
     }
 })
@@ -409,7 +410,7 @@ test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazi
         if (doppie.length) throw new Error(`${surface} ${colonne} ${dove}: etichette ripetute ${doppie.join(' | ')}`)
       }
       expect((await ui.find({ key: 'avvia-a-avviab01' }))?.text).toBe('▶ Start')
-      expect((await ui.find({ key: 'vista-lavoro' }))?.props.label).toBe('● Work view, selected')
+      expect((await ui.find({ key: 'vista-lavoro' }))?.props).toMatchObject({ label: 'Work', variant: 'primary' })
       expect(await ui.find({ type: 'Text', text: /Queued: limit of 3 parallel sessions$/ })).toBeDefined()
       await controlla('lavoro')
       await ui.press({ key: 'vista-carico' })

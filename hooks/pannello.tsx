@@ -328,13 +328,12 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     { id: 'carico', nome: T('vista.carico'), tasto: '2', chiave: 'vista-carico' },
     { id: 'impostazioni', nome: T('vista.impostazioni'), tasto: '3', chiave: 'impostazioni' },
   ]
-  // Le viste come chip di scelta (C1.5): segno ● / ○ e «selezionato» nell'etichetta, accento solo sulla scelta.
+  // Le viste come chip di scelta (C1.5, F5.8): il solo nome; la scelta sta nel colore (primario d'accento), le altre attenuate.
   // Non usa `ui.Chip` per tenere il tasto (1 2 3) e la chiave del pulsante (vista-lavoro, …) di sempre.
   const schede = (
     <Box key="viste" flexDirection="row" flexWrap="wrap" gap={1}>
       {VISTE.map(v => {
         const attiva = v.id === vistaOra
-        const segno = attiva ? '●' : '○'
         return (
           <Box
             key={`${v.chiave}-chip`}
@@ -345,13 +344,11 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
             backgroundColor={conVelo && attiva ? velo(ACCENTO, ALFA_VELO) : undefined}
             paddingX={conVelo ? 1 : 0}
           >
-            <Button key={v.chiave} plain hotkey={v.tasto} label={T(attiva ? 'vista.etichettaScelta' : 'vista.etichetta', { segno, nome: v.nome })} onPress={() => void update($, vista, () => v.id)}>
-              <Text>
-                {conVelo ? '' : '['}
-                <Text color={attiva ? ACCENTO : undefined}>{segno}</Text>
-                {` ${v.nome}${conVelo ? '' : ']'}`}
-              </Text>
-            </Button>
+            {attiva ? (
+              <Button key={v.chiave} variant="primary" hotkey={v.tasto} label={v.nome} onPress={() => void update($, vista, () => v.id)} />
+            ) : (
+              <Button key={v.chiave} plain dimColor hotkey={v.tasto} label={v.nome} onPress={() => void update($, vista, () => v.id)} />
+            )}
           </Box>
         )
       })}

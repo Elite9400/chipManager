@@ -29,8 +29,9 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
   const terminale = surface === 'terminal'
 
   /**
-   * Una chip. Con `attiva` definito è una chip di scelta o filtro: ● e «, selezionato» se attiva, ○ se no, nel testo e nella label.
-   * Senza, è un'etichetta di stato con il suo `segno` nel suo `colore`.
+   * Una chip. Con `attiva` definito è una chip di scelta o filtro (F5.8): la label è il solo nome e la scelta sta nel colore,
+   * pulsante primario d'accento la attiva (nel terminale `[ nome ]`), attenuate le altre.
+   * Senza, è un'etichetta di stato con il suo `segno` nel suo `colore`: segno e parola, mai il solo colore.
    */
   function Chip(p: {
     chiave: string
@@ -43,16 +44,19 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     /** Di chi è la chip, solo nella label («Claude, 70/90»): distingue chip uguali di gruppi diversi. */
     contesto?: string
   }) {
-    const segno = p.segno ?? (p.attiva ? '●' : '○')
-    const tinta = p.attiva ? ACCENTO : p.colore
-    // Il desktop disegna la label, non i figli: il segno sta anche lì.
+    const scelta = p.attiva !== undefined
+    const segno = p.segno ?? '●'
+    // Il desktop disegna la label, non i figli: una chip di stato tiene il segno anche lì.
     const nome = `${p.contesto ? `${p.contesto}, ` : ''}${p.testo}`
-    const etichetta = `${segno} ${p.attiva === undefined ? nome : t(lingua, p.attiva ? 'ui.selezionato' : 'ui.nonSelezionato', { nome })}`
     const chiusa = terminale && !p.onRimuovi ? ']' : ''
-    const corpo = (
+    const corpo = scelta ? (
+      <Text key={`${p.chiave}-testo`} color={p.attiva ? ACCENTO : undefined} dimColor={!p.attiva}>
+        {terminale && p.attiva ? `[${p.testo}]` : p.testo}
+      </Text>
+    ) : (
       <Text key={`${p.chiave}-testo`}>
         {terminale ? '[' : ''}
-        <Text color={tinta}>{segno}</Text>
+        <Text color={p.colore}>{segno}</Text>
         {` ${p.testo}${chiusa}`}
       </Text>
     )
@@ -67,8 +71,14 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
         backgroundColor={!terminale && p.attiva ? velo(ACCENTO, ALFA_VELO) : undefined}
         paddingX={terminale ? 0 : 1}
       >
-        {p.onPress ? (
-          <Button key={`${p.chiave}-premi`} plain label={etichetta} onPress={p.onPress}>
+        {p.onPress && scelta ? (
+          p.attiva ? (
+            <Button key={`${p.chiave}-premi`} variant="primary" label={nome} onPress={p.onPress} />
+          ) : (
+            <Button key={`${p.chiave}-premi`} plain dimColor label={nome} onPress={p.onPress} />
+          )
+        ) : p.onPress ? (
+          <Button key={`${p.chiave}-premi`} plain label={`${segno} ${nome}`} onPress={p.onPress}>
             {corpo}
           </Button>
         ) : (

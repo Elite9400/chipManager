@@ -69,7 +69,7 @@ test('classe di larghezza: stretta sotto 70, media fino a 109, larga da 110', ()
   expect([60, 69, 70, 109, 110, 130].map(classeDi)).toEqual(['stretta', 'stretta', 'media', 'media', 'larga', 'larga'])
 })
 
-test('Chip: la scelta sta nel segno e nell\'etichetta; il terminale la scrive tra parentesi; × rimuove', async ($, on) => {
+test('Chip F5.8: la label è il solo nome; la scelta sta nel colore (primario d\'accento), le altre attenuate; × rimuove', async ($, on) => {
   const monta = banco(on)
   for (const surface of SUPERFICI) {
     const premute: string[] = []
@@ -87,11 +87,13 @@ test('Chip: la scelta sta nel segno e nell\'etichetta; il terminale la scrive tr
     )
     const t = surface === 'terminal'
     const attiva = await ui.find({ key: 'auto-premi' })
-    expect(attiva?.props).toMatchObject({ label: '● Automatico, selezionato' })
-    expect(attiva?.text).toBe(t ? '[● Automatico]' : '● Automatico')
+    // Il terminale disegna il primario come `[ label ]` nell'accento: la parentesi resta il ripiego senza colori.
+    expect(attiva?.props).toMatchObject({ label: 'Automatico', variant: 'primary' })
+    expect(attiva?.props.plain).toBeUndefined()
     const spenta = await ui.find({ key: 'qual-premi' })
-    expect(spenta?.props).toMatchObject({ label: '○ Qualità, non selezionato' })
-    expect(spenta?.text).toBe(t ? '[○ Qualità]' : '○ Qualità')
+    expect(spenta?.props).toMatchObject({ label: 'Qualità', plain: true, dimColor: true })
+    expect(spenta?.props.variant).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^\[?[●○] (Automatico|Qualità)/ })).toBeUndefined()
     expect((await ui.find({ key: 'bud-via' }))?.props).toMatchObject({ label: 'Rimuovi Claude · settimanale · 40%' })
     // Una chip di stato non è un pulsante: segno e parola, nessuna etichetta di scelta.
     expect(await ui.find({ key: 'st-premi' })).toBeUndefined()
@@ -120,8 +122,8 @@ test('GruppoChip: «scelta» cambia solo verso un\'altra voce; «filtro» accend
       u.GruppoChip({ chiave: 'rete', etichetta: 'Rete', modo: 'scelta', valore: 'claude', voci: VOCI, onCambia: v => void scelte.push(v) }),
       u.GruppoChip({ chiave: 'ammessi', etichetta: 'Ammessi', modo: 'filtro', valore: ['claude', 'codex'], voci: VOCI, onCambia: v => void filtri.push(v) }),
     ])
-    expect((await ui.find({ key: 'rete-claude-premi' }))?.props).toMatchObject({ label: '● Claude, selezionato' })
-    expect((await ui.find({ key: 'rete-codex-premi' }))?.props).toMatchObject({ label: '○ Codex, non selezionato' })
+    expect((await ui.find({ key: 'rete-claude-premi' }))?.props).toMatchObject({ label: 'Claude', variant: 'primary' })
+    expect((await ui.find({ key: 'rete-codex-premi' }))?.props).toMatchObject({ label: 'Codex', plain: true, dimColor: true })
     expect(await ui.find({ type: 'Text', text: 'Ammessi' })).toBeDefined()
     premi(albero, 'rete-claude-premi')
     premi(albero, 'rete-codex-premi')
