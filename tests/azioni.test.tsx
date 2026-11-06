@@ -357,7 +357,8 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
   on('env.get', (_, e) => ({ value: e.name === 'CHIPMANAGER_DIR' && !opz.senzaDir ? 'X:/orch' : e.name === 'USERPROFILE' ? 'X:/casa' : e.name === 'OS' ? 'Windows_NT' : undefined }))
   on('session.id', () => ({ value: 'sessione-master' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
-  on('tool.list', () => ({ value: [...(opz.cli ? [] : [{ name: 'mcp__ccd_session__start_session' }]), ...(opz.strumenti ?? []).map(name => ({ name }))] as never }))
+  const elenchiStrumenti: number[] = []
+  on('tool.list', () => (elenchiStrumenti.push(1), { value: [...(opz.cli ? [] : [{ name: 'mcp__ccd_session__start_session' }]), ...(opz.strumenti ?? []).map(name => ({ name }))] as never }))
   on('session.repo', () => ({ value: { root: 'X:/repo', remote: 'https://github.com/acme/progetto.git', internal: false, repo: null } as never }))
   on('fs.exists', (_, e) => ({ value: [...disco.keys()].some(k => k === p(e.path) || k.startsWith(`${p(e.path)}/`)) }))
   const elenchi: string[] = []
@@ -527,7 +528,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
           return []
         }
       })
-  return { disco, chiamate, toast, processi, azione, modello, letti, registrati, inviati, elenchi }
+  return { disco, chiamate, toast, processi, azione, modello, letti, registrati, inviati, elenchi, elenchiStrumenti }
 }
 
 const PANE = (surface: 'desktop' | 'terminal') =>
@@ -2540,6 +2541,28 @@ test('R4: il giro riusa le azioni lette dal battito: una sola lettura della cart
   await clock.advance(20_000)
   // Un battito con il giro dovuto: la cartella si elenca una volta, non due.
   expect(amb.elenchi.filter(d => d === 'X:/orch/azioni').length - prima).toBe(1)
+})
+
+test('R5: elenco degli strumenti e get_session di questa sessione in cache durante i giri; prima di un avvio si rileggono', async ($, on) => {
+  const amb = ambiente(on)
+  const clock = mock.clock(on)
+  amb.disco.set('X:/orch/azioni/a-avv00098.json', JSON.stringify(base('a-avv00098', 1, { repo: 'acme/progetto', stato: 'in-avvio', tentativo: 'az-attesa003', avvioScade: '2999-01-01T00:00:00.000Z', lanciataDa: 'altra' })))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const self = () => amb.chiamate.filter(c => c.tool === 'get_session' && (c.args as { session_id?: string }).session_id === 'self').length
+  const [l0, s0] = [amb.elenchiStrumenti.length, self()]
+  // Cinque minuti di giri a 20 s (15 giri): get_session self al più una volta al minuto, l'elenco degli strumenti al più ogni 10 minuti.
+  for (let i = 0; i < 15; i++) await clock.advance(20_000)
+  expect(self() - s0).toBeLessThanOrEqual(6)
+  expect(amb.elenchiStrumenti.length - l0).toBeLessThanOrEqual(1)
+  // Un avvio rilegge subito chi avvia e la sua capacità.
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Nuova', brief: 'Da avviare.' } as never)
+  const nuova = amb.azione().find(a => a.titolo === 'Nuova')!
+  const [l1, s1] = [amb.elenchiStrumenti.length, self()]
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `avvia-${nuova.id}` })
+  expect(self()).toBeGreaterThan(s1)
+  expect(amb.elenchiStrumenti.length).toBeGreaterThan(l1)
+  await ui.unmount()
 })
 
 test('R4: scrivi se cambia: uguaglianza sul JSON; il consumo si confronta senza `da`', () => {

@@ -139,6 +139,22 @@ export function pianoVuoto(json: unknown): boolean {
   return extra === undefined || (!!extra && typeof extra === 'object' && extra.enabled === false)
 }
 
+/** R5: i nomi degli strumenti dell'host, in cache 10 minuti (subito di nuovo se l'ultima lettura è fallita). */
+let strumentiHost: { quando: number; nomi: Set<string> | null } | undefined
+export async function nomiStrumenti($: EngineInterface, forza = false): Promise<Set<string> | null> {
+  const adesso = await $.clock.now()
+  const c = strumentiHost
+  if (!forza && c?.nomi && adesso >= c.quando && adesso - c.quando < 600_000) return c.nomi
+  try {
+    const nomi = new Set((await $.tool.list()).map(t => t.name))
+    strumentiHost = { quando: adesso, nomi }
+    return nomi
+  } catch {
+    strumentiHost = { quando: adesso, nomi: null }
+    return null
+  }
+}
+
 export async function osservaRisorse($: EngineInterface, options: Record<string, unknown>, r: Regole): Promise<Risorse> {
   if (!r.lette) return { ...RISORSE_VUOTE, proxy: 'proxy.regole' }
   let risultato: Risorse
@@ -146,7 +162,7 @@ export async function osservaRisorse($: EngineInterface, options: Record<string,
   catch { risultato = { ...RISORSE_VUOTE, proxy: 'proxy.helper', chiavi: { anthropic: !!options.anthropicAdminKey, deepseek: !!options.deepseekKey, freellmapi: !!options.freellmapiKey } } }
   if (r.risorse.fornitori.includes('claude') && !r.risorse.soloLocale) {
     try {
-      const disponibile = (await $.tool.list()).some(t => t.name === 'mcp__ccd_session_mgmt__get_usage')
+      const disponibile = !!(await nomiStrumenti($))?.has('mcp__ccd_session_mgmt__get_usage')
       const m = disponibile ? await new Promise<Awaited<ReturnType<EngineInterface['mcp']['call']>> | null>(ok => {
         const timer = $.clock.after(4000, () => ok(null))
         conta({ app: 1 })

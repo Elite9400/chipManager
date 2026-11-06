@@ -59,7 +59,7 @@ import type { Piano as PianoBoard } from './board'
 import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salvato, t, testo, traduttore } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { disegna } from './pannello'
-import { fonte, INSTALLAZIONE, nomeLimiteIn, osservaRisorse, RISORSE_VUOTE } from './risorse'
+import { fonte, INSTALLAZIONE, nomeLimiteIn, nomiStrumenti, osservaRisorse, RISORSE_VUOTE } from './risorse'
 
 // Lo scanner dello stato vuole l'atomo scritto nel file che lo usa: register e pannello ne tengono
 // una copia identica (stesso plugin, chiave e shape), che indirizza lo stesso valore.
@@ -309,13 +309,17 @@ const testoMcp = (r: { content: readonly { type: string; text?: string }[] }) =>
   r.content.map(c => (c.type === 'text' ? c.text ?? '' : '')).join('\n')
 
 /** Questa sessione COM'È ADESSO: progetto, modello, effort e permessi effettivi (get_session "self"). */
-async function chiSonoIo($: Eng): Promise<Chiamante> {
+/** R5: chi è questa sessione, in cache 60 s per i giri; ogni altra chiamata (avvii, decisioni, strumenti) rilegge. */
+let chiInCache: { quando: number; c: Chiamante } | undefined
+async function chiSonoIo($: Eng, opz: { cache?: boolean } = {}): Promise<Chiamante> {
+  const adesso = await $.clock.now()
+  if (opz.cache && chiInCache && adesso >= chiInCache.quando && adesso - chiInCache.quando < 60_000) return chiInCache.c
   const r = await $.session.repo().catch(() => null)
   const repo = repoGithub(r?.remote) ?? (r?.root ? checkoutDi(r.root) : null)
   const c: Chiamante = { io: await $.session.id(), repo, modello: await $.session.model().catch(() => ''), lanciatore: 'ignoto' }
-  try {
-    c.lanciatore = (await $.tool.list()).some(t => t.name === 'mcp__ccd_session__start_session') ? 'desktop' : 'cli'
-  } catch { /* capacità ignota: non si tenta un effetto per scoprirla */ }
+  // Capacità ignota (elenco non letto): non si tenta un effetto per scoprirla.
+  const nomi = await nomiStrumenti($, !opz.cache)
+  if (nomi) c.lanciatore = nomi.has('mcp__ccd_session__start_session') ? 'desktop' : 'cli'
   try {
     conta({ app: 1 })
     const s = JSON.parse(testoMcp(await $.mcp.call('ccd_session_mgmt', 'get_session', { session_id: 'self' }))) as {
@@ -334,6 +338,7 @@ async function chiSonoIo($: Eng): Promise<Chiamante> {
     // Senza la risposta dell'app restano modello e progetto letti dal motore.
   }
   if (!uguale(await read($, contesto), c)) await update($, contesto, () => c)
+  chiInCache = { quando: adesso, c }
   return c
 }
 
@@ -399,7 +404,7 @@ async function leggiSessioni($: Eng) {
   const [chi, r] = [(await read($, contesto)) ?? (await chiSonoIo($)), (await read($, regole)) ?? (await leggiRegole($))]
   const radice = radiceProgetto(root)
   const adesso = Date.now()
-  const desktop = (await $.tool.list().catch(() => [])).some(t => t.name === 'mcp__ccd_session_mgmt__list_sessions')
+  const desktop = !!(await nomiStrumenti($))?.has('mcp__ccd_session_mgmt__list_sessions')
   const note: string[] = []
   let claude: SessioneProgetto[] = []
   if (desktop) {
@@ -878,7 +883,8 @@ async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti)
   if (tutte.rotte?.length) tutte = await carica($)
   // Senza tutti i record niente chiusure né avvii automatici: si osserva soltanto (e il pannello lo dice).
   const completa = !tutte.rotte?.length
-  const chi = await chiSonoIo($)
+  // R5: nel giro chi sono io viene dalla cache di 60 s; avvii e decisioni rileggono.
+  const chi = await chiSonoIo($, { cache: true })
   const lista = delProgetto(tutte, chi)
   const prima = await read($, vive)
   const registro = await leggiRegistro($)
@@ -1000,8 +1006,10 @@ async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti)
   const r = await leggiRegole($)
   const accodate = adesso.filter(a => a.stato === 'accodata')
   if (!completa || !accodate.length) return
+  // Prima di filtrare le code si rilegge chi avvia: un avvio non aspetta la finestra della cache.
+  const chiOra = await chiSonoIo($)
   const limitiOra = (await read($, risorse)).limiti
-  const pronte = (await conCorsia($, codex => pianifica(accodate, adesso, r, maxParalleli(options), codex, a => violazioniAvvio(a, r, tutteOra, chi), limitiOra))).avvia
+  const pronte = (await conCorsia($, codex => pianifica(accodate, adesso, r, maxParalleli(options), codex, a => violazioniAvvio(a, r, tutteOra, chiOra), limitiOra))).avvia
   for (const a of pronte) await avvia($, options, a.id).catch(() => undefined)
 }
 
