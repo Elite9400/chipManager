@@ -1086,6 +1086,7 @@ export function sessioniCodex(json: unknown, radice: string, adesso: number): Se
     const ramo = testoBreve(s.ramo, 80)
     return [{ id: `codex-${s.id}`, motore: 'codex' as const, titolo: ramo ? `Codex · ${ramo}` : 'Sessione Codex', ramo,
       modello: testoBreve(s.modello, 60), effort: testoBreve(s.effort, 20), stato: s.inCorso === true ? ('in-corso' as const) : ('ferma' as const),
+      ...(s.stato === 'ignoto' && s.inCorso !== true ? { ignota: true as const } : {}),
       contesto: token !== undefined && finestra ? Math.min(100, Math.round((token / finestra) * 100)) : undefined, token, attivita }]
   })
 }
@@ -1148,6 +1149,18 @@ const AVVIO = Date.now()
 let secchi: Secchi = []
 export const conta = (delta: Partial<Omit<Consumo, 'da'>>) => void (secchi = contaConsumo(secchi, Date.now(), delta))
 export const sommaConsumo = () => sommaSecchi(secchi, Date.now(), AVVIO)
+
+/** La riga grigia della vista Carico: solo i numeri di QUESTA sessione, e lo dice. */
+export function rigaConsumo(c: Consumo, adesso: number): string {
+  const min = Math.max(1, Math.round((adesso - c.da) / 60_000))
+  const mb = (n: number) => `${(n / 1_048_576).toFixed(1).replace('.', ',')} MB`
+  return [
+    `Questa sessione, ${min >= FINESTRA_MIN ? 'ultimi 10 minuti' : `ultimi ${min} min`}: ${c.processi} ${c.processi === 1 ? 'processo' : 'processi'}`,
+    `${c.app} ${c.app === 1 ? 'chiamata' : 'chiamate'} all'app`,
+    `${mb(c.byte)} letti dall'helper Codex${c.byteLimiti ? ` (${mb(c.byteLimiti)} per i limiti)` : ''}`,
+    `${c.salti} ${c.salti === 1 ? 'salto' : 'salti'} d'arretrato`,
+  ].join(' · ')
+}
 
 /** I contatori che l'helper restituisce (`diagnostica`), validati: tutto ciò che non è un numero non conta. */
 export function diagnosticaHelper(json: unknown): Partial<Omit<Consumo, 'da'>> {

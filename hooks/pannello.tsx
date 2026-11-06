@@ -9,7 +9,7 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
 
-import type { Azione, Chiamante, Fornitore, Limite, Motore, Peso, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, Traguardi, Vista, Vita } from '../types'
+import type { Azione, Chiamante, Consumo, Fornitore, Limite, Motore, Peso, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, Traguardi, Vista, Vita } from '../types'
 import {
   attive,
   aspettaTe as aspettaTeDi,
@@ -52,6 +52,7 @@ const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { li
 const vista = atom({ plugin: 'chip-manager', key: 'vista' } as const, 'lavoro' as Vista)
 const tutteSessioni = atom({ plugin: 'chip-manager', key: 'tutteSessioni' } as const, false)
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
+const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, da: 0 } as Consumo, { shape: 'consumo-1' })
 
 type Eng = EngineInterface
 
@@ -108,6 +109,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const lista = attive(tutte)
   const visibili = lista.filter(a => corrisponde(a, testoFiltro, regoleOra))
   const espansa = await read($, aperta)
+  const consumoOra = await read($, consumo)
   const stati = await read($, vive)
   const nota = await read($, avviso)
   const scartata = await read($, annullabile)
@@ -179,7 +181,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const righe: Riga[] = ses.lista.map(s => {
     const a = avviate.find(x => (s.motore === 'claude' && x.sessione === s.id) || (s.motore === 'codex' && x.esecutore === 'codex' && !!s.ramo && stati[x.id]?.ramo === s.ramo))
     const fermaOra = a ? ferma(a) : s.stato === 'ferma'
-    return { ...s, azione: a, titolo: a?.titolo ?? s.titolo, parola: fermaOra ? 'Ferma' : 'In corso', segno: fermaOra ? '◐' : '●', colore: fermaOra ? COLORE_STATO.ferma : COLORE_STATO.inCorso }
+    return { ...s, azione: a, titolo: a?.titolo ?? s.titolo, parola: !a && s.ignota ? '—' : fermaOra ? 'Ferma' : 'In corso', segno: fermaOra ? '◐' : '●', colore: fermaOra ? COLORE_STATO.ferma : COLORE_STATO.inCorso }
   })
   for (const a of avviate)
     if (!righe.some(r => r.azione?.id === a.id)) {
@@ -209,7 +211,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
     el, c, Select, Input, conVelo, stretto, io, tutte, senzaProgetto, ses, vistaOra, tutteLeSessioni, regoleOra, testoFiltro,
     lista, visibili, espansa, stati, nota, scartata, rotte, tr, adesso, capacita, sb, boardPronta, ultime, configura, fai, modifica,
     completa, apriChiudi, ferma, statoDi, etichetta, nota1, proposte, tentativoAnnullabile, aspettaTe, attese, titoloSezione, righe,
-    alLavoro, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, oraDi,
+    alLavoro, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, oraDi, consumoOra,
   }
 }
 

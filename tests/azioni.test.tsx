@@ -3,6 +3,7 @@ import type { TestBody } from 'claude-code/testing'
 
 import {
   CADENZA_INIZIALE,
+  rigaConsumo,
   contaConsumo,
   diagnosticaHelper,
   passoCadenza,
@@ -2283,4 +2284,26 @@ test('banco D7: a schermo con lavoro in corso, raccolta entro 3,2 processi/min',
   const m = await banco($, on, { nascosto: false, pendente: true })
   console.log('banco a schermo al lavoro, 10 min:', JSON.stringify(m))
   expect(m.raccolta).toBeLessThanOrEqual(32)
+})
+
+test('consumo: riga grigia della sessione; lo stato Codex ignoto non è in corso e si segna', () => {
+  const c = { processi: 7, app: 1, byte: 3 * 1_048_576, byteLimiti: 1_048_576, salti: 2, da: 0 }
+  expect(rigaConsumo(c, 10 * 60_000)).toBe("Questa sessione, ultimi 10 minuti: 7 processi · 1 chiamata all'app · 3,0 MB letti dall'helper Codex (1,0 MB per i limiti) · 2 salti d'arretrato")
+  expect(rigaConsumo({ ...c, byteLimiti: 0, salti: 1, processi: 1 }, 3 * 60_000)).toBe("Questa sessione, ultimi 3 min: 1 processo · 1 chiamata all'app · 3,0 MB letti dall'helper Codex · 1 salto d'arretrato")
+  const adesso = Date.parse('2026-11-05T12:00:00Z')
+  const s = (stato: string, inCorso: boolean) => sessioniCodex([{ id: 'esempio-0001', cwd: 'X:/repo', attivita: '2026-11-05T11:59:00Z', stato, inCorso }], radiceProgetto('X:/repo'), adesso)[0]!
+  expect(s('ignoto', false)).toMatchObject({ stato: 'ferma', ignota: true })
+  expect(s('chiuso', false).ignota).toBeUndefined()
+  expect(s('aperto', true)).toMatchObject({ stato: 'in-corso' })
+})
+
+test('vista Carico: in fondo la riga del consumo di questa sessione', async ($, on) => {
+  ambiente(on)
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(20_000)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'vista-carico' })
+  expect((await ui.find({ type: 'Text', text: /^Questa sessione, ultimi/ }))?.text).toMatch(/process[oi] · \d+ chiamat[ae] all'app · [\d,]+ MB letti dall'helper Codex/)
+  await ui.unmount()
 })

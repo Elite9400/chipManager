@@ -12,13 +12,14 @@ import {
   effortDi,
   modelloDi,
   nomeModello,
+  rigaConsumo,
   velo,
 } from './logica'
 import type { Dati } from './pannello'
 
 export function vistaCarico(d: Dati) {
   const { conVelo, stretto, tutte, regoleOra, lista, adesso, capacita, nota1, titoloSezione,
-    righe, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore } = d
+    righe, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, consumoOra } = d
   const { Box, Text } = d.el
 
   const parolaSoglia = (s: Soglia | null) => (s ? `attenzione da ${s.attenzione}% · critica da ${s.critica}%` : 'nessuna soglia')
@@ -223,6 +224,7 @@ export function vistaCarico(d: Dati) {
       {controlloLimiti}
       {token}
       {pesiInUso}
+      {consumoOra.da > 0 && <Text key="consumo" size="caption" dimColor>{rigaConsumo(consumoOra, adesso)}</Text>}
     </Box>
   )
   return carico

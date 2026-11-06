@@ -225,6 +225,8 @@ export type SessioneProgetto = {
   modello?: string
   effort?: string
   stato: 'in-corso' | 'ferma'
+  /** Stato del turno non noto (Codex dopo un salto d'arretrato senza eventi di turno): mai «in corso», si mostra «—». */
+  ignota?: true
   /** Percentuale della finestra di contesto usata, se letta. */
   contesto?: number
   /** Token nella finestra di contesto, se letti. */
