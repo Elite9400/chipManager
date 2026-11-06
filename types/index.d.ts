@@ -299,7 +299,7 @@ export type Vista = 'lavoro' | 'carico' | 'impostazioni'
 export type StatoBoard = { percorso?: string; motivo?: string; riassunti?: string }
 /** La vista Impostazioni: sezione aperta, ultimo errore in linea e procedure guidate fatte in linea (popup rifiutato). */
 export type StatoImpostazioni = {
-  sezione: 'connessioni' | 'soglie' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate' | 'lingua' | 'legenda'
+  sezione: 'connessioni' | 'soglie' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate' | 'esecuzione' | 'lingua' | 'legenda'
   errore?: { dove: string; testo: Messaggio }
   guida?: Fornitore
   bozza?: { fornitore?: Fornitore; tipo?: string }

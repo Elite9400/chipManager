@@ -180,7 +180,7 @@ export const cambiatiAltrove = (p: Pendenti, r: RisorseProgetto) => Object.keys(
 export const SEZIONE_DI: Record<string, Chiave> = {
   fornitori: 'imp.sezione.connessioni', soglie: 'imp.sezione.soglie', profilo: 'imp.sezione.bilanciamento', pesi: 'imp.sezione.bilanciamento',
   soloLocale: 'imp.sezione.progetto', milestoneGithub: 'imp.sezione.progetto', board: 'imp.sezione.board',
-  freellmapi: 'imp.sezione.avanzate',
+  freellmapi: 'imp.sezione.avanzate', apiClaude: 'imp.sezione.esecuzione', consigliere: 'imp.sezione.esecuzione',
 }
 
 // --- simulazione --------------------------------------------------------------------------------------

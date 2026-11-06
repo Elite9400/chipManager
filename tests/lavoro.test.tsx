@@ -454,7 +454,7 @@ test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazi
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', progetti: { 'acme/progetto': {} } }))
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'lingua', 'legenda']
+  const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda']
   for (const surface of SUPERFICI)
     for (const colonne of LARGHEZZE) {
       const ui = await $.ui.mount(PANE(surface, colonne))
@@ -517,7 +517,7 @@ test('lingue: a 60 colonne nel terminale nessuna riga supera la larghezza e ness
   const amb = ambiente(on, MATRICE_EN)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'lingua', 'legenda']
+  const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda']
   for (const lingua of ['en', 'it', 'es', 'fr', 'de', 'pt']) {
     amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua, progetti: { 'acme/progetto': {} } }))
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })

@@ -220,7 +220,8 @@ export function risorseDa(p: Record<string, unknown>): RisorseProgetto | Msg {
         ...(typeof o.voce === 'string' && { voce: o.voce.slice(0, 60) }), ...(Number.isInteger(o.versione) && { versione: o.versione as number }) }
     : undefined
   // F6.2: budget del mese e tetto per tentativo in USD (l'unità di total_cost_usd); assente = API non configurata.
-  const api = p.apiClaude
+  // null = tolta dalle Impostazioni (Applica scrive null per togliere un campo): vale come assente.
+  const api = p.apiClaude === null ? undefined : p.apiClaude
   if (api !== undefined && (!oggettoRisorse(api) || !numero(api.budgetUsd, 0.01, 100_000) || (api.tetto !== undefined && !numero(api.tetto, 0.01, 1_000))))
     return errore
   const apiClaude = api && { budgetUsd: api.budgetUsd as number, tetto: (api.tetto as number | undefined) ?? TETTO_API_PREDEFINITO }

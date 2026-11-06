@@ -346,7 +346,7 @@ const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
     requestId: 'chipManager',
     props: { title: 'chipManager', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
   }) as const
-const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'lingua', 'legenda'] as const
+const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda'] as const
 
 test('lingua: config assente = inglese; la scelta va nella bozza, Applica la scrive con configura-utente (CAS) e il pannello cambia', async ($, on) => {
   const amb = ambiente(on)
@@ -1033,6 +1033,52 @@ test('giro 7, 2: Applica dal pulsante con la lettura iniziale sospesa: una modif
   expect(amb.progettoOra().milestoneGithub).toBeUndefined()
   expect(amb.toast.some(t => t === 'Salvataggio in corso…' || t === 'Le impostazioni sono cambiate nel frattempo: non è stato fatto niente')).toBe(true)
   await altro.unmount()
+  await ui.unmount()
+})
+
+test('F6.6 Esecuzione: la chiave solo come presenza (mai popup, bozza o JSON); budget, tetto e consigliere passano per bozza e Applica', { options: { anthropicApiKey: 'sk-ant-sentinella-0123' } }, async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  expect(await ui.find({ type: 'Text', text: /Chiave impostata nelle opzioni sensibili della mod$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Usa una chiave creata solo per la mod, .*La mod non può verificarlo\.$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /questo non revoca la chiave\. Se pensi che la chiave sia stata copiata, revocala dalla Console/ })).toBeDefined()
+  expect(await ui.find({ key: 'ese-tetto' })).toBeUndefined()
+  const prima = amb.disco.get(CONFIG)
+  await ui.input({ key: 'ese-budget', text: '15' })
+  await ui.press({ key: 'consigliere-suggerisci-premi' })
+  expect(await ui.find({ type: 'Text', text: '2 modifiche non salvate' })).toBeDefined()
+  expect(amb.disco.get(CONFIG)).toBe(prima)
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra()).toMatchObject({ apiClaude: { budgetUsd: 15, tetto: 2 }, consigliere: 'suggerisci' })
+  // Il tetto non supera il budget; un valore fuori misura resta in linea, senza bozza.
+  await ui.input({ key: 'ese-tetto', text: '30' })
+  expect(await ui.find({ type: 'Text', text: /Scrivi un numero da 0,01 a 15$/ })).toBeDefined()
+  await ui.input({ key: 'ese-tetto', text: '3' })
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra()).toMatchObject({ apiClaude: { budgetUsd: 15, tetto: 3 } })
+  await ui.press({ key: 'ese-api-togli' })
+  await ui.press({ key: 'consigliere-spento-premi' })
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra()).toMatchObject({ apiClaude: null, consigliere: null })
+  // La chiave non passa mai di qui: nessun popup, nessun valore nel config.
+  expect(amb.domande).toEqual([])
+  expect(amb.disco.get(CONFIG)).not.toContain('sentinella')
+  await ui.unmount()
+})
+
+test('F6.6 Esecuzione: senza chiave lo dice; senza remote GitHub il cloud non è disponibile', async ($, on) => {
+  ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('terminal') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  expect(await ui.find({ type: 'Text', text: /Nessuna chiave impostata$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Il progetto è su GitHub: il cloud parte dal ramo pubblicato$/ })).toBeDefined()
   await ui.unmount()
 })
 

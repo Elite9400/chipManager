@@ -29,7 +29,7 @@ import {
   TIPI_BUDGET,
 } from './bilanciamento'
 import type { Profilo } from './bilanciamento'
-import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, piuPieno, sogliaDi } from './logica'
+import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, piuPieno, sogliaDi, TETTO_API_PREDEFINITO } from './logica'
 import type { Ctx, Dati } from './pannello'
 import { eMsg, Errore, LEGENDA, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
 import type { Chiave, Lingua, T } from './lingua'
@@ -57,6 +57,7 @@ const SEZIONI: { valore: Sezione; testo: Chiave }[] = [
   { valore: 'board', testo: 'imp.sezione.board' },
   { valore: 'avanzate', testo: 'imp.sezione.avanzate' },
   { valore: 'lingua', testo: 'imp.sezione.lingua' },
+  { valore: 'esecuzione', testo: 'imp.sezione.esecuzione' },
   { valore: 'legenda', testo: 'imp.sezione.legenda' },
 ]
 const TIPO = (t: string) => t[0]!.toUpperCase() + t.slice(1)
@@ -668,6 +669,66 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     { valore: 'R1', testo: T('ava.r1') },
     { valore: 'R2', testo: T('ava.r2') },
   ]
+  // --- Esecuzione (F6.6) ------------------------------------------------------------------------------------
+  // La chiave API di Claude si inserisce SOLO nelle opzioni sensibili della mod (archivio sicuro dell'host): qui se ne dice
+  // la presenza, mai il valore, e non passa mai per popup, bozza o JSON. Budget, tetto e consigliere vanno nella bozza.
+  const CONSIGLI = [
+    { valore: 'spento', testo: T('ese.spento') },
+    { valore: 'suggerisci', testo: T('ese.suggerisci') },
+    { valore: 'applica', testo: T('ese.applica') },
+  ]
+  const numeroUsd = (testo: string, min: number, max: number) => {
+    const n = Number(testo.trim().replace(',', '.'))
+    if (!Number.isFinite(n) || n < min || n > max) throw new Errore(msg('ese.numero', { min, max }))
+    return Math.round(n * 100) / 100
+  }
+  const esecuzione = () => {
+    const api = r.apiClaude
+    const chiave = !!regoleOra.chiaveApi
+    const github = /^[^/\s]+\/[^/\s]+$/.test(io?.repo ?? '')
+    const stato = T(api ? 'ese.statoApi' : 'ese.statoLocale')
+    return u.Sezione({
+      chiave: 'pagina-esecuzione',
+      titolo: T('imp.sezione.esecuzione'),
+      descrizione: T('ese.descrizione'),
+      stato,
+      figli: [
+        // API Claude: chiave (solo presenza), modello di minaccia, budget del mese e tetto per tentativo.
+        <Box key="ese-api" flexDirection="column" gap={1}>
+          <Text key="ese-api-titolo" weight="semibold">{T('ese.apiTitolo')}</Text>
+          {nota1('ese-chiave', chiave ? STATO.inCorso : STATO.attesa, chiave ? '✓' : '○', T(chiave ? 'ese.chiavePresente' : 'ese.chiaveAssente'))}
+          {didascalia('ese-chiave-dove', T('ese.chiaveDove'))}
+          {didascalia('ese-chiave-dedicata', T('ese.chiaveDedicata'))}
+          {didascalia('ese-chiave-rischio', T('ese.chiaveRischio'))}
+          {Input ? (
+            <Input key="ese-budget" label={T('ese.budget')} value={api ? String(api.budgetUsd) : ''}
+              onSubmit={v => salva('api', () => ({ apiClaude: { budgetUsd: numeroUsd(v, 0.01, 100_000), tetto: api?.tetto ?? TETTO_API_PREDEFINITO } }))()} />
+          ) : null}
+          {Input && api ? (
+            <Input key="ese-tetto" label={T('ese.tetto')} value={String(api.tetto)}
+              onSubmit={v => salva('api', () => ({ apiClaude: { budgetUsd: api.budgetUsd, tetto: numeroUsd(v, 0.01, Math.min(1_000, api.budgetUsd)) } }))()} />
+          ) : null}
+          {didascalia('ese-tetto-nota', T('ese.tettoNota'))}
+          {api && <Button key="ese-api-togli" plain dimColor label={T('ese.apiTogli')} onPress={salva('api', () => ({ apiClaude: null }))} />}
+          {errore('api')}
+        </Box>,
+        // Cloud di Claude: niente da configurare qui; si verifica il remote GitHub e si dice che cosa serve.
+        <Box key="ese-cloud" flexDirection="column" gap={1}>
+          <Text key="ese-cloud-titolo" weight="semibold">{T('ese.cloudTitolo')}</Text>
+          {nota1('ese-github', github ? STATO.inCorso : STATO.attesa, github ? '✓' : '○', T(github ? 'ese.github' : 'ese.noGithub'))}
+          {didascalia('ese-cloud-come', T('ese.cloudCome'))}
+          {didascalia('ese-cloud-extra', T('ese.cloudExtra'))}
+        </Box>,
+        u.GruppoChip({
+          chiave: 'consigliere', etichetta: T('ese.consigliere'), modo: 'scelta', valore: r.consigliere ?? 'spento', voci: CONSIGLI,
+          onCambia: v => salva('consigliere', () => ({ consigliere: v === 'spento' ? null : v }))(),
+        }),
+        didascalia('ese-consigliere-nota', T('ese.consigliereNota')),
+        errore('consigliere'),
+      ],
+    })
+  }
+
   const avanzate = () => {
     const stato = `FreeLLMAPI: ${LIVELLI.find(l => l.valore === r.freellmapi.livello)!.testo}`
     return u.Sezione({
@@ -763,7 +824,8 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
 
   const pendenti = piena(vista.pendenti)?.dove.length ?? 0
   const corpo =
-    vista.sezione === 'legenda' ? legenda()
+    vista.sezione === 'esecuzione' ? esecuzione()
+      : vista.sezione === 'legenda' ? legenda()
       : vista.sezione === 'lingua' ? lingua()
       : vista.sezione === 'soglie' ? soglie()
       : vista.sezione === 'bilanciamento' ? bilanciamento()
