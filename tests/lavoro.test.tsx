@@ -359,3 +359,55 @@ test('C1: anche le Impostazioni ricevono la classe di larghezza da bodyColumns, 
       await ui.unmount()
     }
 })
+
+// --- lingue: il giro delle viste in inglese ---------------------------------------------------------------
+// Dati d'esempio in inglese e record nuovi (motivo come codice): così ogni parola italiana viene dalla mod.
+const MATRICE_EN = [
+  az('a-avviab01', 1, { titolo: 'Search filter for long lists, with server-side paging and a result count in the header', brief: 'Add the filter to the sample list.', issue: 123 }),
+  az('a-blocca01', 2, { titolo: 'Draft from another conversation', brief: 'Sample brief.', contesto: 'fork', origineFork: 'altra-sessione', origineNome: 'Other' }),
+  az('a-coda0001', 3, { titolo: 'Queued sample guide', brief: 'Sample brief.', stato: 'accodata', motivoCoda: 'limit of 3 parallel sessions', motivoCodice: 'coda.paralleli', motivoParametri: { n: 3 } }),
+  az('a-fallit01', 4, { titolo: 'Failed sample export', brief: 'Sample brief.', stato: 'fallita', errore: 'HTTP 502' }),
+  az('a-conseg01', 5, { titolo: 'Delivered sample legend', brief: 'Sample brief.', stato: 'consegnata', sessione: SID, lanciataDa: 'sessione-master', avviataIl: '2026-11-05T10:00:00Z' }),
+]
+const ITALIANO = /\b(Avvia|Aspettano|Impostazioni|Nessun[ao]?|sessione|Soglie|Collega|Dettagli|Scarta|selezionato|Modifica|Perché|Fallo|Lavoro|Carico|coda|Aggiorna|fornitor[ei]|giorni|manuale|Pesi|Vista|Lingua|Progetto|Avanzate|Rete|Cartella|Mandato|Ramo|Riprova|Chiedi|Togli|Segna)\b/
+/** Tutto il testo dell'albero disegnato: le stringhe e le etichette dei pulsanti e dei campi. */
+function testi(n: unknown): string[] {
+  if (typeof n === 'string' || typeof n === 'number') return [String(n)]
+  if (!n || typeof n !== 'object') return []
+  if (Array.isArray(n)) return n.flatMap(testi)
+  const x = n as { props?: Record<string, unknown>; children?: unknown }
+  return [...['label', 'placeholder', 'submitLabel'].map(k => x.props?.[k]).filter((v): v is string => typeof v === 'string'), ...testi(x.children)]
+}
+
+test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazioni) non hanno parole italiane, a ogni larghezza', async ($, on) => {
+  const amb = ambiente(on, MATRICE_EN)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', progetti: { 'acme/progetto': {} } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'lingua']
+  for (const surface of SUPERFICI)
+    for (const colonne of LARGHEZZE) {
+      const ui = await $.ui.mount(PANE(surface, colonne))
+      const controlla = async (dove: string) => {
+        const tutto = testi(await ui.drawn())
+        const italiane = tutto.filter(s => ITALIANO.test(s))
+        if (italiane.length) throw new Error(`${surface} ${colonne} ${dove}: ${italiane.slice(0, 3).join(' | ')}`)
+        const etichette = pulsanti(await ui.drawn()).map(b => b.label ?? '')
+        const doppie = etichette.filter((e, i) => etichette.indexOf(e) !== i)
+        if (doppie.length) throw new Error(`${surface} ${colonne} ${dove}: etichette ripetute ${doppie.join(' | ')}`)
+      }
+      expect((await ui.find({ key: 'avvia-a-avviab01' }))?.text).toBe('▶ Start')
+      expect((await ui.find({ key: 'vista-lavoro' }))?.props.label).toBe('● Work view, selected')
+      expect(await ui.find({ type: 'Text', text: /Queued: limit of 3 parallel sessions$/ })).toBeDefined()
+      await controlla('lavoro')
+      await ui.press({ key: 'vista-carico' })
+      await controlla('carico')
+      await ui.press({ key: 'impostazioni' })
+      for (const s of SEZIONI) {
+        await ui.press({ key: `sezione-${s}-premi` })
+        await controlla(s)
+      }
+      await ui.press({ key: 'vista-lavoro' })
+      await ui.unmount()
+    }
+})

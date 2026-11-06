@@ -101,6 +101,13 @@ export function data(l: Lingua, quando: Date | string | number): string {
 
 const MIGLIAIA: Record<Lingua, string> = { en: ',', it: '.', es: '.', fr: ' ', de: '.', pt: '.' }
 
+/** Giorno, mese corto e anno, senza ora («Nov 4, 2026», «4 nov 2026»). */
+export function giorno(l: Lingua, quando: Date | string | number): string {
+  const d = new Date(quando)
+  if (Number.isNaN(d.getTime())) return '—'
+  return t(l, 'data.giorno', { giorno: d.getDate(), mese: t(l, 'data.mesi').split('|')[d.getMonth()] ?? '', anno: d.getFullYear() })
+}
+
 /** Numero con il separatore decimale della lingua; quello delle migliaia solo da 10.000 in su. */
 export function numero(l: Lingua, n: number, decimali?: number): string {
   const s = decimali === undefined ? String(n) : n.toFixed(decimali)
@@ -129,6 +136,7 @@ export function traduttore(l: Lingua) {
     /** Un testo che può essere un codice del dizionario («codice» o «codice: dettaglio»): tradotto se lo è, altrimenti com'è. */
     k: (s: string | undefined) => chiaveOTesto(l, s),
     data: (q: Date | string | number) => data(l, q),
+    giorno: (q: Date | string | number) => giorno(l, q),
     ora: (q: Date | string | number) => ora(l, q),
     numero: (n: number, decimali?: number) => numero(l, n, decimali),
   })

@@ -3,6 +3,8 @@
 // legge dal segno (● / ○) e dall'etichetta, il valore della Gamma è scritto e si cambia con − e +.
 import type { ElementTable, RenderSurface } from 'claude-code'
 
+import { t } from './lingua'
+import type { Lingua } from './lingua'
 import { velo } from './logica'
 import { ACCENTO, ALFA_VELO, GRIGIO } from './tema'
 
@@ -14,7 +16,7 @@ export type Voce = { valore: string; testo: string }
 
 type Nodo = unknown
 
-export function componenti(el: ElementTable, surface: RenderSurface) {
+export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lingua) {
   const { Box, Text, Button } = el
   const terminale = surface === 'terminal'
 
@@ -36,7 +38,8 @@ export function componenti(el: ElementTable, surface: RenderSurface) {
     const segno = p.segno ?? (p.attiva ? '●' : '○')
     const tinta = p.attiva ? ACCENTO : p.colore
     // Il desktop disegna la label, non i figli: il segno sta anche lì.
-    const etichetta = `${segno} ${p.contesto ? `${p.contesto}, ` : ''}${p.testo}${p.attiva === undefined ? '' : p.attiva ? ', selezionato' : ', non selezionato'}`
+    const nome = `${p.contesto ? `${p.contesto}, ` : ''}${p.testo}`
+    const etichetta = `${segno} ${p.attiva === undefined ? nome : t(lingua, p.attiva ? 'ui.selezionato' : 'ui.nonSelezionato', { nome })}`
     const chiusa = terminale && !p.onRimuovi ? ']' : ''
     const corpo = (
       <Text key={`${p.chiave}-testo`}>
@@ -64,7 +67,7 @@ export function componenti(el: ElementTable, surface: RenderSurface) {
           corpo
         )}
         {p.onRimuovi && (
-          <Button key={`${p.chiave}-via`} plain dimColor label={`Rimuovi ${p.testo}`} onPress={p.onRimuovi}>
+          <Button key={`${p.chiave}-via`} plain dimColor label={t(lingua, 'ui.rimuovi', { nome: p.testo })} onPress={p.onRimuovi}>
             ×
           </Button>
         )}
@@ -153,7 +156,7 @@ export function componenti(el: ElementTable, surface: RenderSurface) {
             key={`${p.chiave}-meno`}
             plain
             dimColor={!puoMeno}
-            label={`Diminuisci ${p.etichetta}${puoMeno ? '' : ', al minimo'}`}
+            label={t(lingua, puoMeno ? 'ui.diminuisci' : 'ui.diminuisciMinimo', { nome: p.etichetta })}
             onPress={() => {
               if (puoMeno) p.onCambia(meno)
             }}
@@ -165,7 +168,7 @@ export function componenti(el: ElementTable, surface: RenderSurface) {
             key={`${p.chiave}-piu`}
             plain
             dimColor={!puoPiu}
-            label={`Aumenta ${p.etichetta}${puoPiu ? '' : ', al massimo'}`}
+            label={t(lingua, puoPiu ? 'ui.aumenta' : 'ui.aumentaMassimo', { nome: p.etichetta })}
             onPress={() => {
               if (puoPiu) p.onCambia(piu)
             }}

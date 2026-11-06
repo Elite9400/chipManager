@@ -402,7 +402,7 @@ async function leggiSessioni($: Eng) {
       note.push('sessioni Claude non lette')
     }
   }
-  const io: SessioneProgetto = { id: 'self', motore: 'claude', titolo: chi.titolo ?? 'Questa sessione', ramo: chi.ramo, modello: chi.modello || undefined, effort: chi.effort, stato: 'in-corso', qui: true }
+  const io: SessioneProgetto = { id: 'self', motore: 'claude', titolo: chi.titolo ?? '', ramo: chi.ramo, modello: chi.modello || undefined, effort: chi.effort, stato: 'in-corso', qui: true }
   // Le sonde dell'app (get_usage) seguono la politica del progetto come i limiti: regole illeggibili o solo locale = niente.
   const sonde = r.lette && !r.risorse.soloLocale && r.risorse.fornitori.includes('claude')
   const daLeggere = desktop ? [io, ...claude.sort((x, y) => Number(y.stato === 'in-corso') - Number(x.stato === 'in-corso')).slice(0, MAX_DETTAGLI - 1)] : []

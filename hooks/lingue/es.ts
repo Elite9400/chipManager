@@ -31,6 +31,23 @@ const es: Parziale = {
   // Weights proposals
   // Provider limits: names, read errors, proxy states
   // Helper answers on weights proposals
+  // Panel: chip states, header, summary
+  "data.giorno": "{giorno} {mese} {anno}",
+  // Work view: chip editor
+  // Work view: chip card
+  // Work view: sessions at work
+  // Work view: milestones
+  // Work view: sections, filter, empty states
+  // Load view
+  // Settings: sections
+  // Settings: connections
+  // Settings: thresholds
+  // Settings: balancing
+  // Settings: project
+  // Settings: board
+  // Settings: advanced
+
+
   // ‹fine›
 }
 

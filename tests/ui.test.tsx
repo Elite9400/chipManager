@@ -20,7 +20,7 @@ function banco(on: On) {
   on('ui.render', { component: 'Pane', requestId: 'prova-ui' }, ($$, e) => {
     const el = $$.ui.resolve(e)
     const { Box } = el
-    const r = disegno(componenti(el, e.surface))
+    const r = disegno(componenti(el, e.surface, 'it'))
     albero = Array.isArray(r) ? <Box flexDirection="column">{r as never}</Box> : r
     return albero as never
   })

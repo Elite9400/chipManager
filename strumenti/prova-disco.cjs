@@ -817,6 +817,30 @@ test('2.4 git-log: oggetto, data e SHA corto del ramo base, al massimo 15', () =
   assert.ok(Number.isFinite(Date.parse(l[0].data)))
 })
 
+test('lingue: nelle viste nessun testo fuori dal dizionario (testo fra i tag, label, titoli, didascalie)', () => {
+  const cartella = path.join(__dirname, '..', 'hooks')
+  const file = ['pannello.tsx', 'ui.tsx', ...fs.readdirSync(cartella).filter(n => /^vista-.*\.tsx$/.test(n))]
+  assert.ok(file.length >= 5)
+  // Le parole sono di almeno due lettere; segni (● ▲ ▶ ↑ ↓ — …), numeri e percentuali passano.
+  const parola = /[A-Za-zÀ-ÿ]{2,}/
+  const trovati = []
+  for (const f of file) {
+    // Senza commenti: un commento in italiano non è interfaccia.
+    const testo = fs.readFileSync(path.join(cartella, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/ \/\/ .*$/gm, '')
+    const vedi = (re, prendi = m => m[1]) => {
+      for (const m of testo.matchAll(re)) if (parola.test(prendi(m))) trovati.push(`${f}: ${m[0].trim().slice(0, 90)}`)
+    }
+    vedi(/>([^<>{}]*)<\/[A-Za-z]/g)
+    vedi(/\b(?:label|placeholder|submitLabel|header)="([^"]*)"/g)
+    // Un'etichetta composta: tolti i `${…}`, non resta nessuna parola.
+    vedi(/\b(?:label|placeholder|submitLabel)=\{`((?:[^`$]|\$\{[^}]*\})*)`\}/g, m => m[1].replace(/\$\{[^}]*\}/g, ''))
+    // Proprietà di testo dei componenti e delle note: una frase (con spazi) scritta lì è fuori dal dizionario.
+    vedi(/\b(?:titolo|descrizione|etichetta|testo|parola|stato): '([^']*\s[^']*)'/g)
+    vedi(/\b(?:didascalia|nota1|titoloSezione)\([^()]*?'([^']*\s[^']*)'\s*[,)]/g)
+  }
+  assert.deepStrictEqual(trovati, [])
+})
+
 test('2.4 date: ogni cambio di stato di un\'azione passa da transizione()', () => {
   // Ogni sorgente dei hooks, così un file nuovo (una vista, un modulo) non esce dal controllo.
   const cartella = path.join(__dirname, '..', 'hooks')

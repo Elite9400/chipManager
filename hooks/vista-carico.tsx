@@ -23,7 +23,7 @@ export function vistaCarico(d: Dati) {
     righe, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, consumoOra } = d
   const { Box, Text } = d.el
 
-  const parolaSoglia = (s: Soglia | null) => (s ? `attenzione da ${s.attenzione}% · critica da ${s.critica}%` : 'nessuna soglia')
+  const parolaSoglia = (s: Soglia | null) => (s ? T('car.soglie', { attenzione: s.attenzione, critica: s.critica }) : T('car.nessunaSoglia'))
 
   /** Barra al rapporto vero con entrambi gli estremi: Box in proporzione sul desktop, 20 celle sul terminale. */
   const barraPct = (k: string, pct: number, colore: string, corta = false) => {
@@ -66,13 +66,13 @@ export function vistaCarico(d: Dati) {
     const n = l.percentuale
     const colore = coloreLimite(l, adesso, soglia)
     const livello = n !== undefined && (fresco || l.manuale) ? livelloDi(n, soglia) : undefined
-    const valore = n !== undefined ? `${n}% usato` : l.valore !== undefined ? `${T.numero(l.valore)} ${unitaIn(l.unita, T.lingua)}` : 'non disponibile'
+    const valore = n !== undefined ? T('car.usato', { pct: n }) : l.valore !== undefined ? `${T.numero(l.valore)} ${unitaIn(l.unita, T.lingua)}` : T('car.nonDisponibile')
     // Un valore inserito a mano non invecchia come una misura: dice solo quando è stato scritto.
     const eta = !l.letto
-      ? 'mai letto'
+      ? T('car.maiLetto')
       : l.manuale
-        ? `inserito ${durata(Math.max(0, adesso - Date.parse(l.letto)), T.lingua)} fa`
-        : `${durata(Math.max(0, adesso - Date.parse(l.letto)), T.lingua)} fa${fresco ? '' : ' · vecchio, non conta nelle scelte'}`
+        ? T('car.inserito', { durata: durata(Math.max(0, adesso - Date.parse(l.letto)), T.lingua) })
+        : `${T('car.fa', { durata: durata(Math.max(0, adesso - Date.parse(l.letto)), T.lingua) })}${fresco ? '' : ` · ${T('car.vecchio')}`}`
     const reset = l.reset
       ? T.data(l.reset)
       : undefined
@@ -80,18 +80,18 @@ export function vistaCarico(d: Dati) {
       <Box key={`limite-${l.id}`} flexDirection="column">
         <Text dimColor={grigio}>
           {n === undefined ? <Text color={colore}>{'○ '}</Text> : livello && livello !== 'ok' ? <Text color={colore}>{'▲ '}</Text> : ''}
-          {`${nomeLimiteIn(l, T.lingua)}: ${valore}${l.manuale ? ' · manuale' : ''}${livello === 'critica' ? ' · oltre la soglia critica' : livello === 'attenzione' ? ' · sopra la soglia di attenzione' : ''}${l.manuale && livello && livello !== 'ok' ? ' (dichiarato: non cambia le scelte)' : ''}`}
+          {`${nomeLimiteIn(l, T.lingua)}: ${valore}${l.manuale ? ` · ${T('car.manuale')}` : ''}${livello === 'critica' ? ` · ${T('car.oltreCritica')}` : livello === 'attenzione' ? ` · ${T('car.sopraAttenzione')}` : ''}${l.manuale && livello && livello !== 'ok' ? ` ${T('car.dichiarato')}` : ''}`}
         </Text>
         {barra && barraPct(`barra-${l.id}`, n!, colore)}
-        <Text dimColor size="caption">{`${l.fonte} · ${eta}${l.errore ? ` · ${T.k(l.errore)}` : ''}${reset ? ` · reset ${reset}` : ''}`}</Text>
+        <Text dimColor size="caption">{`${l.fonte} · ${eta}${l.errore ? ` · ${T.k(l.errore)}` : ''}${reset ? ` · ${T('car.reset', { quando: reset })}` : ''}`}</Text>
       </Box>
     )
   }
 
   const controlloLimiti = (
     <Box key="limiti" flexDirection="column" gap={1}>
-      {titoloSezione('t-limiti', 'Limiti e budget')}
-      {fornitoriInUso.length === 0 && <Text dimColor>Nessun limite collegato · vai a Impostazioni</Text>}
+      {titoloSezione('t-limiti', T('car.limiti'))}
+      {fornitoriInUso.length === 0 && <Text dimColor>{T('car.nessunLimite')}</Text>}
       {fornitoriInUso.map(f => (
         <Box key={`forn-${f}`} flexDirection="column" gap={1}>
           <Text wrap="wrap">
@@ -101,8 +101,8 @@ export function vistaCarico(d: Dati) {
           {limiti.filter(l => l.fornitore === f).map(rigaLimite)}
         </Box>
       ))}
-      {fornitoriInUso.length > 0 && <Text size="caption" dimColor>Saldi e budget non sono quote di piano. Un dato vecchio resta grigio e non entra nelle scelte.</Text>}
-      {capacita.proxy === 'proxy.helper' && <Text dimColor>{`Limiti non letti: ${T.k(capacita.proxy)}`}</Text>}
+      {fornitoriInUso.length > 0 && <Text size="caption" dimColor>{T('car.notaSaldi')}</Text>}
+      {capacita.proxy === 'proxy.helper' && <Text dimColor>{T('car.nonLetti', { motivo: T.k(capacita.proxy) })}</Text>}
     </Box>
   )
 
@@ -126,7 +126,7 @@ export function vistaCarico(d: Dati) {
   const griglia = (
     <Box flexDirection="column">
       <Box key="m-testa" flexDirection="row">
-        {cella('m-h-mod', '36%', <Text size="caption" dimColor>Modello</Text>)}
+        {cella('m-h-mod', '36%', <Text size="caption" dimColor>{T('tab.modello')}</Text>)}
         {regoleOra.effort.map(e => cella(`m-h-${e}`, larghezzaEffort, <Text size="caption" dimColor>{e}</Text>, true))}
       </Box>
       {modelliAttivi.map(m => (
@@ -146,7 +146,7 @@ export function vistaCarico(d: Dati) {
           })}
         </Box>
       ))}
-      <Text size="caption" dimColor>{`al lavoro · +in coda${senzaDati ? ` · ${senzaDati} al lavoro senza modello o effort noto` : ''}`}</Text>
+      <Text size="caption" dimColor>{`${T('car.legenda')}${senzaDati ? ` · ${T('car.senzaDati', { n: senzaDati })}` : ''}`}</Text>
     </Box>
   )
   // Su `stretta` la griglia non entra: un elenco per modello, solo le celle non vuote.
@@ -159,17 +159,17 @@ export function vistaCarico(d: Dati) {
           <Text key={`m-${m}`} wrap="wrap">
             <Text weight="semibold">{`${nomeModello(m)}: `}</Text>
             {celle.map(x => `${x.e} ${x.lavoro}`).join(' · ')}
-            {coda ? <Text dimColor>{` (+${coda} in coda)`}</Text> : ''}
+            {coda ? <Text dimColor>{` ${T('car.piuCoda', { n: coda })}`}</Text> : ''}
           </Text>
         )
       })}
-      {senzaDati > 0 && <Text size="caption" dimColor>{`${senzaDati} al lavoro senza modello o effort noto`}</Text>}
+      {senzaDati > 0 && <Text size="caption" dimColor>{T('car.senzaDati', { n: senzaDati })}</Text>}
     </Box>
   )
   const matrice = (
     <Box key="matrice" flexDirection="column" gap={1}>
-      {titoloSezione('t-matrice', 'Al lavoro per modello ed effort')}
-      {modelliAttivi.length === 0 ? <Text dimColor>Nessuna sessione al lavoro e niente in coda.</Text> : classe === 'stretta' ? elenco : griglia}
+      {titoloSezione('t-matrice', T('car.matrice'))}
+      {modelliAttivi.length === 0 ? <Text dimColor>{T('car.matriceVuota')}</Text> : classe === 'stretta' ? elenco : griglia}
     </Box>
   )
 
@@ -186,9 +186,9 @@ export function vistaCarico(d: Dati) {
   }, {})
   const token = (
     <Box key="token" flexDirection="column" gap={1}>
-      {titoloSezione('t-token', 'Contesto delle sessioni al lavoro')}
+      {titoloSezione('t-token', T('car.contesto'))}
       {conContesto.length === 0 ? (
-        <Text dimColor>Nessuna sessione al lavoro riporta il suo contesto.</Text>
+        <Text dimColor>{T('car.contestoVuoto')}</Text>
       ) : (
         conContesto.map(r =>
           classe === 'stretta' ? (
@@ -211,7 +211,7 @@ export function vistaCarico(d: Dati) {
       {Object.keys(perModello).length > 0 && (
         <Text size="caption" dimColor>
           {Object.entries(perModello)
-            .map(([m, x]) => `${m === '—' ? 'modello ignoto' : nomeModello(m)}: ${x.n} ${x.n === 1 ? 'sessione' : 'sessioni'}${x.noti ? ` · ${migliaia(x.token)} token` : ''}`)
+            .map(([m, x]) => `${m === '—' ? T('ses.modelloIgnoto') : nomeModello(m)}: ${T('car.sessioni', { n: x.n })}${x.noti ? ` · ${migliaia(x.token)} token` : ''}`)
             .join(' · ')}
         </Text>
       )}
@@ -231,18 +231,18 @@ export function vistaCarico(d: Dati) {
   const quote = MOTORI.map(m => ({ m, n: avviiRecenti.filter(a => a.esecutore === m).length })).filter(x => x.n > 0)
   const pesiInUso = (
     <Box key="pesi-uso" flexDirection="column" gap={1}>
-      {titoloSezione('t-pesi', 'Pesi in uso')}
+      {titoloSezione('t-pesi', T('car.pesi'))}
       <Text>
         {parolePesi
-          ? `${parolePesi}. Valgono solo fra le combinazioni che le regole ammettono.`
-          : 'Nessun peso: l\'ordine è il tuo, e il pannello completa le scelte lasciate aperte guardando i margini.'}
+          ? T('car.pesiValgono', { pesi: parolePesi })
+          : T('car.nessunPeso')}
       </Text>
-      {critici.length > 0 && nota1('critici', COLORE_LIVELLO.critica, '▲', `Oltre la soglia critica: ${critici.join(', ')}. Le scelte lasciate aperte vanno a un altro fornitore ammesso.`)}
+      {critici.length > 0 && nota1('critici', COLORE_LIVELLO.critica, '▲', T('car.critici', { fornitori: critici.join(', ') }))}
       {d.registroPesi('carico-pesi')}
       <Text size="caption" dimColor>
         {quote.length
-          ? `Avvii nelle ultime 24 ore: ${quote.map(x => `${motore(x.m)} ${x.n} (${Math.round((x.n / avviiRecenti.length) * 100)}%)`).join(' · ')}`
-          : 'Nessun avvio nelle ultime 24 ore.'}
+          ? T('car.avvii', { quote: quote.map(x => `${motore(x.m)} ${x.n} (${Math.round((x.n / avviiRecenti.length) * 100)}%)`).join(' · ') })
+          : T('car.nessunAvvio')}
       </Text>
     </Box>
   )

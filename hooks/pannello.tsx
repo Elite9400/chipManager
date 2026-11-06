@@ -92,12 +92,7 @@ export type Ctx = {
 }
 
 const MOTORI = ['claude', 'codex', 'freellmapi'] as const
-const motore = (m: Motore | 'nessuno') => (m === 'claude' ? 'Claude' : m === 'codex' ? 'Codex' : m === 'freellmapi' ? 'FreeLLMAPI' : 'Nessuno')
-const due = (n: number) => String(n).padStart(2, '0')
-const oraDi = (iso: string) => {
-  const d = new Date(iso)
-  return `${due(d.getHours())}:${due(d.getMinutes())}`
-}
+const NOMI_MOTORI: Record<Motore, string> = { claude: 'Claude', codex: 'Codex', freellmapi: 'FreeLLMAPI' }
 
 /** Dati e pezzi comuni alle viste, letti una volta per disegno. */
 async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, colonne: number) {
@@ -108,9 +103,10 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const conVelo = surface !== 'terminal'
   // La larghezza vera del pannello, su ogni superficie (bodyColumns; 100 se l'host non la dà).
   const classe = classeDi(colonne)
-  const ui = componenti(el, surface)
-
   const T = traduttore(await read($, lingua))
+  const ui = componenti(el, surface, T.lingua)
+
+  const motore = (m: Motore | 'nessuno') => (m === 'nessuno' ? T('motore.nessuno') : NOMI_MOTORI[m])
   const io = await read($, contesto)
   const lette = await read($, azioni)
   // Solo le azioni di questo progetto: quelle senza progetto non si mostrano più da nessuna parte.
@@ -153,19 +149,19 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
 
   /** Stato di una chip: il segno nel colore dello stato, la parola nell'inchiostro. */
   const statoDi = (a: Azione): { colore: string; segno: string; parola: string } => {
-    if (a.stato === 'proposta') return { colore: STATO.coda, segno: '○', parola: 'Da avviare' }
-    if (a.stato === 'accodata') return { colore: STATO.coda, segno: '◔', parola: 'In coda' }
+    if (a.stato === 'proposta') return { colore: STATO.coda, segno: '○', parola: T('stato.proposta') }
+    if (a.stato === 'accodata') return { colore: STATO.coda, segno: '◔', parola: T('stato.accodata') }
     if (a.stato === 'in-avvio')
       return {
         colore: STATO.coda,
         segno: '◔',
-        parola: a.manuale ? 'Chiesta a questa sessione: aspetto la conferma' : a.incerto ? 'Avvio incerto: verifico' : 'In avvio',
+        parola: T(a.manuale ? 'stato.chiestaQui' : a.incerto ? 'stato.incerto' : 'stato.inAvvio'),
       }
-    if (a.stato === 'fallita') return { colore: STATO.errore, segno: '▲', parola: 'Avvio fallito' }
-    if (a.stato === 'consegnata') return { colore: STATO.consegnata, segno: '✓', parola: 'Consegnata: attende la fusione' }
-    if (a.qui) return { colore: STATO.inCorso, segno: '●', parola: 'In esecuzione qui' }
-    if (ferma(a)) return { colore: STATO.attesa, segno: '◐', parola: 'Ferma: aspetta te' }
-    return { colore: STATO.inCorso, segno: '●', parola: stati[a.id] ? 'In corso' : 'Avviata' }
+    if (a.stato === 'fallita') return { colore: STATO.errore, segno: '▲', parola: T('stato.fallita') }
+    if (a.stato === 'consegnata') return { colore: STATO.consegnata, segno: '✓', parola: T('stato.consegnata') }
+    if (a.qui) return { colore: STATO.inCorso, segno: '●', parola: T('stato.qui') }
+    if (ferma(a)) return { colore: STATO.attesa, segno: '◐', parola: T('stato.ferma') }
+    return { colore: STATO.inCorso, segno: '●', parola: T(stati[a.id] ? 'stato.inCorso' : 'stato.avviata') }
   }
 
   /** Riga di nota: segno colorato, parole nell'inchiostro (contrasto pieno su ogni tema). */
@@ -199,9 +195,9 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
     const fermaOra = a ? ferma(a) : s.stato === 'ferma'
     // Stato non noto: né in corso né ferma, come un dato mancante.
     // Una sessione senza titolo ne prende uno nella lingua del pannello.
-    const titolo = s.titolo || T(s.motore === 'codex' ? 'sessione.codex' : 'sessione.senzaTitolo')
+    const titolo = s.titolo || T(s.id === 'self' ? 'sessione.questa' : s.motore === 'codex' ? 'sessione.codex' : 'sessione.senzaTitolo')
     if (!a && s.stato === 'ignota') return { ...s, titolo, parola: '—', segno: '○', colore: GRIGIO }
-    return { ...s, azione: a, titolo: a?.titolo ?? titolo, parola: fermaOra ? 'Ferma' : 'In corso', segno: fermaOra ? '◐' : '●', colore: fermaOra ? STATO.attesa : STATO.inCorso }
+    return { ...s, azione: a, titolo: a?.titolo ?? titolo, parola: T(fermaOra ? 'sessione.ferma' : 'sessione.inCorso'), segno: fermaOra ? '◐' : '●', colore: fermaOra ? STATO.attesa : STATO.inCorso }
   })
   for (const a of avviate)
     if (!righe.some(r => r.azione?.id === a.id)) {
@@ -209,7 +205,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
       righe.push({
         id: `chip-${a.id}`, motore: a.esecutore === 'codex' ? 'codex' : 'claude', titolo: a.titolo, ramo: stati[a.id]?.ramo,
         modello: modelloDi(a, regoleOra), effort: effortDi(a, regoleOra), stato: fermaOra ? 'ferma' : 'in-corso', attivita: stati[a.id]?.ultimaAttivita, azione: a,
-        parola: a.stato === 'in-avvio' ? 'In avvio' : fermaOra ? 'Ferma' : 'In corso', segno: a.stato === 'in-avvio' ? '◔' : fermaOra ? '◐' : '●',
+        parola: T(a.stato === 'in-avvio' ? 'stato.inAvvio' : fermaOra ? 'sessione.ferma' : 'sessione.inCorso'), segno: a.stato === 'in-avvio' ? '◔' : fermaOra ? '◐' : '●',
         colore: a.stato === 'in-avvio' ? STATO.coda : fermaOra ? STATO.attesa : STATO.inCorso,
       })
     }
@@ -291,7 +287,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
     el, T, fonteRegole, c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, vistaOra, tutteLeSessioni, regoleOra, testoFiltro,
     lista, visibili, espansa, motiviAperti, stati, nota, scartata, rotte, tr, adesso, capacita, sb, boardPronta, ultime, configura, fai, modifica,
     completa, apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, attese, titoloSezione, righe,
-    alLavoro, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, oraDi, consumoOra,
+    alLavoro, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, oraDi: T.ora, consumoOra,
     proposteAperte, rigaProposta, registroPesi,
   }
 }
@@ -310,27 +306,27 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     const nome = NOME_FORNITORE[f]
     // Un solo segno per fornitore visibile: c'era una misura, ora nessuna è più fresca.
     const vecchie = etaVecchie(limiti, f, adesso)
-    if (vecchie !== undefined) return `${nome}: limiti non letti da ${durata(vecchie, T.lingua)}`
+    if (vecchie !== undefined) return T('sintesi.vecchi', { nome, durata: durata(vecchie, T.lingua) })
     // Il margine in percentuale resta sulle quote di piano.
     const l = f === 'claude' || f === 'codex' ? piuPieno(limiti, f, adesso) : undefined
     if (!l) return undefined
     const livello = livelloDi(l.percentuale!, sogliaDi(regoleOra.risorse, f))
-    return `${nome} ${l.percentuale}%${livello === 'critica' ? ' oltre la soglia critica' : livello === 'attenzione' ? ' in attenzione' : ''}`
+    return T(livello === 'critica' ? 'sintesi.critica' : livello === 'attenzione' ? 'sintesi.attenzione' : 'sintesi.uso', { nome, pct: l.percentuale! })
   }
   const sintesi =
     [
-      `${alLavoro} al lavoro`,
-      attese ? `${attese} ${attese === 1 ? 'aspetta' : 'aspettano'} te` : undefined,
-      proposte ? `${proposte} da avviare` : undefined,
+      T('sintesi.alLavoro', { n: alLavoro }),
+      attese ? T('sintesi.aspettano', { n: attese }) : undefined,
+      proposte ? T('sintesi.daAvviare', { n: proposte }) : undefined,
       ...FORNITORI.map(margine),
     ]
       .filter(Boolean)
       .join(' · ')
 
   const VISTE: { id: Vista; nome: string; tasto: string; chiave: string }[] = [
-    { id: 'lavoro', nome: 'Lavoro', tasto: '1', chiave: 'vista-lavoro' },
-    { id: 'carico', nome: 'Carico', tasto: '2', chiave: 'vista-carico' },
-    { id: 'impostazioni', nome: 'Impostazioni', tasto: '3', chiave: 'impostazioni' },
+    { id: 'lavoro', nome: T('vista.lavoro'), tasto: '1', chiave: 'vista-lavoro' },
+    { id: 'carico', nome: T('vista.carico'), tasto: '2', chiave: 'vista-carico' },
+    { id: 'impostazioni', nome: T('vista.impostazioni'), tasto: '3', chiave: 'impostazioni' },
   ]
   // Le viste come chip di scelta (C1.5): segno ● / ○ e «selezionato» nell'etichetta, accento solo sulla scelta.
   // Non usa `ui.Chip` per tenere il tasto (1 2 3) e la chiave del pulsante (vista-lavoro, …) di sempre.
@@ -349,7 +345,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
             backgroundColor={conVelo && attiva ? velo(ACCENTO, ALFA_VELO) : undefined}
             paddingX={conVelo ? 1 : 0}
           >
-            <Button key={v.chiave} plain hotkey={v.tasto} label={`${segno} Vista ${v.nome}, ${attiva ? 'selezionato' : 'non selezionato'}`} onPress={() => void update($, vista, () => v.id)}>
+            <Button key={v.chiave} plain hotkey={v.tasto} label={T(attiva ? 'vista.etichettaScelta' : 'vista.etichetta', { segno, nome: v.nome })} onPress={() => void update($, vista, () => v.id)}>
               <Text>
                 {conVelo ? '' : '['}
                 <Text color={attiva ? ACCENTO : undefined}>{segno}</Text>
@@ -374,26 +370,26 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
             </Text>
           ),
           azioni: [
-            boardPronta && <Button key="apri-board" plain hotkey="b" label="Apri board" onPress={fai(c.apriBoard)} />,
-            <Button key="ricarica" plain dimColor hotkey="r" label={`Aggiorna${ses.letto ? ` · ${oraDi(ses.letto)}` : ''}`} onPress={fai(c.giro)} />,
+            boardPronta && <Button key="apri-board" plain hotkey="b" label={T('testata.apriBoard')} onPress={fai(c.apriBoard)} />,
+            <Button key="ricarica" plain dimColor hotkey="r" label={ses.letto ? T('testata.aggiornaOra', { ora: T.ora(ses.letto) }) : T('testata.aggiorna')} onPress={fai(c.giro)} />,
             schede,
           ],
         })}
         <Text dimColor wrap="wrap">{sintesi}</Text>
-        {boardPronta && <Text key="percorso-board" size="caption" dimColor wrap="truncate-middle">{`Board: ${sb.percorso}`}</Text>}
-        {!regoleOra.lette && nota1('regole', STATO.errore, '▲', `Regole ${d.fonteRegole}: nessun avvio finché routing.json non si legge.`)}
+        {boardPronta && <Text key="percorso-board" size="caption" dimColor wrap="truncate-middle">{T('testata.percorsoBoard', { percorso: sb.percorso ?? '' })}</Text>}
+        {!regoleOra.lette && nota1('regole', STATO.errore, '▲', T('testata.regole', { fonte: d.fonteRegole }))}
         {rotte.length > 0 &&
           nota1(
             'rotte',
             STATO.attesa,
             '!',
-            `Non si leggono: ${rotte.map(r => `${r.nome} (${T.m(r.motivo)})`).join('; ')}. Finché non si leggono, il pannello non avvia e non chiude nulla da solo.`,
+            T('testata.rotte', { file: rotte.map(r => `${r.nome} (${T.m(r.motivo)})`).join('; ') }),
           )}
       </Box>
       {scartata && (
         <Box flexDirection="row" gap={1} alignItems="center" flexWrap="wrap" backgroundColor={conVelo ? velo(GRIGIO, '1F') : undefined} paddingX={1}>
-          <Text>{`Scartata «${scartata.titolo}»`}</Text>
-          <Button key="annulla-scarto" plain hotkey="u" label="Annulla" onPress={fai(() => c.annullaScarto(scartata.id))} />
+          <Text>{T('testata.scartata', { titolo: scartata.titolo })}</Text>
+          <Button key="annulla-scarto" plain hotkey="u" label={T('comune.annulla')} onPress={fai(() => c.annullaScarto(scartata.id))} />
         </Box>
       )}
       {nota && (

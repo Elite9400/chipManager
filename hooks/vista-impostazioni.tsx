@@ -26,8 +26,8 @@ import {
 import type { Profilo } from './bilanciamento'
 import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, piuPieno, sogliaDi } from './logica'
 import type { Dati } from './pannello'
-import { Errore, LINGUE, msgDi, NOMI_LINGUE } from './lingua'
-import type { Lingua } from './lingua'
+import { Errore, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
+import type { Chiave, Lingua } from './lingua'
 import { INSTALLAZIONE, nomeLimiteIn, unitaIn } from './risorse'
 import { GRIGIO, LIVELLO, STATO } from './tema'
 import { componenti } from './ui'
@@ -42,14 +42,14 @@ export async function apriBilanciamento($: EngineInterface) {
   await update($, statoVista, (s): StatoVista => ({ ...s, sezione: 'bilanciamento', errore: undefined }))
 }
 
-const SEZIONI: { valore: Sezione; testo: string }[] = [
-  { valore: 'connessioni', testo: 'Connessioni' },
-  { valore: 'soglie', testo: 'Soglie' },
-  { valore: 'bilanciamento', testo: 'Bilanciamento' },
-  { valore: 'progetto', testo: 'Progetto' },
-  { valore: 'board', testo: 'Board' },
-  { valore: 'avanzate', testo: 'Avanzate' },
-  { valore: 'lingua', testo: 'Lingua' },
+const SEZIONI: { valore: Sezione; testo: Chiave }[] = [
+  { valore: 'connessioni', testo: 'imp.sezione.connessioni' },
+  { valore: 'soglie', testo: 'imp.sezione.soglie' },
+  { valore: 'bilanciamento', testo: 'imp.sezione.bilanciamento' },
+  { valore: 'progetto', testo: 'imp.sezione.progetto' },
+  { valore: 'board', testo: 'imp.sezione.board' },
+  { valore: 'avanzate', testo: 'imp.sezione.avanzate' },
+  { valore: 'lingua', testo: 'imp.sezione.lingua' },
 ]
 const TIPO = (t: string) => t[0]!.toUpperCase() + t.slice(1)
 
@@ -57,7 +57,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const { T, c, Input, regoleOra, adesso, capacita, sb, configura, nota1, NOME_FORNITORE, MOTORI, motore, ultime, io } = d
   const { Box, Text, Button } = d.el
   const terminale = !d.conVelo
-  const u = componenti(d.el, terminale ? 'terminal' : 'desktop')
+  const u = componenti(d.el, terminale ? 'terminal' : 'desktop', T.lingua)
   const classe = d.classe
   const r = regoleOra.risorse
   const vista = await read($, statoVista)
@@ -65,7 +65,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const nomeTipo = (x: (typeof TIPI_BUDGET)[number]) => TIPO(T(`budget.${x}`))
 
   /** Esegue, poi toast se va (senza `conferma`, nessun toast) e errore in linea sotto `dove` se non va. */
-  const esegui = async (dove: string, fn: () => Promise<unknown>, conferma = 'Salvato') => {
+  const esegui = async (dove: string, fn: () => Promise<unknown>, conferma = T('salvato')) => {
     try {
       await fn()
       await cambia(s => ({ ...s, errore: undefined }))
@@ -92,23 +92,23 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
 
   /** La procedura di «Collega…»: un testo e le scelte; la stessa nel popup e in linea. */
   const guida = (f: Fornitore): { testo: string; scelte: { etichetta: string; fai: () => Promise<unknown>; conferma: string }[] } => {
-    const verifica = { etichetta: 'Verifica ora', fai: c.giro, conferma: 'Letture aggiornate' }
-    const admin = 'Facoltativo: la spesa API con la chiave Admin Anthropic nel campo segreto di /config.'
+    const verifica = { etichetta: T('con.verifica'), fai: c.giro, conferma: T('con.lettureAggiornate') }
+    const admin = T('con.admin')
     if (f === 'claude')
       return {
         testo: terminale
-          ? `Da terminale l'uso del piano arriva dalla status line. Nel tuo script di status line passa il JSON a:\n\nnode "${$.plugin.root.replace(/\\/g, '/')}/strumenti/fornitori.cjs" statusline\n\nScrive solo istante e percentuali in ~/.claude/chipmanager/statusline.json. ${admin}`
-          : `Dal desktop Claude si collega da solo: l'uso del piano arriva dall'app. ${admin}`,
+          ? T('con.claudeTerminale', { comando: `node "${$.plugin.root.replace(/\\/g, '/')}/strumenti/fornitori.cjs" statusline`, admin })
+          : T('con.claudeDesktop', { admin }),
         scelte: [verifica],
       }
-    if (f === 'codex') return { testo: 'I limiti di Codex si leggono dalle sessioni locali di Codex CLI: basta averlo usato una volta su questo computer.', scelte: [verifica] }
+    if (f === 'codex') return { testo: T('con.codex'), scelte: [verifica] }
     if (f === 'deepseek')
-      return { testo: 'La chiave DeepSeek va nel campo segreto di /config (impostazioni della mod), mai nel config del progetto. Poi verifica il collegamento.', scelte: [verifica] }
+      return { testo: T('con.deepseek'), scelte: [verifica] }
     return {
-      testo: 'FreeLLMAPI gira in un container Docker locale. Prepara l\'immagine, poi avvia il container; copia la chiave unificata dal dashboard http://localhost:3001 nel campo segreto di /config. Ogni comando chiede conferma.',
+      testo: T('con.free'),
       scelte: [
-        { etichetta: 'Prepara immagine Docker', fai: () => c.installa(0), conferma: '' },
-        { etichetta: 'Avvia container', fai: () => c.installa(1), conferma: '' },
+        { etichetta: T('con.prepara'), fai: () => c.installa(0), conferma: '' },
+        { etichetta: T('con.avviaContainer'), fai: () => c.installa(1), conferma: '' },
         verifica,
       ],
     }
@@ -117,7 +117,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const g = guida(f)
     let scelta: string
     try {
-      scelta = await $.ui.ask(`${g.testo}\n\nCosa faccio adesso?`, { options: [...g.scelte.map(s => s.etichetta), 'Chiudi'], header: 'Collega' })
+      scelta = await $.ui.ask(T('con.domanda', { testo: g.testo }), { options: [...g.scelte.map(s => s.etichetta), T('az.chiudi')], header: T('con.collega') })
     } catch {
       // Popup chiuso o nessuno a cui chiedere (-p): la procedura resta in linea, sotto la riga.
       await cambia(s => ({ ...s, guida: f }))
@@ -128,31 +128,31 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   }
 
   const statoFornitore = (f: Fornitore) => {
-    if (!r.fornitori.includes(f)) return u.Chip({ chiave: `stato-chip-${f}`, testo: 'Vietato per questo progetto', segno: '✕', colore: GRIGIO })
+    if (!r.fornitori.includes(f)) return u.Chip({ chiave: `stato-chip-${f}`, testo: T('con.vietato'), segno: '✕', colore: GRIGIO })
     const l = ultima(f)
-    if (!l) return u.Chip({ chiave: `stato-chip-${f}`, testo: 'Da collegare', segno: '○', colore: STATO.coda })
-    return u.Chip({ chiave: `stato-chip-${f}`, testo: `Collegato · ${l.fonte} · ${durata(Math.max(0, adesso - Date.parse(l.letto!)), T.lingua)} fa`, segno: '●', colore: STATO.inCorso })
+    if (!l) return u.Chip({ chiave: `stato-chip-${f}`, testo: T('con.daCollegare'), segno: '○', colore: STATO.coda })
+    return u.Chip({ chiave: `stato-chip-${f}`, testo: T('con.collegato', { fonte: l.fonte, durata: durata(Math.max(0, adesso - Date.parse(l.letto!)), T.lingua) }), segno: '●', colore: STATO.inCorso })
   }
   // La diagnosi delle sonde (le viste operative la tacciono): solo per gli ammessi, come nella 2.3.1.
   const diagnosi = (f: Fornitore) => {
     const righe = capacita.limiti.filter(l => l.fornitore === f && !l.manuale)
-      .map(l => (l.errore ? `${nomeLimiteIn(l, T.lingua)} · ${T.k(l.errore)}` : `${nomeLimiteIn(l, T.lingua)} · letto ${durata(Math.max(0, adesso - Date.parse(l.letto!)), T.lingua)} fa`))
-    if (f === 'freellmapi') righe.push(`proxy ${T.k(capacita.proxy)} · chiave ${capacita.chiavi.freellmapi ? 'impostata' : 'mancante'}`)
-    return `${NOME_FORNITORE[f]}: ${righe.join(' · ') || (capacita.proxy === 'proxy.helper' ? T.k(capacita.proxy) : 'nessuna lettura')}`
+      .map(l => (l.errore ? `${nomeLimiteIn(l, T.lingua)} · ${T.k(l.errore)}` : `${nomeLimiteIn(l, T.lingua)} · ${T('con.letto', { durata: durata(Math.max(0, adesso - Date.parse(l.letto!)), T.lingua) })}`))
+    if (f === 'freellmapi') righe.push(T(capacita.chiavi.freellmapi ? 'con.proxyChiave' : 'con.proxySenzaChiave', { proxy: T.k(capacita.proxy) }))
+    return `${NOME_FORNITORE[f]}: ${righe.join(' · ') || (capacita.proxy === 'proxy.helper' ? T.k(capacita.proxy) : T('con.nessunaLettura'))}`
   }
   const chiave = (f: Fornitore) =>
-    f === 'claude' ? `Chiave Admin Anthropic ${capacita.chiavi.anthropic ? 'impostata' : 'mancante'}` : f === 'deepseek' ? `Chiave ${capacita.chiavi.deepseek ? 'impostata' : 'mancante'}` : undefined
+    f === 'claude' ? T(capacita.chiavi.anthropic ? 'con.adminImpostata' : 'con.adminMancante') : f === 'deepseek' ? T(capacita.chiavi.deepseek ? 'con.chiaveImpostata' : 'con.chiaveMancante') : undefined
 
   const connessioni = () => {
-    const stato = `${collegati.length} ${collegati.length === 1 ? 'collegato' : 'collegati'} · ${ammessi.length - collegati.length} da collegare`
+    const stato = T('con.stato', { n: collegati.length, mancanti: ammessi.length - collegati.length })
     return u.Sezione({
       chiave: 'pagina-connessioni',
-      titolo: 'Connessioni',
-      descrizione: 'Quali fornitori può usare questo progetto e da dove si leggono i loro limiti.',
+      titolo: T('imp.sezione.connessioni'),
+      descrizione: T('con.descrizione'),
       stato,
       figli: [
         u.GruppoChip({
-          chiave: 'fornitore', etichetta: 'Ammessi per questo progetto', modo: 'filtro', valore: r.fornitori,
+          chiave: 'fornitore', etichetta: T('con.ammessi'), modo: 'filtro', valore: r.fornitori,
           voci: FORNITORI.map(f => ({ valore: f, testo: NOME_FORNITORE[f] })),
           onCambia: v => salva('fornitori', () => ({ fornitori: FORNITORI.filter(f => v.includes(f)) }))(),
         }),
@@ -172,7 +172,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
                   r.fornitori.includes(f) && didascalia(`stato-${f}`, diagnosi(f)),
                   chiave(f) && didascalia(`chiave-${f}`, chiave(f)!),
                 ],
-                azioni: r.fornitori.includes(f) && !ultima(f) ? [<Button key={`collega-${f}`} variant="secondary" label={`Collega ${NOME_FORNITORE[f]}…`} onPress={() => void collega(f)()} />] : [],
+                azioni: r.fornitori.includes(f) && !ultima(f) ? [<Button key={`collega-${f}`} variant="secondary" label={T('con.collegaFornitore', { fornitore: NOME_FORNITORE[f] })} onPress={() => void collega(f)()} />] : [],
               })}
               {errore(`collega-${f}`)}
               {g && (
@@ -180,16 +180,16 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
                   {didascalia(`guida-${f}-testo`, g.testo)}
                   <Box flexDirection="row" flexWrap="wrap" gap={1}>
                     {g.scelte.map((s, i) => (
-                      <Button key={`guida-${f}-${i}`} variant="secondary" label={`${s.etichetta} per ${NOME_FORNITORE[f]}`} onPress={() => void esegui(`collega-${f}`, s.fai, s.conferma)} />
+                      <Button key={`guida-${f}-${i}`} variant="secondary" label={T('con.passoPer', { passo: s.etichetta, fornitore: NOME_FORNITORE[f] })} onPress={() => void esegui(`collega-${f}`, s.fai, s.conferma)} />
                     ))}
-                    <Button key={`guida-${f}-chiudi`} plain dimColor label={`Chiudi la procedura di ${NOME_FORNITORE[f]}`} onPress={() => void cambia(s => ({ ...s, guida: undefined }))} />
+                    <Button key={`guida-${f}-chiudi`} plain dimColor label={T('con.chiudiProcedura', { fornitore: NOME_FORNITORE[f] })} onPress={() => void cambia(s => ({ ...s, guida: undefined }))} />
                   </Box>
                 </Box>
               )}
             </Box>
           )
         }),
-        didascalia('chiavi-nota', 'Le chiavi stanno nei campi segreti di /config o nell\'ambiente, mai nel config del progetto: qui se ne vede solo lo stato.'),
+        didascalia('chiavi-nota', T('con.chiaviNota')),
       ],
     })
   }
@@ -203,11 +203,11 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const livello = uso === undefined ? 'ok' : livelloDi(uso, s)
     const cella = (i: number) => (s && (i + 1) * 5 === s.critica ? '┃' : s && (i + 1) * 5 === s.attenzione ? '│' : uso !== undefined && i < Math.round(uso / 5) ? '█' : '░')
     const traccia = Array.from({ length: 20 }, (_, i) => cella(i)).join('')
-    const parole = uso === undefined ? 'nessuna misura fresca' : `uso ${uso}%${livello === 'critica' ? ', oltre la critica' : livello === 'attenzione' ? ', in attenzione' : ''}`
+    const parole = uso === undefined ? T('sog.nessunaMisura') : T(livello === 'critica' ? 'sog.usoCritica' : livello === 'attenzione' ? 'sog.usoAttenzione' : 'sog.uso', { pct: uso })
     return (
       <Text key={`anteprima-${f}`} size="caption">
         <Text color={LIVELLO[livello]} dimColor={livello === 'ok'}>{traccia}</Text>
-        {` ${parole}${s ? ` · attenzione ${s.attenzione}% · critica ${s.critica}%` : ' · nessuna soglia'}`}
+        {` ${parole} · ${s ? T('car.soglie', { attenzione: s.attenzione, critica: s.critica }) : T('car.nessunaSoglia')}`}
       </Text>
     )
   }
@@ -219,17 +219,17 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       <Box key={`soglie-${f}`} flexDirection="column" gap={1}>
         <Text weight="medium">{nome}</Text>
         {u.GruppoChip({
-          chiave: `soglia-${f}`, etichetta: presetDi(s) ? 'Preset' : 'Preset (adesso una soglia personale)', modo: 'scelta', valore: presetDi(s),
+          chiave: `soglia-${f}`, etichetta: T(presetDi(s) ? 'sog.preset' : 'sog.presetPersonale'), modo: 'scelta', valore: presetDi(s),
           voci: SOGLIE_PRESET.map(p => ({ valore: p.valore, testo: T(p.testo) })), contesto: nome, onCambia: v => scrivi(SOGLIE_PRESET.find(p => p.valore === v)!.soglia),
         })}
         {s &&
           u.Gamma({
-            chiave: `attenzione-${f}`, etichetta: `Attenzione da (${nome})`, valore: s.attenzione, min: 1, max: s.critica - 1, passo: 5,
+            chiave: `attenzione-${f}`, etichetta: T('sog.attenzioneDa', { nome }), valore: s.attenzione, min: 1, max: s.critica - 1, passo: 5,
             formato: v => `${v}%`, onCambia: v => scrivi({ ...s, attenzione: v }),
           })}
         {s &&
           u.Gamma({
-            chiave: `critica-${f}`, etichetta: `Critica da (${nome})`, valore: s.critica, min: s.attenzione + 1, max: 100, passo: 5,
+            chiave: `critica-${f}`, etichetta: T('sog.criticaDa', { nome }), valore: s.critica, min: s.attenzione + 1, max: 100, passo: 5,
             formato: v => `${v}%`, onCambia: v => scrivi({ ...s, critica: v }),
           })}
         {anteprima(f)}
@@ -238,15 +238,15 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     )
   }
   const soglie = () => {
-    const stato = `${d.fornitoriInUso.length} fornitori con misure`
+    const stato = T('sog.stato', { n: d.fornitoriInUso.length })
     return u.Sezione({
       chiave: 'pagina-soglie',
-      titolo: 'Soglie',
-      descrizione: 'Da quale uso un limite passa in attenzione e in critica. Oltre la critica il bilanciamento cerca un\'alternativa.',
+      titolo: T('imp.sezione.soglie'),
+      descrizione: T('sog.descrizione'),
       stato,
       figli: d.fornitoriInUso.length
         ? d.fornitoriInUso.map(sogliaUi)
-        : [didascalia('soglie-vuote', 'Le soglie compaiono per i fornitori ammessi con una lettura o un budget manuale: collegane uno in Connessioni.')],
+        : [didascalia('soglie-vuote', T('sog.vuote'))],
     })
   }
 
@@ -256,13 +256,13 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const esito = simula(regoleOra, capacita.limiti, d.tutte, io)
     if (esito.motivi)
       return [
-        nota1('simulazione', STATO.attesa, '▲', 'Simulazione: nessuna combinazione avviabile con queste regole.'),
+        nota1('simulazione', STATO.attesa, '▲', T('bil.simulazioneNessuna')),
         ...esito.motivi.map((m, i) => didascalia(`simulazione-motivo-${i}`, `· ${T.m(m)}`)),
       ]
     const a = esito.scelta!
     return [
       <Text key="simulazione" wrap="wrap">
-        {`Simulazione: una nuova proposta R2 senza scelte andrebbe a ${motore(a.esecutore)} · ${nomeModello(a.modello ?? '')} · ${a.effort}`}
+        {T('bil.simulazione', { scelta: `${motore(a.esecutore)} · ${nomeModello(a.modello ?? '')} · ${a.effort}` })}
       </Text>,
     ]
   }
@@ -282,44 +282,44 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           chiave: dove, etichetta: v.testo, valore: i < 0 ? null : i, min: 0, max: POSIZIONI.length - 1, passo: 1,
           formato: n => (n === null ? pesoScritto(p as Peso, T.lingua) : T(POSIZIONI[n]!.nome)), onCambia: scrivi,
         })}
-        {i < 0 && <Button key={`${dove}-normale`} plain label={`Riporta ${v.testo} a Normale`} onPress={() => scrivi(2)} />}
+        {i < 0 && <Button key={`${dove}-normale`} plain label={T('bil.riporta', { voce: v.testo })} onPress={() => scrivi(2)} />}
         {errore(dove)}
       </Box>
     )
   }
   const bilanciamento = () => {
-    const stato = `Profilo ${T(PROFILI.find(p => p.id === profilo)!.nome)}`
+    const stato = T('bil.stato', { profilo: T(PROFILI.find(p => p.id === profilo)!.nome) })
     return u.Sezione({
       chiave: 'pagina-bilanciamento',
-      titolo: 'Bilanciamento',
-      descrizione: 'Come scegliere motore ed effort quando una proposta non li indica. Una preferenza, mai un permesso: le regole d\'avvio valgono sempre.',
+      titolo: T('imp.sezione.bilanciamento'),
+      descrizione: T('bil.descrizione'),
       stato,
       figli: [
         ...(d.proposteAperte.length
           ? [<Box key="bil-proposte" flexDirection="column" gap={1}>{d.proposteAperte.map(p => d.rigaProposta('bil-pesi', p, true))}</Box>]
           : []),
         u.GruppoChip({
-          chiave: 'profilo', etichetta: 'Profilo', modo: 'scelta', valore: profilo, voci: PROFILI.map(p => ({ valore: p.id, testo: T(p.nome) })),
+          chiave: 'profilo', etichetta: T('bil.profilo'), modo: 'scelta', valore: profilo, voci: PROFILI.map(p => ({ valore: p.id, testo: T(p.nome) })),
           onCambia: v => salva('profilo', () => ({ profilo: v, pesi: conProfilo(r.pesi, v as Profilo) }))(),
         }),
         <Box key="profili-descrizione" flexDirection="column">
           {PROFILI.map(p => didascalia(`profilo-${p.id}-descrizione`, `${T(p.nome)}: ${T(p.descrizione)}`))}
         </Box>,
-        didascalia('profili-nota', 'I profili toccano solo motori ed effort; i modelli si regolano a mano.'),
+        didascalia('profili-nota', T('bil.profiliNota')),
         errore('profilo'),
         ...simulazione(),
-        didascalia('simulazione-nota', 'Vale alla creazione di una proposta: le chip già salvate non cambiano.'),
+        didascalia('simulazione-nota', T('bil.simulazioneNota')),
         <Button
           key="regola-a-mano"
           plain
-          label={vista.regola ? 'Chiudi le regolazioni a mano' : 'Regola a mano…'}
+          label={T(vista.regola ? 'bil.chiudiRegola' : 'bil.regola')}
           onPress={() => void cambia(s => ({ ...s, regola: !s.regola }))}
         />,
         ...(vista.regola
           ? [
               u.GruppoChip({
-                chiave: 'gruppo', etichetta: 'Regola', modo: 'scelta', valore: vista.gruppo ?? 'fornitore',
-                voci: [{ valore: 'fornitore', testo: 'Fornitori' }, { valore: 'modello', testo: 'Modelli' }, { valore: 'effort', testo: 'Effort' }],
+                chiave: 'gruppo', etichetta: T('bil.gruppo'), modo: 'scelta', valore: vista.gruppo ?? 'fornitore',
+                voci: [{ valore: 'fornitore', testo: T('bil.fornitori') }, { valore: 'modello', testo: T('bil.modelli') }, { valore: 'effort', testo: T('tab.effort') }],
                 onCambia: v => void cambia(s => ({ ...s, gruppo: v as Gruppo })),
               }),
               ...voci[vista.gruppo ?? 'fornitore'].map(v => regolazione(vista.gruppo ?? 'fornitore', v)),
@@ -337,7 +337,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const env = await $.env.get('CHIPMANAGER_DIR')
     if (env) return { config, cartella: env.replace(/\\/g, '/') }
     const letto = await $.fs.read(config).then(t => JSON.parse(t as string) as unknown, () => null)
-    return { config, cartella: cartellaDati(letto, io?.repo ?? null, casa) ?? 'non valida: vedi «cartella» nel config' }
+    return { config, cartella: cartellaDati(letto, io?.repo ?? null, casa) ?? T('pro.cartellaNonValida') }
   }
   const budgetScritto = (l: RisorseProgetto['limitiManuali'][number]) =>
     `${NOME_FORNITORE[l.fornitore]} · ${nomeLimiteIn(l, T.lingua)} · ${l.percentuale !== undefined ? `${l.percentuale}%` : `${T.numero(l.valore ?? 0)} ${unitaIn(l.unita, T.lingua)}`}`
@@ -345,15 +345,15 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const nomi = ammessi.map(f => NOME_FORNITORE[f])
     const bozza: NonNullable<StatoVista['bozza']> = {}
     try {
-      if (!ammessi.length) throw new Error('Nessun fornitore ammesso: abilitane uno in Connessioni')
-      const f = ammessi.length === 1 ? ammessi[0] : ammessi[nomi.indexOf(await $.ui.ask('Per quale fornitore è il budget?', { options: nomi.slice(0, 4), header: 'Budget' }))]
+      if (!ammessi.length) throw new Errore(msg('pro.nessunAmmesso'))
+      const f = ammessi.length === 1 ? ammessi[0] : ammessi[nomi.indexOf(await $.ui.ask(T('pro.budgetFornitore'), { options: nomi.slice(0, 4), header: T('pro.budget') }))]
       // Una risposta libera («Altro») che non è un fornitore: il resto si sceglie in linea.
       if (!f) throw new Error('fornitore da scegliere in linea')
       bozza.fornitore = f
-      const t = await $.ui.ask(`Che budget è per ${NOME_FORNITORE[f]}?`, { options: TIPI_BUDGET.map(nomeTipo), header: 'Budget' })
+      const t = await $.ui.ask(T('pro.budgetTipo', { fornitore: NOME_FORNITORE[f] }), { options: TIPI_BUDGET.map(nomeTipo), header: T('pro.budget') })
       bozza.tipo = TIPI_BUDGET.find(x => nomeTipo(x) === t)
     } catch (err) {
-      if (!ammessi.length) return void (await cambia(s => ({ ...s, errore: { dove: 'budget', testo: String((err as Error).message) } })))
+      if (!ammessi.length) return void (await cambia(s => ({ ...s, errore: { dove: 'budget', testo: msgDi(err) } })))
       // Popup rifiutato: i passi mancanti si scelgono in linea.
     }
     await cambia(s => ({ ...s, bozza, errore: undefined }))
@@ -361,17 +361,17 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const bozzaUi = (b: NonNullable<StatoVista['bozza']>) => (
     <Box key="bozza-budget" flexDirection="column" gap={1} paddingLeft={2}>
       {u.GruppoChip({
-        chiave: 'bozza-fornitore', etichetta: 'Fornitore', modo: 'scelta', valore: b.fornitore ?? '',
+        chiave: 'bozza-fornitore', etichetta: T('pro.fornitore'), modo: 'scelta', valore: b.fornitore ?? '',
         voci: ammessi.map(f => ({ valore: f, testo: NOME_FORNITORE[f] })), onCambia: v => void cambia(s => ({ ...s, bozza: { ...s.bozza, fornitore: v as Fornitore } })),
       })}
       {u.GruppoChip({
-        chiave: 'bozza-tipo', etichetta: 'Tipo', modo: 'scelta', valore: b.tipo ?? '',
+        chiave: 'bozza-tipo', etichetta: T('pro.tipo'), modo: 'scelta', valore: b.tipo ?? '',
         voci: TIPI_BUDGET.map(t => ({ valore: t, testo: nomeTipo(t) })), onCambia: v => void cambia(s => ({ ...s, bozza: { ...s.bozza, tipo: v } })),
       })}
       {Input && b.fornitore && b.tipo && (
         <Input
           key="bozza-valore"
-          label={`Valore di ${NOME_FORNITORE[b.fornitore]} · ${b.tipo} (40%, 12 USD, 500 richieste)`}
+          label={T('pro.valore', { fornitore: NOME_FORNITORE[b.fornitore], tipo: nomeTipo(b.tipo as (typeof TIPI_BUDGET)[number]), esempio: T('budget.esempio') })}
           onSubmit={testo =>
             void esegui('budget', async () => {
               const misura = budgetDa(testo)
@@ -382,48 +382,48 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           }
         />
       )}
-      <Button key="bozza-annulla" plain dimColor label="Annulla il nuovo budget" onPress={() => void cambia(s => ({ ...s, bozza: undefined, errore: undefined }))} />
+      <Button key="bozza-annulla" plain dimColor label={T('pro.annullaBudget')} onPress={() => void cambia(s => ({ ...s, bozza: undefined, errore: undefined }))} />
     </Box>
   )
   const progetto = async () => {
     const { config, cartella } = await percorsi()
-    const stato = `${r.soloLocale ? 'Solo rete locale' : 'Fornitori abilitati'} · ${r.limitiManuali.length} ${r.limitiManuali.length === 1 ? 'budget manuale' : 'budget manuali'}`
+    const stato = `${T(r.soloLocale ? 'pro.soloLocale' : 'pro.abilitati')} · ${T('pro.budgetManuali', { n: r.limitiManuali.length })}`
     return u.Sezione({
       chiave: 'pagina-progetto',
-      titolo: 'Progetto',
-      descrizione: 'Rete, servizi esterni, cartella dei dati, termini sensibili e budget dichiarati a mano.',
+      titolo: T('imp.sezione.progetto'),
+      descrizione: T('pro.descrizione'),
       stato,
       figli: [
         u.GruppoChip({
-          chiave: 'rete', etichetta: 'Rete', modo: 'scelta', valore: r.soloLocale ? 'locale' : 'abilitati',
-          voci: [{ valore: 'abilitati', testo: 'Fornitori abilitati' }, { valore: 'locale', testo: 'Solo rete locale' }],
+          chiave: 'rete', etichetta: T('pro.rete'), modo: 'scelta', valore: r.soloLocale ? 'locale' : 'abilitati',
+          voci: [{ valore: 'abilitati', testo: T('pro.abilitati') }, { valore: 'locale', testo: T('pro.soloLocale') }],
           onCambia: v => salva('rete', () => ({ soloLocale: v === 'locale' }))(),
         }),
         didascalia('rete-nota', r.soloLocale
-          ? 'Bloccati: ogni inferenza esterna (anche Claude, Codex e FreeLLMAPI) e le milestone remote.'
-          : 'Ammessi i fornitori scelti in Connessioni. FreeLLMAPI inoltra a fornitori esterni.'),
+          ? T('pro.reteBloccati')
+          : T('pro.reteAmmessi')),
         errore('rete'),
         u.Chip({
-          chiave: 'milestone-github', testo: 'Leggi le milestone GitHub', attiva: r.milestoneGithub,
+          chiave: 'milestone-github', testo: T('pro.milestone'), attiva: r.milestoneGithub,
           onPress: salva('milestone', () => ({ milestoneGithub: !r.milestoneGithub })),
         }),
         errore('milestone'),
         <Box key="cartella" flexDirection="column">
-          {didascalia('cartella-titolo', 'Cartella dei dati')}
+          {didascalia('cartella-titolo', T('pro.cartella'))}
           <Text wrap="truncate-middle">{cartella}</Text>
         </Box>,
         <Box key="sensibili" flexDirection="column">
-          {didascalia('sensibili-titolo', `Termini sensibili in più (da ${config})`)}
+          {didascalia('sensibili-titolo', T('pro.sensibili', { config }))}
           {regoleOra.sensibili.length ? (
             <Box flexDirection="row" flexWrap="wrap" gap={1}>
               {regoleOra.sensibili.map((t, i) => u.Chip({ chiave: `sensibile-${i}`, testo: t, segno: '▲', colore: STATO.attesa }))}
             </Box>
           ) : (
-            <Text>Nessuno: valgono quelli generici.</Text>
+            <Text>{T('pro.sensibiliNessuno')}</Text>
           )}
         </Box>,
         <Box key="budget" flexDirection="column" gap={1}>
-          {didascalia('budget-titolo', 'Budget manuali: dichiarazioni, non cambiano i dati misurati')}
+          {didascalia('budget-titolo', T('pro.budgetTitolo'))}
           <Box flexDirection="row" flexWrap="wrap" gap={1}>
             {r.limitiManuali.map(l =>
               u.Chip({
@@ -431,7 +431,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
                 onRimuovi: salva('budget', () => ({ limitiManuali: manualiDaScrivere(r.limitiManuali.filter(x => x.id !== l.id)) })),
               }),
             )}
-            {!vista.bozza && <Button key="aggiungi-budget" variant="secondary" label="Aggiungi budget…" onPress={() => void aggiungiBudget()} />}
+            {!vista.bozza && <Button key="aggiungi-budget" variant="secondary" label={T('pro.aggiungiBudget')} onPress={() => void aggiungiBudget()} />}
           </Box>
           {vista.bozza && bozzaUi(vista.bozza)}
           {errore('budget')}
@@ -442,31 +442,31 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
 
   // --- Board -------------------------------------------------------------------------------------------
   const MODI: { valore: RisorseProgetto['board']['modo']; testo: string }[] = [
-    { valore: 'spenta', testo: 'Spenta' },
-    { valore: 'accesa', testo: 'Accesa' },
-    { valore: 'riassunti', testo: 'Con riassunti' },
+    { valore: 'spenta', testo: T('boa.spenta') },
+    { valore: 'accesa', testo: T('boa.accesa') },
+    { valore: 'riassunti', testo: T('boa.riassunti') },
   ]
   const board = () => {
     const stato = MODI.find(m => m.valore === r.board.modo)!.testo
     return u.Sezione({
       chiave: 'pagina-board',
-      titolo: 'Board',
-      descrizione: 'Una pagina HTML locale con lo stato delle chip, nella cartella dei dati. Mai pubblicata.',
+      titolo: T('imp.sezione.board'),
+      descrizione: T('boa.descrizione'),
       stato,
       figli: [
         u.GruppoChip({
-          chiave: 'board', etichetta: 'Board di progetto', modo: 'scelta', valore: r.board.modo, voci: MODI,
+          chiave: 'board', etichetta: T('boa.etichetta'), modo: 'scelta', valore: r.board.modo, voci: MODI,
           onCambia: v => void esegui('board', () => c.board(v as RisorseProgetto['board']['modo'], r)),
         }),
         didascalia('board-nota', r.board.modo === 'riassunti'
-          ? `Costo stimato: circa 700 token in ingresso e 120 in uscita con Haiku per chip cambiata, al più 100 al giorno${r.soloLocale || !r.fornitori.includes('claude') ? '. Fermi: servono Claude abilitato e rete non solo locale' : ''}${sb.riassunti ? `. ${sb.riassunti}` : ''}.`
+          ? [T('boa.costoRiassunti'), r.soloLocale || !r.fornitori.includes('claude') ? T('boa.fermi') : '', sb.riassunti ? T.k(sb.riassunti) : ''].filter(Boolean).join('. ') + '.'
           : r.board.modo === 'accesa'
-            ? 'Costo: nessun modello, solo un file HTML scritto a ogni cambiamento.'
-            : 'I riassunti sono facoltativi e mandano a Claude solo titolo e mandato delle chip.'),
+            ? T('boa.costoAccesa')
+            : T('boa.notaSpenta')),
         sb.percorso ? (
-          <Text key="board-percorso" size="caption" wrap="truncate-middle">{`File: ${sb.percorso}`}</Text>
+          <Text key="board-percorso" size="caption" wrap="truncate-middle">{T('boa.file', { percorso: sb.percorso })}</Text>
         ) : null,
-        r.board.modo !== 'spenta' && sb.motivo ? nota1('board-motivo', STATO.attesa, '!', `Board non scritta: ${sb.motivo}`) : null,
+        r.board.modo !== 'spenta' && sb.motivo ? nota1('board-motivo', STATO.attesa, '!', T('boa.nonScritta', { motivo: T.k(sb.motivo) })) : null,
         errore('board'),
       ],
     })
@@ -474,42 +474,42 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
 
   // --- Avanzate ----------------------------------------------------------------------------------------
   const LIVELLI = [
-    { valore: 'niente', testo: 'Niente' },
-    { valore: 'R1', testo: 'Solo R0–R1' },
-    { valore: 'R2', testo: 'Anche R2' },
+    { valore: 'niente', testo: T('ava.niente') },
+    { valore: 'R1', testo: T('ava.r1') },
+    { valore: 'R2', testo: T('ava.r2') },
   ]
   const avanzate = () => {
     const stato = `FreeLLMAPI: ${LIVELLI.find(l => l.valore === r.freellmapi.livello)!.testo}`
     return u.Sezione({
       chiave: 'pagina-avanzate',
-      titolo: 'Avanzate',
-      descrizione: 'FreeLLMAPI: un proxy locale verso modelli gratuiti, per compiti testuali delle corsie basse.',
+      titolo: T('imp.sezione.avanzate'),
+      descrizione: T('ava.descrizione'),
       stato,
       figli: [
         u.GruppoChip({
-          chiave: 'free-livello', etichetta: 'Compiti FreeLLMAPI', modo: 'scelta', valore: r.freellmapi.livello, voci: LIVELLI,
+          chiave: 'free-livello', etichetta: T('ava.compiti'), modo: 'scelta', valore: r.freellmapi.livello, voci: LIVELLI,
           onCambia: v => salva('free-livello', () => ({ freellmapi: { ...r.freellmapi, livello: v } }))(),
         }),
         errore('free-livello'),
         Input ? (
           <Input
             key="free-endpoint"
-            label="Endpoint FreeLLMAPI (loopback)"
+            label={T('ava.endpoint')}
             value={r.freellmapi.endpoint}
             onSubmit={v =>
               salva('free-endpoint', () => {
-                if (!endpointLocale(v.trim())) throw new Error('Endpoint solo su questo computer: http://localhost:<porta>/v1, 127.0.0.1 o [::1]')
+                if (!endpointLocale(v.trim())) throw new Errore(msg('ava.endpointLocale'))
                 return { freellmapi: { ...r.freellmapi, endpoint: v.trim() } }
               })()
             }
           />
         ) : null,
         errore('free-endpoint'),
-        didascalia('installa-nota', 'Installa con Docker già disponibile; poi configura i fornitori e copia la chiave unificata dal dashboard http://localhost:3001.'),
+        didascalia('installa-nota', T('ava.installaNota')),
         ...INSTALLAZIONE.map((cmd, i) => (
           <Box key={`installazione-${i}`} flexDirection="column">
             <Text size="caption" wrap="wrap">{cmd.join(' ')}</Text>
-            <Button key={`installa-${i}`} variant="secondary" label={i === 0 ? 'Prepara immagine Docker…' : 'Avvia container…'} onPress={() => void esegui('installa', () => c.installa(i), '')} />
+            <Button key={`installa-${i}`} variant="secondary" label={`${T(i === 0 ? 'con.prepara' : 'con.avviaContainer')}…`} onPress={() => void esegui('installa', () => c.installa(i), '')} />
           </Box>
         )),
         errore('installa'),
@@ -550,7 +550,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   return (
     <Box key="configurazione" flexDirection="column" gap={1}>
       {u.GruppoChip({
-        chiave: 'sezione', etichetta: 'Sezione', modo: 'scelta', valore: vista.sezione, voci: SEZIONI,
+        chiave: 'sezione', etichetta: T('imp.sezione'), modo: 'scelta', valore: vista.sezione, voci: SEZIONI.map(s => ({ valore: s.valore, testo: T(s.testo) })),
         onCambia: v => void cambia(s => ({ ...s, sezione: v as Sezione, errore: undefined })),
       })}
       {corpo}
