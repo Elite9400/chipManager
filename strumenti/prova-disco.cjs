@@ -570,8 +570,9 @@ test('2.6 config: soglie, profilo e pesi in una sola scrittura; campi fuori elen
   }
   assert.strictEqual(await configura(file, { atteso: prima, repo: 'esempio/demo', campi }), 0)
   const dopo = fs.readFileSync(file, 'utf8')
-  assert.deepStrictEqual(JSON.parse(dopo).progetti['esempio/demo'], { fornitori: ['claude'], ...campi })
-  for (const estraneo of [{ chiave: 'x' }, { routing: 'altro.json' }, { sensibili: [] }])
+  // Profilo e pesi portano la revisione e l'origine manuale, scritte dall'helper.
+  assert.deepStrictEqual(JSON.parse(dopo).progetti['esempio/demo'], { fornitori: ['claude'], ...campi, pesiRevisione: 1, pesiOrigine: { tipo: 'manuale' } })
+  for (const estraneo of [{ chiave: 'x' }, { routing: 'altro.json' }, { sensibili: [] }, { pesiRevisione: 9 }, { pesiOrigine: { tipo: 'proposta', id: 'd-falsa00001' } }])
     assert.strictEqual(await configura(file, { atteso: dopo, repo: 'esempio/demo', campi: { profilo: 'qualita', ...estraneo } }), 2)
   assert.strictEqual(fs.readFileSync(file, 'utf8'), dopo)
 })
@@ -948,4 +949,159 @@ test('2.4.2 cache Codex: una voce senza meta.id o senza meta.cwd non vale: si ri
     assert.strictEqual(r.diagnostica.aperti, 1, `senza meta.${campo} la voce si rilegge`)
     assert.deepStrictEqual(r.sessioni[0], giusta)
   }
+})
+
+// --- F4: proposte di pesi, con l'helper vero ------------------------------------------------------------
+const { pesiProponi, pesiDecidi, pesiAnnulla } = require(DISCO)
+const REPO_PESI = 'esempio/demo'
+const EFFORT_LOW = { tipo: 'effort', nome: 'low', percentuale: 40, assoluto: 0 }
+const arresto = { dopoConfig: () => { throw new Error('arresto simulato') } }
+function ambientePesi() {
+  const dir = tmp()
+  const a = { config: path.join(dir, 'config.json'), proposte: path.join(dir, 'dati', 'proposte-pesi.json') }
+  fs.writeFileSync(a.config, JSON.stringify({ progetti: { [REPO_PESI]: { fornitori: ['claude'] }, 'altro/progetto': { fornitori: ['codex'] } } }))
+  a.testo = () => fs.readFileSync(a.config, 'utf8')
+  a.leggi = () => JSON.parse(a.testo()).progetti[REPO_PESI]
+  a.voci = () => JSON.parse(fs.readFileSync(a.proposte, 'utf8')).voci
+  a.scriviVoci = f => { const p = JSON.parse(fs.readFileSync(a.proposte, 'utf8')); f(p.voci); fs.writeFileSync(a.proposte, JSON.stringify(p)) }
+  return a
+}
+const proposta = (risultato = { profilo: 'risparmio', pesi: [EFFORT_LOW] }, partenza = { profilo: null, pesi: [] }, revisione = 0) =>
+  ({ repo: REPO_PESI, proponente: { id: 'sessione-esempio', titolo: 'Master' }, motivo: 'Claude settimanale al 78%', profilo: risultato.profilo, partenza, revisione, risultato })
+async function proponi(a, q = proposta()) {
+  const [codice, testo] = await pesiProponi(a.config, a.proposte, q)
+  assert.strictEqual(codice, 0, testo)
+  return JSON.parse(testo)
+}
+/** `pesi-decidi` in un processo suo, come lo chiama il pannello. */
+const decidi = (a, id, versione, esito, chiave) =>
+  new Promise(r => {
+    const p = spawn(process.execPath, [ENTRATA, 'pesi-decidi', a.config, a.proposte, REPO_PESI, id, String(versione), esito, chiave])
+    let testo = ''
+    p.stdout.on('data', d => { testo += d })
+    p.on('exit', codice => r({ codice, testo }))
+  })
+
+test('F4 pesi: due processi decidono la stessa voce insieme: una sola applicazione, altri progetti intatti', async () => {
+  const a = ambientePesi()
+  const { id } = await proponi(a)
+  const esiti = await Promise.all([decidi(a, id, 0, 'applica', 'd-primo00001'), decidi(a, id, 0, 'applica', 'd-second0001')])
+  assert.deepStrictEqual(esiti.map(x => x.codice).sort(), [0, 4])
+  const v = a.voci()[0]
+  assert.deepStrictEqual([v.stato, a.leggi().pesiRevisione, a.leggi().pesiOrigine.id], ['applicata', 1, v.decisione.id])
+  assert.deepStrictEqual([a.leggi().profilo, a.leggi().pesi, a.leggi().fornitori], ['risparmio', [EFFORT_LOW], ['claude']])
+  assert.deepStrictEqual(JSON.parse(a.testo()).progetti['altro/progetto'], { fornitori: ['codex'] })
+})
+
+test('F4 pesi: chiave di decisione idempotente; altra chiave o versione vecchia rifiutate', async () => {
+  const a = ambientePesi()
+  const { id } = await proponi(a)
+  assert.strictEqual((await decidi(a, id, 1, 'applica', 'd-vecchia001')).codice, 4)
+  assert.strictEqual((await decidi(a, id, 0, 'applica', 'd-chiave0001')).codice, 0)
+  // La risposta si perde e il pannello ritenta con la stessa chiave: ok, nessuna seconda applicazione.
+  const ritento = await decidi(a, id, 0, 'applica', 'd-chiave0001')
+  assert.deepStrictEqual([ritento.codice, JSON.parse(ritento.testo).stato, a.leggi().pesiRevisione], [0, 'applicata', 1])
+  // Una risposta tardiva (popup aperto sulla versione 0) con un'altra chiave: rifiutata.
+  const tardiva = await decidi(a, id, 0, 'rifiuta', 'd-chiave0002')
+  assert.deepStrictEqual([tardiva.codice, tardiva.testo], [4, 'la proposta è cambiata, rivedi'])
+  assert.strictEqual(a.voci()[0].stato, 'applicata')
+})
+
+test('F4 pesi: proposta nuova mentre un\'altra è in revisione: entrambe visibili, decisioni indipendenti', async () => {
+  const a = ambientePesi()
+  const p1 = (await proponi(a)).id
+  const p2 = (await proponi(a, proposta({ profilo: 'qualita', pesi: [] }))).id
+  const p3 = (await proponi(a, proposta({ profilo: 'velocita', pesi: [] }))).id
+  assert.deepStrictEqual(a.voci().map(v => v.stato), ['attesa', 'attesa', 'attesa'])
+  assert.strictEqual((await decidi(a, p1, 0, 'rifiuta', 'd-rifiuto001')).codice, 0)
+  assert.strictEqual((await decidi(a, p2, 0, 'applica', 'd-applica001')).codice, 0)
+  // La terza partiva dalla configurazione di prima: non si applica sopra quella nuova.
+  assert.deepStrictEqual(await decidi(a, p3, 0, 'applica', 'd-applica002'), { codice: 4, testo: 'la configurazione è cambiata dalla proposta: rivedi' })
+  assert.deepStrictEqual([a.voci().map(v => v.stato), a.leggi().profilo], [['rifiutata', 'applicata', 'attesa'], 'qualita'])
+})
+
+test('F4 pesi: arresto dopo il config di un\'applicazione: la configura successiva recupera prima di scrivere', async () => {
+  const a = ambientePesi()
+  const { id } = await proponi(a)
+  await assert.rejects(pesiDecidi(a.config, a.proposte, REPO_PESI, id, 0, 'applica', 'd-arresto001', arresto))
+  assert.deepStrictEqual([a.voci()[0].stato, a.leggi().pesiOrigine], ['attesa', { tipo: 'proposta', id: 'd-arresto001', voce: id, versione: 0 }])
+  // Senza il file delle proposte non si può completare: nessuna scrittura.
+  const prima = a.testo()
+  assert.strictEqual(await configura(a.config, { atteso: prima, repo: REPO_PESI, campi: { pesi: [] } }), 2)
+  assert.strictEqual(a.testo(), prima)
+  assert.strictEqual(await configura(a.config, { atteso: prima, repo: REPO_PESI, campi: { profilo: 'qualita', pesi: [] }, proposte: a.proposte }), 0)
+  const v = a.voci()[0]
+  assert.deepStrictEqual([v.stato, v.decisione.id, v.decisione.revisione], ['applicata', 'd-arresto001', 1])
+  assert.deepStrictEqual([a.leggi().pesiRevisione, a.leggi().pesiOrigine, a.leggi().profilo], [2, { tipo: 'manuale' }, 'qualita'])
+})
+
+test('F4 pesi: arresto dopo il config di un annullamento: la configura successiva lo completa', async () => {
+  const a = ambientePesi()
+  const { id } = await proponi(a)
+  assert.strictEqual((await decidi(a, id, 0, 'applica', 'd-applica003')).codice, 0)
+  await assert.rejects(pesiAnnulla(a.config, a.proposte, REPO_PESI, id, 'u-arresto001', arresto))
+  assert.deepStrictEqual([a.voci()[0].stato, a.leggi().pesi, a.leggi().profilo, a.leggi().pesiRevisione], ['applicata', [], undefined, 2])
+  assert.strictEqual(await configura(a.config, { atteso: a.testo(), repo: REPO_PESI, campi: { pesi: [EFFORT_LOW] }, proposte: a.proposte }), 0)
+  const v = a.voci()[0]
+  assert.deepStrictEqual([v.stato, v.annullamento.id, v.annullamento.revisione], ['annullata', 'u-arresto001', 2])
+  assert.strictEqual(a.leggi().pesiRevisione, 3)
+})
+
+test('F4 pesi: due proposte con lo stesso risultato: si recupera solo quella indicata in pesiOrigine', async () => {
+  const a = ambientePesi()
+  const p1 = (await proponi(a)).id
+  const p2 = (await proponi(a)).id
+  await assert.rejects(pesiDecidi(a.config, a.proposte, REPO_PESI, p2, 0, 'applica', 'd-seconda001', arresto))
+  // Anche un comando pesi-* recupera prima di fare altro.
+  assert.strictEqual((await decidi(a, p1, 0, 'rifiuta', 'd-rifiuto002')).codice, 0)
+  const [v1, v2] = a.voci()
+  assert.deepStrictEqual([v1.stato, v1.decisione.id, v2.stato, v2.decisione.id], ['rifiutata', 'd-rifiuto002', 'applicata', 'd-seconda001'])
+})
+
+test('F4 pesi: Annulla ripristina la partenza; dopo una modifica manuale (anche risultato → altro → risultato) è rifiutato', async () => {
+  const a = ambientePesi()
+  const p1 = (await proponi(a)).id
+  assert.strictEqual((await decidi(a, p1, 0, 'applica', 'd-applica004')).codice, 0)
+  assert.strictEqual((await pesiAnnulla(a.config, a.proposte, REPO_PESI, p1, 'u-annulla001'))[0], 0)
+  assert.deepStrictEqual([a.leggi().pesi, a.leggi().profilo, a.leggi().pesiRevisione, a.leggi().pesiOrigine.tipo], [[], undefined, 2, 'annullamento'])
+  assert.strictEqual(a.voci()[0].stato, 'annullata')
+  const p2 = (await proponi(a, proposta(undefined, { profilo: null, pesi: [] }, 2))).id
+  assert.strictEqual((await decidi(a, p2, 0, 'applica', 'd-applica005')).codice, 0)
+  for (const campi of [{ profilo: 'qualita', pesi: [] }, { profilo: 'risparmio', pesi: [EFFORT_LOW] }])
+    assert.strictEqual(await configura(a.config, { atteso: a.testo(), repo: REPO_PESI, campi, proposte: a.proposte }), 0)
+  const prima = a.testo()
+  assert.deepStrictEqual(await pesiAnnulla(a.config, a.proposte, REPO_PESI, p2, 'u-tardivo001'), [4, 'la configurazione è cambiata dopo l\'applicazione'])
+  assert.deepStrictEqual([a.testo(), a.voci()[1].stato], [prima, 'applicata'])
+})
+
+test('F4 pesi: un campo diverso da profilo o pesi è rifiutato, anche in un file manomesso, senza toccare il config', async () => {
+  const a = ambientePesi()
+  const prima = a.testo()
+  for (const risultato of [{ profilo: 'risparmio', pesi: [], fornitori: ['codex'] }, { profilo: 'risparmio', pesi: [], soglie: {} }, { profilo: 'risparmio', pesi: [{ ...EFFORT_LOW, extra: 1 }] }])
+    assert.strictEqual((await pesiProponi(a.config, a.proposte, proposta(risultato)))[0], 2)
+  assert.strictEqual((await pesiProponi(a.config, a.proposte, { ...proposta(), soloLocale: true }))[0], 2)
+  assert.strictEqual((await pesiProponi(a.config, a.proposte, { ...proposta(), motivo: 'x'.repeat(301) }))[0], 2)
+  assert.strictEqual(fs.existsSync(a.proposte), false)
+  const { id } = await proponi(a)
+  a.scriviVoci(voci => { voci[0].risultato.fornitori = ['codex'] })
+  assert.deepStrictEqual(await decidi(a, id, 0, 'applica', 'd-manomess01'), { codice: 4, testo: 'proposta non valida: solo profilo e pesi' })
+  assert.strictEqual(a.testo(), prima)
+})
+
+test('F4 pesi: dopo 24 ore scade; oltre 3 in attesa la più vecchia scade e lo dice; al massimo 10 voci', async () => {
+  const a = ambientePesi()
+  const { id } = await proponi(a)
+  a.scriviVoci(voci => { voci[0].quando = new Date(Date.now() - 25 * 3_600_000).toISOString() })
+  assert.deepStrictEqual(await decidi(a, id, 0, 'applica', 'd-scaduta001'), { codice: 4, testo: 'la proposta è scaduta' })
+  assert.strictEqual(a.voci()[0].stato, 'scaduta')
+  const ids = []
+  for (let i = 0; i < 12; i++) {
+    const r = await proponi(a)
+    if (i === 3) assert.deepStrictEqual(r.scadute, [ids[0]])
+    ids.push(r.id)
+  }
+  const voci = a.voci()
+  assert.strictEqual(voci.length, 10)
+  assert.deepStrictEqual(voci.filter(v => v.stato === 'attesa').map(v => v.id), ids.slice(-3))
+  assert.strictEqual(a.leggi().pesiRevisione, undefined, 'una proposta non cambia il config')
 })

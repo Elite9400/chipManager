@@ -264,7 +264,11 @@ function avviaComando(comando, opzioni = {}) {
   return spawn(f, comando.slice(1), { stdio: 'inherit', windowsHide: true, detached: process.platform !== 'win32', ...opzioni })
 }
 
-/** CAS del config intero, senza scartare campi di altri progetti o modifiche di un altro pannello. */
+/**
+ * CAS del config intero, senza scartare campi di altri progetti o modifiche di un altro pannello. Una scrittura di
+ * `profilo` o `pesi` completa prima l'operazione indicata da `pesiOrigine` (serve `richiesta.proposte`), poi
+ * incrementa `pesiRevisione` e segna l'origine manuale: nessuno dei due si scrive da fuori.
+ */
 async function configura(file, richiesta) {
   if (!richiesta || typeof richiesta.repo !== 'string' || !richiesta.repo || !richiesta.campi ||
       Object.keys(richiesta.campi).some(k => !['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo'].includes(k))) return 2
@@ -279,6 +283,20 @@ async function configura(file, richiesta) {
     const precedente = c.progetti?.[richiesta.repo] ?? {}
     if (!precedente || typeof precedente !== 'object' || Array.isArray(precedente)) return 2
     const campi = { ...richiesta.campi }
+    if ('pesi' in campi || 'profilo' in campi) {
+      const o = precedente.pesiOrigine
+      if (o && (o.tipo === 'proposta' || o.tipo === 'annullamento')) {
+        if (typeof richiesta.proposte !== 'string' || !path.isAbsolute(richiesta.proposte)) return 2
+        try {
+          recupera(c, richiesta.repo, leggiProposte(richiesta.proposte), richiesta.proposte)
+        } catch (e) {
+          if (e instanceof Rifiuto) return 4
+          throw e
+        }
+      }
+      campi.pesiRevisione = revisioneDi(precedente) + 1
+      campi.pesiOrigine = { tipo: 'manuale' }
+    }
     if (campi.board) {
       // La generazione la decide l'helper, sotto lo stesso lock: ogni cambio di modo invalida il lavoro in volo.
       const b = precedente.board
@@ -729,6 +747,238 @@ async function corsiaCodex(argv, mutexCodex = MUTEX_CODEX) {
   }
 }
 
+// --- proposte di pesi (F4) ---------------------------------------------------------------------------
+// Un'unica autorità: questi comandi e `configura` lavorano sotto il mutex del config. Il legame fra operazione e
+// proposta (`pesiOrigine = { tipo, id, voce, versione }`) entra nel config nella stessa scrittura che cambia i pesi;
+// prima di ogni altra scrittura il recupero lo completa nel file delle proposte. Mai dedotto dai valori dei pesi.
+// Uscite: 0 ok (stdout JSON) · 2 uso · 3 mutex occupato · 4 rifiuto (stdout: il motivo).
+
+const PROFILI = ['automatico', 'risparmio', 'qualita', 'velocita', 'personalizzato']
+const SCADENZA_PROPOSTA = 24 * 3_600_000
+const MAX_ATTESA = 3
+const MAX_VOCI = 10
+const ID_VOCE = /^p-[a-z0-9]{6,40}$/
+const ID_DECISIONE = /^d-[a-z0-9]{6,40}$/
+const ID_ANNULLAMENTO = /^u-[a-z0-9]{6,40}$/
+// I testi che arrivano al committente, raccolti qui.
+const TESTI_PESI = {
+  argomenti: 'argomenti non validi',
+  campi: 'proposta non valida: solo profilo e pesi',
+  illeggibile: 'proposte-pesi.json illeggibile: non lo tocco',
+  configIlleggibile: 'config.json illeggibile: non lo tocco',
+  nonTrovata: 'proposta non trovata',
+  cambiata: 'la proposta è cambiata, rivedi',
+  scaduta: 'la proposta è scaduta',
+  primaDellaProposta: 'la configurazione è cambiata dalla proposta: rivedi',
+  dopoApplicazione: 'la configurazione è cambiata dopo l\'applicazione',
+  nonApplicata: 'la proposta non è applicata',
+  scadutaDopo: 'scaduta dopo 24 ore senza decisione',
+  sostituita: `scaduta: più di ${MAX_ATTESA} proposte in attesa`,
+}
+
+const oggetto = x => !!x && typeof x === 'object' && !Array.isArray(x)
+const numero = (v, min, max) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max
+// Stesse regole di `pesoValido` nella mod.
+const pesoOk = p => oggetto(p) && Object.keys(p).every(k => ['tipo', 'nome', 'percentuale', 'assoluto'].includes(k)) &&
+  ['fornitore', 'modello', 'effort'].includes(p.tipo) && typeof p.nome === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,99}$/.test(p.nome) &&
+  numero(p.percentuale, -100, 1000) && numero(p.assoluto, -100, 1000)
+const pesiOk = x => Array.isArray(x) && x.length <= 100 && x.every(pesoOk) && new Set(x.map(p => `${p.tipo}:${p.nome}`)).size === x.length
+/** Solo `{ profilo, pesi }`: un qualsiasi altro campo rifiuta, così l'applicazione non scrive mai altro. */
+const pesiProfiloOk = s => oggetto(s) && Object.keys(s).every(k => k === 'profilo' || k === 'pesi') && (s.profilo === null || PROFILI.includes(s.profilo)) && pesiOk(s.pesi)
+
+const revisioneDi = prog => (Number.isInteger(prog?.pesiRevisione) && prog.pesiRevisione >= 0 ? prog.pesiRevisione : 0)
+const pesiProfiloDi = prog => ({ profilo: PROFILI.includes(prog?.profilo) ? prog.profilo : null, pesi: Array.isArray(prog?.pesi) ? prog.pesi : [] })
+const canonico = s => JSON.stringify([s.profilo ?? null, (s.pesi ?? []).map(p => [p.tipo, p.nome, p.percentuale, p.assoluto])])
+const ugualiPesi = (a, b) => canonico(a) === canonico(b)
+
+function leggiProposte(file) {
+  let testo
+  try {
+    testo = fs.readFileSync(file, 'utf8')
+  } catch (e) {
+    if (e.code === 'ENOENT') return { versione: 0, voci: [] }
+    throw e
+  }
+  let p
+  try {
+    p = JSON.parse(testo)
+  } catch {
+    throw new Rifiuto(4, TESTI_PESI.illeggibile)
+  }
+  if (!oggetto(p) || !Number.isInteger(p.versione) || !Array.isArray(p.voci) || !p.voci.every(v => oggetto(v) && typeof v.id === 'string' && Number.isInteger(v.versione)))
+    throw new Rifiuto(4, TESTI_PESI.illeggibile)
+  return p
+}
+function scriviProposte(file, p) {
+  p.versione += 1
+  scriviAtomico(file, JSON.stringify(p, null, 2))
+}
+function leggiConfigPesi(file) {
+  if (!fs.existsSync(file)) return {}
+  let c
+  try {
+    c = JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    throw new Rifiuto(4, TESTI_PESI.configIlleggibile)
+  }
+  if (!oggetto(c) || (c.progetti !== undefined && !oggetto(c.progetti))) throw new Rifiuto(4, TESTI_PESI.configIlleggibile)
+  return c
+}
+const conProgetto = (c, repo, prog) => ({ ...c, progetti: { ...c.progetti, [repo]: prog } })
+/** Il progetto con profilo e pesi di `s`; profilo null = nessun profilo salvato. */
+function conPesiProfilo(prog, s, revisione, origine) {
+  const nuovo = { ...prog, pesi: s.pesi, pesiRevisione: revisione, pesiOrigine: origine }
+  if (s.profilo) nuovo.profilo = s.profilo
+  else delete nuovo.profilo
+  return nuovo
+}
+
+/** Completa nel file delle proposte l'operazione che `pesiOrigine` dice già scritta nel config. */
+function recupera(c, repo, P, fileProposte) {
+  const prog = c.progetti?.[repo]
+  const o = prog?.pesiOrigine
+  if (!oggetto(o) || (o.tipo !== 'proposta' && o.tipo !== 'annullamento')) return
+  const v = P.voci.find(x => x.id === o.voce && x.progetto === repo)
+  if (!v || v.versione !== o.versione) return
+  const traccia = { id: o.id, quando: new Date().toISOString(), revisione: revisioneDi(prog) }
+  if (o.tipo === 'proposta' && v.stato === 'attesa' && v.decisione?.id !== o.id) Object.assign(v, { stato: 'applicata', decisione: { ...traccia, esito: 'applica' } })
+  else if (o.tipo === 'annullamento' && v.stato === 'applicata' && v.annullamento?.id !== o.id) Object.assign(v, { stato: 'annullata', annullamento: traccia })
+  else return
+  v.versione += 1
+  scriviProposte(fileProposte, P)
+}
+
+/** Le voci in attesa da più di 24 ore scadono. Restituisce se qualcosa è cambiato. */
+function scadi(P, repo, adesso) {
+  let cambiato = false
+  for (const v of P.voci)
+    if (v.progetto === repo && v.stato === 'attesa' && !(adesso - Date.parse(v.quando) <= SCADENZA_PROPOSTA)) {
+      Object.assign(v, { stato: 'scaduta', nota: TESTI_PESI.scadutaDopo })
+      v.versione += 1
+      cambiato = true
+    }
+  return cambiato
+}
+
+/** Sotto il mutex del config: legge config e proposte, recupera, poi `fn(c, P)`. */
+async function conPesi(file, fileProposte, repo, fn) {
+  if (typeof repo !== 'string' || !repo || repo.length > 400 || typeof fileProposte !== 'string' || !path.isAbsolute(fileProposte)) return [2, TESTI_PESI.argomenti]
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.mkdirSync(path.dirname(fileProposte), { recursive: true })
+  const r = await conMutex(mutexConfig(file), 8000, () => {
+    try {
+      const c = leggiConfigPesi(file)
+      const P = leggiProposte(fileProposte)
+      recupera(c, repo, P, fileProposte)
+      return fn(c, P)
+    } catch (e) {
+      if (e instanceof Rifiuto) return [e.codice, e.message]
+      throw e
+    }
+  })
+  return r.occupato ? [3, 'mutex occupato'] : r.valore
+}
+
+/**
+ * stdin: `{ repo, proponente: { id, titolo }, motivo, profilo?, regolazioni?, partenza: { profilo, pesi }, revisione, risultato: { profilo, pesi } }`.
+ * La partenza deve essere ancora quella del config (valori e revisione). Oltre 3 in attesa la più vecchia scade.
+ */
+async function pesiProponi(file, fileProposte, q) {
+  const ammessi = ['repo', 'proponente', 'motivo', 'profilo', 'regolazioni', 'partenza', 'revisione', 'risultato']
+  if (!oggetto(q) || Object.keys(q).some(k => !ammessi.includes(k))) return [2, TESTI_PESI.campi]
+  const chi = q.proponente
+  if (!oggetto(chi) || typeof chi.id !== 'string' || !chi.id || chi.id.length > 200 || (chi.titolo !== undefined && (typeof chi.titolo !== 'string' || chi.titolo.length > 80)) ||
+      typeof q.motivo !== 'string' || !q.motivo.trim() || q.motivo.length > 300 ||
+      (q.profilo !== undefined && !PROFILI.includes(q.profilo)) ||
+      (q.regolazioni !== undefined && !(Array.isArray(q.regolazioni) && q.regolazioni.length <= 30 && q.regolazioni.every(x =>
+        oggetto(x) && ['fornitore', 'modello', 'effort'].includes(x.tipo) && typeof x.nome === 'string' && x.nome.length <= 100 && Number.isInteger(x.posizione) && x.posizione >= 0 && x.posizione <= 4))) ||
+      (q.profilo === undefined && q.regolazioni === undefined) ||
+      !Number.isInteger(q.revisione) || q.revisione < 0 || !pesiProfiloOk(q.partenza) || !pesiProfiloOk(q.risultato) || !q.risultato.profilo) return [2, TESTI_PESI.campi]
+  return conPesi(file, fileProposte, q.repo, (c, P) => {
+    const prog = c.progetti?.[q.repo] ?? {}
+    if (revisioneDi(prog) !== q.revisione || !ugualiPesi(pesiProfiloDi(prog), q.partenza)) return [4, TESTI_PESI.primaDellaProposta]
+    const adesso = Date.now()
+    scadi(P, q.repo, adesso)
+    const scadute = []
+    const inAttesa = P.voci.filter(v => v.progetto === q.repo && v.stato === 'attesa').sort((x, y) => Date.parse(x.quando) - Date.parse(y.quando))
+    while (inAttesa.length >= MAX_ATTESA) {
+      const v = inAttesa.shift()
+      Object.assign(v, { stato: 'scaduta', nota: TESTI_PESI.sostituita })
+      v.versione += 1
+      scadute.push(v.id)
+    }
+    const voce = {
+      id: `p-${adesso.toString(36)}${crypto.randomBytes(3).toString('hex')}`, versione: 0, progetto: q.repo,
+      proponente: { id: chi.id, titolo: chi.titolo ?? '' }, quando: new Date(adesso).toISOString(), motivo: q.motivo.trim(),
+      ...(q.profilo !== undefined && { profilo: q.profilo }), ...(q.regolazioni !== undefined && { regolazioni: q.regolazioni }),
+      partenza: { profilo: q.partenza.profilo, pesi: q.partenza.pesi, revisione: q.revisione },
+      risultato: { profilo: q.risultato.profilo, pesi: q.risultato.pesi }, stato: 'attesa',
+    }
+    P.voci.push(voce)
+    // Al massimo MAX_VOCI per progetto: escono le più vecchie già decise.
+    const decise = P.voci.filter(v => v.progetto === q.repo && v.stato !== 'attesa').sort((x, y) => Date.parse(x.quando) - Date.parse(y.quando))
+    const troppe = P.voci.filter(v => v.progetto === q.repo).length - MAX_VOCI
+    const fuori = new Set(decise.slice(0, Math.max(0, troppe)).map(v => v.id))
+    P.voci = P.voci.filter(v => v.progetto !== q.repo || !fuori.has(v.id))
+    scriviProposte(fileProposte, P)
+    return [0, JSON.stringify({ id: voce.id, scadute })]
+  })
+}
+
+/**
+ * Applica o rifiuta la voce alla `versione` vista. Primo controllo: la stessa chiave di decisione ha già deciso →
+ * l'esito registrato, senza riscrivere. `opz.dopoConfig` esiste solo per le prove (arresto fra le due scritture).
+ */
+async function pesiDecidi(file, fileProposte, repo, idVoce, versione, esito, idDecisione, opz = {}) {
+  if (!ID_VOCE.test(idVoce) || !/^\d{1,9}$/.test(String(versione)) || !['applica', 'rifiuta'].includes(esito) || !ID_DECISIONE.test(idDecisione)) return [2, TESTI_PESI.argomenti]
+  return conPesi(file, fileProposte, repo, (c, P) => {
+    const v = P.voci.find(x => x.id === idVoce && x.progetto === repo)
+    if (!v) return [4, TESTI_PESI.nonTrovata]
+    if (v.decisione?.id === idDecisione) return [0, JSON.stringify({ stato: v.stato, decisione: v.decisione })]
+    if (scadi(P, repo, Date.now())) scriviProposte(fileProposte, P)
+    if (v.stato !== 'attesa' || v.versione !== Number(versione)) return [4, v.stato === 'scaduta' ? TESTI_PESI.scaduta : TESTI_PESI.cambiata]
+    const quando = new Date().toISOString()
+    if (esito === 'applica') {
+      const partenza = oggetto(v.partenza) ? { profilo: v.partenza.profilo, pesi: v.partenza.pesi } : null
+      if (!pesiProfiloOk(v.risultato) || !pesiProfiloOk(partenza)) return [4, TESTI_PESI.campi]
+      const prog = c.progetti?.[repo] ?? {}
+      if (!oggetto(prog)) return [4, TESTI_PESI.configIlleggibile]
+      const R = revisioneDi(prog)
+      if (R !== v.partenza.revisione || !ugualiPesi(pesiProfiloDi(prog), partenza)) return [4, TESTI_PESI.primaDellaProposta]
+      const origine = { tipo: 'proposta', id: idDecisione, voce: v.id, versione: v.versione }
+      scriviAtomico(file, JSON.stringify(conProgetto(c, repo, conPesiProfilo(prog, v.risultato, R + 1, origine)), null, 2))
+      opz.dopoConfig?.()
+      Object.assign(v, { stato: 'applicata', decisione: { id: idDecisione, esito, quando, revisione: R + 1 } })
+    } else Object.assign(v, { stato: 'rifiutata', decisione: { id: idDecisione, esito, quando } })
+    v.versione += 1
+    scriviProposte(fileProposte, P)
+    return [0, JSON.stringify({ stato: v.stato, decisione: v.decisione })]
+  })
+}
+
+/** Ripristina la partenza solo se il config porta ancora la revisione e l'origine di quella applicazione. */
+async function pesiAnnulla(file, fileProposte, repo, idVoce, idAnnullamento, opz = {}) {
+  if (!ID_VOCE.test(idVoce) || !ID_ANNULLAMENTO.test(idAnnullamento)) return [2, TESTI_PESI.argomenti]
+  return conPesi(file, fileProposte, repo, (c, P) => {
+    const v = P.voci.find(x => x.id === idVoce && x.progetto === repo)
+    if (!v) return [4, TESTI_PESI.nonTrovata]
+    if (v.annullamento?.id === idAnnullamento) return [0, JSON.stringify({ stato: v.stato, annullamento: v.annullamento })]
+    if (v.stato !== 'applicata' || !oggetto(v.decisione)) return [4, TESTI_PESI.nonApplicata]
+    const prog = c.progetti?.[repo] ?? {}
+    const R = revisioneDi(prog)
+    if (R !== v.decisione.revisione || prog.pesiOrigine?.id !== v.decisione.id) return [4, TESTI_PESI.dopoApplicazione]
+    const partenza = oggetto(v.partenza) ? { profilo: v.partenza.profilo, pesi: v.partenza.pesi } : null
+    if (!pesiProfiloOk(partenza)) return [4, TESTI_PESI.campi]
+    const origine = { tipo: 'annullamento', id: idAnnullamento, voce: v.id, versione: v.versione }
+    scriviAtomico(file, JSON.stringify(conProgetto(c, repo, conPesiProfilo(prog, partenza, R + 1, origine)), null, 2))
+    opz.dopoConfig?.()
+    Object.assign(v, { stato: 'annullata', annullamento: { id: idAnnullamento, quando: new Date().toISOString(), revisione: R + 1 } })
+    v.versione += 1
+    scriviProposte(fileProposte, P)
+    return [0, JSON.stringify({ stato: v.stato, annullamento: v.annullamento })]
+  })
+}
+
 async function main(argv, { mutexCodex = MUTEX_CODEX } = {}) {
   const [cmd, ...a] = argv
   const stdin = () => JSON.parse(fs.readFileSync(0, 'utf8'))
@@ -755,6 +1005,9 @@ async function main(argv, { mutexCodex = MUTEX_CODEX } = {}) {
   if (cmd === 'board-spegni' && a.length === 4) return esci(...(await boardSpegni(...a)))
   if (cmd === 'board-prenota' && a.length === 5) return esci(...(await boardPrenota(...a)))
   if (cmd === 'board-finalizza' && a.length === 5) return esci(...(await boardFinalizza(...a, stdin())))
+  if (cmd === 'pesi-proponi' && a.length === 2) return esci(...(await pesiProponi(a[0], a[1], stdin())))
+  if (cmd === 'pesi-decidi' && a.length === 7) return esci(...(await pesiDecidi(...a)))
+  if (cmd === 'pesi-annulla' && a.length === 5) return esci(...(await pesiAnnulla(...a)))
   esci(2, 'uso: cas <file> <versione|nuovo> | prenota <cartella> | occupata <mutex|codex> | corsia-codex [--revisione] -- <comando>')
 }
 
@@ -764,4 +1017,4 @@ function esci(codice, testo) {
 }
 
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))
-module.exports = { main, conMutex, scriviAtomico, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, lanciaCli, eseguiCli }
+module.exports = { main, conMutex, scriviAtomico, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla }
