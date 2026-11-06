@@ -1572,7 +1572,7 @@ test('F6.7 stato-esecuzione: con eseguibili finti escono solo sì/no, metodo e h
   assert.deepStrictEqual(JSON.parse(r2.stdout), { claude: { trovato: false }, github: { trovato: true, loggedIn: false, remote: false, host: 'gitlab.example.org' }, fonti: [] })
 })
 
-test('F6.7 accedi: di GitHub esce solo il codice; l\'output del login non tocca mai il disco; un solo login finché vive, a qualunque età', async () => {
+test('F6.7 accedi: di GitHub esce solo il codice; l\'output del login non tocca mai il disco; un solo login finché vive, a qualunque età', async t => {
   // Il nome dell'account si compone a runtime: nel sorgente del finto non compare intero.
   const finti = eseguibiliFinti({
     gh: `console.log('! First copy your one-time code: AB12-CD34'); console.log('Logged in as ' + 'account-' + 'nascosto-gh7'); setTimeout(() => {}, 3000)`,
@@ -1593,8 +1593,13 @@ test('F6.7 accedi: di GitHub esce solo il codice; l\'output del login non tocca 
     // Solo cartelle e file veri: le giunzioni lasciate da altre prove non si seguono.
     const tutti = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? tutti(path.join(d, e.name)) : e.isFile() ? [path.join(d, e.name)] : []))
     assert.deepStrictEqual(tutti(radiceProve).filter(f => fs.readFileSync(f, 'utf8').includes('account-nascosto-gh7')), [])
-    // Il primo login vive ancora: un secondo clic non ne avvia un altro, anche oltre i 3 minuti del ricontrollo.
-    assert.deepStrictEqual(await API.accedi('gh', { adesso: () => Date.now() + 180_001 }), [3, ''])
+    // Il primo login vive ancora: un secondo clic non ne avvia un altro, anche con l'orologio oltre i 3 minuti del ricontrollo.
+    t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 180_001 })
+    try {
+      assert.deepStrictEqual(await API.accedi('gh', {}), [3, ''])
+    } finally {
+      t.mock.timers.reset()
+    }
     // Finito il login, il mutex è libero e un nuovo clic riparte.
     for (let i = 0; i < 100 && (await require(DISCO).conMutex('accesso-vivo:gh', 0, () => true)).occupato; i++) await new Promise(ok => setTimeout(ok, 100))
     fs.writeFileSync(path.join(finti, 'gh.js'), `console.log('codice XY98-ZW76'); setTimeout(() => {}, 300)`)
