@@ -110,7 +110,7 @@ test('mandato: Codex esegue con il coordinatore della corsia, Claude rivede', ()
   expect(m.model).toBe('claude-opus-5-5')
   expect(m.prompt).toContain('node "D:/m/disco.cjs" corsia-codex -- codex exec -m gpt-6-astra -c model_reasoning_effort="xhigh"')
   expect(m.prompt).toContain('tentativo "az-abc"')
-  expect(m.prompt).toContain('Revisione: Claude (tu)')
+  expect(m.prompt).toContain('Review: Claude (you)')
   expect(m.prompt).toContain('stato "consegnata"')
   expect(m.background.length).toBeGreaterThanOrEqual(80)
 })
@@ -118,7 +118,7 @@ test('mandato: Codex esegue con il coordinatore della corsia, Claude rivede', ()
 test('mandato: Claude esegue, Codex rivede prendendo la corsia della macchina', () => {
   const m = mandato(base('a-claude1', 1), R, { disco: 'D:/m/disco.cjs' })
   expect(m.model).toBe('claude-opus-5-5')
-  expect(m.prompt).toContain('Revisione: Codex')
+  expect(m.prompt).toContain('Review: Codex')
   expect(m.prompt).toContain('corsia-codex --revisione -- codex exec -c model_reasoning_effort="xhigh" -s read-only')
   expect(m.prompt).not.toContain('codex exec -m')
 })
@@ -539,7 +539,7 @@ test('suggerisci, rivedi le opzioni, avvia una volta sola', async ($, on) => {
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const r = await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Fix ricerca', brief: 'Correggi il dedup.', esecutore: 'codex', corsia: 'R2' } as never)
-  expect(String((r as { result?: unknown }).result)).toContain('nel pannello')
+  expect(String((r as { result?: unknown }).result)).toContain('in the panel')
   const id = amb.azione()[0]!.id
   expect(amb.azione()[0]!.repo).toBe('acme/progetto')
 
@@ -624,7 +624,7 @@ test('aggiorna_azione: transizioni ammesse, «completata» = consegnata, «avvia
     const r = await call(args)
     return r.deny ?? (r.isError ? r.text : undefined) ?? ''
   }
-  expect(await rifiuto({ stato: 'completata', tentativo: 'az-x' })).toContain('non si passa')
+  expect(await rifiuto({ stato: 'completata', tentativo: 'az-x' })).toContain('cannot go to')
   expect(await rifiuto({ stato: 'avviata', tentativo: 'az-x' })).toContain('sessione')
   // Il proponente può ritirare la propria proposta.
   expect(await rifiuto({ stato: 'scartata' })).toBe('')
@@ -652,13 +652,13 @@ test('suggerisci: sensibile:false non spegne R4; dipendenze inesistenti rifiutat
     revisore: 'nessuno',
     permessi: 'bypassPermissions',
   } as never)) as { result?: unknown }
-  expect(String(r.result)).toContain('così non può partire')
+  expect(String(r.result)).toContain('as it is it cannot start')
   expect(amb.azione()[0]!.sensibile).toBeUndefined()
   const d = (await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'B', brief: 'x', dipende: ['a-inesist01'] } as never)) as {
     deny?: string
     text?: string
   }
-  expect(d.deny ?? d.text).toContain('inesistenti')
+  expect(d.deny ?? d.text).toContain('do not exist')
 })
 
 test('giro: ferma = toast una volta; archiviata NON è fusa; il task del registro (per ramo) chiude', async ($, on) => {
@@ -729,7 +729,7 @@ test('avvio incerto: a scadenza NON diventa fallita da solo; si annulla a mano; 
     $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id, stato: 'presa', ...args } as never) as Promise<{ deny?: string; result?: unknown }>
   expect((await presa({ tentativo: 'az-altro' })).deny).toContain('tentativo')
   expect((await presa({ tentativo: t })).deny).toBeUndefined()
-  expect((await presa({ tentativo: t })).deny).toContain('non è (più) prendibile')
+  expect((await presa({ tentativo: t })).deny).toContain('cannot be taken')
   expect(await ui.find({ key: `annullaT-${id}` })).toBeUndefined()
   await ui.unmount()
 })
@@ -796,7 +796,7 @@ test('suggerisci: titolo di soli spazi rifiutato', async ($, on) => {
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const r = (await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: '   ', brief: 'x' } as never)) as { deny?: string; text?: string }
-  expect(r.deny ?? r.text).toContain('manca titolo')
+  expect(r.deny ?? r.text).toContain('missing titolo')
 })
 
 test('registro: un task chiuso e nato prima dell\'invio non si associa mai (anche se aggiornato dopo)', () => {
@@ -1814,7 +1814,7 @@ test('2.4: aggiorna_azione con sola revisione: stato invariato, gettone vecchio 
   const ok = await chiama({ tentativo: t, revisione: { esito: 'approvata', nota: 'tutto a posto', riferitaDa: 'falso' } })
   expect(ok.deny).toBeUndefined()
   expect(amb.azione()[0]).toMatchObject({ stato: 'avviata', revisione: { esito: 'approvata', nota: 'tutto a posto', riferitaDa: 'sessione-master', tentativo: t } })
-  expect((await chiama({ tentativo: 'az-vecchio001', revisione: { esito: 'da-correggere' } })).deny).toContain('tentativo')
+  expect((await chiama({ tentativo: 'az-vecchio001', revisione: { esito: 'da-correggere' } })).deny).toContain('current attempt')
   expect((await chiama({ revisione: { esito: 'verificata' } })).deny).toContain('esito')
   expect((await chiama({ tentativo: t, revisione: { esito: 'approvata', nota: 'x'.repeat(301) } })).deny).toContain('300')
   expect((await chiama({})).deny).toContain('stato')
@@ -1822,7 +1822,7 @@ test('2.4: aggiorna_azione con sola revisione: stato invariato, gettone vecchio 
   expect((await chiama({ revisione: { esito: 'in-corso' } })).deny).toBeUndefined()
   const a = amb.azione()[0]!
   amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...a, proponente: 'altra-sessione' }))
-  expect((await chiama({ revisione: { esito: 'approvata' } })).deny).toContain('tentativo corrente')
+  expect((await chiama({ revisione: { esito: 'approvata' } })).deny).toContain('current attempt')
   expect(amb.azione()[0]!.revisione!.esito).toBe('in-corso')
   expect(amb.azione()[0]!.stato).toBe('avviata')
   // Stato e revisione insieme: la data di consegna la scrive transizione().
@@ -1970,7 +1970,7 @@ test('2.4: la board riceve tutte le chip: completate vecchie contate, dipendenze
   expect(html).toContain('Base vecchia')
   // Il riassunto della chip che dipende dalla vecchia si vede: stesso testo (con i titoli delle dipendenze) per generare e mostrare.
   expect(amb.modello.length).toBe(1)
-  expect(amb.modello[0]!.prompt).toContain('Dipende da: Base vecchia')
+  expect(amb.modello[0]!.prompt).toContain('Depends on: Base vecchia')
   expect(html).toContain('Riassunto d&#39;esempio.')
   await clock.advance(60_000)
   expect(amb.modello.length).toBe(1)

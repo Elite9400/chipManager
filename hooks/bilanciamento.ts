@@ -210,33 +210,33 @@ export function vociRegolabili(r: Regole): Record<Peso['tipo'], string[]> {
  */
 export function propostaDa(args: Record<string, unknown>, r: Regole): string | { motivo: string; profilo?: Profilo; regolazioni?: Regolazione[]; risultato: PesiProfilo } {
   const ignoti = Object.keys(args).filter(k => !['profilo', 'regolazioni', 'motivo'].includes(k))
-  if (ignoti.length) return `campi non ammessi: ${ignoti.join(', ')} (solo profilo, regolazioni e motivo)`
+  if (ignoti.length) return `fields not allowed: ${ignoti.join(', ')} (only profilo, regolazioni and motivo)`
   const motivo = typeof args.motivo === 'string' ? args.motivo.trim() : ''
-  if (!motivo || motivo.length > 300) return 'motivo: obbligatorio, fino a 300 caratteri'
+  if (!motivo || motivo.length > 300) return 'motivo: mandatory, up to 300 characters'
   const profilo = args.profilo as Profilo | undefined
-  if (profilo !== undefined && !PROFILI.some(p => p.id === profilo)) return `profilo: uno fra ${PROFILI.map(p => p.id).join(', ')}`
+  if (profilo !== undefined && !PROFILI.some(p => p.id === profilo)) return `profilo: one of ${PROFILI.map(p => p.id).join(', ')}`
   let regolazioni: Regolazione[] | undefined
   if (args.regolazioni !== undefined) {
-    if (!Array.isArray(args.regolazioni) || !args.regolazioni.length || args.regolazioni.length > 30) return 'regolazioni: da 1 a 30 voci'
+    if (!Array.isArray(args.regolazioni) || !args.regolazioni.length || args.regolazioni.length > 30) return 'regolazioni: from 1 to 30 entries'
     const ammesse = vociRegolabili(r)
     regolazioni = []
     for (const x of args.regolazioni as unknown[]) {
       const v = x as Record<string, unknown>
-      if (!v || typeof v !== 'object' || Object.keys(v).some(k => !['tipo', 'nome', 'posizione'].includes(k))) return 'regolazioni: ogni voce è { tipo, nome, posizione }'
-      if (!['fornitore', 'modello', 'effort'].includes(String(v.tipo))) return 'regolazioni: tipo fornitore, modello o effort'
+      if (!v || typeof v !== 'object' || Object.keys(v).some(k => !['tipo', 'nome', 'posizione'].includes(k))) return 'regolazioni: each entry is { tipo, nome, posizione }'
+      if (!['fornitore', 'modello', 'effort'].includes(String(v.tipo))) return 'regolazioni: tipo fornitore, modello or effort'
       const tipo = v.tipo as Peso['tipo']
-      if (typeof v.nome !== 'string' || !ammesse[tipo].includes(v.nome)) return `regolazioni: «${String(v.nome)}» non è un ${tipo} ammesso (${ammesse[tipo].join(', ') || 'nessuno'})`
-      if (!Number.isInteger(v.posizione) || (v.posizione as number) < 0 || (v.posizione as number) > 4) return 'regolazioni: posizione da 0 (Molto meno) a 4 (Preferisci)'
-      if (regolazioni.some(y => y.tipo === tipo && y.nome === v.nome)) return `regolazioni: ${tipo} «${v.nome}» ripetuto`
+      if (typeof v.nome !== 'string' || !ammesse[tipo].includes(v.nome)) return `regolazioni: "${String(v.nome)}" is not an allowed ${tipo} (${ammesse[tipo].join(', ') || 'none'})`
+      if (!Number.isInteger(v.posizione) || (v.posizione as number) < 0 || (v.posizione as number) > 4) return 'regolazioni: posizione from 0 (Much less) to 4 (Prefer)'
+      if (regolazioni.some(y => y.tipo === tipo && y.nome === v.nome)) return `regolazioni: ${tipo} "${v.nome}" repeated`
       regolazioni.push({ tipo, nome: v.nome, posizione: v.posizione as number })
     }
   }
-  if (!profilo && !regolazioni) return 'serve un profilo, delle regolazioni o entrambi'
+  if (!profilo && !regolazioni) return 'a profilo, some regolazioni or both are needed'
   let pesi = profilo ? conProfilo(r.risorse.pesi, profilo) : [...r.risorse.pesi]
   for (const x of regolazioni ?? []) pesi = conPosizione(pesi, x.tipo, x.nome, x.posizione)
   const risultato: PesiProfilo = { profilo: regolazioni ? 'personalizzato' : profilo!, pesi }
   // Il confronto è con il profilo in vigore: «automatico» su un config senza profilo né pesi non cambia nulla.
-  if (risultato.profilo === profiloDi(r.risorse) && JSON.stringify(pesi) === JSON.stringify(r.risorse.pesi)) return 'la proposta non cambia nulla rispetto alla configurazione attuale'
+  if (risultato.profilo === profiloDi(r.risorse) && JSON.stringify(pesi) === JSON.stringify(r.risorse.pesi)) return 'the proposal changes nothing compared to the current configuration'
   return { motivo, ...(profilo && { profilo }), ...(regolazioni && { regolazioni }), risultato }
 }
 
@@ -313,7 +313,7 @@ export function contestoPerModello(sessioni: readonly SessioneProgetto[], adesso
     out[m] = {
       media: valori.length ? Math.round(valori.reduce((x, y) => x + y, 0) / valori.length) : null,
       massimo: valori.length ? Math.max(...valori) : null,
-      misurate: `${valori.length} su ${lista.length}`,
+      misurate: `${valori.length} of ${lista.length}`,
       ultima: istanti.at(-1) ?? null,
     }
   }
@@ -338,19 +338,19 @@ export function rispostaRisorse(dati: Record<string, unknown>, tetto = TETTO_RIS
   let d: Record<string, unknown> = { ...dati }
   const ridotti: string[] = []
   const passi: [string, (x: Record<string, unknown>) => Record<string, unknown>][] = [
-    ['limiti senza fonte e nome', x => ({ ...x, limiti: (x.limiti as Limite[] | undefined)?.map(l => ({ id: l.id, percentuale: l.percentuale, valore: l.valore, letto: l.letto, reset: l.reset, errore: l.errore })) })],
-    ['alLavoro: le 8 combinazioni più usate', x => ({ ...x, alLavoro: Object.fromEntries(Object.entries((x.alLavoro ?? {}) as Record<string, { lavoro: number; coda: number }>).sort((a, b) => b[1].lavoro + b[1].coda - a[1].lavoro - a[1].coda).slice(0, 8)) })],
-    ['contesto: i 5 modelli più usati', x => ({ ...x, contesto: Object.fromEntries(Object.entries((x.contesto ?? {}) as Record<string, { misurate: string }>).sort((a, b) => parseInt(b[1].misurate.split(' su ')[1]!, 10) - parseInt(a[1].misurate.split(' su ')[1]!, 10)).slice(0, 5)) })],
-    ['pesi della politica: solo il numero', x => ({ ...x, politica: { ...(x.politica as object), pesi: `${((x.politica as { pesi?: unknown[] }).pesi ?? []).length} pesi: vedi le Impostazioni` } })],
-    ['limiti omessi', x => ({ ...x, limiti: 'omessi: troppi per la risposta' })],
-    ['politica omessa', x => ({ ...x, politica: 'omessa: troppo lunga' })],
+    ['limits without source and name', x => ({ ...x, limiti: (x.limiti as Limite[] | undefined)?.map(l => ({ id: l.id, percentuale: l.percentuale, valore: l.valore, letto: l.letto, reset: l.reset, errore: l.errore })) })],
+    ['alLavoro: the 8 most used combinations', x => ({ ...x, alLavoro: Object.fromEntries(Object.entries((x.alLavoro ?? {}) as Record<string, { lavoro: number; coda: number }>).sort((a, b) => b[1].lavoro + b[1].coda - a[1].lavoro - a[1].coda).slice(0, 8)) })],
+    ['contesto: the 5 most used models', x => ({ ...x, contesto: Object.fromEntries(Object.entries((x.contesto ?? {}) as Record<string, { misurate: string }>).sort((a, b) => parseInt(b[1].misurate.split(' of ')[1]!, 10) - parseInt(a[1].misurate.split(' su ')[1]!, 10)).slice(0, 5)) })],
+    ['policy weights: only the count', x => ({ ...x, politica: { ...(x.politica as object), pesi: `${((x.politica as { pesi?: unknown[] }).pesi ?? []).length} weights: see Settings` } })],
+    ['limits omitted', x => ({ ...x, limiti: 'omitted: too many for the answer' })],
+    ['policy omitted', x => ({ ...x, politica: 'omitted: too long' })],
   ]
   for (const [nome, passo] of passi) {
     if (JSON.stringify(d).length <= tetto) break
     d = passo(d)
     ridotti.push(nome)
   }
-  if (ridotti.length) d = { ...d, nota: `risposta ridotta sotto ${tetto} caratteri: ${ridotti.join('; ')}` }
+  if (ridotti.length) d = { ...d, nota: `answer reduced under ${tetto} characters: ${ridotti.join('; ')}` }
   const testo = JSON.stringify(d)
-  return testo.length <= tetto ? testo : JSON.stringify({ nota: `risposta oltre ${tetto} caratteri anche ridotta`, chiavi: Object.keys(d) })
+  return testo.length <= tetto ? testo : JSON.stringify({ nota: `answer over ${tetto} characters even when reduced`, chiavi: Object.keys(d) })
 }

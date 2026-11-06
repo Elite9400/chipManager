@@ -1111,40 +1111,40 @@ type Suggerita = Omit<Azione, 'id' | 'versione' | 'stato' | 'creata' | 'aggiorna
 function valida(e: Record<string, unknown>, r: Regole, esistenti: readonly Azione[]): string | Suggerita {
   const str = (k: string, max: number, obbl = false) => {
     const v = e[k]
-    if (v === undefined || v === null || v === '') return obbl ? `manca ${k}` : undefined
-    if (typeof v !== 'string' || v.length > max) return `${k}: testo fino a ${max} caratteri`
+    if (v === undefined || v === null || v === '') return obbl ? `missing ${k}` : undefined
+    if (typeof v !== 'string' || v.length > max) return `${k}: text up to ${max} characters`
     return undefined
   }
   const err =
     str('titolo', 200, true) ?? str('brief', 20000, true) ?? str('background', 4000) ?? str('modello', 100) ?? str('effort', 10)
   if (err) return err
-  if (!(e.titolo as string).trim()) return 'manca titolo'
-  if (!(e.brief as string).trim()) return 'manca brief'
+  if (!(e.titolo as string).trim()) return 'missing titolo'
+  if (!(e.brief as string).trim()) return 'missing brief'
   const esecutore = (e.esecutore ?? 'claude') as Motore
   const revisore = (e.revisore ?? (esecutore !== 'claude' ? 'claude' : 'codex')) as Revisore
   if (!MOTORI.includes(esecutore)) return 'esecutore: claude | codex | freellmapi'
   if (!REVISORI.includes(revisore)) return 'revisore: claude | codex | nessuno'
   if (e.modello !== undefined && !r.modelli[esecutore].includes(e.modello as string))
-    return `modello per ${esecutore}: ${r.modelli[esecutore].join(', ')}`
+    return `modello for ${esecutore}: ${r.modelli[esecutore].join(', ')}`
   if (e.effort !== undefined && !r.effort.includes(e.effort as string)) return `effort: ${r.effort.join(', ')}`
   const dipende = e.dipende ?? []
   if (!Array.isArray(dipende) || dipende.length > 20 || !dipende.every(d => typeof d === 'string' && ID_RE.test(d)))
-    return 'dipende: lista di id restituiti da suggerisci_azione'
+    return 'dipende: list of ids returned by suggerisci_azione'
   // Solo azioni che esistono e non sono scartate: un riferimento inventato non deve sbloccarsi da solo.
   const ignote = dipende.filter(d => !esistenti.some(x => x.id === d && x.stato !== 'scartata'))
-  if (ignote.length) return `dipende: azioni inesistenti o scartate: ${ignote.join(', ')}`
+  if (ignote.length) return `dipende: actions that do not exist or were discarded: ${ignote.join(', ')}`
   const ordine = e.ordine
-  if (ordine !== undefined && (!Number.isInteger(ordine) || (ordine as number) < 1 || (ordine as number) > 999)) return 'ordine: intero 1-999'
+  if (ordine !== undefined && (!Number.isInteger(ordine) || (ordine as number) < 1 || (ordine as number) > 999)) return 'ordine: integer 1-999'
   const issue = e.issue
-  if (issue !== undefined && (!Number.isInteger(issue) || (issue as number) < 1)) return 'issue: numero intero'
+  if (issue !== undefined && (!Number.isInteger(issue) || (issue as number) < 1)) return 'issue: integer'
   if (e.corsia !== undefined && !CORSIE.includes(e.corsia as Corsia)) return `corsia: ${CORSIE.join(', ')}`
   if (e.permessi !== undefined && !PERMESSI_VALIDI.includes(e.permessi as never)) return `permessi: ${PERMESSI_VALIDI.join(', ')}`
   if (e.contesto !== undefined && !CONTESTI.includes(e.contesto as never)) return 'contesto: fresh | fork'
   if (e.destinazione !== undefined && !DESTINAZIONI.includes(e.destinazione as never)) return 'destinazione: local | cloud'
   for (const k of ['worktree', 'sveglia', 'sensibile'] as const)
     if (e[k] !== undefined && typeof e[k] !== 'boolean') return `${k}: true | false`
-  if (e.ramo !== undefined && (typeof e.ramo !== 'string' || !RAMO_RE.test(e.ramo))) return 'ramo: [a-z0-9-], fino a 40'
-  if (e.base !== undefined && (typeof e.base !== 'string' || !BASE_RE.test(e.base))) return 'base: nome di un ramo locale'
+  if (e.ramo !== undefined && (typeof e.ramo !== 'string' || !RAMO_RE.test(e.ramo))) return 'ramo: [a-z0-9-], up to 40'
+  if (e.base !== undefined && (typeof e.base !== 'string' || !BASE_RE.test(e.base))) return 'base: name of a local branch'
   if (e.piano !== undefined) {
     const no = pianoValido(e.piano)
     if (no) return t('en', no.k, no.p)
@@ -1178,26 +1178,26 @@ function valida(e: Record<string, unknown>, r: Regole, esistenti: readonly Azion
 const schemaSuggerisci = (r: Regole) => ({
   type: 'object',
   properties: {
-    titolo: { type: 'string', description: 'Sotto i 60 caratteri: titolo della sessione.' },
-    brief: { type: 'string', description: 'Mandato autoportante: compito, file, perimetro, quando è finito.' },
-    background: { type: 'string', description: 'Contesto facoltativo; mai al cloud.' },
-    esecutore: { type: 'string', enum: MOTORI, description: 'Default claude. Codex solo R1-R3 non sensibili.' },
-    revisore: { type: 'string', enum: REVISORI, description: 'Default l\'altro motore; obbligatorio sulle sensibili.' },
+    titolo: { type: 'string', description: 'Under 60 characters: the session title.' },
+    brief: { type: 'string', description: 'Self-contained brief: task, files, scope, when it is done.' },
+    background: { type: 'string', description: 'Optional context; never sent to the cloud.' },
+    esecutore: { type: 'string', enum: MOTORI, description: 'Default claude. Codex only for non-sensitive R1-R3.' },
+    revisore: { type: 'string', enum: REVISORI, description: 'Default the other engine; mandatory on sensitive chips.' },
     modello: { type: 'string', description: `Claude: ${r.modelli.claude.join(', ')}. Codex: ${r.modelli.codex.join(', ')}.` },
     effort: { type: 'string', enum: r.effort },
-    corsia: { type: 'string', enum: CORSIE, description: 'Assente: R4 se il testo tocca superfici sensibili.' },
-    ordine: { type: 'integer', description: '1 = prima; default in fondo.' },
-    dipende: { type: 'array', items: { type: 'string' }, description: 'Id esistenti da completare e fondere prima.' },
-    issue: { type: 'integer', description: 'Issue GitHub: registro e milestone.' },
-    sensibile: { type: 'boolean', description: 'true se tocca auth, permessi, PII o moduli sensibili (R4); false non annulla il testo.' },
-    permessi: { type: 'string', enum: PERMESSI_VALIDI, description: 'Assente: come chi avvia (sensibili: accetta modifiche).' },
+    corsia: { type: 'string', enum: CORSIE, description: 'Missing: R4 if the text touches sensitive surfaces.' },
+    ordine: { type: 'integer', description: '1 = first; default last.' },
+    dipende: { type: 'array', items: { type: 'string' }, description: 'Existing ids to complete and merge first.' },
+    issue: { type: 'integer', description: 'GitHub issue: registry and milestone.' },
+    sensibile: { type: 'boolean', description: 'true if it touches auth, permissions, PII or sensitive modules (R4); false does not override the text.' },
+    permessi: { type: 'string', enum: PERMESSI_VALIDI, description: 'Missing: same as who starts it (sensitive: acceptEdits).' },
     worktree: { type: 'boolean', description: 'Default true.' },
-    contesto: { type: 'string', enum: CONTESTI, description: 'fresh (default): solo il mandato; fork: la conversazione.' },
-    destinazione: { type: 'string', enum: DESTINAZIONI, description: 'cloud solo fresh, mai sensibili né con dati locali.' },
-    ramo: { type: 'string', description: 'Ramo del worktree, [a-z0-9-].' },
-    base: { type: 'string', description: 'Ramo locale di partenza; default il base di chi avvia.' },
-    sveglia: { type: 'boolean', description: 'Risveglia chi avvia anche se il mandato non arriva.' },
-    piano: { type: 'string', description: '.md o .txt relativo al repo; lo mostra la board.' },
+    contesto: { type: 'string', enum: CONTESTI, description: 'fresh (default): brief only; fork: the conversation.' },
+    destinazione: { type: 'string', enum: DESTINAZIONI, description: 'cloud only fresh, never sensitive nor with local data.' },
+    ramo: { type: 'string', description: 'Worktree branch, [a-z0-9-].' },
+    base: { type: 'string', description: 'Local starting branch; default the base of who starts it.' },
+    sveglia: { type: 'boolean', description: 'Wake whoever starts it even if the brief does not arrive.' },
+    piano: { type: 'string', description: '.md or .txt relative to the repository; the board shows it.' },
   },
   required: ['titolo', 'brief'],
 })
@@ -1411,13 +1411,13 @@ export const register: Register = (on, options) => {
     const chi = await chiSonoIo($)
     const r = await leggiRegole($)
     await aggiornaRisorse($, opz)
-    await $.command.register({ name: 'chipmanager', description: 'Apre il pannello chipManager delle azioni suggerite' })
+    await $.command.register({ name: 'chipmanager', description: 'Opens the chipManager panel of suggested actions' })
     await $.tool.register({
       name: 'suggerisci_azione',
       description:
-        'Mette un\'azione nel pannello «chipManager» invece di proporla in chat: il committente la rivede e la avvia. ' +
-        'Una chiamata per azione, in ordine di avvio; `dipende` con gli id restituiti per le catene. Restituisce l\'id. ' +
-        'Esecutore, modello ed effort omessi li sceglie il pannello; i margini sono in `risorse_agenti`.',
+        'Puts an action in the “chipManager” panel instead of proposing it in chat: the owner reviews and starts it. ' +
+        'One call per action, in start order; `dipende` with the returned ids for chains. Returns the id. ' +
+        'Engine, model and effort left out are chosen by the panel; the margins are in `risorse_agenti`.',
       inputSchema: schemaSuggerisci(r),
       isDeferred: false,
     })
@@ -1425,8 +1425,8 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'risorse_agenti',
       description:
-        'Sola lettura: limiti e margini degli agenti (con fonte e istante, o il motivo se mancano), pesi di carico, fornitori ' +
-        'ammessi, modelli ed effort permessi. Un dato senza istante recente non è disponibilità attuale.',
+        'Read only: limits and margins of the agents (with source and time, or the reason if missing), load weights, allowed ' +
+        'providers, permitted models and effort. A value without a recent time is not current availability.',
       inputSchema: { type: 'object', properties: {} },
       // Si carica solo quando serve (ToolSearch): non pesa sul contesto delle sessioni che non propongono azioni.
       isDeferred: true,
@@ -1434,22 +1434,22 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'proponi_pesi',
       description:
-        'Propone profilo di bilanciamento e/o regolazioni dei pesi per questo progetto, con il motivo (dati in `risorse_agenti`). ' +
-        'Non cambia nulla: la proposta compare nel pannello e la decide il committente.',
+        'Proposes a balancing profile and/or weight adjustments for this project, with the reason (data in `risorse_agenti`). ' +
+        'It changes nothing: the proposal appears in the panel and the owner decides it.',
       inputSchema: {
         type: 'object',
         properties: {
           profilo: { type: 'string', enum: ['automatico', 'risparmio', 'qualita', 'velocita', 'personalizzato'] },
           regolazioni: {
             type: 'array',
-            description: 'Posizione 0 Molto meno · 1 Meno · 2 Normale · 3 Più · 4 Preferisci, su voci ammesse.',
+            description: 'Position 0 Much less · 1 Less · 2 Normal · 3 More · 4 Prefer, on allowed entries.',
             items: {
               type: 'object',
               properties: { tipo: { type: 'string', enum: ['fornitore', 'modello', 'effort'] }, nome: { type: 'string' }, posizione: { type: 'integer', minimum: 0, maximum: 4 } },
               required: ['tipo', 'nome', 'posizione'],
             },
           },
-          motivo: { type: 'string', description: 'Fino a 300 caratteri.' },
+          motivo: { type: 'string', description: 'Up to 300 characters.' },
         },
         required: ['motivo'],
       },
@@ -1458,21 +1458,21 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'aggiorna_azione',
       description:
-        'Aggiorna un\'azione del pannello «chipManager». Dalla sessione avviata: "consegnata" a lavoro consegnato (ramo pushato, ' +
-        'rapporto a chi coordina; la chiusura la decide la fusione), con il `tentativo` scritto nel mandato. Dopo un avvio chiesto a questa ' +
-        'sessione: "avviata" con `sessione`, o "fallita". Dal proponente: "scartata". L\'esito della revisione si riferisce con ' +
-        '`revisione` (anche senza `stato`): dalla sessione avviata con il suo `tentativo`, o dal proponente.',
+        'Updates an action of the “chipManager” panel. From the started session: "consegnata" when the work is delivered (branch pushed, ' +
+        'report to the coordinator; the merge decides the closing), with the `tentativo` written in the brief. After a start asked of this ' +
+        'session: "avviata" with `sessione`, or "fallita". From the proposer: "scartata". The review outcome is reported with ' +
+        '`revisione` (even without `stato`): from the started session with its `tentativo`, or from the proposer.',
       inputSchema: {
         type: 'object',
         properties: {
           id: { type: 'string' },
           stato: { type: 'string', enum: ['presa', 'avviata', 'fallita', 'consegnata', 'scartata'] },
-          tentativo: { type: 'string', description: 'Il gettone az-… del mandato (obbligatorio tranne che per "scartata" e per la revisione riferita dal proponente)' },
-          sessione: { type: 'string', description: 'local_… della sessione avviata (obbligatorio con "avviata")' },
+          tentativo: { type: 'string', description: 'The az-… token of the brief (mandatory except for "scartata" and for a review reported by the proposer)' },
+          sessione: { type: 'string', description: 'local_… of the started session (mandatory with "avviata")' },
           revisione: {
             type: 'object',
-            description: 'Esito della revisione del tentativo corrente; la board lo mostra come «riferito da» chi lo scrive.',
-            properties: { esito: { type: 'string', enum: ESITI }, nota: { type: 'string', description: 'Fino a 300 caratteri.' } },
+            description: 'Review outcome of the current attempt; the board shows it as “reported by” whoever writes it.',
+            properties: { esito: { type: 'string', enum: ESITI }, nota: { type: 'string', description: 'Up to 300 characters.' } },
             required: ['esito'],
           },
         },
@@ -1507,7 +1507,7 @@ export const register: Register = (on, options) => {
     const [lista, r, chi] = await Promise.all([carica($), leggiRegole($), chiSonoIo($)])
     const v = valida(e as unknown as Record<string, unknown>, r, lista)
     if (typeof v === 'string') return { deny: `suggerisci_azione: ${v}` }
-    if (!chi.repo) return { deny: 'suggerisci_azione: questa sessione non è in un repository: il pannello non saprebbe a quale progetto legarla' }
+    if (!chi.repo) return { deny: 'suggerisci_azione: this session is not in a repository: the panel would not know which project to link it to' }
     const ultimo = attive(delProgetto(lista, chi)).reduce((n, a) => Math.max(n, a.ordine), 0)
     const id = `a-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
     const a = await salva(
@@ -1529,8 +1529,8 @@ export const register: Register = (on, options) => {
     const blocchi = violazioni(a, r, [...lista, a])
     return {
       result:
-        `Azione ${a.id} nel pannello (posizione ${a.ordine}, ${a.esecutore} → revisione ${a.revisore}).` +
-        (blocchi.length ? ` Attenzione, così non può partire: ${testo('en', msg('err.nonParte', { motivi: blocchi }))}.` : ''),
+        `Action ${a.id} in the panel (position ${a.ordine}, ${a.esecutore} → review ${a.revisore}).` +
+        (blocchi.length ? ` Warning, as it is it cannot start: ${testo('en', msg('err.nonParte', { motivi: blocchi }))}.` : ''),
     }
   })
 
@@ -1544,8 +1544,9 @@ export const register: Register = (on, options) => {
       result: rispostaRisorse({
         regole: { lette: r.lette, fonte: r.lette ? r.fonte : `not read (${testo('en', r.motivo)})`, modelli: r.modelli, effort: r.effort, corsieCodex: r.corsiaCodex.corsie },
         politica: r.risorse,
-        limiti: ris.limiti,
-        freellmapi: ris.proxy,
+        // Per l'agente in inglese: nomi dei limiti e codici di errore come li direbbe il pannello in inglese.
+        limiti: ris.limiti.map(l => ({ ...l, nome: nomeLimiteIn(l, 'en'), ...(l.errore && { errore: chiaveOTesto('en', l.errore) }) })),
+        freellmapi: chiaveOTesto('en', ris.proxy),
         chiavi: ris.chiavi,
         alLavoro: alLavoroDa(ses.lista, attive(lista), r),
         contesto: contestoPerModello(ses.lista, adesso),
@@ -1556,8 +1557,8 @@ export const register: Register = (on, options) => {
 
   on('tool.call', { tool: 'mcp__chip-manager__proponi_pesi' }, async ($, e) => {
     const [r, chi] = await Promise.all([leggiRegole($), chiSonoIo($)])
-    if (!chi.repo) return { deny: 'proponi_pesi: questa sessione non è in un repository' }
-    if (!r.lette) return { deny: `proponi_pesi: regole non lette (${testo('en', r.motivo)}): senza routing.json le voci non si controllano` }
+    if (!chi.repo) return { deny: 'proponi_pesi: this session is not in a repository' }
+    if (!r.lette) return { deny: `proponi_pesi: rules not read (${testo('en', r.motivo)}): without routing.json the entries cannot be checked` }
     // `tool` e `tool_use_id` sono del motore, non argomenti: ogni altro campo estraneo si rifiuta.
     const { tool: _tool, tool_use_id: _id, ...args } = e as unknown as Record<string, unknown>
     const v = propostaDa(args, r)
@@ -1576,20 +1577,20 @@ export const register: Register = (on, options) => {
 
   on('tool.call', { tool: 'mcp__chip-manager__aggiorna_azione' }, async ($, e) => {
     const { id, stato, sessione, tentativo, revisione } = e as unknown as { id?: unknown; stato?: unknown; sessione?: unknown; tentativo?: unknown; revisione?: unknown }
-    if (typeof id !== 'string' || !ID_RE.test(id)) return { deny: 'aggiorna_azione: id non valido' }
-    if (stato === undefined && revisione === undefined) return { deny: 'aggiorna_azione: serve uno stato, una revisione o entrambi' }
+    if (typeof id !== 'string' || !ID_RE.test(id)) return { deny: 'aggiorna_azione: invalid id' }
+    if (stato === undefined && revisione === undefined) return { deny: 'aggiorna_azione: a stato, a revisione or both are needed' }
     // «completata» resta accettata come sinonimo per i mandati della versione precedente.
     const voluto = stato === undefined ? undefined : ((stato === 'completata' ? 'consegnata' : stato) as StatoAzione | 'presa')
-    if (voluto !== undefined && !(voluto in TRANSIZIONI)) return { deny: 'aggiorna_azione: stato non valido' }
+    if (voluto !== undefined && !(voluto in TRANSIZIONI)) return { deny: 'aggiorna_azione: invalid stato' }
     if (voluto === 'avviata' && (typeof sessione !== 'string' || !SESSIONE_RE.test(sessione)))
-      return { deny: 'aggiorna_azione: "avviata" vuole sessione = id local_… completo' }
-    if (voluto !== undefined && voluto !== 'scartata' && typeof tentativo !== 'string') return { deny: 'aggiorna_azione: manca il tentativo (az-…) del mandato' }
+      return { deny: 'aggiorna_azione: "avviata" needs sessione = the full local_… id' }
+    if (voluto !== undefined && voluto !== 'scartata' && typeof tentativo !== 'string') return { deny: 'aggiorna_azione: the tentativo (az-…) of the brief is missing' }
     const rev = revisione as { esito?: unknown; nota?: unknown } | undefined
     if (rev !== undefined) {
       if (!rev || typeof rev !== 'object' || !ESITI.includes(rev.esito as never)) return { deny: `aggiorna_azione: revisione.esito: ${ESITI.join(' | ')}` }
-      if (rev.nota !== undefined && (typeof rev.nota !== 'string' || rev.nota.length > 300)) return { deny: 'aggiorna_azione: revisione.nota fino a 300 caratteri' }
-      if (voluto === 'presa' || voluto === 'scartata') return { deny: `aggiorna_azione: la revisione non si riferisce insieme a «${voluto}»` }
-      if (tentativo !== undefined && typeof tentativo !== 'string') return { deny: 'aggiorna_azione: tentativo non valido' }
+      if (rev.nota !== undefined && (typeof rev.nota !== 'string' || rev.nota.length > 300)) return { deny: 'aggiorna_azione: revisione.nota up to 300 characters' }
+      if (voluto === 'presa' || voluto === 'scartata') return { deny: `aggiorna_azione: a review is not reported together with "${voluto}"` }
+      if (tentativo !== undefined && typeof tentativo !== 'string') return { deny: 'aggiorna_azione: invalid tentativo' }
     }
     // L'identità di chi scrive la dà la sessione, mai gli argomenti.
     const io = (await read($, contesto))?.io ?? (await $.session.id())
@@ -1597,29 +1598,29 @@ export const register: Register = (on, options) => {
     const perStato = (a: Azione): Partial<Azione> | null => {
       if (voluto === undefined) return {}
       if (!TRANSIZIONI[voluto]!.includes(a.stato)) {
-        rifiuto = `da «${a.stato}» non si passa a «${voluto}»`
+        rifiuto = `"${a.stato}" cannot go to "${voluto}"`
         return null
       }
-      if (a.lanciatore && ['presa', 'avviata', 'fallita'].includes(voluto)) { rifiuto = 'l’avvio CLI/proxy lo conferma solo il suo lanciatore'; return null }
+      if (a.lanciatore && ['presa', 'avviata', 'fallita'].includes(voluto)) { rifiuto = 'a CLI/proxy start is confirmed only by its launcher'; return null }
       // Ogni aggiornamento di avvio o consegna deve portare il gettone del tentativo CORRENTE: una
       // conferma tardiva di un tentativo vecchio non si attacca a quello nuovo.
       if (voluto !== 'scartata' && tentativo !== a.tentativo) {
-        rifiuto = 'il tentativo non è quello corrente'
+        rifiuto = 'the tentativo is not the current one'
         return null
       }
       if (voluto === 'presa') {
         if (a.lanciataDa !== io || !a.manuale || a.presa) {
-          rifiuto = 'il gettone non è (più) prendibile: tentativo annullato o già preso'
+          rifiuto = 'the token cannot be taken (any more): attempt cancelled or already taken'
           return null
         }
         return { presa: true, tentatoIl: ora() }
       }
       if ((voluto === 'avviata' || voluto === 'fallita') && a.lanciataDa !== io) {
-        rifiuto = 'l\'avvio lo conferma solo la sessione che l\'ha chiesto'
+        rifiuto = 'the start is confirmed only by the session that asked for it'
         return null
       }
       if (voluto === 'scartata' && a.proponente !== io) {
-        rifiuto = 'la può ritirare solo la sessione che l\'ha suggerita (o il committente dal pannello)'
+        rifiuto = 'only the session that suggested it can withdraw it (or the owner from the panel)'
         return null
       }
       if (voluto === 'avviata') return { ...transizione(a, 'avviata', ora()), sessione: sessione as string, incerto: false, errore: undefined }
@@ -1632,11 +1633,11 @@ export const register: Register = (on, options) => {
       if (!campi || rev === undefined) return campi
       // Sola revisione o insieme allo stato, dentro lo stesso CAS: il gettone corrente, oppure il proponente senza gettone.
       if (!a.tentativo) {
-        rifiuto = 'nessun tentativo avviato: non c\'è una revisione da riferire'
+        rifiuto = 'no attempt started: there is no review to report'
         return null
       }
       if (tentativo !== undefined ? tentativo !== a.tentativo : a.proponente !== io) {
-        rifiuto = 'la revisione la riferisce solo chi porta il tentativo corrente o la sessione che ha proposto l\'azione'
+        rifiuto = 'the review is reported only by whoever holds the current attempt or by the session that proposed the action'
         return null
       }
       const r: Revisione = { esito: rev.esito as Revisione['esito'], riferitaDa: io, quando: ora(), tentativo: a.tentativo }
@@ -1646,9 +1647,9 @@ export const register: Register = (on, options) => {
       rifiuto = String((err as Error)?.message ?? err)
       return undefined
     })
-    if (rifiuto || !fatta) return { deny: `aggiorna_azione: ${rifiuto ?? `nessuna azione ${id}`}` }
-    if (voluto === 'presa') return { result: `Gettone preso per ${id}: avvia ora.` }
-    return { result: `Azione ${id}: ${fatta.stato}${rev ? `, revisione «${String(rev.esito)}» riferita` : ''}.` }
+    if (rifiuto || !fatta) return { deny: `aggiorna_azione: ${rifiuto ?? `no action ${id}`}` }
+    if (voluto === 'presa') return { result: `Token taken for ${id}: start now.` }
+    return { result: `Action ${id}: ${fatta.stato}${rev ? `, review "${String(rev.esito)}" reported` : ''}.` }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => {

@@ -72,7 +72,7 @@ export function oscura(html: string, gettoni: readonly (string | undefined)[]) {
 /** Il testo di una chip che i riassunti possono vedere: titolo, mandato, titoli delle dipendenze; 2.000 caratteri. */
 export function testoRiassunto(a: Azione, lista: readonly Azione[]) {
   const dip = a.dipende.map(id => lista.find(x => x.id === id)?.titolo).filter(Boolean)
-  return `${a.titolo}\n${a.brief}${dip.length ? `\nDipende da: ${dip.join('; ')}` : ''}`.slice(0, 2000)
+  return `${a.titolo}\n${a.brief}${dip.length ? `\nDepends on: ${dip.join('; ')}` : ''}`.slice(0, 2000)
 }
 
 /** La chiave di un riassunto: il testo della chip e la lingua (cambiare lingua chiede un riassunto nuovo). */

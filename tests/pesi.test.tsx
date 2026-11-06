@@ -114,15 +114,15 @@ test('proponi_pesi: argomenti validati al confine; mai pesi grezzi; risultato ca
     [{ profilo: 'risparmio' }, 'motivo'],
     [{ profilo: 'risparmio', motivo: 'x'.repeat(301) }, 'motivo'],
     [{ profilo: 'economico', motivo: 'm' }, 'profilo'],
-    [{ motivo: 'm' }, 'serve un profilo'],
-    [{ motivo: 'm', pesi: [MODELLO] }, 'campi non ammessi'],
-    [{ motivo: 'm', fornitori: ['codex'] }, 'campi non ammessi'],
-    [{ motivo: 'm', regolazioni: [{ tipo: 'fornitore', nome: 'deepseek', posizione: 3 }] }, 'non è un fornitore ammesso'],
-    [{ motivo: 'm', regolazioni: [{ tipo: 'modello', nome: 'modello-inventato', posizione: 3 }] }, 'non è un modello ammesso'],
+    [{ motivo: 'm' }, 'a profilo'],
+    [{ motivo: 'm', pesi: [MODELLO] }, 'fields not allowed'],
+    [{ motivo: 'm', fornitori: ['codex'] }, 'fields not allowed'],
+    [{ motivo: 'm', regolazioni: [{ tipo: 'fornitore', nome: 'deepseek', posizione: 3 }] }, 'is not an allowed fornitore'],
+    [{ motivo: 'm', regolazioni: [{ tipo: 'modello', nome: 'modello-inventato', posizione: 3 }] }, 'is not an allowed modello'],
     [{ motivo: 'm', regolazioni: [{ tipo: 'effort', nome: 'low', posizione: 5 }] }, 'posizione'],
     [{ motivo: 'm', regolazioni: [{ tipo: 'effort', nome: 'low', posizione: 1, percentuale: 300 }] }, '{ tipo, nome, posizione }'],
-    [{ motivo: 'm', regolazioni: [{ tipo: 'effort', nome: 'low', posizione: 1 }, { tipo: 'effort', nome: 'low', posizione: 3 }] }, 'ripetuto'],
-    [{ motivo: 'm', profilo: 'automatico' }, 'non cambia nulla'],
+    [{ motivo: 'm', regolazioni: [{ tipo: 'effort', nome: 'low', posizione: 1 }, { tipo: 'effort', nome: 'low', posizione: 3 }] }, 'repeated'],
+    [{ motivo: 'm', profilo: 'automatico' }, 'changes nothing'],
   ] as const)
     expect(String(propostaDa(args as Record<string, unknown>, r))).toContain(motivo)
   expect(propostaDa({ profilo: 'risparmio', motivo: '  Claude al 78%  ' }, r)).toEqual({ motivo: 'Claude al 78%', profilo: 'risparmio', risultato: { profilo: 'risparmio', pesi: conProfilo([], 'risparmio') } })
@@ -186,8 +186,8 @@ test('contesto per modello: solo misure riuscite negli ultimi 5 minuti, con cope
     s('d', {}),
     s('e', { stato: 'ferma', contesto: 99, contestoIl: fa(1) }),
   ]
-  expect(contestoPerModello(sessioni, adesso)).toEqual({ 'claude-opus-5-5': { media: 60, massimo: 80, misurate: '2 su 4', ultima: fa(1) } })
-  expect(contestoPerModello([s('x', { contesto: 70, contestoIl: fa(9) })], adesso)['claude-opus-5-5']).toEqual({ media: null, massimo: null, misurate: '0 su 1', ultima: fa(9) })
+  expect(contestoPerModello(sessioni, adesso)).toEqual({ 'claude-opus-5-5': { media: 60, massimo: 80, misurate: '2 of 4', ultima: fa(1) } })
+  expect(contestoPerModello([s('x', { contesto: 70, contestoIl: fa(9) })], adesso)['claude-opus-5-5']).toEqual({ media: null, massimo: null, misurate: '0 of 1', ultima: fa(9) })
 })
 
 test('risorse_agenti: al lavoro per modello ed effort; risposta sotto 4.000 caratteri anche con 20 sessioni e 50 chip', () => {
@@ -205,7 +205,7 @@ test('risorse_agenti: al lavoro per modello ed effort; risposta sotto 4.000 cara
   const testo = rispostaRisorse({ regole: { modelli: R.modelli }, politica: { ...RISORSE_DEFAULT, pesi }, limiti, alLavoro: lavoro, contesto: contestoPerModello(sessioni, Date.parse(ORA)), proposte: [] })
   expect(testo.length).toBeLessThanOrEqual(TETTO_RISORSE)
   const d = JSON.parse(testo) as { nota?: string; alLavoro?: object; contesto?: object }
-  expect(d.nota).toContain('risposta ridotta')
+  expect(d.nota).toContain('answer reduced')
   expect(d.alLavoro && d.contesto).toBeTruthy()
   // Una risposta piccola non si tocca.
   expect(JSON.parse(rispostaRisorse({ alLavoro: lavoro }))).toEqual({ alLavoro: lavoro })
@@ -340,7 +340,7 @@ test('proponi_pesi: il proponente è questa sessione; la proposta compare in Lav
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const rifiuto = await $.tool.call({ tool: 'mcp__chip-manager__proponi_pesi', motivo: 'm', profilo: 'risparmio', proponente: { id: 'falso' } } as never)
-  expect(JSON.stringify(rifiuto)).toContain('campi non ammessi')
+  expect(JSON.stringify(rifiuto)).toContain('fields not allowed')
   expect(amb.comandi('pesi-proponi')).toHaveLength(0)
   const r = await $.tool.call({ tool: 'mcp__chip-manager__proponi_pesi', motivo: 'Claude settimanale al 78%', profilo: 'risparmio' } as never)
   expect(JSON.stringify(r)).toContain('Proposal recorded (id p-esempio01): the owner decides it')
@@ -444,7 +444,7 @@ test('P2 Codex: contesto di una sessione Codex con l\'istante del token_count; s
   expect(sessioniCodex([{ ...base, tokenIl: '2026-01-02T11:30:00Z' }], radice, adesso)[0]).toMatchObject({ contesto: 61, contestoIl: '2026-01-02T11:30:00Z' })
   expect(sessioniCodex([base], radice, adesso)[0]).not.toHaveProperty('contestoIl')
   // Misura di 30 minuti fa con attività recente: fuori dalla media.
-  expect(contestoPerModello(sessioniCodex([{ ...base, modello: 'gpt-6-astra', tokenIl: '2026-01-02T11:30:00Z' }], radice, adesso), adesso)['gpt-6-astra']).toMatchObject({ media: null, misurate: '0 su 1' })
+  expect(contestoPerModello(sessioniCodex([{ ...base, modello: 'gpt-6-astra', tokenIl: '2026-01-02T11:30:00Z' }], radice, adesso), adesso)['gpt-6-astra']).toMatchObject({ media: null, misurate: '0 of 1' })
 })
 
 test('P2 spareggio: l\'ordine per vicinanza vale solo con Automatico in R0–R1; altrove resta il più basso ammesso', () => {

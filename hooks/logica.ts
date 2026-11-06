@@ -8,8 +8,8 @@ import { GRIGIO, LIVELLO, STATO } from './tema'
 
 /** Contesto del mandato quando il progetto non ne configura uno; è anche l'unico che va al cloud. */
 export const BACKGROUND_GENERICO =
-  'Segui le istruzioni del progetto (CLAUDE.md o AGENTS.md): lavora nel tuo worktree, pusha il ramo e riferisci a chi ' +
-  'ha proposto l\'azione; non fondere in main.'
+  'Follow the project instructions (CLAUDE.md or AGENTS.md): work in your worktree, push the branch and report to whoever ' +
+  'proposed the action; do not merge into main.'
 
 /**
  * Valori di ripiego per DISEGNARE il pannello quando routing.json non si legge. `lette: false` blocca
@@ -752,15 +752,15 @@ function revisione(a: Azione, regole: Regole, s: Strumenti | undefined) {
   if (!rev) return ''
   if (rev === 'motore:codex') {
     return (
-      '**Revisione: Codex.** Prima del rapporto fai rivedere il diff del ramo a Codex in sola lettura, SEMPRE attraverso la corsia ' +
-      `della macchina (una sola esecuzione Codex per volta, le revisioni passano davanti): \`${conCorsia(s, true, `codex exec -c model_reasoning_effort="${regole.corsiaCodex.effort.revisione ?? 'xhigh'}" -s read-only -C <worktree> -`)}\` ` +
-      'con la richiesta di revisione su stdin. Integra o motiva ogni rilievo nel rapporto.'
+      '**Review: Codex.** Before reporting, have Codex review the branch diff read-only, ALWAYS through the machine lane ' +
+      `(one Codex run at a time, reviews go first): \`${conCorsia(s, true, `codex exec -c model_reasoning_effort="${regole.corsiaCodex.effort.revisione ?? 'xhigh'}" -s read-only -C <worktree> -`)}\` ` +
+      'with the review request on stdin. Address or justify every finding in the report.'
     )
   }
   if (a.esecutore === 'codex')
-    return '**Revisione: Claude (tu).** Rivedi tu il diff prodotto da Codex, riga per riga (skill `requesting-code-review`): correggi o rimanda a Codex prima del rapporto.'
-  const come = sensibile(a, regole) ? ', in lettura avversariale' : ''
-  return `**Revisione: Claude.** A fine lavoro fai rivedere il diff da un subagente \`${rev}\`${come} (routing.json: il revisore non è mai l'autore).`
+    return '**Review: Claude (you).** Review the diff Codex produced yourself, line by line (skill `requesting-code-review`): fix it or send it back to Codex before reporting.'
+  const come = sensibile(a, regole) ? ', as an adversarial read' : ''
+  return `**Review: Claude.** When the work is done, have a \`${rev}\` subagent review the diff${come} (routing.json: the reviewer is never the author).`
 }
 
 /** Il prompt e i parametri con cui la sessione desktop viene avviata. */
@@ -769,23 +769,23 @@ export function mandato(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strument
   const effort = effortDi(a, regole)
   const corsia = corsiaDi(a, regole)
   const parti: string[] = []
-  if (corsia) parti.push(`**Corsia ${corsia}.** Determinata dal pannello: applica le skill e i gate che il processo del progetto impone per questa corsia.`)
-  if (sensibile(a, regole)) parti.push('**Modulo sensibile.** Verifica avversariale e revisione umana esplicita prima della fusione.')
+  if (corsia) parti.push(`**Lane ${corsia}.** Set by the panel: apply the skills and gates the project process requires for this lane.`)
+  if (sensibile(a, regole)) parti.push('**Sensitive module.** Adversarial check and explicit human review before merging.')
   if (a.esecutore === 'codex') {
     parti.push(
-      `**Esecutore: Codex (\`${modello}\`, effort ${effort}).** Tu coordini e non scrivi il codice: passa il mandato qui sotto a Codex, ` +
-        'SEMPRE attraverso la corsia della macchina (una sola esecuzione Codex per volta): ' +
-        `\`${conCorsia(s, false, `codex exec -m ${modello} -c model_reasoning_effort="${effort}" -C <il tuo worktree> -`)}\` con il mandato su stdin. ` +
-        'Poi verifica test e diff.',
+      `**Engine: Codex (\`${modello}\`, effort ${effort}).** You coordinate and do not write the code: pass the brief below to Codex, ` +
+        'ALWAYS through the machine lane (one Codex run at a time): ' +
+        `\`${conCorsia(s, false, `codex exec -m ${modello} -c model_reasoning_effort="${effort}" -C <your worktree> -`)}\` with the brief on stdin. ` +
+        'Then check the tests and the diff.',
     )
   }
   parti.push(a.brief.trim())
   const rev = revisione(a, regole, s)
   if (rev) parti.push(rev)
   parti.push(
-    `_Azione suggerita \`${a.id}\`, tentativo \`${a.tentativo ?? '-'}\`._ A lavoro consegnato (ramo pushato, rapporto a chi coordina), se hai ` +
-      `lo strumento \`mcp__chip-manager__aggiorna_azione\` chiamalo con id "${a.id}", stato "consegnata" e tentativo "${a.tentativo ?? ''}". ` +
-      'La chiusura la decide la fusione. Quando la revisione ha un esito, riferiscilo con lo stesso strumento: id, tentativo e ' +
+    `_Suggested action \`${a.id}\`, attempt \`${a.tentativo ?? '-'}\`._ When the work is delivered (branch pushed, report to the coordinator), if you have ` +
+      `the \`mcp__chip-manager__aggiorna_azione\` tool, call it with id "${a.id}", stato "consegnata" and tentativo "${a.tentativo ?? ''}". ` +
+      'The merge decides the closing. When the review has an outcome, report it with the same tool: id, tentativo and ' +
       '`revisione` ({ esito: "in-corso" | "approvata" | "da-correggere", nota }).',
   )
   // Al cloud va solo il contesto fisso: il background dell'azione è contesto locale e resta qui.
