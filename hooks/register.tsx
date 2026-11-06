@@ -1445,12 +1445,13 @@ async function riassumi($: Eng) {
  * di adesso, e il pannello chiede se riapplicare o scartare.
  */
 async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pendenti): Promise<EsitoApplica> {
-  // Profilo e pesi scritti per ultimi da una proposta (o dal suo annullamento) non si sovrascrivono con «Riapplica».
+  // Profilo e pesi scritti per ultimi da una proposta (o dal suo annullamento) non si sovrascrivono con «Riapplica». Sono una
+  // coppia: se la proposta ne ha cambiato uno, escono dalla bozza entrambi (un profilo riscritto altererebbe la proposta).
   const daProposta = (ora: RisorseProgetto) => !!ora.pesiOrigine && ora.pesiOrigine.tipo !== 'manuale'
   const conflitto = (ora: RisorseProgetto, cambiati: string[]): EsitoApplica => ({
     cambiati,
     base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])),
-    immediati: daProposta(ora) ? cambiati.filter(k => k === 'pesi' || k === 'profilo') : [],
+    immediati: daProposta(ora) && cambiati.some(k => k === 'pesi' || k === 'profilo') ? ['pesi', 'profilo'].filter(k => k in p.campi) : [],
   })
   let ora = (await leggiRegole($)).risorse
   if (cambiatiAltrove(p, ora).length) return conflitto(ora, cambiatiAltrove(p, ora))

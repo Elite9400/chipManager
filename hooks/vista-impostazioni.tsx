@@ -73,6 +73,9 @@ let inVolo = false
  * volo; altrimenti non tocca niente e lo dice.
  */
 const epocaDi = (s: StatoVista) => s.epoca ?? 0
+/** L'ultima epoca scritta da questo modulo: si legge senza attese, così un'azione la cattura nell'istante della pressione. */
+let epocaNota = 0
+const conEpoca = (s: StatoVista, n: StatoVista): StatoVista => ({ ...n, epoca: (epocaNota = epocaDi(s) + 1) })
 export async function epocaBozza($: EngineInterface) {
   return epocaDi(await read($, statoVista))
 }
@@ -89,7 +92,7 @@ async function cambiaBozza($: EngineInterface, T: T, f: (s: StatoVista) => Stato
   let motivo: Chiave | undefined
   await update($, statoVista, s => {
     motivo = ferma(s, epoca)
-    return motivo ? s : { ...f(s), epoca: epocaDi(s) + 1 }
+    return motivo ? s : conEpoca(s, f(s))
   })
   if (motivo) $.ui.toast(T(motivo))
   return !motivo
@@ -105,7 +108,7 @@ export async function ripristinaImpostazioni($: EngineInterface, T: T) {
     const { applicando: _, pendenti, ...resto } = (s && typeof s === 'object' ? s : { sezione: 'connessioni' }) as StatoVista
     const letta = pendentiDa(pendenti)
     perso = letta.perso
-    return { ...resto, epoca: (typeof resto.epoca === 'number' ? resto.epoca : 0) + 1, ...(letta.pendenti && { pendenti: letta.pendenti }) }
+    return conEpoca({ ...resto, epoca: typeof resto.epoca === 'number' ? resto.epoca : 0 }, { ...resto, ...(letta.pendenti && { pendenti: letta.pendenti }) })
   })
   if (perso) $.ui.toast(T('imp.bozzaScartata'))
 }
@@ -115,19 +118,28 @@ export async function ripristinaImpostazioni($: EngineInterface, T: T) {
  * campo toccato, niente è scritto e un popup chiede «Ricarica e riapplica» (la bozza vince) o «Scarta». `epoca`, se data, è
  * quella letta prima di un popup: se intanto la bozza è cambiata non si applica. Vero se la bozza non c'è più.
  */
-export async function applicaBozza($: EngineInterface, c: Ctx, T: T, epoca?: number): Promise<boolean> {
-  const motivo = ferma(await read($, statoVista), epoca)
-  if (motivo || inVolo) {
-    $.ui.toast(T(motivo ?? 'imp.salvando'))
+export async function applicaBozza($: EngineInterface, c: Ctx, T: T, epoca = epocaNota): Promise<boolean> {
+  // L'epoca è quella della pressione (o del popup). La bozza si ferma subito; poi, nella stessa scrittura che segna
+  // l'inizio, si controlla che sia ancora quella: una modifica arrivata fra la pressione e la lettura annulla l'Applica.
+  if (inVolo) {
+    $.ui.toast(T('imp.salvando'))
     return false
   }
   inVolo = true
+  let cambiata = false
   try {
-    await update($, statoVista, (s): StatoVista => ({ ...s, applicando: true, epoca: epocaDi(s) + 1 }))
+    await update($, statoVista, (s): StatoVista => {
+      cambiata = epoca !== epocaDi(s)
+      return cambiata ? s : conEpoca(s, { ...s, applicando: true })
+    })
+    if (cambiata) {
+      $.ui.toast(T('imp.cambiateNelFrattempo'))
+      return false
+    }
     return await applicaFerma($, c, T)
   } finally {
     inVolo = false
-    await update($, statoVista, (s): StatoVista => ({ ...s, applicando: undefined, epoca: epocaDi(s) + 1 }))
+    if (!cambiata) await update($, statoVista, (s): StatoVista => conEpoca(s, { ...s, applicando: undefined }))
   }
 }
 
@@ -135,7 +147,7 @@ export async function applicaBozza($: EngineInterface, c: Ctx, T: T, epoca?: num
 async function applicaFerma($: EngineInterface, c: Ctx, T: T): Promise<boolean> {
   const p = piena((await read($, statoVista)).pendenti)
   if (!p) return true
-  const scrivi = (f: (s: StatoVista) => StatoVista) => update($, statoVista, (s): StatoVista => ({ ...f(s), epoca: epocaDi(s) + 1 }))
+  const scrivi = (f: (s: StatoVista) => StatoVista) => update($, statoVista, (s): StatoVista => conEpoca(s, f(s)))
   try {
     const esito = await c.applica(p)
     if (!esito.cambiati.length) {

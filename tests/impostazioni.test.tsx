@@ -990,6 +990,52 @@ test('giro 6, B: profilo e pesi scritti da una proposta mentre la bozza li tocca
   await ui.unmount()
 })
 
+test('giro 7, 1: Personalizzato → bozza Risparmio → una proposta cambia solo i pesi → Riapplica: profilo e pesi escono insieme', async ($, on) => {
+  const amb = ambiente(on, { profilo: 'personalizzato', pesi: [MODELLO] })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-bilanciamento-premi' })
+  await ui.press({ key: 'profilo-risparmio-premi' })
+  // La proposta applicata altrove tocca solo i pesi: il profilo resta «personalizzato».
+  const proposta = { profilo: 'personalizzato', pesi: [MODELLO, { tipo: 'effort', nome: 'low', percentuale: 40, assoluto: 0 }], pesiRevisione: 2, pesiOrigine: { tipo: 'proposta', id: 'p-esempio01', versione: 1 } }
+  amb.disco.set(CONFIG, JSON.stringify({ lingua: 'it', progetti: { 'esempio/demo': proposta } }))
+  amb.popup.risposta = () => 'Ricarica e riapplica la mia bozza'
+  await ui.press({ key: 'applica' })
+  expect(amb.toast).toContain('I pesi sono stati cambiati da una proposta applicata: restano così ed escono dalla tua bozza')
+  expect(amb.configure()).toBe(0)
+  expect(amb.progettoOra()).toEqual(proposta)
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('giro 7, 2: Applica dal pulsante con la lettura iniziale sospesa: una modifica arrivata intanto non entra nella scrittura', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  const altro = await $.ui.mount({ ...PANE('terminal') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'fornitore-deepseek-premi' })
+  await ui.find({ key: 'pendenti' })
+  await altro.find({ key: 'pendenti' })
+  // La lettura dello stato con cui Applica comincia arriva tardi; intanto l'altro pannello tocca un altro controllo.
+  const lettura = amb.trattieniLettura('impostazioni')
+  const applica = ui.press({ key: 'applica' })
+  await lettura.arrivato
+  await altro.press({ key: 'sezione-progetto-premi' })
+  await altro.press({ key: 'milestone-github-premi' })
+  lettura.apri()
+  await applica
+  await finoA(() => amb.toast.includes('Salvato') || amb.toast.includes('Le impostazioni sono cambiate nel frattempo: non è stato fatto niente'))
+  // Si scrive solo la bozza mostrata alla pressione: la modifica arrivata dopo è rifiutata e detta, o resta pendente.
+  expect(amb.progettoOra().milestoneGithub).toBeUndefined()
+  expect(amb.toast.some(t => t === 'Salvataggio in corso…' || t === 'Le impostazioni sono cambiate nel frattempo: non è stato fatto niente')).toBe(true)
+  await altro.unmount()
+  await ui.unmount()
+})
+
 test('rilievo 3: un conflitto CAS dopo il controllo preliminare (codice 4) apre lo stesso popup; «Ricarica e riapplica» scrive', async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
