@@ -759,6 +759,8 @@ const es: Dizionario = {
   "imp.linguaNonSalvata": "Ajustes del proyecto guardados; el idioma no se guardó: {motivo}",
   // Settings: draft frozen while Apply writes
   "imp.salvando": "Guardando…",
+  // Settings: previous draft not valid
+  "imp.bozzaScartata": "El borrador anterior no era válido y se descartó",
   // ‹fine›
 }
 

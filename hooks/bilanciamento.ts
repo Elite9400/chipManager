@@ -146,6 +146,23 @@ export function conPendente(p: Pendenti | undefined, r: RisorseProgetto, dove: s
   return { ...p, campi: { ...p?.campi, ...campi }, base, dove: [...new Set([...(p?.dove ?? []), dove])] }
 }
 
+const CAMPI_BOZZA = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo']
+const oggetto = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)
+/**
+ * La bozza come la lascia uno stato conservato (anche da un modulo precedente): la forma di oggi, oppure null se non lo
+ * è. I campi del progetto che `configura` non conosce si tolgono; `perso` dice se si è tolto qualcosa.
+ */
+export function pendentiDa(x: unknown): { pendenti: Pendenti | undefined; perso: boolean } {
+  if (x === undefined) return { pendenti: undefined, perso: false }
+  if (!oggetto(x) || !oggetto(x.campi) || !oggetto(x.base) || !Array.isArray(x.dove) || !x.dove.every(d => typeof d === 'string') ||
+      (x.lingua !== undefined && !(LINGUE as readonly unknown[]).includes(x.lingua)))
+    return { pendenti: undefined, perso: true }
+  const noti = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([k]) => CAMPI_BOZZA.includes(k)))
+  const campi = noti(x.campi)
+  const pendenti = piena({ campi, base: noti(x.base), dove: x.dove as string[], ...(x.lingua !== undefined && { lingua: x.lingua as Lingua }) })
+  return { pendenti, perso: Object.keys(campi).length !== Object.keys(x.campi).length }
+}
+
 /** Una bozza senza campi né lingua non c'è. */
 export const piena = (p: Pendenti | undefined) => (p && (Object.keys(p.campi).length || p.lingua) ? p : undefined)
 

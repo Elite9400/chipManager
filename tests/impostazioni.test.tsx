@@ -188,6 +188,15 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
    * configura-utente; `trattieni()` ferma la prossima scrittura (configura o configura-utente) finché il test non la apre.
    */
   const hook: { primaDiConfigura?: () => void; rifiutaUtente?: boolean; cancello?: { attesa: Promise<void>; segnala: () => void } } = {}
+  const popupFermi: { quale: (q: string) => boolean; attesa: Promise<void>; segnala: () => void }[] = []
+  /** Il prossimo popup la cui domanda soddisfa `quale` resta aperto finché non si chiama `apri()`. */
+  const trattieniPopup = (quale: (q: string) => boolean) => {
+    let apri!: () => void
+    let segnala!: () => void
+    const arrivato = new Promise<void>(ok => (segnala = ok))
+    popupFermi.push({ quale, attesa: new Promise<void>(ok => (apri = ok)), segnala })
+    return { arrivato, apri }
+  }
   const trattieni = () => {
     let apri!: () => void
     let segnala!: () => void
@@ -265,9 +274,17 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   on('tool.call', { tool: 'AskUserQuestion' }, (_, e) => {
     const q = e.questions[0]!.question
     domande.push(q)
-    const r = popup.risposta(q)
-    if (r === null) return { deny: 'finestra chiusa' }
-    return { result: { questions: e.questions, answers: { [q]: r } } }
+    const rispondi = () => {
+      const r = popup.risposta(q)
+      if (r === null) return { deny: 'finestra chiusa' }
+      return { result: { questions: e.questions, answers: { [q]: r } } }
+    }
+    // Un popup trattenuto resta aperto finché il test non lo apre; la risposta si sceglie allora.
+    const i = popupFermi.findIndex(f => f.quale(q))
+    if (i < 0) return rispondi()
+    const [f] = popupFermi.splice(i, 1)
+    f!.segnala()
+    return f!.attesa.then(rispondi) as never
   })
   on('ui.toast', (_, e) => {
     toast.push(String((e as { text?: unknown }).text))
@@ -280,7 +297,26 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   const progettoOra = () => JSON.parse(disco.get(CONFIG)!).progetti['esempio/demo'] as Record<string, unknown>
   const configure = () => processi.filter(p => p[2] === 'configura').length
-  return { disco, toast, domande, popup, progettoOra, configure, hook, trattieni }
+  // Una lettura lenta della lingua salvata: il valore si legge subito ma arriva solo dopo `apri()` (una lettura vecchia).
+  let letturaFerma: { attesa: Promise<void>; segnala: () => void } | undefined
+  on('state.get', { plugin: 'chip-manager', key: 'lingua' } as never, async (_$, e, next) => {
+    const letto = await next(e as never)
+    const f = letturaFerma
+    if (f) {
+      letturaFerma = undefined
+      f.segnala()
+      await f.attesa
+    }
+    return letto as never
+  })
+  const trattieniLettura = () => {
+    let apri!: () => void
+    let segnala!: () => void
+    const arrivato = new Promise<void>(ok => (segnala = ok))
+    letturaFerma = { attesa: new Promise<void>(ok => (apri = ok)), segnala }
+    return { arrivato, apri }
+  }
+  return { disco, toast, domande, popup, progettoOra, configure, hook, trattieni, trattieniPopup, trattieniLettura }
 }
 
 const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
@@ -697,6 +733,104 @@ test('congelamento: i due casi del giro 4 (scelta della lingua durante la scritt
   await ui.press({ key: 'applica' })
   expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('it')
   await altro.unmount()
+  await ui.unmount()
+})
+
+test('giro 5, caso 1: «Scarta» nel popup d\'uscita arrivato mentre Applica è in volo non tocca la bozza; «Riapplica» poi scrive', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  const altro = await $.ui.mount({ ...PANE('terminal') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-soglie-premi' })
+  await ui.press({ key: 'soglia-claude-nessuna-premi' })
+  // L'altro pannello vuole uscire: il popup Applica / Scarta / Resta resta aperto.
+  const uscita = amb.trattieniPopup(q => q.includes('non è ancora salvata'))
+  const esce = altro.press({ key: 'vista-lavoro' })
+  await uscita.arrivato
+  // Questo pannello applica e trova un conflitto: il suo popup resta aperto, Applica è in volo.
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { soglie: { claude: { attenzione: 50, critica: 60 } } } } }))
+  const conflitto = amb.trattieniPopup(q => q.startsWith('Un\'altra sessione'))
+  const applica = ui.press({ key: 'applica' })
+  await conflitto.arrivato
+  amb.popup.risposta = q => (q.includes('non è ancora salvata') ? 'Scarta' : 'Ricarica e riapplica la mia bozza')
+  uscita.apri()
+  await esce
+  expect(amb.toast).toContain('Salvataggio in corso…')
+  conflitto.apri()
+  await applica
+  expect(amb.configure()).toBe(1)
+  expect(amb.progettoOra()).toMatchObject({ soglie: { claude: null } })
+  expect(amb.toast.at(-1)).toBe('Salvato')
+  await altro.unmount()
+  await ui.unmount()
+})
+
+test('giro 5, caso 2: la scelta della lingua la cui lettura finisce dopo un Applica intero non si perde in silenzio', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  const altro = await $.ui.mount({ ...PANE('terminal') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-lingua-premi' })
+  await ui.press({ key: 'lingua-de-premi' })
+  // L'altro pannello sceglie it (la lingua salvata adesso); la sua lettura della lingua arriva dopo che Applica ha scritto de.
+  const lettura = amb.trattieniLettura()
+  const sceglie = altro.press({ key: 'lingua-it-premi' })
+  await lettura.arrivato
+  await ui.press({ key: 'applica' })
+  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('de')
+  lettura.apri()
+  await sceglie
+  // O la scelta resta pendente, o è rifiutata e lo si dice: mai de salvato con it perso in silenzio.
+  const pendente = (await ui.find({ key: 'lingua-it-premi' }))?.props.variant === 'primary'
+  const detto = amb.toast.includes('Salvataggio in corso…')
+  expect(pendente || detto).toBe(true)
+  await altro.unmount()
+  await ui.unmount()
+})
+
+/** Ricarica del modulo con `$.state` conservato: finché il modulo nuovo non scrive, le Impostazioni valgono `valore`. */
+function lasciato(on: On, valore: unknown) {
+  on('state.get', { plugin: 'chip-manager', key: 'impostazioni' } as never, async (_$, e, next) => {
+    // L'hook risponde { value: { value, version } }; l'atomo tiene il suo valore nella busta { shape, value }.
+    const letto = (await next(e as never)) as { value: { value?: unknown; version: number } }
+    return (letto.value.value === undefined ? { value: { ...letto.value, value: { shape: 'impostazioni-1', value: valore } } } : letto) as never
+  })
+}
+
+test('giro 5, caso 3: ricarica del modulo con lo stato conservato: «applicando» rimasto vero si azzera; una bozza di forma vecchia si scarta e lo si dice', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  // Lo stato che un modulo precedente ha lasciato: scrittura «in volo» e la bozza con `dove` come oggetto.
+  lasciato(on, { sezione: 'connessioni', applicando: true, pendenti: { campi: { fornitori: ['claude', 'codex', 'deepseek'] }, base: {}, dove: { fornitori: ['fornitori'] } } })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(amb.toast).toContain('La bozza precedente non era valida ed è stata scartata')
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  expect(await ui.find({ type: 'Text', text: 'Salvataggio in corso…' })).toBeUndefined()
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  // I controlli scrivono di nuovo nella bozza e Applica scrive.
+  await ui.press({ key: 'fornitore-deepseek-premi' })
+  expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra().fornitori).toEqual(['claude', 'codex', 'deepseek'])
+  await ui.unmount()
+})
+
+test('giro 5, caso 3: una bozza valida lasciata da un modulo precedente resta, solo «applicando» si azzera', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  lasciato(on, { sezione: 'connessioni', applicando: true, pendenti: { campi: { soloLocale: true }, base: { soloLocale: false }, dove: ['rete'] } })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(amb.toast).not.toContain('La bozza precedente non era valida ed è stata scartata')
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra()).toEqual({ soloLocale: true })
   await ui.unmount()
 })
 

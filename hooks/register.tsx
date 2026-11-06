@@ -60,6 +60,7 @@ import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salv
 import type { Lingua, Msg } from './lingua'
 import { disegna } from './pannello'
 import type { EsitoApplica } from './pannello'
+import { ripristinaImpostazioni } from './vista-impostazioni'
 import { fonte, INSTALLAZIONE, nomeLimiteIn, nomiStrumenti, osservaRisorse, RISORSE_VUOTE } from './risorse'
 
 // Lo scanner dello stato vuole l'atomo scritto nel file che lo usa: register e pannello ne tengono
@@ -1512,6 +1513,7 @@ export const register: Register = (on, options) => {
     const started = await next(e)
     const chi = await chiSonoIo($)
     const r = await leggiRegole($)
+    await ripristinaImpostazioni($, traduttore(await leggiLingua($)))
     await aggiornaRisorse($, opz)
     await $.command.register({ name: 'chipmanager', description: 'Opens the chipManager panel of suggested actions' })
     await $.tool.register({

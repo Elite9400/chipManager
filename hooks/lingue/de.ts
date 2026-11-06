@@ -759,6 +759,8 @@ const de: Dizionario = {
   "imp.linguaNonSalvata": "Projekteinstellungen gespeichert; die Sprache wurde nicht gespeichert: {motivo}",
   // Settings: draft frozen while Apply writes
   "imp.salvando": "Wird gespeichert…",
+  // Settings: previous draft not valid
+  "imp.bozzaScartata": "Der vorherige Entwurf war ungültig und wurde verworfen",
   // ‹fine›
 }
 

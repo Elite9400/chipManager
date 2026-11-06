@@ -761,6 +761,8 @@ const en = {
   "imp.linguaNonSalvata": "Project settings saved; the language was not saved: {motivo}",
   // Settings: draft frozen while Apply writes
   "imp.salvando": "Saving…",
+  // Settings: previous draft not valid
+  "imp.bozzaScartata": "The previous draft was not valid and has been discarded",
   // ‹fine›
 } satisfies Record<string, Voce>
 

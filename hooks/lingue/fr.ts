@@ -759,6 +759,8 @@ const fr: Dizionario = {
   "imp.linguaNonSalvata": "Réglages du projet enregistrés ; la langue n'a pas été enregistrée : {motivo}",
   // Settings: draft frozen while Apply writes
   "imp.salvando": "Enregistrement…",
+  // Settings: previous draft not valid
+  "imp.bozzaScartata": "Le brouillon précédent n'était pas valide et a été abandonné",
   // ‹fine›
 }
 
