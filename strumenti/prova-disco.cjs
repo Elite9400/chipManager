@@ -1229,3 +1229,182 @@ test('R11: il comando sessioni scrive l\'istantanea versionata e atomica accanto
   // Nessun file temporaneo rimasto: la scrittura è un rename.
   assert.deepStrictEqual(fs.readdirSync(cartella).filter(n => n.startsWith('sessioni') && n !== 'sessioni.json'), [])
 })
+
+// --- F6.2: corsia «API Claude» (nessuna chiamata a pagamento: processi finti) -------------------------------------
+const API = require('./api-claude.cjs')
+const CHIAVE_PROVA = 'sk-ant-prova-0123456789'
+const { EventEmitter: Emettitore } = require('node:events')
+/** Un `claude -p` finto: emette lo spawn, accetta il prompt, scrive `uscita` su stdout ed esce con `codice`. */
+const claudeFinto = (uscita, codice = 0, durante = () => {}) => (argv, opzioni) => {
+  const p = new Emettitore()
+  p.pid = 424242
+  p.stdout = new Emettitore()
+  p.stdin = new Emettitore()
+  p.stdin.end = () => setImmediate(async () => {
+    await durante(argv, opzioni)
+    p.stdout.emit('data', Buffer.from(uscita))
+    p.emit('exit', codice)
+  })
+  queueMicrotask(() => p.emit('spawn'))
+  return p
+}
+const ingressoApi = root => ({ root, prompt: 'Lavoro di prova.', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', tetto: 2, budget: 5, mese: '2026-11', chiave: CHIAVE_PROVA })
+const recordApi = (dir, id, tentativo) => fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ stato: 'in-avvio', lanciatore: 'api-claude', tentativo }))
+const fontiPulite = dir => ['utente', 'progetto', 'locale', 'gestite'].map(nome => ({ nome, file: path.join(dir, `${nome}.json`) }))
+const supervisoreFinto = stdin => () => {
+  const p = new Emettitore()
+  p.stdin = new Emettitore()
+  p.stdin.end = t => stdin.push(t)
+  queueMicrotask(() => p.emit('spawn'))
+  return p
+}
+
+test('F6.2 impostazioni: ogni fonte (utente, progetto, locale, gestite) e l\'ambiente bloccano api-claude; una fonte illeggibile blocca', () => {
+  const dir = tmp()
+  const fonti = fontiPulite(dir)
+  assert.deepStrictEqual(API.blocchiImpostazioni(fonti, {}), [])
+  const vietate = [{ env: { ANTHROPIC_BASE_URL: 'http://x' } }, { env: { ANTHROPIC_AUTH_TOKEN: 't' } }, { env: { ANTHROPIC_API_KEY: 'k' } },
+    { env: { CLAUDE_CODE_USE_BEDROCK: '1' } }, { apiKeyHelper: 'x' }, { forceLoginMethod: 'claudeai' }, { forceLoginOrgUUID: 'u' }]
+  for (const f of fonti)
+    for (const v of vietate) {
+      fs.writeFileSync(f.file, JSON.stringify(v))
+      assert.deepStrictEqual([f.nome, API.blocchiImpostazioni(fonti, {})], [f.nome, [f.nome]])
+      fs.rmSync(f.file)
+    }
+  fs.writeFileSync(fonti[1].file, '{ non json')
+  assert.deepStrictEqual(API.blocchiImpostazioni(fonti, {}), ['progetto'])
+  fs.rmSync(fonti[1].file)
+  assert.deepStrictEqual(API.blocchiImpostazioni(fonti, { ANTHROPIC_API_KEY: 'k' }), ['ambiente'])
+  // Il valore non compare mai: si nomina solo la fonte.
+  fs.writeFileSync(fonti[0].file, JSON.stringify({ env: { ANTHROPIC_API_KEY: CHIAVE_PROVA } }))
+  assert.ok(!JSON.stringify(API.blocchiImpostazioni(fonti, {})).includes(CHIAVE_PROVA))
+})
+
+test('F6.2 spesa: il tetto si prenota sul budget del mese, la contabilizzazione è idempotente e un costo ignoto vale il tetto', async () => {
+  const dir = tmp()
+  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa01', '2026-11', 2, 5), true)
+  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa01', '2026-11', 2, 5), true)
+  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa02', '2026-11', 2, 5), true)
+  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa03', '2026-11', 2, 5), false)
+  await API.contaSpesa(dir, 'az-spesa01', 0.4)
+  await API.contaSpesa(dir, 'az-spesa01', 9)
+  await API.contaSpesa(dir, 'az-spesa02', null)
+  const s = API.leggiSpesa(dir)
+  assert.deepStrictEqual([s.voci['az-spesa01'].costo, s.voci['az-spesa02'].costo], [0.4, null])
+  assert.strictEqual(API.spesoNelMese(s.voci, '2026-11'), 2.4)
+  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa03', '2026-11', 2, 5), true)
+  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa04', '2026-12', 2, 5), true)
+})
+
+test('F6.2 avvio: lock della macchina e spesa prenotati prima del processo; un secondo avvio non parte; budget e impostazioni bloccano', async () => {
+  const dir = tmp()
+  const dm = tmp()
+  const root = tmp()
+  recordApi(dir, 'a-api00001', 'az-api0001')
+  recordApi(dir, 'a-api00002', 'az-api0002')
+  const stdin = []
+  const deps = { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto(stdin) }
+  assert.deepStrictEqual(await API.lanciaApi(dir, 'a-api00001', 'az-api0001', ingressoApi(root), deps), [0, ''])
+  const lock = fs.readFileSync(API.fileLock(dm), 'utf8')
+  assert.strictEqual(JSON.parse(lock).stato, 'in-avvio')
+  assert.ok(!lock.includes(CHIAVE_PROVA))
+  assert.ok(!fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0001.json'), 'utf8').includes(CHIAVE_PROVA))
+  // La chiave viaggia solo su stdin del supervisore.
+  assert.strictEqual(JSON.parse(stdin[0]).chiave, CHIAVE_PROVA)
+  const [codice, testo] = await API.lanciaApi(dir, 'a-api00002', 'az-api0002', ingressoApi(root), deps)
+  assert.deepStrictEqual([codice, JSON.parse(testo).motivo], [3, 'senza-pid'])
+  // Lock libero: il budget (5 USD, 2 già prenotati) e le impostazioni decidono.
+  const dm2 = tmp()
+  assert.strictEqual((await API.lanciaApi(dir, 'a-api00002', 'az-api0002', { ...ingressoApi(root), tetto: 4 }, { ...deps, dirMacchina: dm2 }))[0], 5)
+  assert.strictEqual((await API.lanciaApi(dir, 'a-api00002', 'az-api0002', ingressoApi(root), { ...deps, dirMacchina: dm2, env: { ANTHROPIC_API_KEY: 'k' } }))[0], 6)
+  assert.strictEqual(fs.existsSync(API.fileLock(dm2)), false)
+})
+
+test('F6.2 supervisore: niente chiave nell\'ambiente o su argv; helper con TTL esplicito; file-chiave solo durante l\'esecuzione; esito e costo contabilizzati', async () => {
+  const dir = tmp()
+  const dm = tmp()
+  const root = tmp()
+  recordApi(dir, 'a-api00003', 'az-api0003')
+  const deps = { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }
+  assert.strictEqual((await API.lanciaApi(dir, 'a-api00003', 'az-api0003', ingressoApi(root), deps))[0], 0)
+  const helper = (k, c) => spawnSync(process.execPath, [path.join(__dirname, 'chiave-api.cjs'), k, c], { encoding: 'utf8' })
+  let visto
+  const uscita = JSON.stringify({ type: 'result', is_error: false, total_cost_usd: 0.42, num_turns: 3, result: `Fatto. La chiave era ${CHIAVE_PROVA}` })
+  const codice = await API.eseguiApi(dir, 'a-api00003', 'az-api0003', ingressoApi(root), {
+    dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [],
+    env: { PATH: process.env.PATH, ANTHROPIC_BASE_URL: 'http://altrove', ANTHROPIC_AUTH_TOKEN: 'token', CLAUDECODE: '1' },
+    avvia: claudeFinto(uscita, 0, (argv, opzioni) => {
+      visto = { argv, env: opzioni.env }
+      const settings = JSON.parse(argv[argv.indexOf('--settings') + 1])
+      const [, , k, c] = settings.apiKeyHelper.match(/"([^"]+)"/g).map(x => x.slice(1, -1))
+      assert.strictEqual(helper(k, c).stdout, CHIAVE_PROVA)
+      assert.ok(Number.isFinite(Date.parse(fs.readFileSync(c, 'utf8'))))
+    }),
+  })
+  assert.strictEqual(codice, 0)
+  assert.deepStrictEqual(visto.argv.slice(0, 2), ['claude', '-p'])
+  assert.strictEqual(visto.argv[visto.argv.indexOf('--max-budget-usd') + 1], '2')
+  assert.ok(!visto.argv.join(' ').includes(CHIAVE_PROVA))
+  for (const k of API.VIETATE) assert.strictEqual(visto.env[k], undefined)
+  assert.strictEqual(visto.env.CLAUDE_CODE_API_KEY_HELPER_TTL_MS, '300000')
+  // Dopo l'uscita il file-chiave non c'è più e l'helper non consegna niente.
+  assert.strictEqual(fs.existsSync(API.fileChiave(dm, 'az-api0003')), false)
+  assert.strictEqual(helper(API.fileChiave(dm, 'az-api0003'), API.fileConsegna(dm, 'az-api0003')).stdout, '')
+  const esec = fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0003.json'), 'utf8')
+  assert.deepStrictEqual([JSON.parse(esec).stato, JSON.parse(esec).costo], ['consegnata', 0.42])
+  assert.ok(!esec.includes(CHIAVE_PROVA) && !esec.includes('sk-ant'))
+  assert.strictEqual(API.leggiSpesa(dir).voci['az-api0003'].costo, 0.42)
+  // Il lock resta finché non scade la copia in memoria della chiave (5 minuti dall'ultima consegna).
+  assert.strictEqual((await API.statoApi(dm, { elenco: () => [] })).motivo, 'cache')
+  assert.deepStrictEqual(await API.statoApi(dm, { elenco: () => [], adesso: () => Date.now() + API.TTL_MS + 1000 }), { libero: true, liberato: 'az-api0003' })
+})
+
+test('F6.2 supervisore: un esito illeggibile o troncato è incerto e conta il tetto intero, senza riavvio', async () => {
+  const dir = tmp()
+  const dm = tmp()
+  const root = tmp()
+  recordApi(dir, 'a-api00004', 'az-api0004')
+  assert.strictEqual((await API.lanciaApi(dir, 'a-api00004', 'az-api0004', ingressoApi(root), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }))[0], 0)
+  await API.eseguiApi(dir, 'a-api00004', 'az-api0004', ingressoApi(root), { dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], env: {}, avvia: claudeFinto('{"type":"result","total_c') })
+  const esec = JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0004.json'), 'utf8'))
+  assert.deepStrictEqual([esec.stato, esec.incerto, esec.costo], ['avviata', true, null])
+  assert.strictEqual(API.spesoNelMese(API.leggiSpesa(dir).voci, '2026-11'), 2)
+})
+
+test('F6.2 lock: senza uscita registrata nessuna liberazione automatica; «Libera» solo con file-chiave cancellato, nessun discendente e 5 minuti', async () => {
+  const dir = tmp()
+  const dm = tmp()
+  const root = tmp()
+  recordApi(dir, 'a-api00005', 'az-api0005')
+  assert.strictEqual((await API.lanciaApi(dir, 'a-api00005', 'az-api0005', ingressoApi(root), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }))[0], 0)
+  const dopo = () => Date.now() + API.TTL_MS + 1000
+  // Crash fra la prenotazione e lo spawn: nessun PID. Né il censimento né il tempo la liberano da soli.
+  assert.strictEqual((await API.statoApi(dm, { elenco: () => [], adesso: dopo })).motivo, 'senza-pid')
+  // PID registrato e poi riusato da un altro processo: senza uscita registrata resta bloccata.
+  const rec = JSON.parse(fs.readFileSync(API.fileLock(dm), 'utf8'))
+  fs.writeFileSync(API.fileLock(dm), JSON.stringify({ ...rec, pid: 4242, creato: 1000, avvio: 1000 }))
+  assert.strictEqual((await API.statoApi(dm, { elenco: () => [{ pid: '4242', ppid: '1', creato: 99999 }], adesso: dopo })).motivo, 'in-corso')
+  // «Libera»: un discendente vivo la impedisce (si offre «Termina»), la cancellazione fallita anche, i 5 minuti pure.
+  const figlio = [{ pid: '5151', ppid: '4242', creato: 2000 }]
+  const r1 = await API.liberaApi(dm, { elenco: () => figlio, adesso: dopo })
+  assert.deepStrictEqual([r1.libero, r1.motivo, r1.discendenti], [false, 'discendenti', ['5151']])
+  const uccisi = []
+  assert.deepStrictEqual(await API.terminaApi(dm, { elenco: () => figlio, uccidi: pid => uccisi.push(pid) }), { chiusi: 1 })
+  assert.deepStrictEqual(uccisi, ['5151'])
+  fs.mkdirSync(path.dirname(API.fileChiave(dm, 'az-api0005')), { recursive: true })
+  fs.writeFileSync(API.fileChiave(dm, 'az-api0005'), CHIAVE_PROVA)
+  assert.strictEqual((await API.liberaApi(dm, { elenco: () => [], adesso: dopo, rm: () => { throw new Error('EPERM') } })).motivo, 'chiave')
+  assert.strictEqual((await API.liberaApi(dm, { elenco: () => [] })).motivo, 'cache')
+  assert.deepStrictEqual(await API.liberaApi(dm, { elenco: () => [], adesso: dopo }), { libero: true, liberato: 'az-api0005' })
+  assert.strictEqual(fs.existsSync(API.fileChiave(dm, 'az-api0005')), false)
+  // Il costo di un tentativo liberato a mano è ignoto: conta il tetto intero.
+  assert.deepStrictEqual(API.leggiSpesa(dir).voci['az-api0005'], { mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
+})
+
+test('F6.2 lock: uscita registrata ma un discendente vivo: resta bloccato finché «Termina» o «Libera»', async () => {
+  const dm = tmp()
+  fs.writeFileSync(API.fileLock(dm), JSON.stringify({ tentativo: 'az-api0006', istante: new Date(0).toISOString(), pid: 4242, creato: 1000, avvio: 1000, uscita: { codice: 0, fine: new Date(0).toISOString() } }))
+  const r = await API.statoApi(dm, { elenco: () => [{ pid: '6161', ppid: '4242', creato: 3000 }] })
+  assert.deepStrictEqual([r.libero, r.motivo], [false, 'discendenti'])
+  assert.deepStrictEqual(await API.statoApi(dm, { elenco: () => [] }), { libero: true, liberato: 'az-api0006' })
+})

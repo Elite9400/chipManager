@@ -594,6 +594,38 @@ async function lanciaCli(dir, id, tentativo, input) {
   return r.occupato ? 3 : r.valore
 }
 
+/**
+ * Il worktree del tentativo, sotto `<progetto>/.claude/worktrees`, su un ramo nuovo dalla base: mai fuori dal progetto e
+ * mai rimosso in automatico. `fuori.ramo` si scrive prima di crearlo, così un errore lo può nominare.
+ */
+function preparaWorktree(input, tentativo, deps = {}, fuori = {}) {
+  const root = fs.realpathSync(input.root)
+  const git = deps.git ?? (args => {
+    const g = spawnSync('git', ['-c', `core.hooksPath=${process.platform === 'win32' ? 'NUL' : '/dev/null'}`, '-C', root, ...args], { encoding: 'utf8', windowsHide: true, timeout: 20000 })
+    if (g.status !== 0) throw new Error('preparazione worktree fallita')
+    return g.stdout.trim()
+  })
+  const base = git(['rev-parse', '--verify', `${input.base || 'HEAD'}^{commit}`])
+  let destinazione = root
+  // Controlla ogni antenato prima di creare il successivo: .claude può essere un link esterno.
+  for (const segmento of ['.claude', 'worktrees']) {
+    destinazione = path.join(destinazione, segmento)
+    if (!fs.existsSync(destinazione)) fs.mkdirSync(destinazione)
+    const relativo = path.relative(root, fs.realpathSync(destinazione))
+    if (!relativo || relativo === '..' || relativo.startsWith(`..${path.sep}`) || path.isAbsolute(relativo)) throw new Error('worktree fuori progetto')
+  }
+  const cwd = path.join(destinazione, `chipmanager-${tentativo}`)
+  const ramo = (fuori.ramo = `chipmanager/${tentativo}`)
+  git(['worktree', 'add', '-b', ramo, cwd, base])
+  return { cwd, ramo }
+}
+
+/** I parametri di un avvio da riga di comando (CLI o API): modello, effort e permessi fra quelli ammessi. */
+const parametriValidi = input =>
+  !!input && typeof input.root === 'string' && typeof input.prompt === 'string' && input.prompt.length <= 40000 &&
+  /^claude-[a-z0-9.-]{1,80}$/.test(input.modello) && ['low', 'medium', 'high', 'xhigh'].includes(input.effort) &&
+  ['default', 'acceptEdits', 'plan'].includes(input.permessi) && (!input.base || /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/.test(input.base))
+
 /** Worktree unico; mai rimozione automatica. stdout/stderr del modello non diventano log della mod. */
 async function eseguiCli(dir, id, tentativo, input, deps = {}) {
   if (!idValido(id) || !tentativoValido(tentativo)) throw new Error('identità non valida')
@@ -603,30 +635,12 @@ async function eseguiCli(dir, id, tentativo, input, deps = {}) {
   const r = await conMutex(`cli:${path.resolve(file).toLowerCase()}`, 0, async () => {
     const scrivi = campi => scriviAtomico(file, JSON.stringify({ id, tentativo, ...campi }))
     let partito = false
+    const fuori = {}
     let ramo
     try {
-      if (!input || typeof input.root !== 'string' || typeof input.prompt !== 'string' || input.prompt.length > 40000 ||
-          !/^claude-[a-z0-9.-]{1,80}$/.test(input.modello) || !['low', 'medium', 'high', 'xhigh'].includes(input.effort) ||
-          !['default', 'acceptEdits', 'plan'].includes(input.permessi) ||
-          (input.base && !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/.test(input.base))) throw new Error('parametri non validi')
-      const root = fs.realpathSync(input.root)
-      const git = deps.git ?? (args => {
-        const g = spawnSync('git', ['-c', `core.hooksPath=${process.platform === 'win32' ? 'NUL' : '/dev/null'}`, '-C', root, ...args], { encoding: 'utf8', windowsHide: true, timeout: 20000 })
-        if (g.status !== 0) throw new Error('preparazione worktree fallita')
-        return g.stdout.trim()
-      })
-      const base = git(['rev-parse', '--verify', `${input.base || 'HEAD'}^{commit}`])
-      let destinazione = root
-      // Controlla ogni antenato prima di creare il successivo: .claude può essere un link esterno.
-      for (const segmento of ['.claude', 'worktrees']) {
-        destinazione = path.join(destinazione, segmento)
-        if (!fs.existsSync(destinazione)) fs.mkdirSync(destinazione)
-        const relativo = path.relative(root, fs.realpathSync(destinazione))
-        if (!relativo || relativo === '..' || relativo.startsWith(`..${path.sep}`) || path.isAbsolute(relativo)) throw new Error('worktree fuori progetto')
-      }
-      const cwd = path.join(destinazione, `chipmanager-${tentativo}`)
-      ramo = `chipmanager/${tentativo}`
-      git(['worktree', 'add', '-b', ramo, cwd, base])
+      if (!parametriValidi(input)) throw new Error('parametri non validi')
+      const { cwd } = preparaWorktree(input, tentativo, deps, fuori)
+      ramo = fuori.ramo
       const env = { ...process.env }
       delete env.CLAUDECODE
       const p = (deps.avvia ?? avviaComando)(['claude', '-p', '--model', input.modello, '--effort', input.effort, '--permission-mode', input.permessi, '--output-format', 'json'],
@@ -639,6 +653,7 @@ async function eseguiCli(dir, id, tentativo, input, deps = {}) {
       const codice = await new Promise(ok => p.once('exit', ok))
       scrivi({ stato: 'consegnata', ramo, errore: codice === 0 ? undefined : 'CLI terminata con errore: controlla il worktree prima di chiudere' })
     } catch {
+      ramo ??= fuori.ramo
       scrivi({ stato: partito ? 'avviata' : 'fallita', ramo, errore: partito ? 'esito CLI incerto: controlla il processo e il worktree' : 'CLI non avviata: verifica comando e worktree; nessun file eliminato' })
     }
   })
@@ -1009,9 +1024,11 @@ async function pesiAnnulla(file, repo, idVoce, idAnnullamento, opz = {}) {
   })
 }
 
-async function main(argv, { mutexCodex = MUTEX_CODEX } = {}) {
+async function main(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {}) {
   const [cmd, ...a] = argv
   const stdin = () => JSON.parse(fs.readFileSync(0, 'utf8'))
+  // F6.2: la corsia a crediti API di Claude vive in un modulo suo (letto qui, a modulo caricato).
+  if (/^(lancia|esegui|stato|libera|termina)-api$/.test(cmd ?? '')) return require('./api-claude.cjs').comando(cmd, a, stdin, { dirMacchina })
   if (cmd === 'configura' && a.length === 1) return esci(await configura(a[0], stdin()))
   if (cmd === 'configura-utente' && a.length === 1) return esci(await configuraUtente(a[0], stdin()))
   if (cmd === 'lancia-cli' && a.length === 3) return esci(await lanciaCli(...a, stdin()))
@@ -1047,5 +1064,8 @@ function esci(codice, testo) {
   process.exitCode = codice
 }
 
+module.exports = {
+  main, conMutex, scriviAtomico, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  esci, preparaWorktree, parametriValidi, avviaComando, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
+}
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))
-module.exports = { main, conMutex, scriviAtomico, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla }
