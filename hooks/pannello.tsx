@@ -9,7 +9,8 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
 
-import type { Azione, Chiamante, Consumo, Fornitore, Limite, Motore, Peso, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, Traguardi, Vista, Vita } from '../types'
+import type { Azione, Chiamante, Consumo, Fornitore, Limite, Motore, Peso, PropostaPesi, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, Traguardi, Vista, Vita } from '../types'
+import { annullabile as pesiAnnullabili, daDecidere, descriviPesi, TESTI_PESI } from './bilanciamento'
 import {
   attive,
   aspettaTe as aspettaTeDi,
@@ -31,7 +32,7 @@ import { RISORSE_VUOTE } from './risorse'
 import { ACCENTO, ALFA_VELO, GRIGIO, STATO } from './tema'
 import { classeDi, componenti } from './ui'
 import { vistaCarico } from './vista-carico'
-import { vistaImpostazioni } from './vista-impostazioni'
+import { apriBilanciamento, vistaImpostazioni } from './vista-impostazioni'
 import { vistaLavoro } from './vista-lavoro'
 
 // Copia identica degli atomi di register.tsx (lo scanner li vuole nel file che li usa).
@@ -54,6 +55,7 @@ const vista = atom({ plugin: 'chip-manager', key: 'vista' } as const, 'lavoro' a
 const tutteSessioni = atom({ plugin: 'chip-manager', key: 'tutteSessioni' } as const, false)
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, da: 0 } as Consumo, { shape: 'consumo-1' })
+const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
 
 type Eng = EngineInterface
 
@@ -79,6 +81,9 @@ export type Ctx = {
   installa: (passo: number) => Promise<unknown>
   board: (modo: RisorseProgetto['board']['modo'], attese: RisorseProgetto) => Promise<unknown>
   apriBoard: () => Promise<unknown>
+  /** Applica o rifiuta una proposta di pesi alla versione vista; l'helper rifiuta se è cambiata. */
+  decidiPesi: (p: PropostaPesi, esito: 'applica' | 'rifiuta') => Promise<unknown>
+  annullaPesi: (p: PropostaPesi) => Promise<unknown>
 }
 
 const MOTORI = ['claude', 'codex', 'freellmapi'] as const
@@ -91,7 +96,7 @@ const oraDi = (iso: string) => {
 
 /** Dati e pezzi comuni alle viste, letti una volta per disegno. */
 async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, colonne: number) {
-  const { Box, Text } = el
+  const { Box, Text, Button } = el
   const Select = 'Select' in el ? el.Select : undefined
   const Input = 'Input' in el ? el.Input : undefined
   // Il terminale non conosce l'alfa: lì l'etichetta è segno + parola, senza velo.
@@ -212,11 +217,61 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const limiti = [...Object.values(ultime), ...regoleOra.risorse.limitiManuali].filter(l => fornitoriInUso.includes(l.fornitore))
   const NOME_FORNITORE: Record<Fornitore, string> = { claude: 'Claude', codex: 'Codex', deepseek: 'DeepSeek', freellmapi: 'FreeLLMAPI' }
 
+  // Proposte di pesi: nessun popup dal giro. Il popup si apre solo da «Rivedi»; Applica e Rifiuta stanno sempre sulla riga.
+  const tutteProposte = await read($, propostePesi)
+  const proposteAperte = tutteProposte.filter(p => daDecidere(p, adesso))
+  const ultimaDecisa = tutteProposte.find(p => p.stato !== 'attesa')
+  // Etichette uniche: con più proposte aperte, il pulsante porta la coda dell'id.
+  const suffisso = (p: PropostaPesi) => (proposteAperte.length > 1 ? ` ${p.id.slice(-4)}` : '')
+  const rivedi = (p: PropostaPesi) => async () => {
+    let scelta: string
+    try {
+      scelta = await $.ui.ask(TESTI_PESI.domanda(p), { options: [TESTI_PESI.applica, TESTI_PESI.rifiuta, TESTI_PESI.apri], header: TESTI_PESI.intestazione })
+    } catch {
+      return // popup chiuso o nessuno a cui chiedere: Applica e Rifiuta restano sulla riga
+    }
+    if (scelta === TESTI_PESI.applica) await c.fai(() => c.decidiPesi(p, 'applica'))
+    else if (scelta === TESTI_PESI.rifiuta) await c.fai(() => c.decidiPesi(p, 'rifiuta'))
+    else if (scelta === TESTI_PESI.apri) {
+      await update($, vista, () => 'impostazioni')
+      await apriBilanciamento($)
+    }
+  }
+  /** Una proposta aperta: il testo, poi Rivedi (popup), Applica e Rifiuta. `dove` tiene le chiavi uniche fra le viste. */
+  const rigaProposta = (dove: string, p: PropostaPesi, conDettaglio = false) => (
+    <Box key={`${dove}-${p.id}`} flexDirection="column">
+      <Box flexDirection="row" flexWrap="wrap" gap={1} alignItems="center">
+        {nota1(`${dove}-${p.id}-testo`, STATO.attesa, '◐', TESTI_PESI.riga(p))}
+        <Button key={`${dove}-${p.id}-rivedi`} plain label={`${TESTI_PESI.rivedi}${suffisso(p)}`} onPress={() => void rivedi(p)()} />
+        <Button key={`${dove}-${p.id}-applica`} plain label={`${TESTI_PESI.applica}${suffisso(p)}`} onPress={fai(() => c.decidiPesi(p, 'applica'))} />
+        <Button key={`${dove}-${p.id}-rifiuta`} plain dimColor label={`${TESTI_PESI.rifiuta}${suffisso(p)}`} onPress={fai(() => c.decidiPesi(p, 'rifiuta'))} />
+      </Box>
+      {conDettaglio && (
+        <Text key={`${dove}-${p.id}-dettaglio`} size="caption" dimColor wrap="wrap">
+          {`${descriviPesi(p.partenza)} → ${descriviPesi(p.risultato)}. Motivo: ${p.motivo}`}
+        </Text>
+      )}
+    </Box>
+  )
+  /** L'ultima decisione, con Annulla finché il config porta ancora quell'applicazione. */
+  const registroPesi = (dove: string) =>
+    ultimaDecisa ? (
+      <Box key={`${dove}-registro`} flexDirection="row" flexWrap="wrap" gap={1} alignItems="center">
+        <Text size="caption" wrap="wrap">{TESTI_PESI.registro(ultimaDecisa)}</Text>
+        {pesiAnnullabili(ultimaDecisa, regoleOra.risorse) && (
+          <Button key={`${dove}-registro-annulla`} plain label={`${TESTI_PESI.annulla} la proposta applicata`} onPress={fai(() => c.annullaPesi(ultimaDecisa))} />
+        )}
+      </Box>
+    ) : (
+      <Text key={`${dove}-registro`} size="caption" dimColor>{TESTI_PESI.nessunaDecisione}</Text>
+    )
+
   return {
     el, c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, vistaOra, tutteLeSessioni, regoleOra, testoFiltro,
     lista, visibili, espansa, motiviAperti, stati, nota, scartata, rotte, tr, adesso, capacita, sb, boardPronta, ultime, configura, fai, modifica,
     completa, apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, attese, titoloSezione, righe,
     alLavoro, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, oraDi, consumoOra,
+    proposteAperte, rigaProposta, registroPesi,
   }
 }
 

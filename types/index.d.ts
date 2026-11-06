@@ -29,6 +29,31 @@ export type RisorseProgetto = {
   board: BoardProgetto
   /** Profilo di bilanciamento scelto nelle Impostazioni: tocca solo i pesi di motori ed effort. Assente = nessuna scelta. */
   profilo?: 'automatico' | 'risparmio' | 'qualita' | 'velocita' | 'personalizzato'
+  /** Cresce a ogni scrittura di profilo o pesi (la incrementa l'helper). Assente = 0. */
+  pesiRevisione?: number
+  /** Chi ha fatto l'ultima scrittura di profilo o pesi. Assente = manuale. */
+  pesiOrigine?: { tipo: 'proposta' | 'annullamento' | 'manuale'; id?: string; voce?: string; versione?: number }
+}
+export type PesiProfilo = { profilo: NonNullable<RisorseProgetto['profilo']> | null; pesi: Peso[] }
+/** Una regolazione proposta: una delle cinque posizioni (0–4) su una voce ammessa dalle regole. */
+export type Regolazione = { tipo: Peso['tipo']; nome: string; posizione: number }
+/** Una proposta di pesi in `<cartella dati>/proposte-pesi.json`: la scrive solo l'helper, la decide il committente. */
+export type PropostaPesi = {
+  id: string
+  versione: number
+  progetto: string
+  /** Id e titolo della sessione che propone, presi dalla sessione e mai dagli argomenti: nessuna autorità dal nome. */
+  proponente: { id: string; titolo: string }
+  quando: string
+  motivo: string
+  profilo?: NonNullable<RisorseProgetto['profilo']>
+  regolazioni?: Regolazione[]
+  partenza: PesiProfilo & { revisione: number }
+  risultato: PesiProfilo
+  stato: 'attesa' | 'applicata' | 'rifiutata' | 'scaduta' | 'annullata'
+  decisione?: { id: string; esito: 'applica' | 'rifiuta'; quando: string; revisione?: number }
+  annullamento?: { id: string; quando: string; revisione: number }
+  nota?: string
 }
 export type BoardProgetto = { modo: 'spenta' | 'accesa' | 'riassunti'; generazione: number }
 /** Esito di revisione riferito da una sessione: la board scrive «riferita da», mai «verificata». */
@@ -230,6 +255,8 @@ export type SessioneProgetto = {
   stato: 'in-corso' | 'ferma' | 'ignota'
   /** Percentuale della finestra di contesto usata, se letta. */
   contesto?: number
+  /** Istante dell'ultima misura RIUSCITA del contesto (distinto dalla lettura della sessione). */
+  contestoIl?: string
   /** Token nella finestra di contesto, se letti. */
   token?: number
   attivita?: string
@@ -278,6 +305,8 @@ declare module 'claude-code' {
       board: Shaped<StatoBoard>
       consumo: Shaped<Consumo>
       impostazioni: Shaped<StatoImpostazioni>
+      /** Le proposte di pesi di questo progetto, lette dal file dell'helper. */
+      proposte: Shaped<PropostaPesi[]>
     }
   }
 }

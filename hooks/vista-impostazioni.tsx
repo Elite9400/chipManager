@@ -35,6 +35,11 @@ type Sezione = StatoVista['sezione']
 type Gruppo = NonNullable<StatoVista['gruppo']>
 const statoVista = atom({ plugin: 'chip-manager', key: 'impostazioni' } as const, { sezione: 'connessioni' } as StatoVista, { shape: 'impostazioni-1' })
 
+/** «Apri le impostazioni» di una proposta di pesi: la sezione Bilanciamento, dove la proposta resta in evidenza. */
+export async function apriBilanciamento($: EngineInterface) {
+  await update($, statoVista, (s): StatoVista => ({ ...s, sezione: 'bilanciamento', errore: undefined }))
+}
+
 const SEZIONI: { valore: Sezione; testo: string }[] = [
   { valore: 'connessioni', testo: 'Connessioni' },
   { valore: 'soglie', testo: 'Soglie' },
@@ -285,6 +290,9 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       descrizione: 'Come scegliere motore ed effort quando una proposta non li indica. Una preferenza, mai un permesso: le regole d\'avvio valgono sempre.',
       stato,
       figli: [
+        ...(d.proposteAperte.length
+          ? [<Box key="bil-proposte" flexDirection="column" gap={1}>{d.proposteAperte.map(p => d.rigaProposta('bil-pesi', p, true))}</Box>]
+          : []),
         u.GruppoChip({
           chiave: 'profilo', etichetta: 'Profilo', modo: 'scelta', valore: profilo, voci: PROFILI.map(p => ({ valore: p.id, testo: p.nome })),
           onCambia: v => salva('profilo', () => ({ profilo: v, pesi: conProfilo(r.pesi, v as Profilo) }))(),

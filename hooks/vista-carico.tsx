@@ -237,6 +237,7 @@ export function vistaCarico(d: Dati) {
           : 'Nessun peso: l\'ordine è il tuo, e il pannello completa le scelte lasciate aperte guardando i margini.'}
       </Text>
       {critici.length > 0 && nota1('critici', COLORE_LIVELLO.critica, '▲', `Oltre la soglia critica: ${critici.join(', ')}. Le scelte lasciate aperte vanno a un altro fornitore ammesso.`)}
+      {d.registroPesi('carico-pesi')}
       <Text size="caption" dimColor>
         {quote.length
           ? `Avvii nelle ultime 24 ore: ${quote.map(x => `${motore(x.m)} ${x.n} (${Math.round((x.n / avviiRecenti.length) * 100)}%)`).join(' · ')}`

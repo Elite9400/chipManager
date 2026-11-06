@@ -807,6 +807,11 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
 
   const lavoro = (
     <Box key="vista-lavoro-corpo" flexDirection="column" gap={2}>
+      {d.proposteAperte.length > 0 && (
+        <Box key="proposte-pesi" flexDirection="column" gap={1}>
+          {d.proposteAperte.map(p => d.rigaProposta('lavoro-pesi', p))}
+        </Box>
+      )}
       {senzaProgetto > 0 && (
         <Box key="senza-progetto" flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
           <Text>

@@ -188,11 +188,20 @@ export function risorseDa(p: Record<string, unknown>): RisorseProgetto | string 
   // Una preferenza, non un permesso: ogni forma che non è uno dei cinque nomi vale come assente.
   const profilo = typeof p.profilo === 'string' && ['automatico', 'risparmio', 'qualita', 'velocita', 'personalizzato'].includes(p.profilo)
     ? (p.profilo as RisorseProgetto['profilo']) : undefined
+  // Revisione e origine dei pesi le scrive solo l'helper: servono al pannello per dire se un'applicazione si annulla
+  // ancora. Una forma diversa vale come assente (revisione 0, origine manuale); l'helper ricontrolla sotto lock.
+  const pesiRevisione = Number.isInteger(p.pesiRevisione) && (p.pesiRevisione as number) >= 0 ? (p.pesiRevisione as number) : undefined
+  const o = p.pesiOrigine
+  const pesiOrigine = oggettoRisorse(o) && ['proposta', 'annullamento', 'manuale'].includes(String(o.tipo)) &&
+    (o.id === undefined || typeof o.id === 'string') && (o.voce === undefined || typeof o.voce === 'string') && (o.versione === undefined || Number.isInteger(o.versione))
+    ? { tipo: o.tipo as NonNullable<RisorseProgetto['pesiOrigine']>['tipo'], ...(typeof o.id === 'string' && { id: o.id.slice(0, 60) }),
+        ...(typeof o.voce === 'string' && { voce: o.voce.slice(0, 60) }), ...(Number.isInteger(o.versione) && { versione: o.versione as number }) }
+    : undefined
   return { board, fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
     freellmapi: { livello: f.livello as RisorseProgetto['freellmapi']['livello'], endpoint: (f.endpoint as string | undefined) ?? RISORSE_DEFAULT.freellmapi.endpoint },
     pesi: pesi.map(x => ({ tipo: x.tipo, nome: x.nome, percentuale: x.percentuale, assoluto: x.assoluto })), limitiManuali,
     soglie: { claude: soglia('claude'), codex: soglia('codex'), deepseek: soglia('deepseek'), freellmapi: soglia('freellmapi') },
-    ...(profilo && { profilo }) }
+    ...(profilo && { profilo }), ...(pesiRevisione !== undefined && { pesiRevisione }), ...(pesiOrigine && { pesiOrigine }) }
 }
 
 export const limiteFresco = (l: Limite, adesso = Date.now()) => !l.errore && !!l.letto && adesso >= Date.parse(l.letto) && adesso - Date.parse(l.letto) <= 300_000 && (!l.reset || Date.parse(l.reset) > adesso)
@@ -1079,7 +1088,9 @@ export function sessioniCodex(json: unknown, radice: string, adesso: number): Se
     const ramo = testoBreve(s.ramo, 80)
     return [{ id: `codex-${s.id}`, motore: 'codex' as const, titolo: ramo ? `Codex · ${ramo}` : 'Sessione Codex', ramo,
       modello: testoBreve(s.modello, 60), effort: testoBreve(s.effort, 20), stato: s.inCorso === true ? ('in-corso' as const) : s.stato === 'ignoto' ? ('ignota' as const) : ('ferma' as const),
-      contesto: token !== undefined && finestra ? Math.min(100, Math.round((token / finestra) * 100)) : undefined, token, attivita }]
+      contesto: token !== undefined && finestra ? Math.min(100, Math.round((token / finestra) * 100)) : undefined, token, attivita,
+      // Il conteggio dei token arriva con l'ultimo evento della sessione: è quello l'istante della misura.
+      ...(token !== undefined && finestra && { contestoIl: attivita }) }]
   })
 }
 

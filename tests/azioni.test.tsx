@@ -1471,7 +1471,7 @@ test('2.2: sessioni del progetto: worktree inclusi, altri progetti, archiviate e
     { id: 'esempio-0003', cwd: 'C:/lavori/progetto', attivita: '2025-12-01T00:00:00Z' },
     { id: '../fuori', cwd: 'C:/lavori/progetto', attivita: '2026-01-02T11:58:00Z' },
   ], radice, adesso)
-  expect(codex).toEqual([{ id: 'codex-esempio-0001', motore: 'codex', titolo: 'Codex · fix', ramo: 'fix', modello: 'gpt-6-astra', effort: 'xhigh', stato: 'in-corso', contesto: 61, token: 61_000, attivita: '2026-01-02T11:58:00Z' }])
+  expect(codex).toEqual([{ id: 'codex-esempio-0001', motore: 'codex', titolo: 'Codex · fix', ramo: 'fix', modello: 'gpt-6-astra', effort: 'xhigh', stato: 'in-corso', contesto: 61, token: 61_000, attivita: '2026-01-02T11:58:00Z', contestoIl: '2026-01-02T11:58:00Z' }])
 })
 
 const ID_ESEMPIO = (n: number) => `local_aaaaaaa${n}-1234-1234-1234-123456789abc`
@@ -2268,6 +2268,9 @@ test('strumenti: descrizioni brevi (tetto in caratteri, non token); risorse_agen
   expect(caratteri('risorse_agenti')).toBeLessThanOrEqual(250)
   expect(amb.registrati.find(x => x.name === 'risorse_agenti')!.isDeferred).toBe(true)
   expect(amb.registrati.find(x => x.name === 'suggerisci_azione')!.isDeferred).toBe(false)
+  // F4: proporre pesi è raro, quindi differito e corto.
+  expect(caratteri('proponi_pesi')).toBeLessThanOrEqual(400)
+  expect(amb.registrati.find(x => x.name === 'proponi_pesi')!.isDeferred).toBe(true)
   // Anche la 2.4.0 ha la proprietà piano.
   expect(Object.keys((amb.registrati.find(x => x.name === 'suggerisci_azione')!.inputSchema as { properties: object }).properties)).toContain('piano')
 })

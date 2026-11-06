@@ -1,7 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Limite, Motore, Permessi, Peso, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
+import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Limite, Motore, Permessi, Peso, PropostaPesi, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
+import { alLavoroDa, contestoPerModello, propostaDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI } from './bilanciamento'
 import {
   attive,
   bilancia,
@@ -74,6 +75,7 @@ const ultimeMisure = atom({ plugin: 'chip-manager', key: 'ultimeMisure' } as con
 const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { lista: [] } as Sessioni, { shape: 'sessioni-1' })
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, da: 0 } as Consumo, { shape: 'consumo-1' })
+const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
 
 const PANE = 'chipManager'
 const TITOLO = 'chipManager'
@@ -126,6 +128,8 @@ async function baseOrch($: Eng) {
   return dir
 }
 const cartella = async ($: Eng) => `${await baseOrch($)}/azioni`
+/** Le proposte di pesi: le scrive solo l'helper, sotto il mutex del config. */
+const fileProposte = async ($: Eng) => `${await baseOrch($)}/proposte-pesi.json`
 const strumenti = ($: Eng): Strumenti => ({ disco: `${$.plugin.root.replace(/\\/g, '/')}/strumenti/disco.cjs` })
 const ora = () => new Date().toISOString()
 const gettone = () => `az-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 7)}`
@@ -340,7 +344,7 @@ const delProgetto = (lista: readonly Azione[], chi: Chiamante | null) => lista.f
 // --- sessioni del progetto (anche quelle aperte a mano) ---------------------------------------------------
 
 /** Dettagli per sessione: get_session al più ogni 60 s, get_usage solo sulle sessioni al lavoro. */
-const dettagli = new Map<string, { letto: number; d: Pick<SessioneProgetto, 'modello' | 'effort' | 'ramo'>; inCorso?: boolean; contesto?: Pick<SessioneProgetto, 'contesto' | 'token'> }>()
+const dettagli = new Map<string, { letto: number; d: Pick<SessioneProgetto, 'modello' | 'effort' | 'ramo'>; inCorso?: boolean; contesto?: Pick<SessioneProgetto, 'contesto' | 'token' | 'contestoIl'> }>()
 const MAX_DETTAGLI = 8
 
 async function chiamaApp($: Eng, tool: string, args: Record<string, unknown>) {
@@ -383,7 +387,9 @@ async function leggiSessioni($: Eng) {
         const g = (await chiamaApp($, 'get_session', { session_id: s.id }).catch(() => null)) as { isRunning?: unknown } | null
         const inCorso = typeof g?.isRunning === 'boolean' ? g.isRunning : c?.inCorso
         const lavora = inCorso ?? s.stato === 'in-corso'
-        const contesto = sonde && lavora ? contestoDa(await chiamaApp($, 'get_usage', { session_id: s.id }).catch(() => null)) ?? c?.contesto : undefined
+        // L'istante è quello dell'ultima misura RIUSCITA: un fallimento tiene il valore precedente con il suo istante.
+        const misura = sonde && lavora ? contestoDa(await chiamaApp($, 'get_usage', { session_id: s.id }).catch(() => null)) : undefined
+        const contesto = misura ? { ...misura, contestoIl: new Date(adesso).toISOString() } : sonde && lavora ? c?.contesto : undefined
         dettagli.set(s.id, { letto: adesso, d: g ? dettagliSessione(g) : (c?.d ?? {}), inCorso, contesto })
       }
       const x = dettagli.get(s.id)!
@@ -391,6 +397,7 @@ async function leggiSessioni($: Eng) {
       if (x.inCorso !== undefined) s.stato = x.inCorso ? 'in-corso' : 'ferma'
       s.contesto = x.contesto?.contesto
       s.token = x.contesto?.token
+      s.contestoIl = x.contesto?.contestoIl
     }),
   )
   let codex: SessioneProgetto[] = []
@@ -402,6 +409,41 @@ async function leggiSessioni($: Eng) {
     }
   }
   await update($, sessioni, () => ({ lista: [io, ...claude, ...codex], letto: new Date(adesso).toISOString(), nota: note.join(' · ') || undefined }))
+  // Stessa cadenza delle sessioni (20 s a schermo, 2 minuti nascosto): una proposta nuova si vede presto.
+  await leggiProposte($)
+}
+
+/** Le proposte di pesi del progetto dal file dell'helper: solo $.fs, nessun processo. Illeggibile = la lista di prima. */
+async function leggiProposte($: Eng) {
+  try {
+    const chi = (await read($, contesto)) ?? (await chiSonoIo($))
+    const f = await fileProposte($)
+    const json = (await $.fs.exists(f)) ? (JSON.parse((await $.fs.read(f)) as string) as unknown) : null
+    await update($, propostePesi, () => proposteDa(json, chi.repo))
+  } catch { /* file in scrittura o cartella non valida: resta la lista letta prima */ }
+}
+
+/** Applica o rifiuta una proposta alla versione vista: la chiave della decisione nasce qui, alla pressione. */
+async function decidiPesi($: Eng, opz: Record<string, unknown>, p: PropostaPesi, esito: 'applica' | 'rifiuta') {
+  const chi = await chiSonoIo($)
+  if (!chi.repo) throw new Error('progetto non noto')
+  const chiave = `d-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`
+  const x = await helper($, ['pesi-decidi', await fileConfig($), await fileProposte($), chi.repo, p.id, String(p.versione), esito, chiave])
+  await leggiProposte($)
+  if (x.codice !== 0) throw new Error(`Proposta di pesi: ${x.testo || 'decisione non registrata'}`)
+  await aggiornaRisorse($, opz)
+  $.ui.toast(esito === 'applica' ? TESTI_PESI.applicata : TESTI_PESI.rifiutata)
+}
+
+async function annullaPesi($: Eng, opz: Record<string, unknown>, p: PropostaPesi) {
+  const chi = await chiSonoIo($)
+  if (!chi.repo) throw new Error('progetto non noto')
+  const chiave = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`
+  const x = await helper($, ['pesi-annulla', await fileConfig($), await fileProposte($), chi.repo, p.id, chiave])
+  await leggiProposte($)
+  if (x.codice !== 0) throw new Error(`Annulla: ${x.testo || 'non riuscito'}`)
+  await aggiornaRisorse($, opz)
+  $.ui.toast(TESTI_PESI.annullata)
 }
 
 // --- azioni senza progetto (scritte da una versione precedente) --------------------------------------------
@@ -1144,7 +1186,8 @@ async function configura($: Eng, opz: Record<string, unknown>, campi: Record<str
     const nuovo = { ...config, progetti: { ...config.progetti, [chi.repo]: { ...(config.progetti?.[chi.repo] as object ?? {}), ...campi } } }
     const p = progettoDa(nuovo, chi.repo)
     if (typeof p === 'string') throw new Error(p)
-    const esito = await helper($, ['configura', f], JSON.stringify({ atteso, repo: chi.repo, campi }))
+    // `proposte`: l'helper completa l'ultima operazione sui pesi prima di scrivere profilo o pesi.
+    const esito = await helper($, ['configura', f], JSON.stringify({ atteso, repo: chi.repo, campi, proposte: await fileProposte($).catch(() => undefined) }))
     if (esito.codice !== 0) throw new Error('Configurazione cambiata altrove o non scrivibile: ricarica e riprova')
     await aggiornaRisorse($, opz)
 }
@@ -1350,6 +1393,30 @@ export const register: Register = (on, options) => {
       isDeferred: true,
     })
     await $.tool.register({
+      name: 'proponi_pesi',
+      description:
+        'Propone profilo di bilanciamento e/o regolazioni dei pesi per questo progetto, con il motivo (dati in `risorse_agenti`). ' +
+        'Non cambia nulla: la proposta compare nel pannello e la decide il committente.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          profilo: { type: 'string', enum: ['automatico', 'risparmio', 'qualita', 'velocita', 'personalizzato'] },
+          regolazioni: {
+            type: 'array',
+            description: 'Posizione 0 Molto meno · 1 Meno · 2 Normale · 3 Più · 4 Preferisci, su voci ammesse.',
+            items: {
+              type: 'object',
+              properties: { tipo: { type: 'string', enum: ['fornitore', 'modello', 'effort'] }, nome: { type: 'string' }, posizione: { type: 'integer', minimum: 0, maximum: 4 } },
+              required: ['tipo', 'nome', 'posizione'],
+            },
+          },
+          motivo: { type: 'string', description: 'Fino a 300 caratteri.' },
+        },
+        required: ['motivo'],
+      },
+      isDeferred: true,
+    })
+    await $.tool.register({
       name: 'aggiorna_azione',
       description:
         'Aggiorna un\'azione del pannello «chipManager». Dalla sessione avviata: "consegnata" a lavoro consegnato (ramo pushato, ' +
@@ -1377,6 +1444,7 @@ export const register: Register = (on, options) => {
     void $.ui.open({ id: PANE, title: TITOLO })
     void chiediSenzaProgetto($).catch(() => {})
     void leggiSessioni($).catch(() => {})
+    void leggiProposte($)
     // Le milestone cambiano di rado: ogni 5 minuti, e a mano con «Aggiorna».
     void leggiTraguardi($).catch(() => {})
     // Risorse, sessioni e traguardi appena letti: il battito parte da qui (giro al primo battito, come prima).
@@ -1427,17 +1495,43 @@ export const register: Register = (on, options) => {
   })
 
   on('tool.call', { tool: 'mcp__chip-manager__risorse_agenti' }, async $ => {
-    const [r, ris] = await Promise.all([leggiRegole($), read($, risorse)])
-    // Solo ciò che il pannello mostra: delle chiavi si dice se ci sono, mai il valore.
+    const [r, ris, ses, chi] = await Promise.all([leggiRegole($), read($, risorse), read($, sessioni), chiSonoIo($)])
+    await leggiProposte($)
+    const adesso = Date.now()
+    const lista = delProgetto(await read($, azioni), chi)
+    // Solo ciò che il pannello mostra: delle chiavi si dice se ci sono, mai il valore. Profilo e soglie stanno in `politica`.
     return {
-      result: JSON.stringify({
+      result: rispostaRisorse({
         regole: { lette: r.lette, fonte: r.fonte, modelli: r.modelli, effort: r.effort, corsieCodex: r.corsiaCodex.corsie },
         politica: r.risorse,
         limiti: ris.limiti,
         freellmapi: ris.proxy,
         chiavi: ris.chiavi,
+        alLavoro: alLavoroDa(ses.lista, attive(lista), r),
+        contesto: contestoPerModello(ses.lista, adesso),
+        proposte: proposteBrevi(await read($, propostePesi), adesso),
       }),
     }
+  })
+
+  on('tool.call', { tool: 'mcp__chip-manager__proponi_pesi' }, async ($, e) => {
+    const [r, chi] = await Promise.all([leggiRegole($), chiSonoIo($)])
+    if (!chi.repo) return { deny: 'proponi_pesi: questa sessione non è in un repository' }
+    if (!r.lette) return { deny: `proponi_pesi: regole ${r.fonte}: senza routing.json le voci non si controllano` }
+    // `tool` e `tool_use_id` sono del motore, non argomenti: ogni altro campo estraneo si rifiuta.
+    const { tool: _tool, tool_use_id: _id, ...args } = e as unknown as Record<string, unknown>
+    const v = propostaDa(args, r)
+    if (typeof v === 'string') return { deny: `proponi_pesi: ${v}` }
+    // Il proponente è questa sessione (id dal motore, titolo dall'app), mai un argomento.
+    const esito = await helper($, ['pesi-proponi', await fileConfig($), await fileProposte($)], JSON.stringify({
+      repo: chi.repo, proponente: { id: chi.io, titolo: chi.titolo ?? '' }, motivo: v.motivo, profilo: v.profilo, regolazioni: v.regolazioni,
+      partenza: { profilo: r.risorse.profilo ?? null, pesi: r.risorse.pesi }, revisione: r.risorse.pesiRevisione ?? 0, risultato: v.risultato,
+    }))
+    if (esito.codice !== 0) return { deny: `proponi_pesi: ${esito.testo || 'proposta non registrata'}` }
+    const { id, scadute } = JSON.parse(esito.testo) as { id: string; scadute: string[] }
+    await leggiProposte($)
+    void $.ui.open({ id: PANE, title: TITOLO })
+    return { result: TESTI_PESI.registrata(id, scadute) }
   })
 
   on('tool.call', { tool: 'mcp__chip-manager__aggiorna_azione' }, async ($, e) => {
@@ -1532,6 +1626,8 @@ export const register: Register = (on, options) => {
         return Promise.all([giro($, opz), leggiTraguardi($), aggiornaRisorse($, opz), leggiSessioni($)])
       },
       configura: (campi, attese) => configura($, opz, campi, attese),
+      decidiPesi: (p, esito) => decidiPesi($, opz, p, esito),
+      annullaPesi: p => annullaPesi($, opz, p),
       board: (modo, attese) => impostaBoard($, opz, modo, attese),
       apriBoard: () => apriBoard($),
       peso: async (peso: Peso, attese: RisorseProgetto) => {
