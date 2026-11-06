@@ -411,3 +411,73 @@ test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazi
       await ui.unmount()
     }
 })
+
+// --- lingue: resa nel terminale a 60 colonne ----------------------------------------------------------------
+// Il kit non dipinge: si calcola la larghezza minima che l'albero disegnato chiede al terminale. Una parola non si
+// spezza, un pulsante non va a capo, una riga di Box senza `flexWrap` somma i figli; bordi e margini contano.
+type Nodo = { type?: string; props?: Record<string, unknown>; children?: unknown }
+// Solo le parole di una lingua: un comando, un percorso o un URL dentro un Text che va a capo il terminale lo spezza.
+const parole = (s: string) => Math.max(0, ...s.split(/\s+/).filter(w => /^[\p{L}'’«»“”„()-]+[.,:;!?…]*$/u.test(w)).map(w => [...w].length))
+const testoDi = (n: unknown): string =>
+  typeof n === 'string' || typeof n === 'number' ? String(n) : Array.isArray(n) ? n.map(testoDi).join('') : n && typeof n === 'object' ? testoDi((n as Nodo).children) : ''
+const figliDi = (n: Nodo) => [n.children].flat(9).filter(x => x !== null && x !== undefined && x !== false && x !== '')
+const num = (v: unknown) => (typeof v === 'number' ? v : 0)
+function minima(n: unknown, troppo: string[], limite: number): number {
+  if (typeof n === 'string' || typeof n === 'number') return parole(String(n))
+  if (!n || typeof n !== 'object') return 0
+  if (Array.isArray(n)) return Math.max(0, ...n.map(x => minima(x, troppo, limite)))
+  const x = n as Nodo
+  const p = x.props ?? {}
+  let w: number
+  if (x.type === 'Text') w = String(p.wrap ?? '').startsWith('truncate') ? 1 : parole(testoDi(x))
+  else if (x.type === 'Button') w = [...(testoDi(x) || String(p.label ?? ''))].length + 2
+  else if (x.type === 'Input' || x.type === 'Select') w = Math.min(limite, [...String(p.label ?? '')].length + 2)
+  else {
+    const figli = figliDi(x).map(f => minima(f, troppo, limite))
+    const colonna = p.flexDirection === 'column' || p.flexDirection === 'column-reverse'
+    const spazio = num(p.columnGap ?? p.gap) * Math.max(0, figli.length - 1)
+    const interno = typeof p.width === 'string' ? 0 : colonna || p.flexWrap === 'wrap' ? Math.max(0, ...figli) : figli.reduce((a, b) => a + b, 0) + spazio
+    w = interno + num(p.paddingX) * 2 + num(p.paddingLeft) + num(p.paddingRight) + num(p.padding) * 2 + (p.borderStyle ? 2 : 0)
+  }
+  if (w > limite) troppo.push(`${x.type} ${w}: ${(testoDi(x) || String(p.label ?? '')).slice(0, 70)}`)
+  return w
+}
+
+test('lingue: a 60 colonne nel terminale nessuna riga supera la larghezza e nessuna etichetta si ripete, in ogni lingua', async ($, on) => {
+  const amb = ambiente(on, MATRICE_EN)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'lingua']
+  for (const lingua of ['en', 'it', 'es', 'fr', 'de', 'pt']) {
+    amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua, progetti: { 'acme/progetto': {} } }))
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount(PANE('terminal', 60))
+    const controlla = async (dove: string) => {
+      const albero = await ui.drawn()
+      const troppo: string[] = []
+      // Il pannello toglie due colonne di margine: il contenuto ne ha 58.
+      minima(albero, troppo, 58)
+      // Solo le foglie (Text, Button, campi) sono il colpevole: i Box che le contengono lo ripetono.
+      const foglie = troppo.filter(t => !t.startsWith('Box') && !t.startsWith('undefined'))
+      if (foglie.length) throw new Error(`${lingua} ${dove}: ${foglie.slice(0, 4).join(' | ')}`)
+      if (troppo.length) throw new Error(`${lingua} ${dove}: riga troppo larga ${troppo[0]}`)
+      const etichette = pulsanti(albero).map(b => b.label ?? '')
+      const doppie = etichette.filter((e, i) => etichette.indexOf(e) !== i)
+      if (doppie.length) throw new Error(`${lingua} ${dove}: etichette ripetute ${doppie.join(' | ')}`)
+      for (const [id, chiavi] of Object.entries(AZIONI_PER_STATO))
+        if (dove === 'lavoro' && MATRICE_EN.some(a => a.id === id))
+          for (const k of chiavi) if (!(await ui.find({ key: `${k}-${id}` }))) throw new Error(`${lingua}: manca ${k}-${id}`)
+    }
+    // La vista scelta resta da un giro all'altro: si riparte da Lavoro.
+    await ui.press({ key: 'vista-lavoro' })
+    await controlla('lavoro')
+    await ui.press({ key: 'vista-carico' })
+    await controlla('carico')
+    await ui.press({ key: 'impostazioni' })
+    for (const s of SEZIONI) {
+      await ui.press({ key: `sezione-${s}-premi` })
+      await controlla(s)
+    }
+    await ui.unmount()
+  }
+})

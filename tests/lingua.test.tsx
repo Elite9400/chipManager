@@ -6,14 +6,11 @@ import type { Chiave } from '../hooks/lingua'
 
 const segnaposto = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort().join(',')
 const forme = (v: unknown) => (typeof v === 'string' ? [v] : Object.values(v as Record<string, string>))
-// Le lingue complete; le altre, finché il commit delle traduzioni non le completa, hanno un sottoinsieme delle chiavi.
-const COMPLETE: string[] = ['en', 'it']
 
 test('ogni chiave dell\'inglese esiste in ogni lingua, dello stesso tipo e con gli stessi segnaposto', () => {
   const chiavi = Object.keys(DIZIONARI.en) as Chiave[]
   for (const l of LINGUE) {
-    if (COMPLETE.includes(l)) expect(Object.keys(DIZIONARI[l]).sort()).toEqual([...chiavi].sort())
-    else expect(Object.keys(DIZIONARI[l]).filter(k => !chiavi.includes(k as Chiave))).toEqual([])
+    expect(Object.keys(DIZIONARI[l]).sort()).toEqual([...chiavi].sort())
     for (const k of chiavi) {
       const fonte = DIZIONARI.en[k]!
       const v = DIZIONARI[l][k]

@@ -11,7 +11,7 @@ import pt from './lingue/pt'
 export type { Chiave } from './lingue/en'
 export type Lingua = 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
 export const LINGUE: readonly Lingua[] = ['en', 'it', 'es', 'fr', 'de', 'pt']
-export const DIZIONARI: Record<Lingua, Partial<Record<Chiave, Voce>>> = { en, it, es, fr, de, pt }
+export const DIZIONARI: Record<Lingua, Record<Chiave, Voce>> = { en, it, es, fr, de, pt }
 /** Ogni lingua col suo nome, uguale in tutte le interfacce: chi non capisce la lingua attuale ritrova la sua. */
 export const NOMI_LINGUE: Record<Lingua, string> = { en: 'English', it: 'Italiano', es: 'Español', fr: 'Français', de: 'Deutsch', pt: 'Português (Brasil)' }
 

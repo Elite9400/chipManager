@@ -715,5 +715,3 @@ export default en
 export type Chiave = keyof typeof en
 /** The shape every other dictionary must have: same keys, same kind (sentence or plural forms). */
 export type Dizionario = { [K in Chiave]: (typeof en)[K] extends string ? string : Forme }
-/** A language still being translated: the missing keys fall back to English. */
-export type Parziale = Partial<Dizionario>
