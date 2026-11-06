@@ -500,16 +500,20 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
       const esito = troncato ? null : estraiEsito(Buffer.concat(pezzi).toString('utf8'))
       const errori = Buffer.concat(grezzo).toString('utf8')
       const stderr = errori ? { stderr: filtraStderr(errori, input.chiave, undefined, erroriTroncati) } : {}
-      // Rifiuto all'avvio SOLO se tutto è vero: nessun JSON finale, uscita con errore entro pochi secondi, stderr che cita
-      // advisor, availableModels o il consenso, e il worktree invariato (status pulito, nessun commit oltre la base). Lo
-      // stdout vuoto non dice che non si è lavorato. Ogni altro caso è incerto, con il costo di §4.
-      const nonDisp = !esito && codice !== 0 && Date.now() - avvio < (deps.avvioMs ?? AVVIO_MS) ? advisorNonDisponibile(errori) : undefined
-      if (nonDisp && worktreeInvariato(cwd, base, deps)) scrivi({ stato: 'fallita', ramo, costo: null, advisorNonDisponibile: nonDisp, errore: "advisor non disponibile all'avvio: il worktree è invariato", ...adv, ...stderr })
+      // Rifiuto all'avvio SOLO se tutto è vero: nessun JSON finale e stdout NON troncato (un JSON oltre il limite potrebbe
+      // esserci), uscita con errore entro pochi secondi, stderr che cita advisor, availableModels o il consenso, e il
+      // worktree invariato (status pulito, nessun commit oltre la base). Lo stdout vuoto non dice che non si è lavorato.
+      const nonDisp = !esito && !troncato && codice !== 0 && Date.now() - avvio < (deps.avvioMs ?? AVVIO_MS) ? advisorNonDisponibile(errori) : undefined
+      const rifiutato = !!nonDisp && worktreeInvariato(cwd, base, deps)
+      // F6 §4, una regola sola: ogni esito che non è una consegna pulita (incerto, rifiuto) contabilizza il tetto intero.
+      // Il costo che il JSON riporta resta nel record solo come informazione (`costoRiportato`).
+      const riportato = esito && esito.costo !== null ? { costoRiportato: esito.costo } : {}
+      if (rifiutato) scrivi({ stato: 'fallita', ramo, costo: null, advisorNonDisponibile: nonDisp, errore: "advisor non disponibile all'avvio: il worktree è invariato", ...adv, ...stderr })
       else if (!esito) scrivi({ stato: 'avviata', ramo, incerto: true, costo: null, errore: 'esito API incerto: controlla il worktree prima di chiudere', ...adv, ...stderr })
       // Un JSON con is_error non è una consegna: finita con errore, il lavoro fatto non si sa (num_turns mancante = ignoto).
-      else if (esito.errore) scrivi({ stato: 'avviata', ramo, incerto: true, costo: esito.costo, ...(esito.turni !== undefined && { turni: esito.turni }), errore: 'esecuzione API terminata con errore: controlla il worktree prima di chiudere', ...adv, ...stderr })
+      else if (esito.errore) scrivi({ stato: 'avviata', ramo, incerto: true, costo: null, ...riportato, ...(esito.turni !== undefined && { turni: esito.turni }), errore: 'esecuzione API terminata con errore: controlla il worktree prima di chiudere', ...adv, ...stderr })
       else scrivi({ stato: 'consegnata', ramo, costo: esito.costo, turni: esito.turni, errore: codice !== 0 ? 'esecuzione API terminata con errore: controlla il worktree prima di chiudere' : undefined, ...adv, ...stderr })
-      await contaSpesa(dir, tentativo, esito?.costo ?? null)
+      await contaSpesa(dir, tentativo, esito && !esito.errore && !rifiutato ? esito.costo : null)
     } catch (e) {
       if (!partito) {
         scrivi({ stato: 'fallita', ramo: fuori.ramo,

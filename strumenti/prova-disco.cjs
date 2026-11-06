@@ -1739,7 +1739,8 @@ async function eseguiConAdvisor(tentativo, input, fontiWorktree, figlio, invaria
   assert.strictEqual((await API.lanciaApi(dir, id, tentativo, { ...ingressoApi(root), ...input }, { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }))[0], 0)
   await API.eseguiApi(dir, id, tentativo, { ...ingressoApi(root), ...input }, { dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], env: {}, fontiCwd: () => fontiWorktree, avvia: figlio,
     worktreeInvariato: (_cwd, base) => (assert.strictEqual(base, 'a'.repeat(40)), invariato) })
-  return JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', `${tentativo}.json`), 'utf8'))
+  // La cartella delle azioni viaggia col record (non enumerabile): le prove leggono anche il registro della spesa.
+  return Object.defineProperty(JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', `${tentativo}.json`), 'utf8')), 'dir', { value: dir })
 }
 const fontiCon = (contenuti) => {
   const dir = tmp()
@@ -1806,7 +1807,7 @@ test('F7 rilievo 2: un figlio che ha lavorato (stdout) e cita l\'advisor resta i
   const lavorato = await eseguiConAdvisor('az-riv70201', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: 'testo di lavoro senza JSON', stderr: 'warning: advisor call failed once' }), false)
   assert.deepStrictEqual([lavorato.stato, lavorato.incerto, lavorato.advisorNonDisponibile], ['avviata', true, undefined])
   const errore = await eseguiConAdvisor('az-riv70202', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: JSON.stringify({ is_error: true, total_cost_usd: 0.3, num_turns: 4 }) }))
-  assert.deepStrictEqual([errore.stato, errore.incerto, errore.costo, errore.advisorNonDisponibile], ['avviata', true, 0.3, undefined])
+  assert.deepStrictEqual([errore.stato, errore.incerto, errore.costo, errore.costoRiportato, errore.advisorNonDisponibile], ['avviata', true, null, 0.3, undefined])
   // Senza JSON finale, uscita subito, stderr sull'advisor e worktree invariato: il rifiuto all'avvio.
   const rifiuto = await eseguiConAdvisor('az-riv70203', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr: 'advisor model rejected' }))
   assert.deepStrictEqual([rifiuto.stato, rifiuto.advisorNonDisponibile], ['fallita', 'rifiutato'])
@@ -1847,4 +1848,22 @@ test('F7 giro 2, rilievo 3: senza stdout ma con il worktree cambiato è incerto;
   git('-c', 'user.email=prova@esempio.it', '-c', 'user.name=prova', 'commit', '-q', '--allow-empty', '-m', 'dopo')
   assert.strictEqual(API.worktreeInvariato(repo, base), false)
   assert.strictEqual(API.worktreeInvariato(path.join(repo, 'non-esiste'), base), false)
+})
+
+test('F7 giro 3: ogni esito incerto contabilizza il tetto intero nel registro della spesa (il costo riportato resta solo un\'informazione); stdout troncato non è mai un rifiuto', async () => {
+  const voce = e => API.leggiSpesa(e.dir).voci[e.tentativo]
+  // is_error con costo 0,30 e tetto 2: incerto, nel registro conta 2.
+  const errore = await eseguiConAdvisor('az-rv9001', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: JSON.stringify({ is_error: true, total_cost_usd: 0.3, num_turns: 4 }) }))
+  assert.deepStrictEqual([errore.stato, errore.incerto, errore.costoRiportato], ['avviata', true, 0.3])
+  assert.deepStrictEqual(voce(errore), { mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
+  assert.strictEqual(API.spesoNelMese(API.leggiSpesa(errore.dir).voci, '2026-11'), 2)
+  // Stdout oltre 1 MiB (un JSON potrebbe esserci), uscita subito con stderr sull'advisor e worktree invariato: incerto.
+  const lungo = await eseguiConAdvisor('az-rv9002', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: 'x'.repeat(1024 * 1024 + 10), stderr: 'advisor model rejected' }))
+  assert.deepStrictEqual([lungo.stato, lungo.incerto, lungo.advisorNonDisponibile], ['avviata', true, undefined])
+  assert.deepStrictEqual(voce(lungo), { mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
+  // Il rifiuto all'avvio vero e l'esito senza JSON contano il tetto; una consegna pulita conta il suo costo.
+  const rifiuto = await eseguiConAdvisor('az-rv9003', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr: 'advisor model rejected' }))
+  assert.deepStrictEqual([rifiuto.stato, rifiuto.advisorNonDisponibile, voce(rifiuto).costo], ['fallita', 'rifiutato', null])
+  const pulita = await eseguiConAdvisor('az-rv9004', {}, fontiCon({}), claudeAdvisor({}, { uscita: JSON.stringify({ is_error: false, total_cost_usd: 0.4, num_turns: 3 }) }))
+  assert.deepStrictEqual([pulita.stato, voce(pulita).costo], ['consegnata', 0.4])
 })
