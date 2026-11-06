@@ -1,0 +1,18 @@
+# chipManager
+
+> Claude Code mod: a panel where agents propose work as actions ("chips") that the owner reviews and starts as
+> sessions on Claude, Codex or external models, locally, in the cloud or on API credits, under lane rules R0–R5.
+
+Agents interact through five MCP tools: `suggerisci_azione` (propose), `aggiorna_azione` (report delivery and
+review), `risorse_agenti` (read limits and rules), `proponi_pesi` and `proponi_impostazioni` (only on user request).
+
+## Docs
+
+- [Guide for agents](docs/GUIDE-FOR-AGENTS.md): lifecycle, briefs, lanes, model and effort choice, reporting, platforms
+- [Agents snippet](docs/AGENTS-SNIPPET.md): short block to paste into CLAUDE.md or AGENTS.md
+- [README](README.md): install, configuration, routing.json, limits and balancing, security guards
+
+## Optional
+
+- [Agent UX review](docs/AGENT-UX-REVIEW.md): findings and proposals on tool texts, schemas and mandate
+- [Changelog](CHANGELOG.md): release history
