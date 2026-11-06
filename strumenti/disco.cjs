@@ -20,9 +20,9 @@ const { spawn, spawnSync } = require('child_process')
 // Il mutex identifica la cartella FISICA: due spellings della stessa cartella (C:/… e D:/… sullo stesso
 // volume, una junction, un link) devono dare la stessa porta. Si chiama dopo che la cartella esiste.
 const MUTEX_AZIONI = dir => `azioni:${fs.realpathSync.native(path.resolve(dir)).toLowerCase()}`
-// Solo le prove danno un nome proprio (prefisso «prova:»): così non contendono il mutex con i Codex veri della
-// macchina. In produzione la variabile non c'è e il nome resta quello unico della macchina.
-const MUTEX_CODEX = /^prova:[\w.-]{1,60}$/.test(process.env.CHIPMANAGER_PROVA_MUTEX_CODEX ?? '') ? process.env.CHIPMANAGER_PROVA_MUTEX_CODEX : 'codex:corsia-della-macchina'
+// Uno solo per macchina e non configurabile: nessuna variabile d'ambiente lo cambia. Le prove, chiamando main()
+// dal proprio entrypoint, ne passano un altro come parametro.
+const MUTEX_CODEX = 'codex:corsia-della-macchina'
 
 /** Porta 20000-59999 derivata dal nome: stessa porta per lo stesso mutex su tutta la macchina. */
 const porta = nome => 20000 + (crypto.createHash('sha256').update(nome).digest().readUInt32BE(0) % 40000)
@@ -601,10 +601,10 @@ async function eseguiCli(dir, id, tentativo, input, deps = {}) {
   return r.occupato ? 3 : 0
 }
 
-async function occupata(nome) {
+async function occupata(nome, mutexCodex = MUTEX_CODEX) {
   // Sotto il mutex: chi esegue tiene il mutex (occupata), e nessuno può sostituire il segno mentre lo si
   // controlla e, se l'albero è estinto, lo si toglie.
-  const r = await conMutex(nome, 0, () => (nome === MUTEX_CODEX ? figlioVivo() : false))
+  const r = await conMutex(nome, 0, () => (nome === mutexCodex ? figlioVivo() : false))
   return r.occupato || r.valore ? 3 : 0
 }
 
@@ -613,7 +613,7 @@ async function occupata(nome) {
  * questo processo muoiono, la corsia si libera). Le revisioni hanno la precedenza (routing.json,
  * corsia_codex): un'implementazione cede finché c'è una revisione viva in attesa.
  */
-async function corsiaCodex(argv) {
+async function corsiaCodex(argv, mutexCodex = MUTEX_CODEX) {
   const sep = argv.indexOf('--')
   if (sep < 0 || sep === argv.length - 1) return 2
   const opz = argv.slice(0, sep)
@@ -669,7 +669,7 @@ async function corsiaCodex(argv) {
         await dorme(2_000)
         continue
       }
-      const r = await conMutex(MUTEX_CODEX, Math.min(2_000, Math.max(0, fine - Date.now())), async () => {
+      const r = await conMutex(mutexCodex, Math.min(2_000, Math.max(0, fine - Date.now())), async () => {
         // Ricontrollo DENTRO il mutex: una revisione arrivata durante l'attesa passa davanti, e un figlio
         // sopravvissuto al suo wrapper tiene ancora la corsia.
         if ((!revisione && revisioniVive() > 0) || figlioVivo()) return OCCUPATA
@@ -729,7 +729,7 @@ async function corsiaCodex(argv) {
   }
 }
 
-async function main(argv) {
+async function main(argv, { mutexCodex = MUTEX_CODEX } = {}) {
   const [cmd, ...a] = argv
   const stdin = () => JSON.parse(fs.readFileSync(0, 'utf8'))
   if (cmd === 'configura' && a.length === 1) return esci(await configura(a[0], stdin()))
@@ -747,8 +747,8 @@ async function main(argv) {
     const [codice, testo] = await prenota(a[0], stdin())
     return esci(codice, testo)
   }
-  if (cmd === 'occupata' && a.length === 1) return esci(await occupata(a[0] === 'codex' ? MUTEX_CODEX : a[0]))
-  if (cmd === 'corsia-codex') return esci(await corsiaCodex(a))
+  if (cmd === 'occupata' && a.length === 1) return esci(await occupata(a[0] === 'codex' ? mutexCodex : a[0], mutexCodex))
+  if (cmd === 'corsia-codex') return esci(await corsiaCodex(a, mutexCodex))
   if (cmd === 'leggi-piano' && a.length === 2) return esci(...leggiPiano(...a))
   if (cmd === 'git-log' && a.length === 1) return esci(...gitLog(a[0]))
   if (cmd === 'board-scrivi' && a.length === 5) return esci(...(await boardScrivi(...a, fs.readFileSync(0, 'utf8'))))
@@ -764,4 +764,4 @@ function esci(codice, testo) {
 }
 
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))
-module.exports = { conMutex, scriviAtomico, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, lanciaCli, eseguiCli }
+module.exports = { main, conMutex, scriviAtomico, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, lanciaCli, eseguiCli }

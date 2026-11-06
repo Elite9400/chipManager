@@ -15,14 +15,19 @@ const fuoriDalRepo = []
 const fuori = () => { const d = fs.mkdtempSync(path.join(tmpVero, 'board-')); fuoriDalRepo.push(d); return d }
 fs.mkdirSync(radiceProve, { recursive: true })
 process.env.TMP = process.env.TEMP = process.env.TMPDIR = radiceProve
-// Corsia Codex delle prove: mutex proprio (i figli lo ereditano), mai quello delle revisioni Codex vere.
-process.env.CHIPMANAGER_PROVA_MUTEX_CODEX = `prova:corsia-${process.pid}`
 // I collegamenti simbolici lasciati qui fanno fallire `claude plugin install` dalla cartella.
 after(() => { for (const d of [radiceProve, ...fuoriDalRepo]) fs.rmSync(d, { recursive: true, force: true, maxRetries: 3 }) })
 
 const DISCO = path.join(__dirname, 'disco.cjs')
+// Entrypoint delle prove: lo stesso main() di disco.cjs, con un mutex della corsia Codex proprio, passato come parametro.
+// Così le prove non contendono la corsia con i Codex veri della macchina, e disco.cjs non legge nessuna variabile per farlo.
+const MUTEX_PROVA = `prova:corsia-${process.pid}`
+const ENTRATA = path.join(radiceProve, 'entrata-prove.cjs')
+fs.writeFileSync(ENTRATA, `require(${JSON.stringify(DISCO)}).main(process.argv.slice(2), { mutexCodex: ${JSON.stringify(MUTEX_PROVA)} })
+  .catch(e => { process.stdout.write(String(e?.message ?? e)); process.exitCode = 1 })
+`)
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'disco-'))
-const esegui = (args, input) => spawnSync(process.execPath, [DISCO, ...args], { input, encoding: 'utf8' })
+const esegui = (args, input) => spawnSync(process.execPath, [ENTRATA, ...args], { input, encoding: 'utf8' })
 const corri = (codice, args = []) =>
   new Promise(r => {
     const p = spawn(process.execPath, ['-e', codice, ...args])
@@ -96,7 +101,7 @@ test('corsia Codex: se il wrapper muore, il comando muore con lui o la corsia re
   const dir = tmp()
   const fatto = path.join(dir, 'fatto')
   const lungo = `setTimeout(()=>require('fs').writeFileSync(${JSON.stringify(fatto)},'1'),1500)`
-  const wrapper = spawn(process.execPath, [DISCO, 'corsia-codex', '--', process.execPath, '-e', lungo], { detached: true, stdio: 'ignore' })
+  const wrapper = spawn(process.execPath, [ENTRATA, 'corsia-codex', '--', process.execPath, '-e', lungo], { detached: true, stdio: 'ignore' })
   const filePid = path.join(os.tmpdir(), 'chipmanager-corsia-codex.pid')
   for (let i = 0; i < 50 && !fs.existsSync(filePid); i++) await new Promise(r => setTimeout(r, 50))
   const pid = JSON.parse(fs.readFileSync(filePid, 'utf8')).radice
@@ -112,7 +117,7 @@ test('corsia Codex: se il wrapper muore, il comando muore con lui o la corsia re
   // lui); altrove il figlio può sopravvivere. In entrambi i casi: corsia occupata ⇔ comando vivo.
   assert.strictEqual(esegui(['occupata', 'codex']).status, vivo ? 3 : 0)
   if (vivo) {
-    const secondo = spawnSync(process.execPath, [DISCO, 'corsia-codex', '--', process.execPath, '-e', `process.exit(require('fs').existsSync(${JSON.stringify(fatto)}) ? 0 : 9)`])
+    const secondo = spawnSync(process.execPath, [ENTRATA, 'corsia-codex', '--', process.execPath, '-e', `process.exit(require('fs').existsSync(${JSON.stringify(fatto)}) ? 0 : 9)`])
     assert.strictEqual(secondo.status, 0, 'il secondo comando è partito prima della fine del primo')
   } else assert.ok(!fs.existsSync(fatto), 'il comando doveva morire con il wrapper')
 })
@@ -182,7 +187,7 @@ test('corsia Codex: comandi mai sovrapposti; la revisione in attesa passa davant
     `const fs=require('fs');fs.appendFileSync(${JSON.stringify(log)},'${etichetta}+\\n');setTimeout(()=>{fs.appendFileSync(${JSON.stringify(log)},'${etichetta}-\\n')},300)`
   const via = (etichetta, revisione) =>
     new Promise(r =>
-      spawn(process.execPath, [DISCO, 'corsia-codex', ...(revisione ? ['--revisione'] : []), '--', process.execPath, '-e', passo(etichetta)]).on(
+      spawn(process.execPath, [ENTRATA, 'corsia-codex', ...(revisione ? ['--revisione'] : []), '--', process.execPath, '-e', passo(etichetta)]).on(
         'exit',
         r,
       ),
@@ -244,9 +249,9 @@ test('corsia Codex: una revisione morta (voce senza battito, pid magari riciclat
 test('corsia Codex: il battito ricrea la voce di una revisione viva tolta per errore', async () => {
   const dirAttesa = path.join(os.tmpdir(), 'chipmanager-corsia-codex-revisioni')
   // Una implementazione tiene la corsia; intanto una revisione aspetta.
-  const lungo = spawn(process.execPath, [DISCO, 'corsia-codex', '--', process.execPath, '-e', 'setTimeout(()=>{},6000)'])
+  const lungo = spawn(process.execPath, [ENTRATA, 'corsia-codex', '--', process.execPath, '-e', 'setTimeout(()=>{},6000)'])
   await new Promise(r => setTimeout(r, 800))
-  const rev = spawn(process.execPath, [DISCO, 'corsia-codex', '--revisione', '--', process.execPath, '-e', 'process.exit(0)'])
+  const rev = spawn(process.execPath, [ENTRATA, 'corsia-codex', '--revisione', '--', process.execPath, '-e', 'process.exit(0)'])
   await new Promise(r => setTimeout(r, 800))
   const voce = path.join(dirAttesa, String(rev.pid))
   assert.ok(fs.existsSync(voce))
@@ -859,4 +864,13 @@ test('2.4 riassunti: politica non valida sotto lock (tipi o fornitori ignoti) = 
     fs.writeFileSync(b.config, JSON.stringify(c))
     assert.strictEqual(bc(b, 'board-prenota', g, ['x']).status, 4, JSON.stringify(guasto))
   }
+})
+
+test('2.4.2 corsia Codex: in produzione il mutex della macchina è uno solo, nessuna variabile d\'ambiente lo cambia', () => {
+  assert.strictEqual(require(DISCO).MUTEX_CODEX, 'codex:corsia-della-macchina')
+  assert.ok(!/CHIPMANAGER_PROVA/.test(fs.readFileSync(DISCO, 'utf8')))
+  // Con la variabile che la prima versione di questa fase leggeva, il nome resta quello della macchina.
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(DISCO)}).MUTEX_CODEX)`],
+    { env: { ...process.env, CHIPMANAGER_PROVA_MUTEX_CODEX: 'prova:altro' }, encoding: 'utf8' })
+  assert.strictEqual(r.stdout, 'codex:corsia-della-macchina')
 })
