@@ -65,6 +65,8 @@ export type Ctx = {
   faiQui: (a: Azione) => Promise<unknown>
   chiediQui: (a: Azione) => Promise<unknown>
   avviaTutte: () => Promise<unknown>
+  /** Avvia la prima del piano di «Avvia tutte»; `attesa` è quella che il pannello ha annunciato. */
+  avviaProssima: (attesa?: string) => Promise<unknown>
   giro: () => Promise<unknown>
   riordina: (id: string, verso: -1 | 1) => Promise<unknown>
   scarta: (a: Azione) => Promise<unknown>
@@ -319,7 +321,8 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
         </Box>
       )}
       {nota && (
-        <Box backgroundColor={conVelo ? velo(STATO.errore) : undefined} paddingX={1}>
+        // Un bordo e non un velo: il rosso del segno sul proprio velo, sul fondo scuro, scende sotto 3:1.
+        <Box borderStyle={conVelo ? 'round' : undefined} borderColor={STATO.errore} paddingX={1}>
           {nota1('nota', STATO.errore, '!', nota)}
         </Box>
       )}

@@ -671,8 +671,8 @@ async function chiediQui($: Eng, options: Record<string, unknown>, id: string) {
   }
 }
 
-/** «Avvia tutte»: piano, conferma con il riepilogo, poi ogni avvio ridecide sotto controllo atomico. */
-async function avviaTutte($: Eng, options: Record<string, unknown>) {
+/** Il piano delle proposte del progetto, come lo eseguirebbe chi avvia adesso: regole, dipendenze, posti e corsia Codex reale. */
+async function pianoProposte($: Eng, options: Record<string, unknown>) {
   const [tutte, r, chi] = await Promise.all([carica($, { completa: true }), leggiRegole($), chiSonoIo($)])
   const lista = delProgetto(tutte, chi)
   const max = maxParalleli(options)
@@ -680,6 +680,30 @@ async function avviaTutte($: Eng, options: Record<string, unknown>) {
   // Le violazioni della configurazione effettiva (chi avvia) entrano nel piano: una bloccata non consuma posti.
   const limitiOra = (await read($, risorse)).limiti
   const piano: Piano = await conCorsia($, codex => pianifica(proposte, lista, r, max, codex, a => violazioniAvvio(a, r, tutte, chi), limitiOra))
+  return { piano, r, max }
+}
+
+/**
+ * «Avvia la prossima» (tasto n): la prima del piano di «Avvia tutte», cioè la prima che parte davvero adesso. Il pannello
+ * la annuncia senza conoscere la corsia Codex della macchina: se ne parte un'altra, un toast lo dice.
+ */
+async function avviaProssima($: Eng, options: Record<string, unknown>, attesa?: string) {
+  const { piano } = await pianoProposte($, options)
+  const a = piano.avvia[0]
+  if (!a) {
+    const motivi = [...new Set([...piano.coda.map(x => x.motivo), ...(piano.bloccate.length ? [`${piano.bloccate.length} bloccate dalle regole`] : [])])]
+    throw new Error(motivi.length ? `Nessuna parte adesso: ${motivi.join(' · ')}` : 'Niente da avviare')
+  }
+  if (attesa && a.id !== attesa) {
+    const ferma = piano.coda.find(x => x.a.id === attesa)
+    $.ui.toast(`Parte «${a.titolo}»${ferma ? `; «${ferma.a.titolo}» aspetta: ${ferma.motivo}` : ''}`)
+  }
+  await avvia($, options, a.id, a.versione)
+}
+
+/** «Avvia tutte»: piano, conferma con il riepilogo, poi ogni avvio ridecide sotto controllo atomico. */
+async function avviaTutte($: Eng, options: Record<string, unknown>) {
+  const { piano, r, max } = await pianoProposte($, options)
   if (!piano.avvia.length && !piano.coda.length) {
     if (piano.bloccate.length) throw new Error(`Nessuna può partire: ${piano.bloccate.length} bloccate dalle regole`)
     return
@@ -1502,6 +1526,7 @@ export const register: Register = (on, options) => {
       faiQui: a => faiQui($, opz, a.id),
       chiediQui: a => chiediQui($, opz, a.id),
       avviaTutte: () => avviaTutte($, opz),
+      avviaProssima: attesa => avviaProssima($, opz, attesa),
       giro: async () => {
         await segna($, ['giro', 'sessioni', 'traguardi', 'risorse'])
         return Promise.all([giro($, opz), leggiTraguardi($), aggiornaRisorse($, opz), leggiSessioni($)])

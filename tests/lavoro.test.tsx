@@ -3,7 +3,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { ACCENTO, contrasto, GRIGIO, ICONA, MOTORE, SFONDI, STATO } from '../hooks/tema'
+import { ACCENTO, contrasto, GRIGIO, ICONA, MOTORE, SFONDI, sopra, STATO } from '../hooks/tema'
 import type { Azione, Limite } from '../types'
 
 type On = Parameters<TestBody>[1]
@@ -30,6 +30,8 @@ const ROUTING = {
   },
 }
 
+/** Come le etichette dei pulsanti: il titolo accorciato a 24 caratteri. */
+const breve = (t: string) => (t.length > 24 ? `${t.slice(0, 23)}…` : t)
 const LUNGO = 'Filtro di ricerca per le liste lunghe, con paginazione lato server e conteggio dei risultati in testata'
 const az = (id: string, ordine: number, extra: Partial<Azione> = {}): Azione => ({
   id, versione: 0, titolo: `Esempio ${id}`, brief: 'Frase d\'esempio.', ordine, dipende: [], esecutore: 'claude', revisore: 'codex',
@@ -37,7 +39,8 @@ const az = (id: string, ordine: number, extra: Partial<Azione> = {}): Azione => 
 })
 
 /** Engine finto ridotto: disco in memoria, prenotazione atomica dell'helper, avvio desktop che riesce. */
-function ambiente(on: On, azioni: Azione[], limiti: Limite[] = []) {
+function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexOccupato?: boolean } = {}) {
+  const toast: string[] = []
   const disco = new Map<string, string>()
   disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING))
   disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': {} } }))
@@ -75,7 +78,8 @@ function ambiente(on: On, azioni: Azione[], limiti: Limite[] = []) {
     const fine = (exitCode: number, stdout = '') => ({ value: { exitCode, stdout, stderr: '' } as never })
     if (e.argv[1]?.endsWith('/fornitori.cjs'))
       return fine(0, JSON.stringify(cmd === 'limiti' ? { limiti, proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } } : {}))
-    if (cmd === 'occupata') return fine(0)
+    // La corsia Codex della macchina: occupata da fuori (un'altra sessione, una revisione) quando il test lo chiede.
+    if (cmd === 'occupata') return fine(opz.codexOccupato ? 1 : 0)
     if (cmd === 'cas') {
       const f = p(a[0])
       if (versione(f) !== a[1]) return fine(4, versione(f))
@@ -103,14 +107,14 @@ function ambiente(on: On, azioni: Azione[], limiti: Limite[] = []) {
     if (e.tool === 'start_session') return testo(`started ${SID}`)
     return testo({})
   })
-  on('ui.toast', () => ({ value: undefined }))
+  on('ui.toast', (_, e) => (toast.push(String((e as { text?: unknown }).text)), { value: undefined }))
   on('ui.notify', () => ({ value: { isSent: false, reason: 'no-surface' } as never }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('tool.register', (_, e) => ({ value: { tool: e.name } }))
   on('command.register', () => ({ value: { command: 'chipmanager' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   const azione = (id: string) => JSON.parse(disco.get(`${DIR}/${id}.json`)!) as Azione
-  return { disco, chiamate, azione, avvii: () => chiamate.filter(c => c.tool === 'start_session') }
+  return { disco, chiamate, toast, azione, avvii: () => chiamate.filter(c => c.tool === 'start_session') }
 }
 
 const PANE = (surface: 'desktop' | 'terminal', colonne: number) =>
@@ -129,6 +133,7 @@ const MATRICE = [
   az('a-blocca01', 2, { titolo: 'Bozza da un\'altra conversazione', contesto: 'fork', origineFork: 'altra-sessione', origineNome: 'Altra' }),
   az('a-coda0001', 3, { titolo: 'Guida d\'esempio in coda', stato: 'accodata', motivoCoda: 'limite di 3 sessioni in parallelo' }),
   az('a-fallit01', 4, { titolo: 'Esportazione d\'esempio fallita', stato: 'fallita', errore: 'la sessione non è partita' }),
+  az('a-avviat01', 6, { titolo: 'Indici di esempio al lavoro', stato: 'avviata', sessione: 'local_22345678-1234-1234-1234-123456789abc', lanciataDa: 'sessione-master', avviataIl: '2026-11-05T10:00:00Z' }),
   az('a-conseg01', 5, { titolo: 'Legenda d\'esempio consegnata', stato: 'consegnata', sessione: SID, lanciataDa: 'sessione-master', avviataIl: '2026-11-05T10:00:00Z' }),
 ]
 /** Le azioni che ogni stato della matrice deve offrire sulla riga, per chiave del pulsante. */
@@ -138,7 +143,20 @@ const AZIONI_PER_STATO: Record<string, string[]> = {
   'a-coda0001': ['annulla', 'mod', 'su', 'giu', 'scarta'],
   'a-fallit01': ['riprova', 'chiedi', 'mod', 'su', 'giu', 'scarta'],
   'a-conseg01': ['vedi', 'fatta', 'mod'],
+  // Avviata e non ferma: sta in «Al lavoro adesso», con la stessa riga di azioni della matrice.
+  'a-avviat01': ['vedi', 'fatta', 'mod'],
 }
+
+type Pulsante = { key?: string; label?: string }
+/** Le props di ogni Button dell'albero disegnato. */
+function pulsanti(n: unknown): Pulsante[] {
+  if (!n || typeof n !== 'object') return []
+  if (Array.isArray(n)) return n.flatMap(pulsanti)
+  const x = n as { type?: string; props?: Pulsante; children?: unknown }
+  return [...(x.type === 'Button' && x.props ? [x.props] : []), ...pulsanti(x.children)]
+}
+// Le azioni delle righe: il desktop può disegnarne l'etichetta, che deve stare corta e restare unica.
+const AZIONI_RIGA = /^(avvia|riprova|qui|chiedi|perche|annullaT|annulla|fatta|mod|su|giu|scarta)-/
 
 test('C1: a 60, 90 e 130 colonne, desktop e terminale: titoli interi, «▶ Avvia» presente, nessuna azione persa', async ($, on) => {
   ambiente(on, MATRICE)
@@ -151,7 +169,14 @@ test('C1: a 60, 90 e 130 colonne, desktop e terminale: titoli interi, «▶ Avvi
       const avvia = await ui.find({ key: 'avvia-a-avviab01' })
       // Sempre il primo pulsante della sua riga: si vede «▶ Avvia», l'etichetta dice anche quale chip.
       expect(avvia?.text).toBe('▶ Avvia')
-      expect(avvia?.props.label).toBe(`Avvia ${LUNGO}`)
+      expect(avvia?.props.label).toBe(`▶ Avvia ${breve(LUNGO)}`)
+      expect((await ui.find({ key: 'su-a-avviab01' }))?.props.label).toBe(`↑ ${breve(LUNGO)}`)
+      const tutti = pulsanti(await ui.drawn())
+      const etichette = tutti.map(b => b.label ?? '')
+      for (const b of tutti.filter(b => AZIONI_RIGA.test(b.key ?? ''))) {
+        if ((b.label ?? '').length > 50) throw new Error(`${b.key}: etichetta lunga «${b.label}»`)
+        if (etichette.filter(l => l === b.label).length > 1) throw new Error(`${b.key}: etichetta ripetuta «${b.label}»`)
+      }
       for (const [id, chiavi] of Object.entries(AZIONI_PER_STATO))
         for (const k of chiavi) if (!(await ui.find({ key: `${k}-${id}` }))) throw new Error(`${surface} ${colonne}: manca ${k}-${id}`)
       // La chip bloccata non ha «Avvia»; quella consegnata non si riordina.
@@ -258,10 +283,13 @@ test('C1: i colori del pannello sono solo gettoni di tema.ts; ogni segno colorat
   await clock.advance(20_000)
   const gettoni = new Set<string>([ACCENTO, GRIGIO, ...Object.values(STATO), ...Object.values(MOTORE)])
   const visti = new Set<string>()
-  const visita = (n: unknown): void => {
+  // `fondi`: i backgroundColor degli antenati (con il loro alfa), dal più esterno; il segno si misura sul fondo composto.
+  const visita = (n: unknown, fondi: string[] = []): void => {
     if (!n || typeof n !== 'object') return
-    if (Array.isArray(n)) return n.forEach(visita)
+    if (Array.isArray(n)) return n.forEach(m => visita(m, fondi))
     const x = n as { type?: string; props?: Record<string, unknown>; children?: unknown }
+    const fondo = x.props?.backgroundColor
+    const sotto = typeof fondo === 'string' ? [...fondi, fondo] : fondi
     for (const k of ['color', 'backgroundColor', 'borderColor']) {
       const v = x.props?.[k]
       if (typeof v !== 'string') continue
@@ -270,10 +298,12 @@ test('C1: i colori del pannello sono solo gettoni di tema.ts; ogni segno colorat
       if (!gettoni.has(tinta)) throw new Error(`${k} ${v} non è un gettone di tema.ts`)
       // Un segno nel colore (Text color) deve leggersi su ogni sfondo; i veli (alfa) stanno sotto testo in inchiostro.
       if (k === 'color' && x.type === 'Text')
-        for (const sfondo of [...SFONDI.chiaro, ...SFONDI.scuro])
-          if (contrasto(tinta, sfondo) < 3) throw new Error(`${tinta} su ${sfondo}: ${contrasto(tinta, sfondo).toFixed(2)} < 3`)
+        for (const sfondo of [...SFONDI.chiaro, ...SFONDI.scuro]) {
+          const composto = sotto.reduce((base, f) => sopra(f.slice(0, 7), f.slice(7) || 'FF', base), sfondo)
+          if (contrasto(tinta, composto) < 3) throw new Error(`${tinta} su ${composto} (${sfondo} con ${sotto.join(' + ')}): ${contrasto(tinta, composto).toFixed(2)} < 3`)
+        }
     }
-    visita(x.children)
+    visita(x.children, sotto)
   }
   for (const surface of SUPERFICI) {
     const ui = await $.ui.mount(PANE(surface, 90))
@@ -288,4 +318,22 @@ test('C1: i colori del pannello sono solo gettoni di tema.ts; ogni segno colorat
   // Ci sono davvero: stati, motore, livelli dei limiti, accento della vista attiva. L'azzurro dell'icona no.
   for (const t of [STATO.coda, STATO.errore, STATO.consegnata, MOTORE.claude, ACCENTO, STATO.attesa]) expect(visti.has(t)).toBe(true)
   expect(visti.has(ICONA)).toBe(false)
+})
+
+test('C1: «Avvia la prossima» con la corsia Codex occupata da fuori avvia la prima che parte davvero, come «Avvia tutte»', async ($, on) => {
+  const amb = ambiente(on, [
+    az('a-codex001', 1, { titolo: 'Prima, per Codex', esecutore: 'codex', revisore: 'claude', modello: 'gpt-6-astra', corsia: 'R2' }),
+    az('a-claude01', 2, { titolo: 'Seconda, per Claude' }),
+  ], [], { codexOccupato: true })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 90))
+  await ui.press({ key: 'prossima' })
+  expect(amb.avvii().length).toBe(1)
+  expect(amb.azione('a-claude01').stato).toBe('avviata')
+  // La chip Codex non si accoda: resta da avviare, pronta quando la corsia si libera.
+  expect(amb.azione('a-codex001').stato).toBe('proposta')
+  // Il pannello aveva annunciato la chip Codex: il toast dice quale è partita e perché l'altra aspetta.
+  expect(amb.toast).toContain('Parte «Seconda, per Claude»; «Prima, per Codex» aspetta: corsia Codex occupata')
+  await ui.unmount()
 })
