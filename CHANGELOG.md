@@ -6,6 +6,36 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [2.4.2] - 2026-11-06
+
+### Changed
+
+- **Lighter with many sessions open.**
+  - One 20-second heartbeat replaces the four timers.
+  - The orchestration round stays fast while work is pending (proposed, queued, starting, started, delivered
+    actions, CLI runs) and slows to 60 s otherwise.
+  - The session list is read every 20 s only while the panel is on screen, every 2 minutes otherwise, and at
+    once when it comes back or on **Refresh**.
+- **Incremental Codex reading.** The helper keeps a cache of the local Codex session files.
+  - Unchanged files are not opened.
+  - Only appended bytes are read: incomplete lines wait, rewritten or truncated files are read again, and a
+    backlog over 512 KB is skipped with the state recomputed from the tail.
+  - Plan limits are kept per id with a chunked scan.
+  - Only allowed metadata fields are stored; a broken cache entry is rebuilt.
+- The Codex lane is queried only when an action would really start on Codex.
+- Actions are re-read only when their file changes, in full every 5 minutes and after a write conflict.
+- Shorter tool descriptions; `risorse_agenti` is now loaded on demand.
+
+### Added
+
+- A grey line in the Load view with this session's own footprint: helper processes, app calls, bytes read and
+  skipped backlogs in the last 10 minutes.
+
+### Fixed
+
+- A Codex session whose state cannot be read is shown as `—` instead of "stopped".
+- The Codex-lane disk tests use their own lock, so they no longer fail while real Codex work runs on the machine.
+
 ## [2.4.1] - 2026-11-06
 
 ### Changed
