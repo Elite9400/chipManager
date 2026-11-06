@@ -258,6 +258,8 @@ export const profiloDi = (r: RisorseProgetto): NonNullable<RisorseProgetto['prof
 /** Automatico si adatta alla corsia: sulle corsie leggere (R0–R1) gli effort alti valgono meno. R2–R5 non cambiano. */
 export const MOLTIPLICATORE_CORSIA: Readonly<Record<string, number>> = { high: 0.6, xhigh: 0.4 }
 const CORSIE_LEGGERE = ['R0', 'R1']
+/** La corsia adatta la scelta solo con il profilo Automatico e su una corsia leggera. */
+const corsiaAdatta = (a: Azione, r: Regole) => profiloDi(r.risorse) === 'automatico' && CORSIE_LEGGERE.includes(corsiaDi(a, r) ?? '')
 
 /**
  * Peso = preferenza, mai autorizzazione. Quote sconosciute non equivalgono a 100% libero.
@@ -269,7 +271,7 @@ export function punteggio(a: Azione, r: Regole, limiti: readonly Limite[], lista
     const nome = p.tipo === 'fornitore' ? a.esecutore : p.tipo === 'modello' ? modelloDi(a, r) : effortDi(a, r)
     if (p.nome === nome) peso *= Math.max(0, 100 * (1 + p.percentuale / 100) + p.assoluto) / 100
   }
-  if (profiloDi(r.risorse) === 'automatico' && CORSIE_LEGGERE.includes(corsiaDi(a, r) ?? '')) peso *= MOLTIPLICATORE_CORSIA[effortDi(a, r)] ?? 1
+  if (corsiaAdatta(a, r)) peso *= MOLTIPLICATORE_CORSIA[effortDi(a, r)] ?? 1
   const quote = limiti.filter(l => l.fornitore === a.esecutore && !l.manuale && l.percentuale !== undefined && limiteFresco(l))
   const pieno = quote.length ? Math.max(...quote.map(l => l.percentuale!)) : undefined
   // Oltre la soglia critica il margine scende a un residuo: la scelta va altrove se un'alternativa ammessa c'è,
@@ -289,10 +291,13 @@ export function bilancia(a: Azione, espliciti: Record<string, unknown>, r: Regol
     for (const modello of r.modelli[esecutore]) {
       if (espliciti.modello !== undefined && espliciti.modello !== modello) continue
       const preferito = effortDi({ ...a, esecutore, modello }, r)
-      // Prima il preferito, poi i più vicini (a pari distanza il più basso): a pari punteggio vince il più vicino.
+      // Prima il preferito. Solo dove agisce la corsia (Automatico, R0–R1) gli altri vanno dal più vicino (a pari distanza
+      // il più basso): così il preferito penalizzato scende di un passo. Altrove l'ordine resta quello di sempre.
       const tutti = effortPer(r, modello)
       const distanza = (e: string) => Math.abs(tutti.indexOf(e) - tutti.indexOf(preferito))
-      const livelli = [preferito, ...tutti.filter(e => e !== preferito).sort((x, y) => distanza(x) - distanza(y) || tutti.indexOf(x) - tutti.indexOf(y))]
+      const altri = tutti.filter(e => e !== preferito)
+      if (corsiaAdatta(a, r)) altri.sort((x, y) => distanza(x) - distanza(y) || tutti.indexOf(x) - tutti.indexOf(y))
+      const livelli = [preferito, ...altri]
       for (const effort of livelli) {
         if (espliciti.effort !== undefined && espliciti.effort !== effort) continue
         for (const revisore of [a.revisore, ...(a.revisore !== 'claude' ? ['claude' as const] : [])]) {
@@ -1089,8 +1094,8 @@ export function sessioniCodex(json: unknown, radice: string, adesso: number): Se
     return [{ id: `codex-${s.id}`, motore: 'codex' as const, titolo: ramo ? `Codex · ${ramo}` : 'Sessione Codex', ramo,
       modello: testoBreve(s.modello, 60), effort: testoBreve(s.effort, 20), stato: s.inCorso === true ? ('in-corso' as const) : s.stato === 'ignoto' ? ('ignota' as const) : ('ferma' as const),
       contesto: token !== undefined && finestra ? Math.min(100, Math.round((token / finestra) * 100)) : undefined, token, attivita,
-      // Il conteggio dei token arriva con l'ultimo evento della sessione: è quello l'istante della misura.
-      ...(token !== undefined && finestra && { contestoIl: attivita }) }]
+      // L'istante della misura è quello dell'evento token_count, non l'ultima attività (un'attività senza token non rinfresca).
+      ...(token !== undefined && finestra && istante(s.tokenIl) && { contestoIl: istante(s.tokenIl) }) }]
   })
 }
 

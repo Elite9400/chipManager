@@ -305,7 +305,7 @@ test('2.2 sessioni Codex: solo metadati, turno aperto solo se recente, sotto-thr
   const s = (await fonti.sessioniCodexLocali(home)).sessioni
   assert.deepStrictEqual(s.map(x => x.id), ['sessione-a'])
   assert.deepStrictEqual({ ...s[0], attivita: undefined }, { id: 'sessione-a', cwd: 'C:/esempio/progetto', ramo: 'fix-ricerca', modello: 'gpt-esempio', effort: 'xhigh',
-    token: 61_000, finestra: 100_000, stato: 'aperto', inCorso: true, attivita: undefined })
+    token: 61_000, finestra: 100_000, tokenIl: '2026-01-01T00:00:00Z', stato: 'aperto', inCorso: true, attivita: undefined })
   assert.ok(!JSON.stringify(s).includes('privato'))
   assert.ok(!fs.readFileSync(fonti.fileCache(home), 'utf8').includes('privato'))
   // Lo stesso turno aperto in un file fermo da più di 10 minuti non è lavoro in corso.
@@ -1109,4 +1109,17 @@ test('F4 pesi: dopo 24 ore scade; oltre 3 in attesa la più vecchia scade e lo d
   assert.strictEqual(voci.length, 10)
   assert.deepStrictEqual(voci.filter(v => v.stato === 'attesa').map(v => v.id), ids.slice(-3))
   assert.strictEqual(a.leggi().pesiRevisione, undefined, 'una proposta non cambia il config')
+})
+
+test('F4 contesto Codex: l\'istante è quello del token_count valido, non della data del file; cache calda e fredda uguali', async () => {
+  const { home, f } = codexDiProva()
+  const conto = (t, ts) => ev('event_msg', { type: 'token_count', info: { last_token_usage: { total_tokens: t }, model_context_window: 100_000 } }, ts)
+  fs.writeFileSync(f, metaEs + avvio + conto(40_000, '2026-11-05T10:05:00Z'))
+  assert.strictEqual((await unaSessione(home)).tokenIl, '2026-11-05T10:05:00Z')
+  // Nuova attività senza token: il file cambia, la misura no.
+  fs.appendFileSync(f, ev('event_msg', { type: 'task_complete' }, '2026-11-05T10:30:00Z') + avvio)
+  const calda = await unaSessione(home)
+  assert.deepStrictEqual([calda.token, calda.tokenIl], [40_000, '2026-11-05T10:05:00Z'])
+  fs.rmSync(fonti.fileCache(home), { force: true })
+  assert.strictEqual((await unaSessione(home)).tokenIl, '2026-11-05T10:05:00Z')
 })

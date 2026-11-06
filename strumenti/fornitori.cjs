@@ -136,7 +136,7 @@ function vocePulita(v) {
   const pt = v.primoTurno
   const u = v.ultimo
   if (!solo(pt, ['modello', 'effort']) || !forse(pt.modello, t(60)) || !forse(pt.effort, t(20))) return null
-  if (!solo(u, ['modello', 'effort', 'token', 'finestra', 'stato']) || !forse(u.modello, t(60)) || !forse(u.effort, t(20)) ||
+  if (!solo(u, ['modello', 'effort', 'token', 'finestra', 'tokenIl', 'stato']) || !forse(u.modello, t(60)) || !forse(u.effort, t(20)) || !forse(u.tokenIl, data) ||
     !forse(u.token, numero) || !forse(u.finestra, numero) || !['aperto', 'chiuso', 'ignoto'].includes(u.stato)) return null
   if (!Array.isArray(v.limiti) || v.limiti.length > 2 || !v.limiti.every(l => solo(l, ['id', 'percentuale', 'letto', 'reset']) &&
     /^codex-(primary|secondary)$/.test(l.id) && numero(l.percentuale) && l.percentuale <= 100 && data(l.letto) && forse(l.reset, istante))) return null
@@ -144,7 +144,7 @@ function vocePulita(v) {
     dimensione: v.dimensione, mtimeMs: v.mtimeMs, ino: v.ino, offset: v.offset,
     meta: m && { id: m.id, cwd: m.cwd, ramo: m.ramo, figlia: m.figlia },
     primoTurno: { modello: pt.modello, effort: pt.effort },
-    ultimo: { modello: u.modello, effort: u.effort, token: u.token, finestra: u.finestra, stato: u.stato },
+    ultimo: { modello: u.modello, effort: u.effort, token: u.token, finestra: u.finestra, tokenIl: u.tokenIl, stato: u.stato },
     limiti: v.limiti.map(l => ({ id: l.id, percentuale: l.percentuale, letto: l.letto, reset: l.reset })),
   }
 }
@@ -211,6 +211,8 @@ function aggiornaVoce(f, st, c, diag) {
       if (p?.type === 'token_count' && numero(t) && numero(p.info.model_context_window)) {
         v.ultimo.token = t
         v.ultimo.finestra = p.info.model_context_window
+        // L'istante della misura è quello dell'evento, non la data del file: un'attività senza token non la rinfresca.
+        v.ultimo.tokenIl = data(e.timestamp) ? e.timestamp : undefined
       }
     }
     // Per ogni finestra l'osservazione con il timestamp più recente; un evento senza limiti non cancella nulla.
@@ -371,7 +373,7 @@ async function sessioniCodexLocali(home, adesso = Date.now()) {
     if (!v?.meta || v.meta.figlia) return []
     // Un turno aperto in un file fermo da 10 minuti è un processo finito male, non lavoro in corso.
     return [{ id: v.meta.id, cwd: v.meta.cwd, ramo: v.meta.ramo, attivita: new Date(st.mtimeMs).toISOString(),
-      modello: v.ultimo.modello ?? v.primoTurno.modello, effort: v.ultimo.effort ?? v.primoTurno.effort, token: v.ultimo.token, finestra: v.ultimo.finestra,
+      modello: v.ultimo.modello ?? v.primoTurno.modello, effort: v.ultimo.effort ?? v.primoTurno.effort, token: v.ultimo.token, finestra: v.ultimo.finestra, tokenIl: v.ultimo.tokenIl,
       stato: v.ultimo.stato, inCorso: v.ultimo.stato === 'aperto' && adesso - st.mtimeMs <= 600_000 }]
   })
   return { sessioni, diagnostica: c.diag }

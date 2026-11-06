@@ -10,7 +10,7 @@ import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
 
 import type { Azione, Chiamante, Consumo, Fornitore, Limite, Motore, Peso, PropostaPesi, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, Traguardi, Vista, Vita } from '../types'
-import { annullabile as pesiAnnullabili, daDecidere, descriviPesi, TESTI_PESI } from './bilanciamento'
+import { annullabile as pesiAnnullabili, daDecidere, decisaIl, descriviPesi, statoVisto, TESTI_PESI } from './bilanciamento'
 import {
   attive,
   aspettaTe as aspettaTeDi,
@@ -220,9 +220,9 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   // Proposte di pesi: nessun popup dal giro. Il popup si apre solo da «Rivedi»; Applica e Rifiuta stanno sempre sulla riga.
   const tutteProposte = await read($, propostePesi)
   const proposteAperte = tutteProposte.filter(p => daDecidere(p, adesso))
-  // L'ultima decisione per istante di decisione (o di annullamento), non di proposta.
-  const decisaIl = (p: PropostaPesi) => Date.parse(p.annullamento?.quando ?? p.decisione?.quando ?? p.quando)
-  const ultimaDecisa = tutteProposte.filter(p => p.stato !== 'attesa').sort((a, b) => decisaIl(b) - decisaIl(a))[0]
+  // L'ultima decisione per istante di decisione (o di annullamento o di scadenza), non di proposta. Una voce oltre le
+  // 24 ore è scaduta anche se l'helper non l'ha ancora segnata: compare qui, non sparisce.
+  const ultimaDecisa = tutteProposte.filter(p => statoVisto(p, adesso) !== 'attesa').sort((a, b) => decisaIl(b, adesso) - decisaIl(a, adesso))[0]
   // Etichette uniche: con più proposte aperte, il pulsante porta la coda dell'id.
   const suffisso = (p: PropostaPesi) => (proposteAperte.length > 1 ? ` ${p.id.slice(-4)}` : '')
   const rivedi = (p: PropostaPesi) => async () => {
@@ -259,7 +259,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const registroPesi = (dove: string) =>
     ultimaDecisa ? (
       <Box key={`${dove}-registro`} flexDirection="row" flexWrap="wrap" gap={1} alignItems="center">
-        <Text size="caption" wrap="wrap">{TESTI_PESI.registro(ultimaDecisa)}</Text>
+        <Text size="caption" wrap="wrap">{TESTI_PESI.registro(ultimaDecisa, adesso)}</Text>
         {pesiAnnullabili(ultimaDecisa, regoleOra.risorse) && (
           <Button key={`${dove}-registro-annulla`} plain label={`${TESTI_PESI.annulla} la proposta applicata`} onPress={fai(() => c.annullaPesi(ultimaDecisa))} />
         )}

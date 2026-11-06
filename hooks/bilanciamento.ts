@@ -164,11 +164,11 @@ export const TESTI_PESI = {
   applicata: 'Pesi applicati',
   rifiutata: 'Proposta rifiutata',
   annullata: 'Pesi ripristinati',
-  registro: (p: PropostaPesi) => {
+  registro: (p: PropostaPesi, adesso = Date.now()) => {
     const quando = (iso: string) => new Date(iso).toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-    const parola = { attesa: 'In attesa', applicata: 'Applicata', rifiutata: 'Rifiutata', scaduta: 'Scaduta', annullata: 'Annullata' }[p.stato]
-    const il = p.stato === 'annullata' ? p.annullamento?.quando : p.decisione?.quando ?? p.quando
-    return `${parola} il ${quando(il ?? p.quando)}, proposta da ${TESTI_PESI.chi(p)}: ${riassuntoProposta(p)}`
+    const stato = statoVisto(p, adesso)
+    const parola = { attesa: 'In attesa', applicata: 'Applicata', rifiutata: 'Rifiutata', scaduta: 'Scaduta', annullata: 'Annullata' }[stato]
+    return `${parola} il ${quando(new Date(decisaIl(p, adesso)).toISOString())}, proposta da ${TESTI_PESI.chi(p)}: ${riassuntoProposta(p)}`
   },
   nessunaDecisione: 'Nessuna proposta di pesi decisa.',
   titoloRegistro: 'Ultima proposta di pesi',
@@ -191,6 +191,14 @@ export const riassuntoProposta = (p: Pick<PropostaPesi, 'profilo' | 'regolazioni
 const SCADENZA_PROPOSTA = 24 * 3_600_000
 /** In attesa e non ancora scaduta (l'helper la segna scaduta alla prossima operazione). */
 export const daDecidere = (p: PropostaPesi, adesso: number) => p.stato === 'attesa' && adesso - Date.parse(p.quando) <= SCADENZA_PROPOSTA
+/**
+ * Lo stato da mostrare: una voce ancora «attesa» nel file ma oltre le 24 ore è già scaduta (l'helper la segna alla
+ * prossima operazione). Stessa regola per righe, registro e `risorse_agenti`.
+ */
+export const statoVisto = (p: PropostaPesi, adesso: number): PropostaPesi['stato'] => (p.stato === 'attesa' && !daDecidere(p, adesso) ? 'scaduta' : p.stato)
+/** Quando la voce è stata decisa (o annullata, o è scaduta): ordina il registro. */
+export const decisaIl = (p: PropostaPesi, adesso: number) =>
+  Date.parse(p.annullamento?.quando ?? p.decisione?.quando ?? p.quando) + (p.stato === 'attesa' && statoVisto(p, adesso) === 'scaduta' ? SCADENZA_PROPOSTA : 0)
 /** Annullabile solo se il config porta ancora la revisione e l'origine di quella applicazione. */
 export const annullabile = (p: PropostaPesi, r: RisorseProgetto) =>
   p.stato === 'applicata' && !!p.decisione && r.pesiRevisione === p.decisione.revisione && r.pesiOrigine?.id === p.decisione.id
@@ -264,6 +272,8 @@ export function proposteDa(json: unknown, repo: string | null): PropostaPesi[] {
       const regolazioni = Array.isArray(v.regolazioni)
         ? (v.regolazioni as Regolazione[]).filter(r => r && ['fornitore', 'modello', 'effort'].includes(r.tipo) && typeof r.nome === 'string' && Number.isInteger(r.posizione)).slice(0, 30)
         : undefined
+      // Lo stato di una proposta di pesi, non di un'azione: niente transizione().
+      const stato = v.stato as PropostaPesi['stato']
       const d = v.decisione as PropostaPesi['decisione'] | undefined
       const u = v.annullamento as PropostaPesi['annullamento'] | undefined
       return [{
@@ -271,7 +281,7 @@ export function proposteDa(json: unknown, repo: string | null): PropostaPesi[] {
         proponente: { id: chi.id.slice(0, 200), titolo: testoCorto(chi.titolo, 80) ?? '' },
         quando: v.quando as string, motivo: v.motivo.slice(0, 300),
         ...(PROFILI.some(p => p.id === v.profilo) && { profilo: v.profilo as Profilo }), ...(regolazioni && { regolazioni }),
-        partenza: { ...partenza, revisione: rev as number }, risultato, stato: v.stato as PropostaPesi['stato'],
+        partenza: { ...partenza, revisione: rev as number }, risultato, stato,
         ...(d && typeof d.id === 'string' && istanteOk(d.quando) && { decisione: { id: d.id, esito: d.esito === 'applica' ? 'applica' : 'rifiuta', quando: d.quando, ...(Number.isInteger(d.revisione) && { revisione: d.revisione }) } }),
         ...(u && typeof u.id === 'string' && istanteOk(u.quando) && Number.isInteger(u.revisione) && { annullamento: { id: u.id, quando: u.quando, revisione: u.revisione } }),
         ...(typeof v.nota === 'string' && { nota: v.nota.slice(0, 120) }),
@@ -318,11 +328,11 @@ export function contestoPerModello(sessioni: readonly SessioneProgetto[], adesso
 
 /** Le ultime 3 proposte, in forma breve. */
 export const proposteBrevi = (lista: readonly PropostaPesi[], adesso: number) =>
-  lista.slice(0, 3).map(p => ({
-    id: p.id, stato: daDecidere(p, adesso) || p.stato !== 'attesa' ? p.stato : 'scaduta', quando: p.quando,
-    da: p.proponente.titolo || idBreve(p.proponente.id), chiede: riassuntoProposta(p),
-    ...(p.decisione && { decisa: p.decisione.quando }),
-  }))
+  lista.slice(0, 3).map(p => {
+    // Lo stato visto di una proposta di pesi, non di un'azione.
+    const stato = statoVisto(p, adesso)
+    return { id: p.id, stato, quando: p.quando, da: p.proponente.titolo || idBreve(p.proponente.id), chiede: riassuntoProposta(p), ...(p.decisione && { decisa: p.decisione.quando }) }
+  })
 
 export const TETTO_RISORSE = 4_000
 

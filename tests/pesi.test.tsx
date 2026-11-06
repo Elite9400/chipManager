@@ -7,6 +7,9 @@ import {
   conProfilo,
   contestoPerModello,
   daDecidere,
+  decisaIl,
+  proposteBrevi,
+  statoVisto,
   descriviPesi,
   profiloDi as profiloDaBilanciamento,
   propostaDa,
@@ -16,7 +19,7 @@ import {
   TESTI_PESI,
   TETTO_RISORSE,
 } from '../hooks/bilanciamento'
-import { bilancia, MOLTIPLICATORE_CORSIA, pianifica, profiloDi, punteggio, regoleDa, risorseDa, RISORSE_DEFAULT } from '../hooks/logica'
+import { bilancia, MOLTIPLICATORE_CORSIA, pianifica, profiloDi, punteggio, regoleDa, risorseDa, RISORSE_DEFAULT, radiceProgetto, sessioniCodex } from '../hooks/logica'
 import type { Azione, Chiamante, Corsia, Peso, Regole, SessioneProgetto } from '../types'
 
 // Dati d'esempio: nessun progetto reale.
@@ -416,4 +419,33 @@ test('risorse_agenti: al lavoro, contesto con copertura e proposte; profilo e so
   expect(d).not.toHaveProperty('profilo')
   expect(d).not.toHaveProperty('soglie')
   expect(Object.keys(d.politica as object)).toContain('soglie')
+})
+
+test('P2 Codex: contesto di una sessione Codex con l\'istante del token_count; senza, nessuna misura datata', () => {
+  const radice = radiceProgetto('C:\\Lavori\\Progetto\\')
+  const adesso = Date.parse('2026-01-02T12:00:00Z')
+  const base = { id: 'esempio-0001', cwd: 'C:/lavori/progetto', attivita: '2026-01-02T11:58:00Z', token: 61_000, finestra: 100_000, inCorso: true }
+  expect(sessioniCodex([{ ...base, tokenIl: '2026-01-02T11:30:00Z' }], radice, adesso)[0]).toMatchObject({ contesto: 61, contestoIl: '2026-01-02T11:30:00Z' })
+  expect(sessioniCodex([base], radice, adesso)[0]).not.toHaveProperty('contestoIl')
+  // Misura di 30 minuti fa con attività recente: fuori dalla media.
+  expect(contestoPerModello(sessioniCodex([{ ...base, modello: 'gpt-6-astra', tokenIl: '2026-01-02T11:30:00Z' }], radice, adesso), adesso)['gpt-6-astra']).toMatchObject({ media: null, misurate: '0 su 1' })
+})
+
+test('P2 spareggio: l\'ordine per vicinanza vale solo con Automatico in R0–R1; altrove resta il più basso ammesso', () => {
+  // Chiamante a medium: high (preferito) non è avviabile da lui; fra gli altri, a pari punteggio, l'ordine di sempre.
+  const chi = { ...CHI, effort: 'medium' }
+  const r = conRisorse({ fornitori: ['claude'] })
+  const a = azione('a-spareg01', 'R2', { revisore: 'claude' })
+  expect(bilancia(a, { esecutore: 'claude', modello: 'claude-sonnet-5-5' }, r, [], [a], chi).effort).toBe('low')
+  const p = conRisorse({ fornitori: ['claude'], profilo: 'personalizzato', pesi: [{ tipo: 'effort', nome: 'high', percentuale: -40, assoluto: 0 }] })
+  expect(bilancia({ ...a, corsia: 'R1' }, { esecutore: 'claude', modello: 'claude-sonnet-5-5' }, p, [], [a], CHI).effort).toBe('low')
+})
+
+test('P2 scadenza: oltre 24 ore una proposta ancora «attesa» nel file compare come Scaduta, nel registro e in risorse_agenti', () => {
+  const p = proposteDa({ voci: [VOCE] }, 'esempio/demo')[0]!
+  const dopo = Date.parse(ORA) + 25 * 3_600_000
+  expect([statoVisto(p, dopo), statoVisto(p, Date.parse(ORA) + 3_600_000)]).toEqual(['scaduta', 'attesa'])
+  expect(TESTI_PESI.registro(p, dopo)).toMatch(/^Scaduta il /)
+  expect(decisaIl(p, dopo)).toBe(Date.parse(ORA) + 24 * 3_600_000)
+  expect(proposteBrevi([p], dopo)[0]!.stato).toBe('scaduta')
 })

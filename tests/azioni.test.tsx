@@ -1471,7 +1471,7 @@ test('2.2: sessioni del progetto: worktree inclusi, altri progetti, archiviate e
     { id: 'esempio-0003', cwd: 'C:/lavori/progetto', attivita: '2025-12-01T00:00:00Z' },
     { id: '../fuori', cwd: 'C:/lavori/progetto', attivita: '2026-01-02T11:58:00Z' },
   ], radice, adesso)
-  expect(codex).toEqual([{ id: 'codex-esempio-0001', motore: 'codex', titolo: 'Codex · fix', ramo: 'fix', modello: 'gpt-6-astra', effort: 'xhigh', stato: 'in-corso', contesto: 61, token: 61_000, attivita: '2026-01-02T11:58:00Z', contestoIl: '2026-01-02T11:58:00Z' }])
+  expect(codex).toEqual([{ id: 'codex-esempio-0001', motore: 'codex', titolo: 'Codex · fix', ramo: 'fix', modello: 'gpt-6-astra', effort: 'xhigh', stato: 'in-corso', contesto: 61, token: 61_000, attivita: '2026-01-02T11:58:00Z' }])
 })
 
 const ID_ESEMPIO = (n: number) => `local_aaaaaaa${n}-1234-1234-1234-123456789abc`
