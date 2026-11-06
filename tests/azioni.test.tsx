@@ -2250,3 +2250,37 @@ test('strumenti: descrizioni brevi (tetto in caratteri, non token); risorse_agen
   // Anche la 2.4.0 ha la proprietà piano.
   expect(Object.keys((amb.registrati.find(x => x.name === 'suggerisci_azione')!.inputSchema as { properties: object }).properties)).toContain('piano')
 })
+
+// Banco D7: 10 minuti simulati per pannello. Raccolta = helper fornitori (sessioni e limiti); orchestrazione = disco.cjs;
+// gh a parte. I tetti sono quelli del piano: 0,7 processi/min a riposo e nascosto, 3,2/min a schermo (raccolta).
+const banco = async ($: Parameters<TestBody>[0], on: Parameters<TestBody>[1], opz: { nascosto: boolean; pendente: boolean }) => {
+  const amb = ambiente(on, { nascosto: opz.nascosto })
+  const clock = mock.clock(on)
+  if (opz.pendente) amb.disco.set('X:/orch/azioni/a-banco001.json', JSON.stringify(base('a-banco001', 1, { repo: 'acme/progetto', stato: 'avviata', sessione: SID, tentativo: 'az-banco' })))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(1)
+  const n0 = amb.processi.length
+  const c0 = amb.chiamate.length
+  for (let i = 0; i < 30; i++) await clock.advance(20_000)
+  const dopo = amb.processi.slice(n0)
+  const conta = (f: (a: readonly string[]) => boolean) => dopo.filter(x => f(x.argv)).length
+  return {
+    raccolta: conta(a => !!a[1]?.endsWith('/fornitori.cjs')),
+    orchestrazione: conta(a => !!a[1]?.endsWith('/disco.cjs')),
+    gh: conta(a => a[0] === 'gh'),
+    app: amb.chiamate.length - c0,
+  }
+}
+
+test('banco D7: a riposo e nascosto, raccolta entro 0,7 processi/min', async ($, on) => {
+  const m = await banco($, on, { nascosto: true, pendente: false })
+  console.log('banco nascosto a riposo, 10 min:', JSON.stringify(m))
+  expect(m.raccolta).toBeLessThanOrEqual(7)
+  expect(m.orchestrazione).toBe(0)
+})
+
+test('banco D7: a schermo con lavoro in corso, raccolta entro 3,2 processi/min', async ($, on) => {
+  const m = await banco($, on, { nascosto: false, pendente: true })
+  console.log('banco a schermo al lavoro, 10 min:', JSON.stringify(m))
+  expect(m.raccolta).toBeLessThanOrEqual(32)
+})
