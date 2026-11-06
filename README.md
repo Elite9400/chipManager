@@ -5,7 +5,7 @@
 <img src="docs/img/hero.png" alt="chipManager — one dashboard for the work your agents suggest" width="100%">
 
 [![Claude Code mod](https://img.shields.io/badge/Claude%20Code-mod-D97757)](#install)
-[![version](https://img.shields.io/badge/version-2.1.0-00BFFF)](#)
+[![version](https://img.shields.io/badge/version-2.2.0-00BFFF)](#)
 [![surfaces](https://img.shields.io/badge/surfaces-desktop%20%C2%B7%20terminal-555)](#screenshots)
 [![tests](https://img.shields.io/badge/tests-287%20%2B%20100%20passing-059669)](#testing)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)

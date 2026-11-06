@@ -1,6 +1,6 @@
 {
   "name": "chip-manager",
-  "version": "2.6.0",
+  "version": "2.2.0",
   "author": { "name": "Cristian TATTINI" },
   "license": "MIT",
   "description": "Panel of the actions suggested by sessions: editable order, engine (Claude/Codex) and reviewer, single or bulk start with the rules of routing.json, live state and milestone progress. Interface in English, Italian, Spanish, French, German and Brazilian Portuguese",

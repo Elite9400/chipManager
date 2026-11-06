@@ -6,222 +6,152 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-## [2.6.0] - 2026-11-06
-
-### Changed
-
-- **Settings, rebuilt by section.** Six sections are chosen from a chip row: Connections, Thresholds, Balancing,
-  Project, Board and Advanced. Every control saves on its own and shows a "Saved" toast; an error appears inline.
-- **Connections.** Allowed providers are filter chips, and every provider shows its state. **Connect…** opens a
-  guided pop-up, with an inline fallback when the pop-up is declined.
-- **Thresholds.** Preset chips plus two `−`/`+` steppers. Existing values, `null` and off-step values stay as they
-  are, and "warning < critical" is checked on every path.
-- **Balancing.**
-  - Profiles: Automatic, Saving, Quality, Speed, Custom. They touch only engines and effort, never models, and
-    are saved together with the weights in a single write.
-  - The simulation is declared as such, validated against the start rules, and says when no combination can
-    start.
-  - Manual tuning uses a five-step scale; custom weights are shown in full.
-- **Project.** Network, milestones, data folder, sensitive terms and manual budgets: budgets are removable chips,
-  with a guided **Add…**.
-
-### Fixed
-
-- A malformed `profilo` counts as absent instead of breaking the view.
-- Decimal thresholds can be adjusted.
-- Preset buttons carry the provider in their label, so no two controls share a name.
-
-## [2.5.0] - 2026-11-06
-
-### Changed
-
-- **Work and Load views follow the real pane width** (`bodyColumns`) on every surface, desktop included, in three
-  width classes. Titles wrap, and actions move below when space runs out.
-- **One compact card for every chip**:
-  - state;
-  - who works on it, with model, effort and reviewer;
-  - the first line of the brief;
-  - the actions.
-
-  No action of the previous layout is lost.
-- **▶ Start** sits in the same place on every ready chip.
-- **Start next** (`n`) starts the first chip the real plan (dependencies, slots, Codex lane) would start now.
-- A blocked chip shows its first reason and a **Why** list.
-- **Colours come only from `tema.ts`**: the per-model and per-effort colour maps are gone, and limits take the
-  colour of their level.
-- Button labels are short and unique: they carry the chip's order number.
-
-### Fixed
-
-- **Mark done** is available on started chips directly from the row.
-- Error marks no longer sit on a tint that lowered their contrast.
-
-## [2.4.2] - 2026-11-06
-
-### Changed
-
-- **Lighter with many sessions open.**
-  - One 20-second heartbeat replaces the four timers.
-  - The orchestration round stays fast while work is pending (proposed, queued, starting, started, delivered
-    actions, CLI runs) and slows to 60 s otherwise.
-  - The session list is read every 20 s only while the panel is on screen, every 2 minutes otherwise, and at
-    once when it comes back or on **Refresh**.
-- **Incremental Codex reading.** The helper keeps a cache of the local Codex session files.
-  - Unchanged files are not opened.
-  - Only appended bytes are read: incomplete lines wait, rewritten or truncated files are read again, and a
-    backlog over 512 KB is skipped with the state recomputed from the tail.
-  - Plan limits are kept per id with a chunked scan.
-  - Only allowed metadata fields are stored; a broken cache entry is rebuilt.
-- The Codex lane is queried only when an action would really start on Codex.
-- Actions are re-read only when their file changes, in full every 5 minutes and after a write conflict.
-- Shorter tool descriptions; `risorse_agenti` is now loaded on demand.
+## [2.2.0] - 2026-11-07
 
 ### Added
 
-- A grey line in the Load view with this session's own footprint: helper processes, app calls, bytes read and
-  skipped backlogs in the last 10 minutes.
+- **Work view: who is doing what, right now.** The panel opens on **Work**, a table of every session of the project,
+  including sessions opened by hand and Codex sessions, with engine, model, effort, status, context window used and
+  last activity. Claude sessions come from the desktop app, Codex sessions from the local `~/.codex/sessions` files
+  (metadata only, never conversation text). A summary line counts sessions at work, actions waiting for you and
+  actions ready, with the tightest fresh plan usage.
+- **Three views**, **Work**, **Load** and **Settings**, on keys `1` `2` `3`.
+- **Load view**: a model × effort matrix with sessions at work and queued actions, limits grouped by provider with a
+  bar at the true ratio and both ends labelled, the context used by each working session with the token total per
+  model, the weights in use in plain words, and this session's own footprint (helper processes, app calls, bytes
+  read) in a grey line.
+- **Thresholds per provider** (`soglie`): a warning and a critical percentage, 70/90 by default, or none. They drive
+  the bar colours, the summary line and the **Start all** confirmation. Above the critical threshold the choices left
+  open go to another allowed provider; explicit choices are kept.
+- **Where a chip runs.** Each chip has a destination: **On this computer**, **In the cloud** (new session only) or
+  **Here on API credits (Claude)**, chosen in **Details**, on the row, or for several chips at once.
+  - **API Claude lane**: `claude -p` on this computer, in its own worktree, on a dedicated key kept in the plugin
+    options (**Anthropic API (credits)**). A monthly budget and a cap per run in USD; each run reserves its cap
+    before it starts and stops at it (`--max-budget-usd`). The Load view shows the month's estimated spend against
+    the budget. One run per machine, with **Release** and **End processes** when a run leaves something behind.
+  - **Claude cloud**: for eligible plans with the repository connected on claude.ai/code; each cloud chip asks for
+    confirmation of its full text.
+  - **Destination advisor** (*Off*, *Suggest*, *Apply to chips with no destination*): it picks only where a chip
+    runs; weights and profiles still pick model and effort, and explicit choices are never changed.
+- **One-click Execution setup.** **Settings → Execution → What is ready** checks by itself Claude sign-in, GitHub,
+  the API key, settings sources compatible with API runs, budget and cap, and offers the one action that fixes each
+  missing piece: **Sign in** and **Connect GitHub** open the browser login and the panel checks again for up to
+  3 minutes; **Enter the key** shows where to paste it; a blocking settings file is named with **Copy path**.
+  **Set up Execution** walks through the missing steps one at a time. A command that cannot start is shown with
+  **Copy**.
+- **Who works.** Every chip shows engine · model · effort, then auditor · reviewer · lane, with the reason for the
+  recommended choice. Presets **Recommended**, **Thrifty** and **Quality** show a preview before **Apply**;
+  «changed by hand» comes with **Restore recommended**; the full choices are under **Details**, closed by default.
+- **Change a running session.** **Change model** and **Change effort** on desktop sessions this panel started with
+  Claude, after a confirmation and with the start guards checked again; an unverifiable outcome is shown as
+  *uncertain* with **Check again** and is never retried by itself.
+- **Auditor (advisor).** A per-chip auditor (Sonnet, Opus, Fable or a full model id), checked against Claude Code's
+  documented advisor pairs, stored in one place with source and date; pairs outside the table cannot be chosen.
+  On the API lane it is passed with `--advisor` to that run only, and the chip reports what happened (applied,
+  inherited, none, turned off), with **Restart without auditor** when it is not available. On desktop and terminal
+  sessions the chip tells you to type `/advisor <model>` yourself, with **Copy**.
+- **Balancing profiles**: Automatic (the default, adapting to the lane), Saving, Quality, Speed and Custom, with
+  manual tuning of providers, models and effort on a five-step scale and a declared simulation. On light lanes, at
+  equal score, the lower-rank allowed model wins.
+- **Proposals from sessions.**
+  - `proponi_pesi`: a session proposes a profile or weight adjustments; the proposal appears in the Work view with
+    **Review**, **Apply**, **Reject** and, once applied, **Undo**, and a log of decisions.
+  - `proponi_impostazioni`: only when you ask, a session proposes profile, thresholds, board mode, destination
+    advisor, API budget and cap, or language. Any other field rejects the whole proposal. A valid proposal fills the
+    Settings draft under «Proposed by a session»; nothing changes until you press **Apply**.
+- **Settings with Apply.** Settings are organised in sections (Connections, Thresholds, Balancing, Project, Board,
+  Advanced, Execution, Language, Legend). Every change goes into a draft, validated at once, and **Apply** writes it
+  in one compare-and-swap; **Discard changes** drops it. A change made meanwhile by another session on the same
+  field asks before overwriting; leaving Settings with a draft asks Apply, Discard or Stay. Connections are set up
+  with guided pop-ups, manual budgets are removable chips with a guided **Add…**.
+- **Six languages**: English by default, plus Italian, Spanish, French, German and Brazilian Portuguese, chosen in
+  **Settings → Language**. Pop-ups, toasts, notifications, the board and the tools' answers follow the language.
+- **Legend** for lanes (R0–R5) and terms, in Settings, on the board and in the READMEs.
+- **Project board**: a local, self-contained HTML page, off by default, with the line of work (waiting for you, in
+  progress, next, done) and, for each task, plan, brief, process, owner, model, effort, expected reviewer and the
+  reported review outcome. **Open board** opens it in the browser. It is built without any model; one-sentence
+  summaries with `haiku` are a separate opt-in with a daily cap.
+- `piano` on an action (a `.md`/`.txt` path in the repository), and `revisione` on `aggiorna_azione` to report a
+  review outcome.
+- **Start next** (`n`) starts the first chip the real plan would start now; **▶ Start** sits in the same place on
+  every ready chip; a blocked chip shows its first reason and a **Why** list.
+- `risorse_agenti` lists the configured destinations with their margins, the sessions at work with their context,
+  the pending proposals and the current settings a session may propose.
+
+### Changed
+
+- **Developer style.** States are a glyph and a word, never colour alone; data in monospace, effort as `▰▰▱▱`
+  bars and usage as block bars with both ends labelled. Text uses the host's own ink and dim colour; the accent
+  `#0A86C9` marks only graphics (borders, bars, glyphs, veils), at least 3:1 on light and dark backgrounds. Every
+  colour and opacity comes from one token file, shared with the board as CSS variables; the board follows the
+  system's light or dark theme. On desktop the row under the pointer gets a faint veil; nothing is reachable only by
+  hovering.
+- **Percentages always say what is used** ("76% used"), never what is left.
+- **Choice chips and view tabs show only the name**; the chosen one is marked by the accent and is the primary
+  button.
+- **Each project has its own data folder**: `CHIPMANAGER_DIR`, then `progetti[repo].cartella`, then the global
+  `cartella` (kept for compatibility), then `~/.claude/chipmanager/progetti/<owner>__<repo>`. Actions in the old
+  default folder are not moved: to keep them, set that folder as `cartella`. An unreadable configuration stops reading
+  and writing actions instead of falling back to another folder.
+- **One compact card per chip**, following the real pane width on desktop and terminal: state, who works on it, the
+  first line of the brief and the actions. Only chips waiting for a decision keep a coloured border.
+- **Only configured limits** appear in the working views: a provider shows up in Load and in the summary line only
+  when the project allows it and it has a measurement or a manual limit. A stale measurement stays as a grey row with
+  its age; Settings shows the state of each provider's reading with its errors.
+- **Lighter with many sessions open**: one adaptive heartbeat instead of four timers, an incremental cache of the
+  Codex session files, the Codex lane queried only when an action would really start on Codex, actions re-read only
+  when their file changes, the session list read less often while the panel is hidden.
+- **Start all** names the providers above their critical threshold and asks to start anyway; closing the
+  confirmation cancels.
+- Tool descriptions are shorter, in English, and `risorse_agenti` is loaded on demand.
+- In the terminal, below 80 columns, the sessions table drops context and activity and merges model and effort.
 
 ### Fixed
 
+- Claude plan limits show again on the desktop app, from the current shape of `ccd_session_mgmt.get_usage`; when
+  they do not apply or cannot be read, the panel says why.
+- Actions saved without a project by an earlier version no longer appear in every project: a one-time pop-up offers
+  to assign them to the current project or discard them (discarding can be undone).
+- A successful DeepSeek balance reading no longer makes the panel reject the whole limits reading.
+- A failed limits reading no longer empties the view; a successful one removes limits the source stopped reporting.
 - A Codex session whose state cannot be read is shown as `—` instead of "stopped".
-- The Codex-lane disk tests use their own lock, so they no longer fail while real Codex work runs on the machine.
-
-## [2.4.1] - 2026-11-06
-
-### Changed
-
-- The panel code is split into one file per view (`vista-lavoro.tsx`, `vista-carico.tsx`,
-  `vista-impostazioni.tsx`); behaviour and rendering are unchanged.
-
-### Added
-
-- `hooks/tema.ts`: semantic colour tokens. The interface accent (`#0A86C9`) keeps at least 3:1 contrast on light
-  and dark backgrounds, also over its own tint; `#00BFFF` stays the icon colour.
-- `hooks/ui.tsx`: shared building blocks (chip, chip group, stepper with `−`/`+`, section, wrapping row) for the
-  coming layout and settings redesign. They are not used by the views yet.
-
-### Fixed
-
-- The test that keeps every action state change behind `transizione()` now scans every `hooks` source file.
-
-## [2.4.0] - 2026-11-05
-
-### Added
-
-- **Project board**: a static, self-contained HTML file (`<data folder>/board/<project>-<hash>/index.html`), off by
-  default and switched on per project in Settings. It shows the line of work in four groups (waiting for you, in
-  progress, next, done, with the last 15 commits of the base branch) and, for each task, an expandable card with its
-  plan, the brief rebuilt with the current rules, the process (lane, execution → review → merge, registry phase),
-  who works on it with which model and effort, the expected reviewer and the reported review outcome, dates, links
-  and errors. It is generated without any model, has no scripts, no links built from data and a strict
-  Content-Security-Policy; attempt tokens are masked in the whole file.
-- **Open board** in the panel header (and **In the board** on each task card) opens the file with the system
-  opener, with a fixed argument list and no shell; the path is shown in plain text as a fallback.
-- **Optional summaries with the lightest model** (`haiku`, effort low, 120 output tokens): one sentence per task,
-  only when its text changes, at most 5 per minute and 100 per day, reserved under the helper lock so two panels
-  never pay twice. Off by default; never with `soloLocale` or with Claude disabled for the project.
-- `piano` on an action: a `.md` or `.txt` file relative to the repository root, set by `suggerisci_azione` or in
-  the editor and read by the helper (real path under the repository, regular file, 200 KB).
-- `aggiorna_azione` takes a `revisione` (`in-corso` | `approvata` | `da-correggere`, note up to 300
-  characters), with or without a state. Only the session holding the current attempt token, or the proposer, may
-  write it; the author is the calling session, never an argument. A new attempt clears it.
-- Actions record `consegnataIl` and `completataIl`; every state change goes through a single transition function.
+- **Mark done** is available on started chips directly from the row.
+- A malformed profile counts as absent instead of breaking the view; decimal thresholds can be adjusted.
+- Button labels are unique, so no two controls share a name.
+- The disk tests use their own locks, so they never contend with a real panel or another run on the same machine.
 
 ### Security
 
-- The board is refused when the data folder is inside a git working tree, when any folder on its path is a link or
-  junction, or when the identity marker in its folder belongs to another project. Turning it off deletes only the
-  HTML and the summaries, never folders; the daily summary budget survives off → on.
-- Every `board-*` helper command runs under the configuration lock and re-reads mode and generation: work started
-  before a mode change (even off → on) is never published.
-
-## [2.3.1] - 2026-11-05
-
-### Changed
-
-- The working views show only configured limits. **Carico** lists a provider only when the project allows it and it
-  has a measurement or a manual limit, and for each provider only the limits with a measurement: a bar when fresh,
-  a grey row with its age and no bar when old. Placeholder rows (*not available*, *provider not enabled*) and the
-  FreeLLMAPI proxy line are gone; with nothing to show, the view says *Nessun limite collegato* and points to
-  **Impostazioni**, which still lists every provider.
-- **Impostazioni** shows, for each allowed provider, one grey line with the state of the current reading: the error
-  of each probe, when it was read, and the proxy state with the key presence for FreeLLMAPI.
-- The summary line counts only allowed providers and fresh measurements; any visible provider whose measurement
-  went stale adds one grey note such as *Claude: limiti non letti da 12 min*. The percentage margin stays on plan
-  quotas (Claude, Codex).
-- The last measurement of each limit is kept for the session, so a failed reading no longer empties the view. A
-  successful reading replaces the provider's previous measurements, so a limit the source no longer reports (extra
-  usage turned off) disappears, even when the plan answers with no window at all; Claude API spend is tracked on
-  its own.
-
-### Fixed
-
-- A successful DeepSeek balance reading made the panel reject the whole limits reading, because its id carried the
-  currency in upper case; the id is now lower case (`deepseek-usd`, `deepseek-cny`).
-
-## [2.3.0] - 2026-11-05
-
-### Added
-
-- **Carico (load) view**: a model × effort matrix with sessions at work and queued actions, limits grouped by
-  provider with a bar at the true ratio and both ends labelled, the context window used by each working session with
-  the token total per model, and the weights in use in plain words with the launches of the last 24 hours per
-  provider.
-- **Thresholds per provider** (`soglie` in the project configuration): a warning and a critical percentage for each
-  provider, 70/90 by default, or none. They drive the bar colours, the summary line and the bulk-launch
-  confirmation.
-
-### Changed
-
-- Above a provider's critical threshold its margin drops to a thousandth, so the choices the proposer left open go
-  to another allowed provider; when every provider is above, the margins still rank them. Explicit choices are
-  kept. Manual limits above a threshold are flagged as declarations and do not change the choices.
-- **Avvia tutte** (launch all) names the providers above their critical threshold in its confirmation and asks to
-  launch anyway, also for actions that would only be queued. Closing the confirmation without a choice now cancels
-  instead of showing an error.
-- The context reading of a session also keeps its token count.
-
-## [2.2.0] - 2026-11-05
-
-### Added
-
-- **Who is doing what, right now.** The panel opens on a new **Lavoro** (work) view: a table of every session of the
-  project, including sessions opened by hand and Codex sessions, with engine, model, effort, status, context window
-  used and last activity. Claude sessions come from the desktop app, Codex sessions from the local
-  `~/.codex/sessions` files (metadata only, never conversation text). Context is read only for working sessions and
-  never when the project is local-only.
-- A summary line under the title: sessions at work, actions waiting for you, actions ready, and the tightest fresh
-  plan margin for Claude and Codex.
-- Three views, **Lavoro**, **Carico** (load: limits and budgets) and **Impostazioni** (settings), on keys `1` `2` `3`.
-- On opening, a one-time popup offers to assign the actions saved without a project to the current project or to
-  discard them; discarding can be undone. If the popup cannot be shown, the same request stays in the panel.
-
-### Changed
-
-- **Each project has its own data folder**: `CHIPMANAGER_DIR`, then `progetti[repo].cartella`, then the global
-  `cartella` (kept for compatibility), then `~/.claude/chipmanager/progetti/<owner>__<repo>`. Actions saved in the
-  old default folder `~/.claude/chipmanager/azioni` are not moved: to keep them, set that folder as `cartella`.
-  An unreadable configuration or a `cartella` that is not an absolute or `~` path stops reading and writing actions
-  instead of falling back to another folder. Without a GitHub remote, a worktree and its checkout are one project.
-- Actions are compact rows instead of cards: title and dependency on the first line, engine, model, effort and
-  reviewer on a grey second line, **Dettagli** opens the full editor in place. Only rows waiting for a decision keep
-  a coloured border, and an uncertain launch that can be cancelled now waits in **Aspettano te**.
-- In the terminal, below 80 columns, the sessions table drops context and activity and merges model and effort.
+- **API key.** The Anthropic API key lives only in the sensitive plugin option, never in a file, a brief or the
+  panel. During a run it is handed over through a short-lived `apiKeyHelper` file deleted at the end. During a run
+  the key is reachable by the agent and its tools; afterwards Claude's in-memory copy expires within 5 minutes,
+  which does not revoke the key. Use a key dedicated to the mod, in a Console workspace with a low monthly spend
+  limit: it is the only cap no local process can exceed.
+- **Spend is reserved before the start**, and a run whose outcome is uncertain counts its whole cap.
+- **Settings that change who pays** (a gateway, a login method, an `apiKeyHelper`, credentials or base URLs in `env`)
+  block the API lane in any settings source; the mod names the file and never edits it.
+- **The mod never writes your Claude Code settings**, `advisorModel` included, and never gives the Fable consent.
+- **Sign-in checks report only signed in or not**, never an email or an account id.
+- **Settings proposals use a closed schema** checked again by the helper; keys, guards, permissions, providers and
+  destinations can never be proposed.
+- **The board** is refused inside a git working tree, through links or junctions, or with a foreign identity marker;
+  it is written under the configuration lock only if mode and generation are still the expected ones. No scripts, no
+  remote resources, a strict Content-Security-Policy, attempt tokens masked.
 
 ### Removed
 
-- The per-card "Associa a questo progetto" button, replaced by the one-time request above.
+- The per-card "assign to this project" button, replaced by the one-time request above.
+- Placeholder rows in the Load view (*not available*, *provider not enabled*) and the FreeLLMAPI proxy line.
 
-## [2.1.1] - 2026-11-05
+### Resources
 
-### Fixed
+- Memory footprint across sessions: not measured in this release.
+- The auditor is set per session only on the API lane; on desktop and terminal sessions `/advisor` changes your
+  default for every session.
+- Extra usage credits in the cloud are not documented: check on your account.
+- Dimmed text, hover and keyboard focus on the desktop app were verified only in manual testing.
 
-- **Claude plan limits show again on the desktop app.** The panel reads the current shape of
-  `ccd_session_mgmt.get_usage`: one limit per plan window (5-hour, weekly, weekly per model) with its reset time,
-  plus extra usage when it is enabled. When plan limits do not apply or cannot be read, the panel says so with the
-  reason instead of an unexplained "not available". The previous format is still accepted.
-- **Actions from other projects no longer appear.** Actions saved without a project by an earlier version are no
-  longer shown in any project.
+Development history: the plans behind this release, in Italian, are in [`docs/`](docs/).
 
 ## [2.1.0] - 2026-11-05
 
@@ -269,9 +199,7 @@ First public release.
 - Fail-closed guards: sensitive work is never delegated autonomously or sent to the cloud, an unreadable
   configuration blocks instead of guessing, and API keys are stored as sensitive plugin settings.
 
-[Unreleased]: https://github.com/Elite9400/chipManager/compare/v2.3.0...HEAD
-[2.3.0]: https://github.com/Elite9400/chipManager/compare/v2.2.0...v2.3.0
-[2.2.0]: https://github.com/Elite9400/chipManager/compare/v2.1.1...v2.2.0
-[2.1.1]: https://github.com/Elite9400/chipManager/compare/v2.1.0...v2.1.1
+[Unreleased]: https://github.com/Elite9400/chipManager/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/Elite9400/chipManager/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Elite9400/chipManager/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/Elite9400/chipManager/releases/tag/v2.0.0
