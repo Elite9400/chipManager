@@ -102,14 +102,15 @@ export const TIPI_BUDGET = ['giornaliero', 'settimanale', 'mensile'] as const
 export const nomeLimite = (nome: string, l: Lingua) => ((TIPI_BUDGET as readonly string[]).includes(nome) ? t(l, `budget.${nome as (typeof TIPI_BUDGET)[number]}`) : nome)
 
 /**
- * «40» o «40%» = quota; «12 USD», «500 richieste», «1000 token» = valore. Le unità si scrivono in una qualunque delle
+ * «40», «40%» o «40% usato» (in qualunque lingua) = quota usata; «12 USD», «500 richieste», «1000 token» = valore. Le unità si scrivono in una qualunque delle
  * sei lingue (`ALIAS_UNITA`) e si salvano sempre con lo stesso nome. Restituisce il motivo se non si legge.
  */
 export function budgetDa(testo: string): Pick<Limite, 'percentuale' | 'valore' | 'unita'> | Msg {
-  const m = testo.trim().replace(',', '.').match(/^(\d+(?:\.\d+)?)\s*(%|\p{L}+)?$/iu)
+  // F5.7: dopo «%» può seguire la parola «usato» dell'esempio, in una lingua qualunque; il valore resta l'utilizzo.
+  const m = testo.trim().replace(',', '.').match(/^(\d+(?:\.\d+)?)\s*(%(?:\s*\p{L}+)?|\p{L}+)?$/iu)
   if (!m) return msg('budget.formato')
   const n = Number(m[1])
-  const u = (m[2] ?? '%').toLowerCase()
+  const u = m[2]?.startsWith('%') ? '%' : (m[2] ?? '%').toLowerCase()
   if (u === '%') return n <= 100 ? { percentuale: n, unita: '%' } : msg('budget.percentuale')
   const unita = ALIAS_UNITA[u]
   if (!unita) return msg('budget.unita', { unita: m[2] ?? '' })

@@ -1486,8 +1486,8 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'risorse_agenti',
       description:
-        'Read only: limits and margins of the agents (with source and time, or the reason if missing), load weights, allowed ' +
-        'providers, permitted models and effort. A value without a recent time is not current availability.',
+        'Read only: agent limits and margins (source and time, or why missing), load weights, providers, models, effort. ' +
+        'No recent time = not current. `percentuale` = plan used 0-100, never left; money/counts in `valore`.',
       inputSchema: { type: 'object', properties: {} },
       // Si carica solo quando serve (ToolSearch): non pesa sul contesto delle sessioni che non propongono azioni.
       isDeferred: true,

@@ -27,7 +27,7 @@ export function vistaCarico(d: Dati) {
 
   /** Barra al rapporto vero, a blocchi fra ▕ e ▏ (gli estremi), 20 celle; 10 su pannello o colonna stretti. */
   const barraPct = (k: string, pct: number, colore: string, corta = false) =>
-    ui.Barra({ chiave: k, pct, colore, celle: classe === 'stretta' || corta ? 10 : 20, dopo: ` ${Math.round(Math.min(100, Math.max(0, pct)))}%` })
+    ui.Barra({ chiave: k, pct, colore, celle: classe === 'stretta' || corta ? 10 : 20, dopo: ` ${T('car.usato', { pct: Math.round(Math.min(100, Math.max(0, pct))) })}` })
 
   const rigaLimite = (l: Limite) => {
     const soglia = sogliaDi(regoleOra.risorse, l.fornitore)

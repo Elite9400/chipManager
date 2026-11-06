@@ -18,6 +18,7 @@ import {
 } from '../hooks/bilanciamento'
 import { bilancia, regoleDa, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
 import { LEGENDA, LINGUE, t } from '../hooks/lingua'
+import { usoDesktop } from '../hooks/risorse'
 import type { Azione, Chiamante, Peso } from '../types'
 import { DiscoIt } from './disco-it'
 
@@ -350,6 +351,30 @@ test('impostazioni: chip di sezione in cima, una sezione alla volta, la scelta s
     }
     await ui.press({ key: 'sezione-connessioni-premi' })
     await ui.unmount()
+  }
+})
+
+test('F5.7: ogni percentuale di piano è utilizzo 0→100 con «used» in ogni lingua; i soldi restano soldi', () => {
+  // Stesso consumo da ogni fonte del pannello: get_usage (finestre e rate_limits) e budget manuale in %.
+  const letto = '2026-11-06T10:00:00Z'
+  const fonti = [
+    ...usoDesktop({ plan: { status: 'ok', windows: [{ label: 'weekly', percentUsed: 37 }] } }, letto),
+    ...usoDesktop({ rate_limits: { seven_day: { utilization: 37 } } }, letto),
+    budgetDa('37%'),
+    budgetDa('37% used'),
+    budgetDa('37 % usato'),
+  ]
+  expect(fonti.map(x => ('percentuale' in x ? x.percentuale : x))).toEqual([37, 37, 37, 37, 37])
+  // Un saldo in valuta o un conteggio non diventa mai una percentuale.
+  expect(budgetDa('12 USD')).toEqual({ valore: 12, unita: 'USD' })
+  expect(budgetDa('500 requests')).toEqual({ valore: 500, unita: 'richieste' })
+  for (const l of LINGUE) {
+    const usato = t(l, 'car.usato', { pct: 37 })
+    for (const k of ['sintesi.uso', 'sintesi.attenzione', 'sintesi.critica', 'sog.uso', 'sog.usoAttenzione', 'sog.usoCritica', 'pop.limiteCritico'] as const)
+      expect([l, k, t(l, k, { nome: 'Claude', pct: 37, critica: 90 }).includes(usato)]).toEqual([l, k, true])
+    // L'esempio del budget dice che la percentuale è quella usata, e si legge così com'è scritto.
+    const esempio = t(l, 'budget.esempio').split(',')[0]!
+    expect([l, esempio, budgetDa(esempio)]).toEqual([l, t(l, 'car.usato', { pct: 40 }), { percentuale: 40, unita: '%' }])
   }
 })
 

@@ -860,6 +860,13 @@ test('lingue: nessuna frase italiana nei letterali dei hooks (interfaccia, agent
   assert.deepStrictEqual(trovati, [])
 })
 
+test('F5.7: statusline Claude e Codex locale danno lo stesso utilizzo 0→100 per lo stesso consumo (nessun residuo)', () => {
+  const letto = '2026-11-06T10:00:00Z'
+  const claude = fonti.finestreClaude({ rate_limits: { seven_day: { used_percentage: 37 } } }, letto, 'statusline')
+  const codex = fonti.finestreCodex({ type: 'event_msg', timestamp: letto, payload: { type: 'token_count', rate_limits: { primary: { used_percent: 37 } } } })
+  assert.deepStrictEqual([...claude, ...codex].map(l => [l.percentuale, l.unita]), [[37, '%'], [37, '%']])
+})
+
 test('legenda: i README ricopiano la legenda del dizionario voce per voce (en e it), più la storia dello sviluppo', () => {
   const radice = path.join(__dirname, '..')
   const intestazioni = ['legenda.descrizione', 'legenda.corsie', 'legenda.termini', 'legenda.rimando']

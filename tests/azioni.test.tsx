@@ -1691,9 +1691,9 @@ test('2.3: «Avvia tutte» oltre la soglia critica lo dice e chiede «Avvia comu
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Frase.', esecutore: 'claude' } as never)
   const ui = await $.ui.mount({ ...PANE('desktop') })
-  expect(await ui.find({ type: 'Text', text: /Claude 93% oltre la soglia critica/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Claude 93% usato, oltre la critica/ })).toBeDefined()
   await ui.press({ key: 'tutte' })
-  expect(domande.at(-1)).toMatch(/^Oltre la soglia critica: Claude piano · settimanale al 93% \(critica da 90%\)\. Avvio 1 sessione/)
+  expect(domande.at(-1)).toMatch(/^Oltre la soglia critica: Claude piano · settimanale 93% usato \(critica da 90%\)\. Avvio 1 sessione/)
   expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(0)
   risposta = 'Avvia comunque'
   await ui.press({ key: 'tutte' })
@@ -2078,7 +2078,7 @@ test('2.3.1: un fornitore misurato, uno vietato con misura: Carico e sintesi mos
     expect(await ui.find({ type: 'Text', text: /Codex 95%|non letti/ })).toBeUndefined()
     await ui.press({ key: 'vista-carico' })
     expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^▕.+▏ 37%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^▕.+▏ 37% usato$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /non disponibile|FreeLLMAPI|Claude API|DeepSeek|Codex piano|Codex \(95%\)|Nessun limite collegato/ })).toBeUndefined()
     // Impostazioni resta il posto dove si vedono tutti i fornitori e, per gli ammessi, gli errori delle sonde.
     await ui.press({ key: 'impostazioni' })
@@ -2110,7 +2110,7 @@ test('2.3.1: giro fallito dopo uno riuscito: la misura resta; a fonte sempre gua
   expect(await ui.find({ type: 'Text', text: /^Limiti non letti: helper non disponibile$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /DeepSeek saldo: 12 USD/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^▕.+▏ 37%$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^▕.+▏ 37% usato$/ })).toBeDefined()
   await ui.press({ key: 'impostazioni' })
   expect(await ui.find({ type: 'Text', text: /^Claude: helper non disponibile$/ })).toBeDefined()
   await ui.press({ key: 'vista-lavoro' })
@@ -2158,7 +2158,7 @@ test('2.3.1: piano letto senza finestre dopo l\'uso extra al 99%: l\'extra esce 
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   let ui = await $.ui.mount({ ...PANE('terminal') })
-  expect(await ui.find({ type: 'Text', text: /Claude 99% oltre la soglia critica/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Claude 99% usato, oltre la critica/ })).toBeDefined()
   await ui.press({ key: 'vista-carico' })
   expect(await ui.find({ type: 'Text', text: /Claude uso extra · tetto 10\.00 EUR: 99% usato/ })).toBeDefined()
   await ui.press({ key: 'vista-lavoro' })
@@ -2168,7 +2168,7 @@ test('2.3.1: piano letto senza finestre dopo l\'uso extra al 99%: l\'extra esce 
     piano = scartato
     await clock.advance(300_000)
     ui = await $.ui.mount({ ...PANE('terminal') })
-    expect(await ui.find({ type: 'Text', text: /Claude 99% oltre la soglia critica/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Claude 99% usato, oltre la critica/ })).toBeDefined()
     await ui.unmount()
   }
   piano = { status: 'ok', plan: 'Esempio', windows: [], extraUsage: { enabled: false, percentUsed: 0, spent: '0.00', monthlyLimit: '10.00', currency: 'EUR' } }
