@@ -18,6 +18,7 @@ import {
   effortDi,
   effortPer,
   FASI,
+  idAuditor,
   modelloDi,
   nomeModello,
   percentuale,
@@ -26,6 +27,7 @@ import {
   PERMESSI,
   RAMO_RE,
   sensibile,
+  statoAuditor,
   stimaArrivo,
   taskAccertato,
   transizione,
@@ -405,6 +407,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         )}
         {infoLavoro(a)}
         {consiglioRiga(a)}
+        {auditorRiga(a)}
         <Text dimColor size="caption" wrap="wrap">
           {opzioni(a)}
         </Text>
@@ -579,6 +582,50 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       </Box>
     )
   }
+  /**
+   * F7.3: l'auditor della chip, per modalità. Richiesto (il campo), applicato (solo api-claude, con `--advisor`) o manuale
+   * (sessioni: lo digita l'utente con /advisor, che cambia il suo default per tutte le sessioni). Mai «effettivo».
+   */
+  function auditorRiga(a: Azione) {
+    const st = statoAuditor(a)
+    const esito = a.lanciatore === 'api-claude' ? a.advisorEsito : undefined
+    if (!st && !esito && !a.advisorNonDisponibile) return null
+    const id = a.auditor ? idAuditor(a.auditor) : undefined
+    const nome = a.auditor ? nomeModello(id ?? a.auditor) : ''
+    const comando = `/advisor ${a.auditor ?? ''}`
+    return (
+      <Box key={`auditor-${a.id}`} flexDirection="column">
+        {st === 'applicato' && <Text key={`auditor-${a.id}-testo`} size="caption" dimColor wrap="wrap">{T('au.applicato', { auditor: nome })}</Text>}
+        {st === 'senza' && <Text key={`auditor-${a.id}-testo`} size="caption" dimColor wrap="wrap">{T('au.senza')}</Text>}
+        {st === 'manuale' && (
+          <Box key={`auditor-${a.id}-manuale`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
+            <Text key={`auditor-${a.id}-testo`} size="caption" dimColor wrap="wrap">{T('au.manuale', { comando })}</Text>
+            <Button key={`auditor-copia-${a.id}`} plain label={`${T('ese.copia')} ${breve(a)}`}
+              onPress={() => void $.ui.copy({ text: comando }).then(x => x.isCopied && $.ui.toast(T('ese.copiato')))}>
+              {T('ese.copia')}
+            </Button>
+          </Box>
+        )}
+        {st === 'manuale' && <Text key={`auditor-${a.id}-nota`} size="caption" dimColor wrap="wrap">{T('au.manualeNota')}</Text>}
+        {id?.startsWith('claude-fable') && st !== 'senza' && <Text key={`auditor-${a.id}-fable`} size="caption" dimColor wrap="wrap">{T('au.fable')}</Text>}
+        {esito && <Text key={`auditor-${a.id}-esito`} size="caption" dimColor wrap="wrap">{T(`au.esito.${esito.stato}`, { modello: esito.modello ? nomeModello(esito.modello) : '' })}</Text>}
+        {a.stato === 'fallita' && a.lanciatore === 'api-claude' && a.auditor && a.advisorNonDisponibile && !a.senzaAuditor && (
+          a.senzaAuditorBloccato
+            ? nota1(`auditor-${a.id}-bloccato`, STATO.attesa, '!', T('au.senzaBloccato', { fonte: T(`ese.fonte.${a.senzaAuditorBloccato as 'utente'}`) }))
+            : (
+              <Button key={`senza-auditor-${a.id}`} variant="secondary" label={`${T('au.riavviaSenza')} ${breve(a)}`}
+                onPress={fai(async () => {
+                  // Una scrittura CAS del record (le conferme già date decadono), poi l'avvio di sempre.
+                  await c.salva({ ...a, senzaAuditor: true })
+                  await c.avvia(a)
+                })}>
+                {T('au.riavviaSenza')}
+              </Button>
+            )
+        )}
+      </Box>
+    )
+  }
   /** F6.5 «Suggerisci»: dove andrebbe una proposta senza destinazione esplicita, e perché (il consigliere non sceglie). */
   function consiglioRiga(a: Azione) {
     if (!regoleOra.risorse.consigliere || a.stato !== 'proposta') return null
@@ -689,6 +736,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         )}
         {infoLavoro(a)}
         {consiglioRiga(a)}
+        {auditorRiga(a)}
         {brief && (
           <Text size="caption" dimColor wrap="wrap">
             {corto(brief, Math.max(40, 2 * (colonne - 8)))}

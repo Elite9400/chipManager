@@ -27,6 +27,8 @@ import {
   mandatoApi,
   modalitaDi,
   controlloDa,
+  ADVISOR,
+  idAuditor,
   passiMancanti,
   chiaviApiVietate,
   consigliaDove,
@@ -791,8 +793,10 @@ async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: 
   const m = mandatoApi(a, r, strumenti($))
   const root = (await $.session.repo())?.root
   if (!root) throw new Error('repository root not available')
+  // F7.3: l'auditor va con `--advisor` (alias risolto, coppia già controllata dalla guardia); «senza auditor» lo spegne.
+  const advisor = a.auditor && !a.senzaAuditor ? idAuditor(a.auditor) ?? undefined : undefined
   const ingresso = { root, prompt: `${m.background}\n\n${m.prompt}`, modello: m.model, effort: m.effort, permessi: a.permessi ?? 'default', base: a.base,
-    tetto: api.tetto, budget: api.budgetUsd, mese: ora().slice(0, 7), chiave }
+    tetto: api.tetto, budget: api.budgetUsd, mese: ora().slice(0, 7), chiave, ...(advisor && { advisor }), ...(a.senzaAuditor && { senzaAdvisor: true }) }
   const esito = await helper($, ['lancia-api', await cartella($), a.id, a.tentativo!], JSON.stringify(ingresso))
   const dettaglio = (() => {
     try {
@@ -1018,6 +1022,20 @@ async function aggiornaLockApi($: Eng) {
   if (!uguale(await read($, lockApi), tenuto)) await update($, lockApi, () => tenuto)
 }
 
+/** F7.3: l'advisor di un record d'esecuzione (o di una chip), riletto campo per campo: nient'altro passa. */
+function advisorDa(s: { advisor?: { stato?: unknown; modello?: unknown }; advisorEsito?: Azione['advisorEsito']; advisorNonDisponibile?: unknown; senzaAuditor?: { bloccato?: unknown }; senzaAuditorBloccato?: unknown }) {
+  const v = s.advisor ?? s.advisorEsito
+  const stato = ['applicato', 'ereditato', 'nessuno', 'disattivato', 'incerto'].find(x => x === v?.stato) as NonNullable<Azione['advisorEsito']>['stato'] | undefined
+  const modello = typeof v?.modello === 'string' && /^[A-Za-z0-9._-]{1,60}$/.test(v.modello) ? v.modello : undefined
+  const nonDisp = ['consenso', 'escluso', 'rifiutato'].find(x => x === s.advisorNonDisponibile) as Azione['advisorNonDisponibile']
+  const bloccato = s.senzaAuditor?.bloccato ?? s.senzaAuditorBloccato
+  return {
+    ...(stato && { advisorEsito: { stato, ...(modello && { modello }) } }),
+    ...(nonDisp && { advisorNonDisponibile: nonDisp }),
+    ...(typeof bloccato === 'string' && ['gestite', 'locale', 'progetto', 'utente'].includes(bloccato) && { senzaAuditorBloccato: bloccato }),
+  }
+}
+
 /** F6: le destinazioni per `risorse_agenti`, in inglese: locale, cloud (stesso piano, serve GitHub), API con budget e lock. */
 async function destinazioniPerAgenti($: Eng, r: Regole, chi: Chiamante) {
   const api = r.risorse.apiClaude
@@ -1029,6 +1047,8 @@ async function destinazioniPerAgenti($: Eng, r: Regole, chi: Chiamante) {
     'api-claude': !api ? 'not configured' : !r.chiaveApi ? 'no key in the mod options'
       : { budgetUsd: api.budgetUsd, capPerRunUsd: api.tetto, spentThisMonthUsd: spesa?.speso ?? 'unknown', estimated: true, lane: lock ? `busy (${lock.motivo})` : 'free' },
     advisor: r.risorse.consigliere ?? 'off',
+    // F7.3: l'auditor si sceglie per chip nel pannello; qui solo da dove viene la tabella delle coppie.
+    auditor: `per chip in the panel: --advisor only on api-claude, /advisor typed by the owner elsewhere; pairs from ${ADVISOR.fonte} (${ADVISOR.letta})`,
   }
 }
 
@@ -1217,15 +1237,21 @@ async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti)
         if (!/^az-[a-z0-9]{6,20}$/.test(a.tentativo ?? '')) throw new Error('invalid attempt token')
         const f = `${await cartella($)}/esecuzioni/${a.tentativo}.json`
         const s = (await $.fs.exists(f))
-          ? JSON.parse((await $.fs.read(f)) as string) as { id?: string; tentativo?: string; stato?: string; ramo?: string; errore?: string; costo?: unknown; incerto?: unknown }
+          ? JSON.parse((await $.fs.read(f)) as string) as { id?: string; tentativo?: string; stato?: string; ramo?: string; errore?: string; costo?: unknown; incerto?: unknown
+              advisor?: { stato?: unknown; modello?: unknown }; advisorNonDisponibile?: unknown; senzaAuditor?: { bloccato?: unknown } }
           : null
         if (s?.id === a.id && s.tentativo === a.tentativo && ['avviata', 'consegnata', 'fallita'].includes(s.stato ?? '')) {
           // F6.2: solo il costo stimato (un numero) o ignoto; nient'altro dell'esecuzione entra nel record.
           const costo = a.lanciatore !== 'api-claude' ? undefined : typeof s.costo === 'number' && Number.isFinite(s.costo) && s.costo >= 0 ? s.costo : s.stato === 'avviata' && !s.incerto ? undefined : null
           const incerto = s.incerto === true
-          if (a.stato !== s.stato || a.ramoSessione !== s.ramo || a.errore !== s.errore || a.costoApi !== costo || !!a.incerto !== incerto)
+          // F7.3: dell'advisor solo lo stato, un id da modello e il nome della fonte che blocca «senza auditor».
+          const adv = a.lanciatore === 'api-claude' ? advisorDa(s) : {}
+          const nonDisp = adv.advisorNonDisponibile
+          if (a.stato !== s.stato || a.ramoSessione !== s.ramo || a.errore !== s.errore || a.costoApi !== costo || !!a.incerto !== incerto || !uguale(advisorDa({ advisorEsito: a.advisorEsito, advisorNonDisponibile: a.advisorNonDisponibile, senzaAuditorBloccato: a.senzaAuditorBloccato }), adv))
             a = (await aggiorna($, a.id, x => x.tentativo === a.tentativo && ['in-avvio', 'avviata'].includes(x.stato)
-              ? { ...transizione(x, s.stato as StatoAzione, ora()), ramoSessione: s.ramo, incerto, ...(costo !== undefined && { costoApi: costo }), ...salvato('errore', 'errore', s.errore) } : null)) ?? a
+              ? { ...transizione(x, s.stato as StatoAzione, ora()), ramoSessione: s.ramo, incerto, ...(costo !== undefined && { costoApi: costo }),
+                  advisorEsito: undefined, advisorNonDisponibile: undefined, senzaAuditorBloccato: undefined, ...adv,
+                  ...(nonDisp ? salvato('errore', 'errore', msg(`err.advisor.${nonDisp}`)) : salvato('errore', 'errore', s.errore)) } : null)) ?? a
         }
       } catch { /* record mancante o rotto: nessun riavvio automatico */ }
       if (a.stato === 'in-avvio') continue

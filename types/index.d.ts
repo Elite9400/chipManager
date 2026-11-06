@@ -196,6 +196,16 @@ export type Azione = {
   lanciatore?: 'cli' | 'freellmapi' | 'api-claude'
   /** F6.2: costo stimato in USD dell'esecuzione a crediti API (`total_cost_usd`); null = ignoto (conta il tetto). */
   costoApi?: number | null
+  /** F7.3: l'auditor (advisor) richiesto: alias `sonnet`, `opus`, `fable` o un id completo; assente = nessuno. */
+  auditor?: string
+  /** F7.3: gli avvii `api-claude` spengono l'advisor (`CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` sul solo figlio). */
+  senzaAuditor?: boolean
+  /** F7.3: l'advisor nell'ultima esecuzione `api-claude`, come lo ha visto il supervisore sul worktree reale. */
+  advisorEsito?: { stato: 'applicato' | 'ereditato' | 'nessuno' | 'disattivato' | 'incerto'; modello?: string }
+  /** F7.3: l'esecuzione è uscita subito perché l'advisor non era disponibile, e perché. */
+  advisorNonDisponibile?: 'consenso' | 'escluso' | 'rifiutato'
+  /** F7.3: la fonte di impostazioni che impedisce «Riavvia senza auditor» (un `env` che sovrascrive, o illeggibile). */
+  senzaAuditorBloccato?: string
   /** Risultato testuale del proxy, mai eseguito; da approvare e rivedere localmente. */
   risultato?: string
   /** Piano del lavoro: percorso relativo alla radice del repo (`.md` o `.txt`), letto dall'helper. */

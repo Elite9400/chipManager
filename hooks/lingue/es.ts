@@ -893,6 +893,27 @@ const es: Dizionario = {
   "imp.propostaCome": "Revisa los cambios de abajo y pulsa Aplicar, o Descartar cambios. Hasta entonces no se guarda nada.",
   "imp.propostaInCoda": "Una sesión ({da}) propuso ajustes: entran en el borrador cuando los cambios actuales se aplican o descartan",
   "imp.propostaLavoro": "Ajustes propuestos por una sesión ({da}) esperan en el borrador de Ajustes",
+  // F7.3 auditor (advisor)
+  "au.ignoto": "el auditor {auditor} no es un modelo que la tabla del advisor conozca: no se puede elegir",
+  "au.esecutoreIgnoto": "{modello} no está en la tabla del advisor: no se le puede asociar un auditor",
+  "au.coppia": "{auditor} no puede auditar a {modello}: Claude Code lo ignoraría en silencio",
+  "au.soloClaude": "un auditor solo funciona con Claude como ejecutor",
+  "au.cloud": "en el cloud el panel no puede fijar ni comprobar un auditor: quítalo o elige otro destino",
+  "au.applicato": "auditor {auditor} · se pasa con --advisor al iniciar la ejecución API",
+  "au.senza": "auditor: desactivado para este inicio",
+  "au.manuale": "auditor: actívalo tú con {comando} en esa sesión",
+  "au.manualeNota": "/advisor cambia tu valor por defecto para todas las sesiones (salvo Remote Control y workers remotos): al terminar escribe /advisor off. Lo que hereda la sesión no se comprueba.",
+  "au.fable": "Fable como auditor: en algunos planes necesita un consentimiento único que das tú con /model fable en una sesión interactiva; la mod nunca lo da. El uso de Fable puede cobrarse a los créditos de uso.",
+  "au.esito.applicato": "última ejecución API: advisor {modello} pasado con --advisor",
+  "au.esito.ereditato": "última ejecución API: advisor heredado de los ajustes ({modello})",
+  "au.esito.nessuno": "última ejecución API: sin advisor",
+  "au.esito.disattivato": "última ejecución API: advisor desactivado (CLAUDE_CODE_DISABLE_ADVISOR_TOOL)",
+  "au.esito.incerto": "última ejecución API: CLAUDE_CODE_DISABLE_ADVISOR_TOOL tiene un valor que Claude Code quizá no lea ni como activado ni como desactivado",
+  "au.riavviaSenza": "Reiniciar sin auditor",
+  "au.senzaBloccato": "«Reiniciar sin auditor» no está disponible: {fonte} define CLAUDE_CODE_DISABLE_ADVISOR_TOOL en su env (o no se puede leer) y lo sobrescribiría. La mod nunca modifica ese archivo.",
+  "err.advisor.consenso": "advisor no disponible: Fable necesita tu consentimiento único (/model fable en una sesión interactiva). No se hizo ningún trabajo.",
+  "err.advisor.escluso": "advisor no disponible: availableModels de tu organización lo excluye. No se hizo ningún trabajo.",
+  "err.advisor.rifiutato": "advisor no disponible: Claude Code lo rechazó al iniciar. No se hizo ningún trabajo.",
   // ‹fine›
 }
 

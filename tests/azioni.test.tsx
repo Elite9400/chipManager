@@ -2,6 +2,11 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 import {
+  ADVISOR,
+  idAuditor,
+  motivoAuditor,
+  rangoModello,
+  statoAuditor,
   CADENZA_INIZIALE,
   rigaConsumo,
   modalitaDi,
@@ -2987,4 +2992,107 @@ test('R4: scrivi se cambia: uguaglianza sul JSON; il consumo si confronta senza 
   const c: Consumo = { processi: 3, app: 1, byte: 10, byteLimiti: 0, salti: 0, da: 1_000 }
   expect(consumoUguale(c, { ...c, da: 61_000 })).toBe(true)
   expect(consumoUguale(c, { ...c, processi: 4 })).toBe(false)
+})
+
+// --- F7.3: auditor (advisor) ---------------------------------------------------------------------------------------
+
+test('F7.3 tabella: ogni coppia della documentazione, alias risolti, id ignoti mai scelti; separata dal rango dei modelli', () => {
+  const ok = (esegue: string, auditor: string) => motivoAuditor(esegue, auditor) === undefined
+  // Una riga per ogni modello che esegue, con un ammesso e un escluso che la distinguono dalla riga vicina.
+  const casi: [string, string[], string[]][] = [
+    ['claude-haiku-4-5', ['claude-fable-5', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-5-5'], ['claude-haiku-4-5']],
+    ['claude-sonnet-4-6', ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-5-5'], ['claude-haiku-4-5']],
+    ['claude-opus-4-6', ['claude-fable-5-1', 'claude-opus-4-6', 'claude-sonnet-5', 'claude-haiku-5-5'], ['claude-sonnet-4-6']],
+    ['claude-sonnet-5', ['claude-opus-4-7', 'claude-sonnet-5', 'claude-haiku-5-5'], ['claude-opus-4-6', 'claude-sonnet-4-6']],
+    ['claude-haiku-5-5', ['claude-opus-4-8', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5'], ['claude-opus-4-6']],
+    ['claude-opus-4-7', ['claude-opus-4-7', 'claude-sonnet-5-5', 'claude-fable-5-1'], ['claude-sonnet-5', 'claude-haiku-5-5', 'claude-opus-4-6']],
+    ['claude-opus-4-8', ['claude-opus-5-5', 'claude-sonnet-5-5'], ['claude-haiku-5-5']],
+    ['claude-sonnet-5-5', ['claude-opus-5', 'claude-sonnet-5-5', 'claude-fable-5'], ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-5-5']],
+    ['claude-opus-5', ['claude-opus-5', 'claude-opus-5-5', 'claude-fable-5-1'], ['claude-opus-4-8', 'claude-sonnet-5-5']],
+    ['claude-opus-5-5', ['claude-opus-5', 'claude-fable-5'], ['claude-sonnet-5-5', 'claude-haiku-5-5']],
+    ['claude-fable-5', ['claude-fable-5', 'claude-fable-5-1'], ['claude-opus-5-5']],
+    ['claude-fable-5-1', ['claude-fable-5-1'], ['claude-fable-5', 'claude-opus-5-5']],
+  ]
+  for (const [esegue, si, no] of casi) {
+    for (const x of si) expect([esegue, x, ok(esegue, x)]).toEqual([esegue, x, true])
+    for (const x of no) expect([esegue, x, ok(esegue, x)]).toEqual([esegue, x, false])
+  }
+  expect([idAuditor('opus'), idAuditor('sonnet'), idAuditor('fable'), idAuditor('claude-opus-9'), idAuditor('haiku')]).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', null, null])
+  expect(motivoAuditor('claude-opus-5-5', 'claude-opus-9')?.k).toBe('au.ignoto')
+  expect(motivoAuditor('claude-opus-9', 'fable')?.k).toBe('au.esecutoreIgnoto')
+  expect(motivoAuditor('claude-opus-5-5', 'sonnet')?.k).toBe('au.coppia')
+  expect(ADVISOR).toMatchObject({ fonte: 'https://code.claude.com/docs/en/advisor', letta: '2026-11-06' })
+  // Il rango dei modelli non cambia: la tabella è a parte.
+  expect([rangoModello('claude-sonnet-5-5'), rangoModello('claude-opus-5-5')]).toEqual([1, 2])
+})
+
+test('F7.3 guardia: auditor fuori tabella, su Codex o nel cloud blocca l\'avvio con il motivo; senza auditor niente cambia', () => {
+  const RA: Regole = { ...R, chiaveApi: true, risorse: { ...R.risorse, apiClaude: { budgetUsd: 20, tetto: 2 } } }
+  const a = base('a-aud00001', 1, { repo: AUTORE.repo!, revisore: 'claude', modello: 'claude-opus-5-5' })
+  expect(violazioni({ ...a, auditor: 'fable' }, RA).map(m => m.k)).not.toContain('au.coppia')
+  expect(violazioni({ ...a, auditor: 'sonnet' }, RA).map(m => m.k)).toContain('au.coppia')
+  expect(violazioni({ ...a, auditor: 'gemini' }, RA).map(m => m.k)).toContain('au.ignoto')
+  expect(violazioni({ ...a, esecutore: 'codex', modello: undefined, auditor: 'opus' }, RA).map(m => m.k)).toContain('au.soloClaude')
+  expect(violazioni({ ...a, auditor: 'fable', destinazione: 'cloud' }, RA).map(m => m.k)).toContain('au.cloud')
+  expect(statoAuditor({ ...a, auditor: 'fable' })).toBe('manuale')
+  expect(statoAuditor({ ...a, auditor: 'fable', destinazione: 'api-claude' })).toBe('applicato')
+  expect(statoAuditor({ ...a, auditor: 'fable', destinazione: 'api-claude', senzaAuditor: true })).toBe('senza')
+  expect(statoAuditor(a)).toBeUndefined()
+})
+
+test('F7.3 avvio: --advisor solo per api-claude (alias risolto); le sessioni desktop non lo ricevono e nessun advisorModel si scrive', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  const ingressi: Record<string, unknown>[] = []
+  const amb = ambiente(on, { api: (cmd, _a, stdin) => (cmd === 'lancia-api' ? (ingressi.push(JSON.parse(stdin!)), [0, '']) : undefined) })
+  amb.disco.set(CONFIG, CONFIG_API)
+  const api = { ...chipApi('a-audapi01'), auditor: 'fable' }
+  const desk = base('a-auddsk01', 2, { repo: AUTORE.repo!, revisore: 'claude', auditor: 'opus' })
+  for (const a of [api, desk]) amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  // La chip di sessione dice come attivarlo a mano, con «Copia», e che /advisor cambia il default di tutte le sessioni.
+  expect(await ui.find({ type: 'Text', text: 'auditor: attivalo tu con /advisor opus in quella sessione' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^\/advisor cambia il tuo default per tutte le sessioni/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Fable come auditor: su alcuni piani serve un consenso una tantum/ })).toBeDefined()
+  await ui.press({ key: `avvia-${api.id}` })
+  await ui.press({ key: `avvia-${desk.id}` })
+  expect(ingressi).toHaveLength(1)
+  expect(ingressi[0]).toMatchObject({ advisor: 'claude-fable-5-1' })
+  expect(ingressi[0]).not.toHaveProperty('senzaAdvisor')
+  const start = amb.chiamate.filter(c => c.tool === 'start_session')
+  expect(start).toHaveLength(1)
+  expect(JSON.stringify(start[0]!.args)).not.toMatch(/advisor/i)
+  // Mai una scrittura di advisorModel: né nei file né negli helper.
+  expect([...amb.disco.values()].some(v => v.includes('advisorModel'))).toBe(false)
+  expect(amb.processi.some(p => (p.argv.join(' ') + (p.stdin ?? '')).includes('advisorModel'))).toBe(false)
+  await ui.unmount()
+})
+
+test('F7.3 esito: advisor non disponibile dal supervisore; «Riavvia senza auditor» scrive con CAS e riparte senza advisor; bloccato se una fonte lo sovrascrive', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  const ingressi: Record<string, unknown>[] = []
+  const amb = ambiente(on, { api: (cmd, _a, stdin) => (cmd === 'lancia-api' ? (ingressi.push(JSON.parse(stdin!)), [0, '']) : undefined) })
+  amb.disco.set(CONFIG, CONFIG_API)
+  const a = { ...chipApi('a-audesi01'), auditor: 'fable', stato: 'avviata' as const, lanciatore: 'api-claude' as const, tentativo: 'az-audesi01', avviataIl: '2026-11-06T10:00:00Z' }
+  const b = { ...chipApi('a-audesi02'), ordine: 2, auditor: 'fable', stato: 'avviata' as const, lanciatore: 'api-claude' as const, tentativo: 'az-audesi02', avviataIl: '2026-11-06T10:00:00Z' }
+  for (const x of [a, b]) amb.disco.set(`X:/orch/azioni/${x.id}.json`, JSON.stringify(x))
+  const fallita = (t: string, id: string, senza: object) => JSON.stringify({ id, tentativo: t, stato: 'fallita', ramo: `chipmanager/${t}`, costo: null, advisorNonDisponibile: 'consenso',
+    errore: 'advisor non disponibile: nessun lavoro fatto', advisor: { stato: 'applicato', modello: 'claude-fable-5-1' }, senzaAuditor: senza, stderr: 'testo che non entra' })
+  amb.disco.set('X:/orch/azioni/esecuzioni/az-audesi01.json', fallita('az-audesi01', a.id, {}))
+  amb.disco.set('X:/orch/azioni/esecuzioni/az-audesi02.json', fallita('az-audesi02', b.id, { bloccato: 'progetto' }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  const r = JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione & { stderr?: unknown }
+  expect(r).toMatchObject({ stato: 'fallita', advisorNonDisponibile: 'consenso', advisorEsito: { stato: 'applicato', modello: 'claude-fable-5-1' }, erroreCodice: 'err.advisor.consenso' })
+  expect(r.stderr).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /advisor non disponibile: Fable richiede il tuo consenso una tantum/ })).toBeDefined()
+  expect(await ui.find({ key: `senza-auditor-${b.id}` })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /«Riavvia senza auditor» non è disponibile: Impostazioni del progetto imposta/ })).toBeDefined()
+  await ui.press({ key: `senza-auditor-${a.id}` })
+  expect(JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!)).toMatchObject({ senzaAuditor: true, auditor: 'fable' })
+  expect(ingressi.at(-1)).toMatchObject({ senzaAdvisor: true })
+  expect(ingressi.at(-1)).not.toHaveProperty('advisor')
+  await ui.unmount()
 })

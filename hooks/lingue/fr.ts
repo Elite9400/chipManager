@@ -893,6 +893,27 @@ const fr: Dizionario = {
   "imp.propostaCome": "Vérifiez les modifications ci-dessous et appuyez sur Appliquer, ou Annuler les modifications. Rien n'est enregistré avant.",
   "imp.propostaInCoda": "Une session ({da}) a proposé des paramètres : ils entrent dans le brouillon une fois les modifications actuelles appliquées ou annulées",
   "imp.propostaLavoro": "Des paramètres proposés par une session ({da}) attendent dans le brouillon des Paramètres",
+  // F7.3 auditor (advisor)
+  "au.ignoto": "l'auditeur {auditor} n'est pas un modèle connu de la table de l'advisor : impossible de le choisir",
+  "au.esecutoreIgnoto": "{modello} n'est pas dans la table de l'advisor : aucun auditeur ne peut lui être associé",
+  "au.coppia": "{auditor} ne peut pas auditer {modello} : Claude Code l'ignorerait sans rien dire",
+  "au.soloClaude": "un auditeur ne fonctionne qu'avec Claude comme exécutant",
+  "au.cloud": "dans le cloud le panneau ne peut ni définir ni vérifier un auditeur : retirez-le ou choisissez une autre destination",
+  "au.applicato": "auditeur {auditor} · passé avec --advisor au lancement de l'exécution API",
+  "au.senza": "auditeur : désactivé pour ce lancement",
+  "au.manuale": "auditeur : activez-le vous-même avec {comando} dans cette session",
+  "au.manualeNota": "/advisor change votre valeur par défaut pour toutes les sessions (sauf Remote Control et workers distants) : à la fin tapez /advisor off. Ce que la session hérite n'est pas vérifié.",
+  "au.fable": "Fable comme auditeur : sur certains plans il faut un consentement unique que vous donnez vous-même avec /model fable dans une session interactive ; le mod ne le donne jamais. L'usage de Fable peut être facturé sur les crédits d'utilisation.",
+  "au.esito.applicato": "dernière exécution API : advisor {modello} passé avec --advisor",
+  "au.esito.ereditato": "dernière exécution API : advisor hérité des paramètres ({modello})",
+  "au.esito.nessuno": "dernière exécution API : aucun advisor",
+  "au.esito.disattivato": "dernière exécution API : advisor désactivé (CLAUDE_CODE_DISABLE_ADVISOR_TOOL)",
+  "au.esito.incerto": "dernière exécution API : CLAUDE_CODE_DISABLE_ADVISOR_TOOL a une valeur que Claude Code pourrait ne lire ni comme activée ni comme désactivée",
+  "au.riavviaSenza": "Relancer sans auditeur",
+  "au.senzaBloccato": "« Relancer sans auditeur » n'est pas disponible : {fonte} définit CLAUDE_CODE_DISABLE_ADVISOR_TOOL dans son env (ou est illisible) et l'écraserait. Le mod ne modifie jamais ce fichier.",
+  "err.advisor.consenso": "advisor indisponible : Fable demande votre consentement unique (/model fable dans une session interactive). Aucun travail effectué.",
+  "err.advisor.escluso": "advisor indisponible : availableModels de votre organisation l'exclut. Aucun travail effectué.",
+  "err.advisor.rifiutato": "advisor indisponible : Claude Code l'a refusé au lancement. Aucun travail effectué.",
   // ‹fine›
 }
 

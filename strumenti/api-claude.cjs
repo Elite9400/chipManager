@@ -272,7 +272,67 @@ async function terminaApi(dm, deps = {}) {
 const ingressoValido = input =>
   d.parametriValidi(input) && typeof input.tetto === 'number' && input.tetto >= 0.01 && input.tetto <= 1000 &&
   typeof input.budget === 'number' && input.budget > 0 && /^\d{4}-\d{2}$/.test(input.mese ?? '') &&
-  typeof input.chiave === 'string' && input.chiave.length >= 8 && input.chiave.length <= 500 && !/\s/.test(input.chiave)
+  typeof input.chiave === 'string' && input.chiave.length >= 8 && input.chiave.length <= 500 && !/\s/.test(input.chiave) &&
+  // F7.3: l'auditor è un id della tabella (il pannello ha già risolto l'alias); «senza auditor» lo esclude.
+  (input.advisor === undefined || (typeof input.advisor === 'string' && /^claude-(haiku|sonnet|opus|fable)-\d+(-\d+)?$/.test(input.advisor))) &&
+  (input.senzaAdvisor === undefined || input.senzaAdvisor === true) && !(input.advisor && input.senzaAdvisor)
+
+// --- F7.3: advisor nel contesto del figlio ---------------------------------------------------------------------------
+
+const VERI = ['1', 'true', 'yes', 'on']
+const FALSI = ['0', 'false', 'no', 'off']
+/** Una variabile booleana come la legge Claude Code: true, false, undefined se assente, null se il valore non si riconosce. */
+const booleano = v => (v === undefined ? undefined : VERI.includes(String(v).trim().toLowerCase()) ? true : FALSI.includes(String(v).trim().toLowerCase()) ? false : null)
+
+/**
+ * L'advisor che il figlio vedrebbe nel suo worktree: le fonti in ordine di precedenza (gestite, locale, progetto, utente).
+ * Il primo `env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL` definito vince sull'ambiente del processo; il primo `advisorModel` è
+ * l'advisor ereditato. Una fonte illeggibile si segnala: nessuna deduzione da quello che manca.
+ */
+function advisorNelWorktree(fonti) {
+  const esito = {}
+  for (const nome of ['gestite', 'locale', 'progetto', 'utente']) {
+    const f = fonti.find(x => x.nome === nome)
+    if (!f) continue
+    let s
+    try {
+      s = JSON.parse(fs.readFileSync(f.file, 'utf8'))
+    } catch (e) {
+      if (e.code !== 'ENOENT') esito.illeggibile ??= nome
+      continue
+    }
+    if (!s || typeof s !== 'object' || Array.isArray(s)) {
+      esito.illeggibile ??= nome
+      continue
+    }
+    const v = s.env && typeof s.env === 'object' ? s.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL : undefined
+    if (esito.disattiva === undefined && v !== undefined) Object.assign(esito, { disattiva: v, fonteDisattiva: nome })
+    if (esito.ereditato === undefined && typeof s.advisorModel === 'string') esito.ereditato = s.advisorModel.slice(0, 60)
+  }
+  return esito
+}
+
+/** Lo stato dell'advisor per il record dell'esecuzione, e la fonte che impedirebbe di spegnerlo per il solo figlio. */
+function statoAdvisor(input, w, envFiglio) {
+  const spento = booleano(w.disattiva !== undefined ? w.disattiva : envFiglio.CLAUDE_CODE_DISABLE_ADVISOR_TOOL)
+  const stato = spento === true ? { stato: 'disattivato' } : spento === null ? { stato: 'incerto' }
+    : input.advisor ? { stato: 'applicato', modello: input.advisor } : w.ereditato ? { stato: 'ereditato', modello: w.ereditato } : { stato: 'nessuno' }
+  // «Senza auditor» mette =1 nell'ambiente del figlio: un `env` delle impostazioni che non è vero lo sovrascriverebbe.
+  const bloccato = w.illeggibile ?? (w.disattiva !== undefined && booleano(w.disattiva) !== true ? w.fonteDisattiva : undefined)
+  return { advisor: stato, senzaAuditor: bloccato ? { bloccato } : {} }
+}
+
+const TETTO_STDERR = 16 * 1024
+/** Lo stderr del figlio come si salva: senza la chiave, `sk-ant-…`, email e percorsi della home. */
+function filtraStderr(testo, chiave, casa = os.homedir()) {
+  let t = chiave ? testo.split(chiave).join('[key]') : testo
+  t = t.replace(/sk-ant-[A-Za-z0-9_-]+/g, 'sk-ant-…').replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '<email>')
+  for (const h of new Set([casa, casa.replace(/\\/g, '/')])) if (h && h.length > 2) t = t.split(h).join('~')
+  return t
+}
+/** Un'uscita anticipata per l'advisor: consenso a Fable, esclusione da `availableModels`, o rifiuto all'avvio. */
+const advisorNonDisponibile = stderr =>
+  /\/model fable|consent/i.test(stderr) ? 'consenso' : /availableModels/i.test(stderr) ? 'escluso' : /advisor/i.test(stderr) ? 'rifiutato' : undefined
 
 /** Prenota (lock della macchina e spesa) PRIMA del processo; poi avvia il supervisore staccato, con la chiave su stdin. */
 async function lanciaApi(dir, id, tentativo, input, deps = {}) {
@@ -361,22 +421,27 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
       if (!ingressoValido(input)) throw new Error('parametri non validi')
       const { cwd, ramo } = d.preparaWorktree(input, tentativo, deps, fuori)
       // Il processo parte nel worktree, che può avere impostazioni sue: si ricontrolla lì, prima della chiave e dello spawn.
-      const vietate = blocchiImpostazioni(deps.fontiCwd?.(cwd) ?? fontiImpostazioni(cwd, deps.env ?? process.env), deps.env ?? process.env)
+      const fontiCwd = deps.fontiCwd?.(cwd) ?? fontiImpostazioni(cwd, deps.env ?? process.env)
+      const vietate = blocchiImpostazioni(fontiCwd, deps.env ?? process.env)
       if (vietate.length) throw Object.assign(new Error('impostazioni vietate'), { fonti: vietate })
+      // F7.3: l'advisor sul worktree reale, con le stesse fonti. «Senza auditor» non parte se non si può garantire.
+      const envFiglio = { ...ambienteFiglio(deps.env ?? process.env), ...(input.senzaAdvisor && { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1' }) }
+      const adv = statoAdvisor(input, advisorNelWorktree(fontiCwd), envFiglio)
+      if (input.senzaAdvisor && adv.senzaAuditor.bloccato) throw Object.assign(new Error('advisor non spegnibile'), { advisor: adv.senzaAuditor.bloccato })
       fs.mkdirSync(dirChiavi(dm), { recursive: true })
       // Il file-chiave nasce subito prima dello spawn, leggibile solo dall'utente, e muore all'uscita.
       fs.writeFileSync(fileChiave(dm, tentativo), input.chiave, { mode: 0o600, flag: 'wx' })
       const helper = [process.execPath, CHIAVE, fileChiave(dm, tentativo), fileConsegna(dm, tentativo)].map(x => `"${x}"`).join(' ')
       const argv = ['claude', '-p', '--output-format', 'json', '--model', input.modello, '--effort', input.effort, '--permission-mode', input.permessi,
-        '--max-budget-usd', String(input.tetto), '--settings', JSON.stringify({ apiKeyHelper: helper })]
-      const p = (deps.avvia ?? d.avviaComando)(argv, { cwd, env: ambienteFiglio(deps.env ?? process.env), stdio: ['pipe', 'pipe', 'ignore'], detached: process.platform !== 'win32' })
+        '--max-budget-usd', String(input.tetto), '--settings', JSON.stringify({ apiKeyHelper: helper }), ...(input.advisor && !input.senzaAdvisor ? ['--advisor', input.advisor] : [])]
+      const p = (deps.avvia ?? d.avviaComando)(argv, { cwd, env: envFiglio, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
       await new Promise((ok, ko) => { p.once('spawn', ok); p.once('error', ko) })
       partito = true
       const avvio = Date.now()
       const radice = process.platform === 'win32' && !deps.elenco ? (d.elencoProcessi() ?? []).find(x => x.pid === String(p.pid)) : undefined
       rec = { ...rec, stato: 'avviata', pid: p.pid, creato: radice?.creato, avvio, noti: [] }
       scriviLock(dm, rec)
-      scrivi({ stato: 'avviata', ramo, avviataIl: new Date().toISOString() })
+      scrivi({ stato: 'avviata', ramo, avviataIl: new Date().toISOString(), ...adv })
       // Censimento a intervalli: i discendenti visti restano noti anche se il loro padre muore prima.
       const censimento = process.platform === 'win32' && !deps.elenco ? setInterval(() => {
         const lista = d.elencoProcessi()
@@ -393,6 +458,9 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
         else pezzi.push(b)
         letti += b.length
       })
+      // F7.3: lo stderr non si scarta più: al più 16 KiB, filtrato prima di salvarlo.
+      let errori = ''
+      p.stderr?.on('data', b => { if (errori.length < TETTO_STDERR) errori = (errori + b.toString('utf8')).slice(0, TETTO_STDERR) })
       // La fine degli stream arriva dopo l'uscita: il costo si legge solo allora (al più 30 s dopo l'uscita, poi vale quel che c'è).
       const chiuso = new Promise(ok => p.once('close', ok))
       p.stdin.on('error', () => {})
@@ -404,13 +472,18 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
       scriviLock(dm, rec)
       await Promise.race([chiuso, new Promise(ok => setTimeout(ok, 30_000).unref?.())])
       const esito = troncato ? null : estraiEsito(Buffer.concat(pezzi).toString('utf8'))
-      if (!esito) scrivi({ stato: 'avviata', ramo, incerto: true, costo: null, errore: 'esito API incerto: controlla il worktree prima di chiudere' })
-      else scrivi({ stato: 'consegnata', ramo, costo: esito.costo, turni: esito.turni, errore: esito.errore || codice !== 0 ? 'esecuzione API terminata con errore: controlla il worktree prima di chiudere' : undefined })
+      const stderr = errori ? { stderr: filtraStderr(errori, input.chiave) } : {}
+      const nonDisp = !esito && codice !== 0 ? advisorNonDisponibile(errori) : undefined
+      if (nonDisp) scrivi({ stato: 'fallita', ramo, costo: null, advisorNonDisponibile: nonDisp, errore: 'advisor non disponibile: nessun lavoro fatto', ...adv, ...stderr })
+      else if (!esito) scrivi({ stato: 'avviata', ramo, incerto: true, costo: null, errore: 'esito API incerto: controlla il worktree prima di chiudere', ...adv, ...stderr })
+      else scrivi({ stato: 'consegnata', ramo, costo: esito.costo, turni: esito.turni, errore: esito.errore || codice !== 0 ? 'esecuzione API terminata con errore: controlla il worktree prima di chiudere' : undefined, ...adv, ...stderr })
       await contaSpesa(dir, tentativo, esito?.costo ?? null)
     } catch (e) {
       if (!partito) {
         scrivi({ stato: 'fallita', ramo: fuori.ramo,
-          errore: e?.fonti ? `API non avviata: impostazioni vietate nel worktree (${e.fonti.join(', ')})` : 'API non avviata: verifica comando e worktree; nessun file eliminato' })
+          errore: e?.fonti ? `API non avviata: impostazioni vietate nel worktree (${e.fonti.join(', ')})`
+            : e?.advisor ? `API non avviata: l'advisor non si può spegnere per questo avvio (${e.advisor})` : 'API non avviata: verifica comando e worktree; nessun file eliminato',
+          ...(e?.advisor && { senzaAuditor: { bloccato: e.advisor } }) })
         // Il lock si toglie solo se il file-chiave non c'è più; altrimenti resta, con l'uscita registrata, e la
         // prossima verifica ritenta la cancellazione prima di liberarlo.
         if (cancellaChiave(dm, tentativo, deps)) fs.rmSync(fileLock(dm), { force: true })
@@ -516,6 +589,6 @@ async function comando(cmd, a, stdin, opz = {}) {
 }
 
 module.exports = {
-  comando, lanciaApi, eseguiApi, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
+  comando, lanciaApi, eseguiApi, booleano, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
   leggiSpesa, spesoNelMese, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
 }

@@ -895,6 +895,27 @@ const en = {
   "imp.propostaCome": "Review the changes below and press Apply, or Discard changes. Nothing is saved until then.",
   "imp.propostaInCoda": "A session ({da}) proposed settings: they enter the draft once the current changes are applied or discarded",
   "imp.propostaLavoro": "Settings proposed by a session ({da}) are waiting in the Settings draft",
+  // F7.3 auditor (advisor)
+  "au.ignoto": "auditor {auditor} is not a model the advisor table knows: it cannot be chosen",
+  "au.esecutoreIgnoto": "{modello} is not in the advisor table: no auditor can be paired with it",
+  "au.coppia": "{auditor} cannot audit {modello}: Claude Code would ignore it silently",
+  "au.soloClaude": "an auditor works only with Claude as the executor",
+  "au.cloud": "in the cloud the panel cannot set or check an auditor: remove it or choose another destination",
+  "au.applicato": "auditor {auditor} · passed with --advisor when the API run starts",
+  "au.senza": "auditor: turned off for this start",
+  "au.manuale": "auditor: turn it on yourself with {comando} in that session",
+  "au.manualeNota": "/advisor changes your default for every session (except Remote Control and remote workers): type /advisor off when done. What the session inherits is not checked.",
+  "au.fable": "Fable as auditor: on some plans it needs a one-time consent that you give yourself with /model fable in an interactive session; the mod never gives it. Fable usage can bill to usage credits.",
+  "au.esito.applicato": "last API run: advisor {modello} passed with --advisor",
+  "au.esito.ereditato": "last API run: advisor inherited from the settings ({modello})",
+  "au.esito.nessuno": "last API run: no advisor",
+  "au.esito.disattivato": "last API run: advisor turned off (CLAUDE_CODE_DISABLE_ADVISOR_TOOL)",
+  "au.esito.incerto": "last API run: CLAUDE_CODE_DISABLE_ADVISOR_TOOL has a value Claude Code may not read as on or off",
+  "au.riavviaSenza": "Restart without auditor",
+  "au.senzaBloccato": "Restart without auditor is not available: {fonte} sets CLAUDE_CODE_DISABLE_ADVISOR_TOOL in its env (or cannot be read) and would override it. The mod never edits that file.",
+  "err.advisor.consenso": "advisor not available: Fable needs your one-time consent (/model fable in an interactive session). No work was done.",
+  "err.advisor.escluso": "advisor not available: your organization's availableModels excludes it. No work was done.",
+  "err.advisor.rifiutato": "advisor not available: Claude Code refused it at start. No work was done.",
   // ‹fine›
 } satisfies Record<string, Voce>
 

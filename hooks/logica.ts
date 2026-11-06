@@ -613,6 +613,15 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
     if (effort !== 'low') v.push(msg('v.freeEffort'))
   }
   if (a.modello && a.modello !== modello) v.push(msg('v.modelloNonAmmesso', { modello: a.modello, esecutore: a.esecutore }))
+  // F7.3: l'auditor solo su Claude, mai nel cloud (non lo si controlla), e solo in una coppia della tabella.
+  if (a.auditor) {
+    if (a.esecutore !== 'claude') v.push(msg('au.soloClaude'))
+    else {
+      const m = motivoAuditor(modello, a.auditor)
+      if (m) v.push(m)
+    }
+    if (modo === 'cloud') v.push(msg('au.cloud'))
+  }
   if (a.effort && a.effort !== effort) v.push(msg('v.effortOltre', { effort: a.effort, modello: nomeModello(modello) }))
   // Il revisore che il mandato nominerà deve stare nella matrice dell'autore e non essere l'autore.
   const rev = revisoreConcreto(a, regole)
@@ -736,6 +745,59 @@ export function violazioniAvvio(a: Azione, regole: Regole, lista: readonly Azion
 
 const RANGO = ['haiku', 'sonnet', 'opus', 'fable']
 export const rangoModello = (m: string) => RANGO.findIndex(f => m.toLowerCase().includes(f))
+
+// --- F7.3: auditor (advisor di Claude Code) ------------------------------------------------------------------------
+// Una tabella di coppie, separata da `rangoModello`: Claude Code ignora in silenzio un advisor fuori tabella, quindi qui
+// una coppia non documentata non si può scegliere e blocca l'avvio. Un id che la tabella non conosce non si sceglie.
+
+/** Fonte, data di lettura e alias (Anthropic API) della tabella; le righe vanno dal modello di rango più basso. */
+export const ADVISOR = {
+  fonte: 'https://code.claude.com/docs/en/advisor',
+  letta: '2026-11-06',
+  versione: 1,
+  alias: { fable: 'claude-fable-5-1', opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5' } as Record<string, string>,
+  /** [modelli che eseguono, advisor ammessi]: `famiglia` = ogni versione, `famiglia-v` = quella, `famiglia>=v` = da quella in su. */
+  coppie: [
+    [['haiku-4.5', 'sonnet-4.6'], ['fable', 'opus', 'sonnet', 'haiku-5.5']],
+    [['opus-4.6'], ['fable', 'opus', 'sonnet>=5', 'haiku-5.5']],
+    [['sonnet-5', 'haiku-5.5'], ['fable', 'opus>=4.7', 'sonnet>=5', 'haiku-5.5']],
+    [['opus-4.7', 'opus-4.8'], ['fable', 'opus>=4.7', 'sonnet-5.5']],
+    [['sonnet-5.5'], ['fable', 'opus>=5', 'sonnet-5.5']],
+    [['opus-5', 'opus-5.5'], ['fable', 'opus>=5']],
+    [['fable-5'], ['fable-5.1', 'fable-5']],
+    [['fable-5.1'], ['fable-5.1']],
+  ] as const,
+}
+/** I modelli che la tabella nomina, come id completi: gli altri non si scelgono né come esecutore né come auditor. */
+export const MODELLI_ADVISOR = ['claude-haiku-4-5', 'claude-haiku-5-5', 'claude-sonnet-4-6', 'claude-sonnet-5', 'claude-sonnet-5-5', 'claude-opus-4-6',
+  'claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5', 'claude-opus-5-5', 'claude-fable-5', 'claude-fable-5-1']
+const famigliaVersione = (id: string) => {
+  const m = /^claude-(haiku|sonnet|opus|fable)-(\d+)(?:-(\d+))?$/.exec(id)
+  return m ? { f: m[1]!, v: Number(m[2]) + (m[3] ? Number(m[3]) / 10 : 0) } : undefined
+}
+const nellaRegola = (regola: string, id: string) => {
+  const x = famigliaVersione(id)
+  const r = /^([a-z]+)(?:(-|>=)([\d.]+))?$/.exec(regola)
+  if (!x || !r || x.f !== r[1]) return false
+  return !r[2] || (r[2] === '-' ? x.v === Number(r[3]) : x.v >= Number(r[3]))
+}
+/** L'id dell'auditor: un alias si risolve, un id deve stare nella tabella; null = sconosciuto. */
+export const idAuditor = (auditor: string): string | null => ADVISOR.alias[auditor] ?? (MODELLI_ADVISOR.includes(auditor) ? auditor : null)
+/** Perché `auditor` non va con il modello che esegue (id sconosciuti, coppia fuori tabella), o undefined se va. */
+export function motivoAuditor(esegue: string, auditor: string): Msg | undefined {
+  const id = idAuditor(auditor)
+  if (!id) return msg('au.ignoto', { auditor: auditor.slice(0, 40) })
+  if (!MODELLI_ADVISOR.includes(esegue)) return msg('au.esecutoreIgnoto', { modello: nomeModello(esegue) })
+  const riga = ADVISOR.coppie.find(([chi]) => chi.some(r => nellaRegola(r, esegue)))
+  if (!riga || !riga[1].some(r => nellaRegola(r, id))) return msg('au.coppia', { auditor: nomeModello(id), modello: nomeModello(esegue) })
+  return undefined
+}
+/** Come si applica l'auditor richiesto: con `--advisor` (api-claude), a mano con /advisor (sessioni), o spento per l'avvio. */
+export function statoAuditor(a: Azione): 'applicato' | 'manuale' | 'senza' | undefined {
+  if (!a.auditor) return undefined
+  if (modalitaDi(a) === 'api-claude') return a.senzaAuditor ? 'senza' : 'applicato'
+  return 'manuale'
+}
 
 // --- coda e avvio massivo -----------------------------------------------------------------------
 

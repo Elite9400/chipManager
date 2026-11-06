@@ -1693,3 +1693,108 @@ test('F7.1 helper: rivalida la forma (campo annidato vietato, valore mai ripetut
   assert.strictEqual((await d.impostazioniPrendi(file, 'acme/z', 'i-vecchia01'))[0], 4)
   assert.strictEqual((await d.impostazioniPrendi(file, 'acme/w', 'i-manomessa1'))[0], 4)
 })
+
+// --- F7.3: advisor nel supervisore api-claude ------------------------------------------------------------------------
+
+test('F7.3 booleano e precedenza: 1/true/yes/on veri, 0/false/no/off falsi, assente; la fonte più alta vince fra gestite, locale, progetto, utente', () => {
+  assert.deepStrictEqual(['1', 'TRUE', 'yes', 'On', '0', 'false', 'No', 'OFF', undefined, 'forse'].map(API.booleano), [true, true, true, true, false, false, false, false, undefined, null])
+  const dir = tmp()
+  const fonti = ['utente', 'progetto', 'locale', 'gestite'].map(nome => ({ nome, file: path.join(dir, `${nome}.json`) }))
+  fs.writeFileSync(fonti[0].file, JSON.stringify({ env: { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1' }, advisorModel: 'opus' }))
+  fs.writeFileSync(fonti[2].file, JSON.stringify({ env: { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '0' }, advisorModel: 'fable' }))
+  const w = API.advisorNelWorktree(fonti)
+  assert.deepStrictEqual([w.disattiva, w.fonteDisattiva, w.ereditato], ['0', 'locale', 'fable'])
+  // L'env delle impostazioni sostituisce quello del processo: «0» in locale vince sull'1 del figlio.
+  assert.deepStrictEqual(API.statoAdvisor({ senzaAdvisor: true }, w, { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1' }), { advisor: { stato: 'ereditato', modello: 'fable' }, senzaAuditor: { bloccato: 'locale' } })
+  assert.deepStrictEqual(API.statoAdvisor({}, {}, { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: 'true' }).advisor, { stato: 'disattivato' })
+  assert.deepStrictEqual(API.statoAdvisor({}, {}, {}).advisor, { stato: 'nessuno' })
+  assert.deepStrictEqual(API.statoAdvisor({ advisor: 'claude-opus-5-5' }, { ereditato: 'fable' }, {}).advisor, { stato: 'applicato', modello: 'claude-opus-5-5' })
+})
+
+/** Un `claude -p` finto che registra argv e ambiente, scrive `stderr`, poi esce con `codice` (e il JSON se dato). */
+const claudeAdvisor = (vista, { codice = 0, uscita = '', stderr = '' } = {}) => (argv, opzioni) => {
+  vista.argv = argv
+  vista.env = opzioni.env
+  const p = new Emettitore()
+  p.pid = 525252
+  p.stdout = new Emettitore()
+  p.stderr = new Emettitore()
+  p.stdin = new Emettitore()
+  p.stdin.end = () => setImmediate(() => {
+    if (stderr) p.stderr.emit('data', Buffer.from(stderr))
+    if (uscita) p.stdout.emit('data', Buffer.from(uscita))
+    p.emit('exit', codice)
+    p.emit('close', codice)
+  })
+  queueMicrotask(() => p.emit('spawn'))
+  return p
+}
+async function eseguiConAdvisor(tentativo, input, fontiWorktree, figlio) {
+  const dir = tmp()
+  const dm = tmp()
+  const root = tmp()
+  const id = `a-${tentativo.slice(3)}`
+  recordApi(dir, id, tentativo)
+  // Il padre (lanciaApi) vede fonti pulite: l'eredità si guarda solo sul worktree del figlio.
+  assert.strictEqual((await API.lanciaApi(dir, id, tentativo, { ...ingressoApi(root), ...input }, { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }))[0], 0)
+  await API.eseguiApi(dir, id, tentativo, { ...ingressoApi(root), ...input }, { dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], env: {}, fontiCwd: () => fontiWorktree, avvia: figlio })
+  return JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', `${tentativo}.json`), 'utf8'))
+}
+const fontiCon = (contenuti) => {
+  const dir = tmp()
+  return ['utente', 'progetto', 'locale', 'gestite'].map(nome => {
+    const file = path.join(dir, `${nome}.json`)
+    if (contenuti[nome] !== undefined) fs.writeFileSync(file, typeof contenuti[nome] === 'string' ? contenuti[nome] : JSON.stringify(contenuti[nome]))
+    return { nome, file }
+  })
+}
+const OK = JSON.stringify({ is_error: false, total_cost_usd: 0.1, num_turns: 1 })
+
+test('F7.3 supervisore: --advisor solo se chiesto; eredità letta sul worktree reale (padre diverso); «senza auditor» mette =1 sul solo figlio', async () => {
+  const v1 = {}
+  const e1 = await eseguiConAdvisor('az-adv00001', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor(v1, { uscita: OK }))
+  assert.deepStrictEqual([v1.argv.slice(-2), e1.advisor], [['--advisor', 'claude-opus-5-5'], { stato: 'applicato', modello: 'claude-opus-5-5' }])
+  const v2 = {}
+  const e2 = await eseguiConAdvisor('az-adv00002', {}, fontiCon({ utente: { advisorModel: 'fable' } }), claudeAdvisor(v2, { uscita: OK }))
+  assert.deepStrictEqual([v2.argv.includes('--advisor'), e2.advisor], [false, { stato: 'ereditato', modello: 'fable' }])
+  const v3 = {}
+  const e3 = await eseguiConAdvisor('az-adv00003', { senzaAdvisor: true }, fontiCon({ progetto: { advisorModel: 'opus' }, utente: { env: { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1' } } }), claudeAdvisor(v3, { uscita: OK }))
+  assert.deepStrictEqual([v3.argv.includes('--advisor'), v3.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL, e3.advisor], [false, '1', { stato: 'disattivato' }])
+  assert.strictEqual(process.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL, undefined)
+})
+
+test('F7.3 «senza auditor»: 0 o false nell\'env di qualunque fonte, o una fonte illeggibile, lo rendono non disponibile (niente spawn); 1 o assente no', async () => {
+  for (const nome of ['utente', 'progetto', 'locale', 'gestite'])
+    for (const valore of ['0', 'false']) {
+      let avvii = 0
+      const e = await eseguiConAdvisor('az-advb0001', { senzaAdvisor: true }, fontiCon({ [nome]: { env: { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: valore } } }), () => { avvii++ })
+      assert.deepStrictEqual([nome, valore, avvii, e.stato, e.senzaAuditor], [nome, valore, 0, 'fallita', { bloccato: nome }])
+      assert.ok(!e.errore.includes(valore === '0' ? '"0"' : 'false'))
+    }
+  // Una fonte illeggibile blocca già prima, come impostazione vietata (§6/§7): niente spawn, tentativo fallito.
+  let avvii = 0
+  assert.strictEqual((await eseguiConAdvisor('az-advb0002', { senzaAdvisor: true }, fontiCon({ locale: '{ rotto' }), () => { avvii++ })).stato, 'fallita')
+  assert.strictEqual(avvii, 0)
+  assert.strictEqual(API.statoAdvisor({ senzaAdvisor: true }, { illeggibile: 'locale' }, {}).senzaAuditor.bloccato, 'locale')
+  for (const c of [{}, { gestite: { env: { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1' } } }]) {
+    const v = {}
+    const e = await eseguiConAdvisor('az-advb0003', { senzaAdvisor: true }, fontiCon(c), claudeAdvisor(v, { uscita: OK }))
+    assert.deepStrictEqual([e.stato, e.senzaAuditor, v.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL], ['consegnata', {}, '1'])
+  }
+})
+
+test('F7.3 advisor non disponibile: uscita anticipata con lo stderr sull\'advisor; motivo giusto e stderr salvato senza segreti', async () => {
+  const casa = os.homedir()
+  const stderr = `Error: Fable needs consent: run /model fable first. key ${CHIAVE_PROVA} sk-ant-altra-999 user persona@esempio.it at ${path.join(casa, 'progetto', 'x.json')}`
+  const e = await eseguiConAdvisor('az-advn0001', { advisor: 'claude-fable-5-1' }, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr }))
+  assert.deepStrictEqual([e.stato, e.advisorNonDisponibile, e.costo], ['fallita', 'consenso', null])
+  for (const segreto of [CHIAVE_PROVA, 'sk-ant-altra-999', 'persona@esempio.it', casa]) assert.ok(!e.stderr.includes(segreto), segreto)
+  assert.match(e.stderr, /\/model fable/)
+  assert.strictEqual((await eseguiConAdvisor('az-advn0002', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr: 'model excluded by availableModels' }))).advisorNonDisponibile, 'escluso')
+  // Un errore che non parla dell'advisor resta l'esito incerto di sempre.
+  const altro = await eseguiConAdvisor('az-advn0003', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr: 'network down' }))
+  assert.deepStrictEqual([altro.stato, altro.incerto, altro.advisorNonDisponibile], ['avviata', true, undefined])
+  // Lo stderr ha un tetto di 16 KiB.
+  const lungo = await eseguiConAdvisor('az-advn0004', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr: 'x'.repeat(40_000) }))
+  assert.ok(lungo.stderr.length <= 16 * 1024)
+})
