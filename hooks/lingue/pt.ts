@@ -887,6 +887,12 @@ const pt: Dizionario = {
   "ese.fonte.flag": "Configurações da linha de comando (--settings)",
   "ese.copiaPercorso": "Copiar caminho",
   "ese.percorsoCopiato": "Caminho copiado",
+  // F7.1 settings proposals
+  "imp.propostaArrivata": "Uma sessão propôs configurações: estão no rascunho das Configurações, revise-as e pressione Aplicar",
+  "imp.propostaDa": "Proposto por uma sessão ({da})",
+  "imp.propostaCome": "Revise as alterações abaixo e pressione Aplicar, ou Descartar alterações. Até lá nada é salvo.",
+  "imp.propostaInCoda": "Uma sessão ({da}) propôs configurações: entram no rascunho quando as alterações atuais forem aplicadas ou descartadas",
+  "imp.propostaLavoro": "Configurações propostas por uma sessão ({da}) aguardam no rascunho das Configurações",
   // ‹fine›
 }
 

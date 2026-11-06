@@ -889,6 +889,12 @@ const en = {
   "ese.fonte.flag": "Command-line settings (--settings)",
   "ese.copiaPercorso": "Copy path",
   "ese.percorsoCopiato": "Path copied",
+  // F7.1 settings proposals
+  "imp.propostaArrivata": "A session proposed settings: they are in the Settings draft, review them and press Apply",
+  "imp.propostaDa": "Proposed by a session ({da})",
+  "imp.propostaCome": "Review the changes below and press Apply, or Discard changes. Nothing is saved until then.",
+  "imp.propostaInCoda": "A session ({da}) proposed settings: they enter the draft once the current changes are applied or discarded",
+  "imp.propostaLavoro": "Settings proposed by a session ({da}) are waiting in the Settings draft",
   // ‹fine›
 } satisfies Record<string, Voce>
 

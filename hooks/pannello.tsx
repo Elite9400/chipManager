@@ -10,7 +10,7 @@ import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
 
 import type { LockApi, TipoAccesso } from '../types'
-import type { Azione, Chiamante, Consumo, Fornitore, Limite, Motore, Pendenti, Peso, PropostaPesi, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, Traguardi, Vista, Vita } from '../types'
+import type { Azione, Chiamante, Consumo, Fornitore, Limite, Motore, Pendenti, Peso, PropostaPesi, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, StatoImpostazioni, Traguardi, Vista, Vita } from '../types'
 import { annullabile as pesiAnnullabili, daDecidere, decisaIl, descriviPesi, statoVisto, TESTI_PESI } from './bilanciamento'
 import {
   attive,
@@ -63,6 +63,7 @@ const spesaApi = atom({ plugin: 'chip-manager', key: 'spesaApi' } as const, null
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: 0 } as Consumo, { shape: 'consumo-2' })
 const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
 const lingua = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
+const statoImpostazioni = atom({ plugin: 'chip-manager', key: 'impostazioni' } as const, { sezione: 'connessioni' } as StatoImpostazioni, { shape: 'impostazioni-1' })
 
 type Eng = EngineInterface
 
@@ -143,6 +144,14 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const espansa = apertaOra?.startsWith('perche:') ? null : apertaOra
   const scelte = await read($, selezionate)
   const lockApiOra = await read($, lockApi)
+  // F7.1: una proposta di impostazioni nella bozza, o in coda: la vista Lavoro lo dice e porta alle Impostazioni.
+  const imp = await read($, statoImpostazioni)
+  const propostaImp = imp.proposta && imp.pendenti?.dove.some(x => x.startsWith('proposta:')) ? imp.proposta.da
+    : imp.propostaInCoda ? imp.propostaInCoda.proponente.titolo || imp.propostaInCoda.proponente.id.slice(0, 14) : undefined
+  const rivediImpostazioni = async () => {
+    await update($, vista, () => 'impostazioni')
+    await apriImpostazioni($, c)
+  }
   const spesaApiOra = await read($, spesaApi)
   const motiviAperti = apertaOra?.startsWith('perche:') ? apertaOra.slice('perche:'.length) : null
   const consumoOra = await read($, consumo)
@@ -310,7 +319,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
     lista, visibili, espansa, motiviAperti, scelte, lockApiOra, spesaApiOra, stati, nota, scartata, rotte, tr, adesso, capacita, sb, boardPronta, ultime, configura, fai, modifica,
     completa, apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, attese, titoloSezione, righe,
     alLavoro, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, oraDi: T.ora, consumoOra,
-    proposteAperte, rigaProposta, registroPesi,
+    proposteAperte, rigaProposta, registroPesi, propostaImp, rivediImpostazioni,
   }
 }
 

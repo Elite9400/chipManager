@@ -4,6 +4,7 @@ import type { TestBody } from 'claude-code/testing'
 import {
   budgetDa,
   conPendente,
+  propostaImpostazioniDa,
   conPosizione,
   conProfilo,
   conSoglia,
@@ -182,6 +183,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   const disco = new DiscoIt()
   const toast: string[] = []
   const processi: string[][] = []
+  let proposteFatte = 0
   const domande: string[] = []
   /** F6.7: l'uscita di `stato-esecuzione` (null = l'helper fallisce) e l'esito di `accedi`; si contano entrambi. */
   const esec = {
@@ -200,7 +202,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
    * Concorrenza: `primaDiConfigura` gira una volta appena prima del CAS dell'helper; `rifiutaUtente` fa fallire un
    * configura-utente; `trattieni()` ferma la prossima scrittura (configura o configura-utente) finché il test non la apre.
    */
-  const hook: { primaDiConfigura?: () => void; rifiutaUtente?: boolean; cancello?: { attesa: Promise<void>; segnala: () => void } } = {}
+  const hook: { primaDiConfigura?: () => void; rifiutaUtente?: boolean; cancello?: { attesa: Promise<void>; segnala: () => void }; nonPrendere?: boolean } = {}
   const popupFermi: { quale: (q: string) => boolean; attesa: Promise<void>; segnala: () => void }[] = []
   /** Il prossimo popup la cui domanda soddisfa `quale` resta aperto finché non si chiama `apri()`. */
   const trattieniPopup = (quale: (q: string) => boolean) => {
@@ -294,6 +296,26 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
         disco.set(p(file), JSON.stringify({ ...(prima === null ? {} : JSON.parse(prima)), ...input.campi }))
         return fine(0)
       }) as never
+    // F7.1: il file delle proposte di impostazioni, come l'helper: una per progetto, presa una volta sola.
+    const filePI = 'X:/casa/.claude/chipmanager/proposte-impostazioni.json'
+    if (cmd === 'impostazioni-proponi') {
+      const q = JSON.parse(e.init!.stdin!) as { repo: string; proponente: unknown; proposta: unknown }
+      const P = JSON.parse(disco.get(filePI) ?? '{"versione":0,"voci":{}}') as { versione: number; voci: Record<string, unknown> }
+      if (P.voci[q.repo]) return fine(4, 'another settings proposal for this project is already waiting for the owner')
+      const id = `i-prova${String(++proposteFatte).padStart(3, '0')}`
+      P.voci[q.repo] = { id, quando: new Date().toISOString(), proponente: q.proponente, proposta: q.proposta }
+      disco.set(filePI, JSON.stringify({ versione: P.versione + 1, voci: P.voci }))
+      return fine(0, JSON.stringify({ id }))
+    }
+    if (cmd === 'impostazioni-prendi') {
+      const [repo, id] = [e.argv[4], e.argv[5]]
+      const P = JSON.parse(disco.get(filePI) ?? '{"versione":0,"voci":{}}') as { versione: number; voci: Record<string, { id: string }> }
+      const v = P.voci[repo!]
+      if (hook.nonPrendere || !v || v.id !== id) return fine(4, 'proposal no longer there')
+      delete P.voci[repo!]
+      disco.set(filePI, JSON.stringify({ versione: P.versione + 1, voci: P.voci }))
+      return fine(0, JSON.stringify(v))
+    }
     if (cmd === 'stato-esecuzione') {
       esec.controlli++
       const sospesa = esec.sospesa
@@ -1377,3 +1399,119 @@ test('F6.7 ricontrollo: una risposta vecchia, tornata dopo un nuovo «Accedi», 
   await ui.unmount()
 })
 
+// --- F7.1: proposte di impostazioni da una sessione -------------------------------------------------------------
+
+const FILE_PI = 'X:/casa/.claude/chipmanager/proposte-impostazioni.json'
+const proponi = async ($: Parameters<TestBody>[0], args: Record<string, unknown>) =>
+  (await $.tool.call({ tool: 'mcp__chip-manager__proponi_impostazioni', ...args } as never)) as { result?: string; deny?: string }
+
+test('F7.1 forma: un campo vietato o sconosciuto, anche annidato, rifiuta tutta la proposta col nome e mai col valore', () => {
+  const SEGRETO = 'sk-ant-VALORE-SEGRETO'
+  for (const [x, campo] of [
+    [{ motivo: 'm', soglie: { claude: { attenzione: 60, critica: 80, chiave: SEGRETO } } }, 'soglie.claude.chiave'],
+    [{ motivo: 'm', apiClaude: { budgetUsd: 5, apiKey: SEGRETO } }, 'apiClaude.apiKey'],
+    [{ motivo: 'm', profilo: 'risparmio', fornitori: [SEGRETO] }, 'fornitori'],
+    [{ motivo: 'm', profilo: 'risparmio', soloLocale: true }, 'soloLocale'],
+    [{ motivo: 'm', board: { modo: 'accesa', colore: SEGRETO } }, 'board.colore'],
+    [{ motivo: 'm', profilo: 'risparmio', permessi: 'bypassPermissions' }, 'permessi'],
+    [{ motivo: 'm', soglie: { gemini: { attenzione: 1, critica: 2 } } }, 'soglie.gemini'],
+    [{ motivo: 'm', soglie: { claude: { attenzione: 90, critica: 80 } } }, 'soglie.claude'],
+  ] as const) {
+    const v = propostaImpostazioniDa(x)
+    expect([campo, 'errore' in v && v.errore.includes(`"${campo}"`), JSON.stringify(v).includes(SEGRETO)]).toEqual([campo, true, false])
+  }
+  expect(propostaImpostazioniDa({ motivo: 'Più margine.', profilo: 'risparmio', consigliere: 'spento', lingua: 'de' })).toEqual({ proposta: { motivo: 'Più margine.', profilo: 'risparmio', consigliere: 'spento', lingua: 'de' } })
+  expect(propostaImpostazioniDa({ motivo: 'solo motivo' })).toHaveProperty('errore')
+})
+
+test('F7.1 proposta valida: riempie la bozza con la fascia, niente si scrive senza Applica; Applica scrive solo quei campi', async ($, on) => {
+  const amb = ambiente(on, { board: { modo: 'accesa', generazione: 3 } })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  const prima = amb.disco.get(CONFIG)
+  const r = await proponi($, { motivo: 'Il piano è quasi pieno: meglio risparmiare.', profilo: 'risparmio', soglie: { claude: { attenzione: 60, critica: 80 } } })
+  expect(r.result).toMatch(/^Settings proposal recorded/)
+  expect(amb.disco.get(CONFIG)).toBe(prima)
+  // Nessuna applicazione senza clic: la proposta è nella bozza, la vista Lavoro lo dice.
+  expect(await ui.find({ type: 'Text', text: /Impostazioni proposte da una sessione \(.*\) aspettano nella bozza/ })).toBeDefined()
+  await ui.press({ key: 'proposta-impostazioni-rivedi' })
+  expect(await ui.find({ type: 'Text', text: /^Proposta da una sessione/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Il piano è quasi pieno: meglio risparmiare.' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '2 modifiche non salvate' })).toBeDefined()
+  expect(amb.disco.get(CONFIG)).toBe(prima)
+  // L'impronta della board non cambia per una proposta in bozza: tutte le scritture fin qui hanno la stessa.
+  const impronte = () => new Set(amb.processi.filter(p => p[2] === 'board-scrivi').map(p => p.at(-1)))
+  expect(impronte().size).toBeLessThanOrEqual(1)
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra()).toMatchObject({ profilo: 'risparmio', soglie: { claude: { attenzione: 60, critica: 80 } }, board: { modo: 'accesa', generazione: 3 } })
+  expect(await ui.find({ key: 'proposta-impostazioni' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('F7.1 rifiuti: campo vietato annidato, valore che la bozza non accetta, seconda proposta in attesa; niente scritto né salvato', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const r1 = await proponi($, { motivo: 'x', soglie: { claude: { attenzione: 60, critica: 80, token: 'sk-ant-NONECO' } } })
+  expect(r1.deny).toMatch(/"soglie\.claude\.token" can never be proposed/)
+  expect(r1.deny).not.toContain('sk-ant-NONECO')
+  // Un tetto senza budget (API non configurata) non passerebbe la bozza: si nomina il campo.
+  expect((await proponi($, { motivo: 'x', apiClaude: { tetto: 3 } })).deny).toMatch(/field "apiClaude" has a value the Settings would not accept/)
+  expect(amb.disco.get(FILE_PI)).toBeUndefined()
+  // Una proposta già in attesa nel file (un altro pannello non l'ha ancora presa): la seconda è rifiutata.
+  amb.disco.set(FILE_PI, JSON.stringify({ versione: 1, voci: { 'esempio/demo': { id: 'i-attesa01', quando: new Date().toISOString(), proponente: { id: 'altra', titolo: '' }, proposta: { motivo: 'm', profilo: 'qualita' } } } }))
+  amb.hook.nonPrendere = true
+  expect((await proponi($, { motivo: 'y', profilo: 'risparmio' })).deny).toMatch(/already waiting/)
+})
+
+test('F7.1 con una bozza aperta la proposta resta in coda e la fascia lo dice; entra dopo «Annulla modifiche»', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  await ui.press({ key: 'consigliere-suggerisci-premi' })
+  expect((await proponi($, { motivo: 'Profilo più economico.', profilo: 'risparmio' })).result).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Una sessione \(.*\) ha proposto impostazioni: entrano nella bozza quando/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
+  await ui.press({ key: 'annulla-modifiche' })
+  await ui.press({ key: 'ricarica' })
+  expect(await ui.find({ type: 'Text', text: /^Proposta da una sessione/ })).toBeDefined()
+  expect(await ui.find({ key: 'proposta-in-coda' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('F7.1 Apply in conflitto: un\'altra sessione cambia il profilo proposto; e la lingua cambiata altrove (un altro progetto) si chiede', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await proponi($, { motivo: 'Qualità e tedesco.', profilo: 'qualita', lingua: 'de' })
+  await ui.press({ key: 'impostazioni' })
+  // Un altro progetto sceglie il francese mentre la proposta aspetta: Applica lo dice e non scrive niente.
+  amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
+  amb.popup.risposta = () => null
+  await ui.press({ key: 'applica' })
+  expect(amb.domande.at(-1)).toMatch(/cambiato Lingua dopo le tue modifiche/)
+  expect(JSON.parse(amb.disco.get(CONFIG)!)).toMatchObject({ lingua: 'fr' })
+  expect(amb.progettoOra().profilo).toBeUndefined()
+  // Riapplica (il pannello parla già francese, la lingua salvata ora): la lingua della proposta vince, con la base nuova.
+  amb.popup.risposta = () => t('fr', 'imp.riapplica')
+  await ui.press({ key: 'applica' })
+  expect(JSON.parse(amb.disco.get(CONFIG)!)).toMatchObject({ lingua: 'de' })
+  expect(amb.progettoOra().profilo).toBe('qualita')
+  await ui.unmount()
+})
+
+test('F7.1 risorse_agenti: le impostazioni proponibili con i valori di adesso, nessun segreto, dentro il tetto', { options: { anthropicApiKey: 'sk-ant-SENTINELLA-77' } }, async ($, on) => {
+  ambiente(on, { profilo: 'qualita', apiClaude: { budgetUsd: 12, tetto: 2 }, consigliere: 'suggerisci' })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const r = (await $.tool.call({ tool: 'mcp__chip-manager__risorse_agenti' } as never)) as { result: string }
+  expect(r.result.length).toBeLessThanOrEqual(4000)
+  expect(r.result).not.toContain('SENTINELLA')
+  expect(JSON.parse(r.result).impostazioni).toMatchObject({ profilo: 'qualita', apiClaude: { budgetUsd: 12, tetto: 2 }, consigliere: 'suggerisci', board: 'spenta', lingua: 'it' })
+})

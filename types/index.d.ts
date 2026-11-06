@@ -319,6 +319,21 @@ export type Consumo = { processi: number; app: number; byte: number; byteLimiti:
 export type Vista = 'lavoro' | 'carico' | 'impostazioni'
 /** Ciò che il pannello sa della board: il file scritto dall'helper, perché non si scrive, stato dei riassunti. */
 export type StatoBoard = { percorso?: string; motivo?: string; riassunti?: string }
+/**
+ * F7.1: una proposta di impostazioni di una sessione, come la scrive l'helper dopo averla rivalidata. Solo i campi dello
+ * schema; parziale: la bozza la completa con i valori correnti.
+ */
+export type PropostaImpostazioni = {
+  motivo: string
+  profilo?: NonNullable<RisorseProgetto['profilo']>
+  soglie?: Partial<Record<Fornitore, Soglia | null>>
+  board?: { modo: BoardProgetto['modo'] }
+  consigliere?: 'spento' | 'suggerisci' | 'applica'
+  apiClaude?: { budgetUsd?: number; tetto?: number }
+  lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
+}
+export type VoceImpostazioni = { id: string; quando: string; proponente: { id: string; titolo: string }; proposta: PropostaImpostazioni }
+
 /** La vista Impostazioni: sezione aperta, ultimo errore in linea e procedure guidate fatte in linea (popup rifiutato). */
 export type StatoImpostazioni = {
   sezione: 'connessioni' | 'soglie' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate' | 'esecuzione' | 'lingua' | 'legenda'
@@ -333,12 +348,23 @@ export type StatoImpostazioni = {
   applicando?: boolean
   /** Cresce a ogni modifica della bozza e a ogni «Applica» avviato e concluso: un'azione dopo un'attesa la confronta. */
   epoca?: number
+  /** F7.1: la proposta di una sessione presa dal file, in attesa che la bozza si svuoti (al più una). */
+  propostaInCoda?: VoceImpostazioni
+  /** F7.1: la proposta che ha riempito la bozza (la fascia la mostra finché la bozza ha campi suoi). */
+  proposta?: { id: string; da: string; motivo: string }
 }
 /**
  * La bozza delle Impostazioni: campi del progetto come li scrive `configura`, il loro valore al primo tocco, i controlli
  * toccati, la lingua (pendente solo se diversa da quella salvata quando la si sceglie). Ferma mentre «Applica» scrive.
  */
-export type Pendenti = { campi: Record<string, unknown>; base: Record<string, unknown>; dove: string[]; lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt' }
+export type Pendenti = {
+  campi: Record<string, unknown>
+  base: Record<string, unknown>
+  dove: string[]
+  lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
+  /** F7.1: la lingua salvata quando una proposta l'ha messa in bozza; se intanto è cambiata altrove, Apply lo dice. */
+  linguaBase?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
+}
 
 declare module 'claude-code' {
   interface PluginState {

@@ -892,6 +892,12 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
 
   const lavoro = (
     <Box key="vista-lavoro-corpo" flexDirection="column" gap={2}>
+      {d.propostaImp && (
+        <Box key="proposta-impostazioni-lavoro" flexDirection="row" flexWrap="wrap" gap={1} alignItems="center">
+          {nota1('proposta-impostazioni-lavoro-testo', STATO.attesa, '◐', T('imp.propostaLavoro', { da: d.propostaImp }))}
+          <Button key="proposta-impostazioni-rivedi" plain label={T('pesi.rivedi')} onPress={() => void d.rivediImpostazioni()} />
+        </Box>
+      )}
       {d.proposteAperte.length > 0 && (
         <Box key="proposte-pesi" flexDirection="column" gap={1}>
           {d.proposteAperte.map(p => d.rigaProposta('lavoro-pesi', p))}

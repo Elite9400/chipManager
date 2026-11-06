@@ -1,9 +1,9 @@
 // Logica pura delle Impostazioni (piano grafica, C2 con §9 righe 4, 5 e 7 e §10): profili di bilanciamento, regolazioni
 // a cinque posizioni, soglie, budget manuali e simulazione della scelta. Niente `$`: i test la provano senza engine.
-import type { Azione, Chiamante, Fornitore, Limite, Pendenti, Peso, PesiProfilo, PropostaPesi, Regolazione, Regole, RisorseProgetto, SessioneProgetto, Soglia } from '../types'
-import { ALIAS_UNITA, data, errore, LINGUE, msg, t } from './lingua'
+import type { Azione, Chiamante, Fornitore, Limite, Pendenti, Peso, PesiProfilo, PropostaImpostazioni, PropostaPesi, Regolazione, Regole, RisorseProgetto, SessioneProgetto, Soglia } from '../types'
+import { ALIAS_UNITA, data, eMsg, errore, LINGUE, msg, t } from './lingua'
 import type { Chiave, Lingua, Msg } from './lingua'
-import { bilancia, effortDi, modelloDi, nomeModello, pesoValido, profiloDi, risorseDa, violazioniAvvio } from './logica'
+import { bilancia, effortDi, FORNITORI, modelloDi, nomeModello, pesoValido, profiloDi, risorseDa, TETTO_API_PREDEFINITO, violazioniAvvio } from './logica'
 
 export type Profilo = NonNullable<RisorseProgetto['profilo']>
 
@@ -162,7 +162,8 @@ export function pendentiDa(x: unknown): { pendenti: Pendenti | undefined; perso:
     return { pendenti: undefined, perso: true }
   const noti = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([k]) => CAMPI_BOZZA.includes(k)))
   const campi = noti(x.campi)
-  const pendenti = piena({ campi, base: noti(x.base), dove: x.dove as string[], ...(x.lingua !== undefined && { lingua: x.lingua as Lingua }) })
+  const linguaBase = (LINGUE as readonly unknown[]).includes(x.linguaBase) ? { linguaBase: x.linguaBase as Lingua } : {}
+  const pendenti = piena({ campi, base: noti(x.base), dove: x.dove as string[], ...(x.lingua !== undefined && { lingua: x.lingua as Lingua, ...linguaBase }) })
   return { pendenti, perso: Object.keys(campi).length !== Object.keys(x.campi).length }
 }
 
@@ -180,8 +181,111 @@ export const cambiatiAltrove = (p: Pendenti, r: RisorseProgetto) => Object.keys(
 export const SEZIONE_DI: Record<string, Chiave> = {
   fornitori: 'imp.sezione.connessioni', soglie: 'imp.sezione.soglie', profilo: 'imp.sezione.bilanciamento', pesi: 'imp.sezione.bilanciamento',
   soloLocale: 'imp.sezione.progetto', milestoneGithub: 'imp.sezione.progetto', board: 'imp.sezione.board',
-  freellmapi: 'imp.sezione.avanzate', apiClaude: 'imp.sezione.esecuzione', consigliere: 'imp.sezione.esecuzione',
+  freellmapi: 'imp.sezione.avanzate', apiClaude: 'imp.sezione.esecuzione', consigliere: 'imp.sezione.esecuzione', lingua: 'imp.sezione.lingua',
 }
+
+// --- proposte di impostazioni (F7.1) -----------------------------------------------------------------------
+// Una sessione propone, su indicazione esplicita dell'utente, alcuni campi delle Impostazioni. Schema esplicito e chiuso a
+// ogni livello: un campo sconosciuto o vietato rifiuta TUTTA la proposta, col nome del campo e mai col valore. La proposta
+// valida riempie la bozza di F5.9 e passa per «Applica». La stessa regola di forma la ricontrolla l'helper.
+
+/** I campi che nessuna proposta tocca mai: chiavi, guardie, permessi, destinazioni, fornitori ammessi e pesi. */
+const VIETATI = /^(soloLocale|fornitori|freellmapi|pesi|pesiRevisione|pesiOrigine|milestoneGithub|limitiManuali|corsi[ae]|permessi|destinazion[ei]|sensibil[ei]|cloud|chiav[ei].*|.*(key|token|secret|password).*)$/i
+const PROFILI_PROPONIBILI = ['automatico', 'risparmio', 'qualita', 'velocita', 'personalizzato']
+/** Il nome di un campo come si può ripetere: solo caratteri da identificatore, corto. */
+const nomeCampo = (s: string) => s.replace(/[^A-Za-z0-9_.-]/g, '?').slice(0, 60)
+const numeroIn = (x: unknown, min: number, max: number, intero = false) => typeof x === 'number' && Number.isFinite(x) && x >= min && x <= max && (!intero || Number.isInteger(x))
+
+/** La forma di una proposta: la proposta normalizzata, o perché no (in inglese, per lo strumento). */
+export function propostaImpostazioniDa(x: unknown): { proposta: PropostaImpostazioni } | { errore: string } {
+  const o = oggetto
+  const no = (campo: string, come: 'sconosciuto' | 'vietato' | 'valore') => ({
+    errore: come === 'vietato' ? `field "${nomeCampo(campo)}" can never be proposed (keys, guards, permissions, providers and destinations stay with the owner): the whole proposal is rejected`
+      : come === 'sconosciuto' ? `field "${nomeCampo(campo)}" is not a settings field this tool accepts: the whole proposal is rejected`
+      : `field "${nomeCampo(campo)}" has a value the panel does not accept: the whole proposal is rejected`,
+  })
+  const chiavi = (v: Record<string, unknown>, ammesse: readonly string[], dove: string) => {
+    for (const k of Object.keys(v)) if (!ammesse.includes(k)) return no(dove ? `${dove}.${k}` : k, VIETATI.test(k) ? 'vietato' : 'sconosciuto')
+    return undefined
+  }
+  if (!o(x)) return { errore: 'the proposal must be an object' }
+  const fuori = chiavi(x, ['motivo', 'profilo', 'soglie', 'board', 'consigliere', 'apiClaude', 'lingua'], '')
+  if (fuori) return fuori
+  const p: PropostaImpostazioni = { motivo: '' }
+  if (typeof x.motivo !== 'string' || !x.motivo.trim() || x.motivo.length > 300) return no('motivo', 'valore')
+  p.motivo = x.motivo.trim()
+  if (x.profilo !== undefined) {
+    if (!PROFILI_PROPONIBILI.includes(x.profilo as string)) return no('profilo', 'valore')
+    p.profilo = x.profilo as PropostaImpostazioni['profilo']
+  }
+  if (x.soglie !== undefined) {
+    if (!o(x.soglie) || !Object.keys(x.soglie).length) return no('soglie', 'valore')
+    const f = chiavi(x.soglie, FORNITORI, 'soglie')
+    if (f) return f
+    p.soglie = {}
+    for (const [k, v] of Object.entries(x.soglie)) {
+      if (v !== null) {
+        if (!o(v)) return no(`soglie.${k}`, 'valore')
+        const g = chiavi(v, ['attenzione', 'critica'], `soglie.${k}`)
+        if (g) return g
+        if (!numeroIn(v.attenzione, 1, 100, true) || !numeroIn(v.critica, 1, 100, true) || (v.attenzione as number) >= (v.critica as number)) return no(`soglie.${k}`, 'valore')
+      }
+      p.soglie[k as Fornitore] = v === null ? null : { attenzione: (v as Soglia).attenzione, critica: (v as Soglia).critica }
+    }
+  }
+  if (x.board !== undefined) {
+    if (!o(x.board)) return no('board', 'valore')
+    const g = chiavi(x.board, ['modo'], 'board')
+    if (g) return g
+    if (!['spenta', 'accesa', 'riassunti'].includes(x.board.modo as string)) return no('board.modo', 'valore')
+    p.board = { modo: x.board.modo as 'spenta' | 'accesa' | 'riassunti' }
+  }
+  if (x.consigliere !== undefined) {
+    if (!['spento', 'suggerisci', 'applica'].includes(x.consigliere as string)) return no('consigliere', 'valore')
+    p.consigliere = x.consigliere as PropostaImpostazioni['consigliere']
+  }
+  if (x.apiClaude !== undefined) {
+    if (!o(x.apiClaude) || !Object.keys(x.apiClaude).length) return no('apiClaude', 'valore')
+    const g = chiavi(x.apiClaude, ['budgetUsd', 'tetto'], 'apiClaude')
+    if (g) return g
+    if (x.apiClaude.budgetUsd !== undefined && !numeroIn(x.apiClaude.budgetUsd, 0.01, 100_000)) return no('apiClaude.budgetUsd', 'valore')
+    if (x.apiClaude.tetto !== undefined && !numeroIn(x.apiClaude.tetto, 0.01, 1_000)) return no('apiClaude.tetto', 'valore')
+    p.apiClaude = { ...(x.apiClaude.budgetUsd !== undefined && { budgetUsd: x.apiClaude.budgetUsd as number }), ...(x.apiClaude.tetto !== undefined && { tetto: x.apiClaude.tetto as number }) }
+  }
+  if (x.lingua !== undefined) {
+    if (!(LINGUE as readonly unknown[]).includes(x.lingua)) return no('lingua', 'valore')
+    p.lingua = x.lingua as Lingua
+  }
+  if (Object.keys(p).length < 2) return { errore: 'the proposal has no settings field besides the reason' }
+  return { proposta: p }
+}
+
+/** I campi della bozza (forma di `configura`) che una proposta riempie, completati con i valori correnti di `r`. */
+export function campiDaProposta(p: PropostaImpostazioni, r: RisorseProgetto): Record<string, unknown> {
+  const campi: Record<string, unknown> = {}
+  if (p.profilo) campi.profilo = p.profilo
+  if (p.soglie) campi.soglie = { ...r.soglie, ...p.soglie }
+  if (p.board) campi.board = { modo: p.board.modo }
+  if (p.consigliere) campi.consigliere = p.consigliere === 'spento' ? null : p.consigliere
+  if (p.apiClaude) {
+    const budgetUsd = p.apiClaude.budgetUsd ?? r.apiClaude?.budgetUsd
+    campi.apiClaude = budgetUsd === undefined ? { tetto: p.apiClaude.tetto } : { budgetUsd, tetto: p.apiClaude.tetto ?? r.apiClaude?.tetto ?? TETTO_API_PREDEFINITO }
+  }
+  return campi
+}
+
+/** Il primo campo che, applicato alle impostazioni di adesso, non passerebbe la validazione della bozza (mai il valore). */
+export function campoNonValido(p: PropostaImpostazioni, r: RisorseProgetto): string | undefined {
+  const tutti = campiDaProposta(p, r)
+  for (const [k, v] of Object.entries(tutti)) if (eMsg(conBozza(r, { [k]: v }))) return k
+  return eMsg(conBozza(r, tutti)) ? Object.keys(tutti).join(', ') : undefined
+}
+
+/** Le impostazioni proponibili come le vede l'agente in `risorse_agenti`: valori correnti, nessun segreto. */
+export const impostazioniCorrenti = (r: RisorseProgetto, lingua: Lingua) => ({
+  profilo: profiloDi(r), soglie: r.soglie, board: r.board.modo, consigliere: r.consigliere ?? 'spento',
+  apiClaude: r.apiClaude ?? null, lingua,
+})
 
 // --- simulazione --------------------------------------------------------------------------------------
 
@@ -399,6 +503,7 @@ export function rispostaRisorse(dati: Record<string, unknown>, tetto = TETTO_RIS
     ['alLavoro: the 8 most used combinations', x => ({ ...x, alLavoro: Object.fromEntries(Object.entries((x.alLavoro ?? {}) as Record<string, { lavoro: number; coda: number }>).sort((a, b) => b[1].lavoro + b[1].coda - a[1].lavoro - a[1].coda).slice(0, 8)) })],
     ['contesto: the 5 most used models', x => ({ ...x, contesto: Object.fromEntries(Object.entries((x.contesto ?? {}) as Record<string, { misurate: string }>).sort((a, b) => sessioniDi(b[1]) - sessioniDi(a[1])).slice(0, 5)) })],
     ['policy weights: only the count', x => ({ ...x, politica: { ...(x.politica as object), pesi: `${((x.politica as { pesi?: unknown[] }).pesi ?? []).length} weights: see Settings` } })],
+    ['settings: thresholds omitted', x => ({ ...x, impostazioni: x.impostazioni && { ...(x.impostazioni as object), soglie: 'omitted: see Settings' } })],
     ['limits omitted', x => ({ ...x, limiti: 'omitted: too many for the answer' })],
     ['policy omitted', x => ({ ...x, politica: 'omitted: too long' })],
   ]

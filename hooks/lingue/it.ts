@@ -887,6 +887,12 @@ const it: Dizionario = {
   "ese.fonte.flag": "Impostazioni da riga di comando (--settings)",
   "ese.copiaPercorso": "Copia percorso",
   "ese.percorsoCopiato": "Percorso copiato",
+  // F7.1 settings proposals
+  "imp.propostaArrivata": "Una sessione ha proposto impostazioni: sono nella bozza delle Impostazioni, rivedile e premi Applica",
+  "imp.propostaDa": "Proposta da una sessione ({da})",
+  "imp.propostaCome": "Rivedi le modifiche qui sotto e premi Applica, oppure Annulla modifiche. Fino ad allora non si salva niente.",
+  "imp.propostaInCoda": "Una sessione ({da}) ha proposto impostazioni: entrano nella bozza quando le modifiche attuali sono applicate o annullate",
+  "imp.propostaLavoro": "Impostazioni proposte da una sessione ({da}) aspettano nella bozza delle Impostazioni",
   // ‹fine›
 }
 

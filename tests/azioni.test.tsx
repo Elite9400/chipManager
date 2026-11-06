@@ -2710,6 +2710,9 @@ test('strumenti: descrizioni brevi (tetto in caratteri, non token); risorse_agen
   // F4: proporre pesi è raro, quindi differito e corto.
   expect(caratteri('proponi_pesi')).toBeLessThanOrEqual(400)
   expect(amb.registrati.find(x => x.name === 'proponi_pesi')!.isDeferred).toBe(true)
+  // F7.1: proporre impostazioni è ancora più raro (solo su indicazione dell'utente): differito e corto.
+  expect(caratteri('proponi_impostazioni')).toBeLessThanOrEqual(600)
+  expect(amb.registrati.find(x => x.name === 'proponi_impostazioni')!.isDeferred).toBe(true)
   // Anche la 2.4.0 ha la proprietà piano.
   expect(Object.keys((amb.registrati.find(x => x.name === 'suggerisci_azione')!.inputSchema as { properties: object }).properties)).toContain('piano')
 })

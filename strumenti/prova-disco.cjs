@@ -1663,3 +1663,33 @@ test('F6.2 rilievo 6 (giro 2): l\'attesa degli stream parte dall\'uscita: dopo 3
   assert.deepStrictEqual([esec.stato, esec.costo, esec.incerto], ['consegnata', 0.25, undefined])
   assert.strictEqual(API.leggiSpesa(dir).voci['az-api0019'].costo, 0.25)
 })
+
+// --- F7.1: proposte di impostazioni nell'helper -------------------------------------------------------------------
+
+test('F7.1 helper: rivalida la forma (campo annidato vietato, valore mai ripetuto), una sola proposta per progetto, presa una volta sola', async () => {
+  const d = require(DISCO)
+  const file = path.join(tmp(), 'config.json')
+  const chi = { id: 'local_prova', titolo: 'Sessione di prova' }
+  const [c1, t1] = await d.impostazioniProponi(file, { repo: 'acme/x', proponente: chi, proposta: { motivo: 'm', apiClaude: { budgetUsd: 5, chiave: 'sk-ant-NONQUI' } } })
+  assert.deepStrictEqual([c1, /"apiClaude\.chiave"/.test(t1), t1.includes('sk-ant-NONQUI')], [2, true, false])
+  assert.strictEqual(fs.existsSync(d.fileImpostazioniDi(file)), false)
+  for (const proposta of [{ motivo: 'm' }, { motivo: 'm', soloLocale: true }, { motivo: 'm', soglie: { claude: { attenzione: 80, critica: 70 } } }, { motivo: 'm', lingua: 'xx' }])
+    assert.strictEqual((await d.impostazioniProponi(file, { repo: 'acme/x', proponente: chi, proposta }))[0], 2, JSON.stringify(proposta))
+  const [c2, t2] = await d.impostazioniProponi(file, { repo: 'acme/x', proponente: chi, proposta: { motivo: ' Risparmio. ', profilo: 'risparmio' } })
+  assert.strictEqual(c2, 0)
+  const { id } = JSON.parse(t2)
+  assert.strictEqual((await d.impostazioniProponi(file, { repo: 'acme/x', proponente: chi, proposta: { motivo: 'altra', profilo: 'qualita' } }))[0], 4)
+  // Un altro progetto ha la sua.
+  assert.strictEqual((await d.impostazioniProponi(file, { repo: 'acme/y', proponente: chi, proposta: { motivo: 'y', board: { modo: 'accesa' } } }))[0], 0)
+  const [c3, t3] = await d.impostazioniPrendi(file, 'acme/x', id)
+  assert.deepStrictEqual([c3, JSON.parse(t3).proposta], [0, { motivo: 'Risparmio.', profilo: 'risparmio' }])
+  assert.strictEqual((await d.impostazioniPrendi(file, 'acme/x', id))[0], 4)
+  // Scaduta (oltre 24 ore) o manomessa nel file: non arriva al pannello.
+  const fp = d.fileImpostazioniDi(file)
+  const P = JSON.parse(fs.readFileSync(fp, 'utf8'))
+  P.voci['acme/z'] = { id: 'i-vecchia01', quando: new Date(Date.now() - 25 * 3_600_000).toISOString(), proponente: chi, proposta: { motivo: 'm', profilo: 'qualita' } }
+  P.voci['acme/w'] = { id: 'i-manomessa1', quando: new Date().toISOString(), proponente: chi, proposta: { motivo: 'm', fornitori: ['x'] } }
+  fs.writeFileSync(fp, JSON.stringify(P))
+  assert.strictEqual((await d.impostazioniPrendi(file, 'acme/z', 'i-vecchia01'))[0], 4)
+  assert.strictEqual((await d.impostazioniPrendi(file, 'acme/w', 'i-manomessa1'))[0], 4)
+})

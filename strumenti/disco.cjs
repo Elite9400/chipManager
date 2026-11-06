@@ -929,6 +929,108 @@ async function conPesi(file, repo, fn) {
   return r.occupato ? [3, 'mutex occupato'] : r.valore
 }
 
+// --- F7.1: proposte di impostazioni -------------------------------------------------------------------------
+// Una per progetto, in attesa che il pannello la prenda nella bozza; scade dopo 24 ore. La forma si ricontrolla qui, con
+// la stessa regola dello strumento: un campo sconosciuto o vietato rifiuta tutto, e il valore non si ripete mai.
+
+const fileImpostazioniDi = file => path.join(path.dirname(file), 'proposte-impostazioni.json')
+const FORNITORI_SOGLIE = ['claude', 'codex', 'deepseek', 'freellmapi']
+const LINGUE_PROPOSTA = ['en', 'it', 'es', 'fr', 'de', 'pt']
+const numeroIn = (x, min, max, intero = false) => typeof x === 'number' && Number.isFinite(x) && x >= min && x <= max && (!intero || Number.isInteger(x))
+
+/** Null se la proposta ha la forma ammessa; altrimenti il campo (solo il nome) che la rifiuta. */
+function propostaImpostazioniNonValida(x) {
+  const solo = (v, ammesse, dove) => Object.keys(v).find(k => !ammesse.includes(k)) && `${dove}${Object.keys(v).find(k => !ammesse.includes(k))}`
+  if (!oggetto(x)) return 'proposta'
+  const fuori = solo(x, ['motivo', 'profilo', 'soglie', 'board', 'consigliere', 'apiClaude', 'lingua'], '')
+  if (fuori) return fuori
+  if (typeof x.motivo !== 'string' || !x.motivo.trim() || x.motivo.length > 300) return 'motivo'
+  if (x.profilo !== undefined && !PROFILI.includes(x.profilo)) return 'profilo'
+  if (x.soglie !== undefined) {
+    if (!oggetto(x.soglie) || !Object.keys(x.soglie).length) return 'soglie'
+    const f = solo(x.soglie, FORNITORI_SOGLIE, 'soglie.')
+    if (f) return f
+    for (const [k, v] of Object.entries(x.soglie)) {
+      if (v === null) continue
+      if (!oggetto(v)) return `soglie.${k}`
+      const g = solo(v, ['attenzione', 'critica'], `soglie.${k}.`)
+      if (g) return g
+      if (!numeroIn(v.attenzione, 1, 100, true) || !numeroIn(v.critica, 1, 100, true) || v.attenzione >= v.critica) return `soglie.${k}`
+    }
+  }
+  if (x.board !== undefined) {
+    if (!oggetto(x.board)) return 'board'
+    const g = solo(x.board, ['modo'], 'board.')
+    if (g) return g
+    if (!['spenta', 'accesa', 'riassunti'].includes(x.board.modo)) return 'board.modo'
+  }
+  if (x.consigliere !== undefined && !['spento', 'suggerisci', 'applica'].includes(x.consigliere)) return 'consigliere'
+  if (x.apiClaude !== undefined) {
+    if (!oggetto(x.apiClaude) || !Object.keys(x.apiClaude).length) return 'apiClaude'
+    const g = solo(x.apiClaude, ['budgetUsd', 'tetto'], 'apiClaude.')
+    if (g) return g
+    if (x.apiClaude.budgetUsd !== undefined && !numeroIn(x.apiClaude.budgetUsd, 0.01, 100_000)) return 'apiClaude.budgetUsd'
+    if (x.apiClaude.tetto !== undefined && !numeroIn(x.apiClaude.tetto, 0.01, 1_000)) return 'apiClaude.tetto'
+  }
+  if (x.lingua !== undefined && !LINGUE_PROPOSTA.includes(x.lingua)) return 'lingua'
+  return Object.keys(x).length < 2 ? 'proposta' : null
+}
+
+function leggiImpostazioniProposte(file) {
+  let testo
+  try {
+    testo = fs.readFileSync(file, 'utf8')
+  } catch (e) {
+    if (e.code === 'ENOENT') return { versione: 0, voci: {} }
+    throw e
+  }
+  const p = JSON.parse(testo)
+  if (!oggetto(p) || !Number.isInteger(p.versione) || !oggetto(p.voci)) throw new Error('proposals file not valid')
+  return p
+}
+
+/** stdin `{ repo, proponente: { id, titolo }, proposta }`: 0 e l'id, 4 se un'altra proposta del progetto aspetta, 2 se la forma non va. */
+async function impostazioniProponi(file, q) {
+  if (!oggetto(q) || Object.keys(q).some(k => !['repo', 'proponente', 'proposta'].includes(k)) || typeof q.repo !== 'string' || !q.repo || q.repo.length > 400 ||
+      !oggetto(q.proponente) || typeof q.proponente.id !== 'string' || !q.proponente.id || q.proponente.id.length > 200 ||
+      (q.proponente.titolo !== undefined && (typeof q.proponente.titolo !== 'string' || q.proponente.titolo.length > 80)) || typeof file !== 'string' || !path.isAbsolute(file))
+    return [2, 'arguments not valid']
+  const campo = propostaImpostazioniNonValida(q.proposta)
+  if (campo) return [2, `field "${String(campo).replace(/[^A-Za-z0-9_.-]/g, '?').slice(0, 60)}" is not accepted: the whole proposal is rejected`]
+  const fp = fileImpostazioniDi(file)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const r = await conMutex(mutexConfig(file), 8000, () => {
+    const P = leggiImpostazioniProposte(fp)
+    const adesso = Date.now()
+    const c = P.voci[q.repo]
+    if (c && adesso - Date.parse(c.quando) <= SCADENZA_PROPOSTA) return [4, 'another settings proposal for this project is already waiting for the owner: try again after it is reviewed']
+    const id = `i-${adesso.toString(36)}${crypto.randomBytes(3).toString('hex')}`
+    P.voci[q.repo] = { id, quando: new Date(adesso).toISOString(), proponente: { id: q.proponente.id, titolo: q.proponente.titolo ?? '' }, proposta: { ...q.proposta, motivo: q.proposta.motivo.trim() } }
+    P.versione += 1
+    scriviAtomico(fp, JSON.stringify(P, null, 2))
+    return [0, JSON.stringify({ id })]
+  })
+  return r.occupato ? [3, 'mutex occupato'] : r.valore
+}
+
+/** Il pannello prende la proposta `id` del progetto (una volta sola): 0 e la voce, 4 se non c'è più o è scaduta. */
+async function impostazioniPrendi(file, repo, id) {
+  if (typeof repo !== 'string' || !repo || typeof id !== 'string' || !/^i-[a-z0-9]{6,20}$/.test(id) || typeof file !== 'string' || !path.isAbsolute(file)) return [2, 'arguments not valid']
+  const fp = fileImpostazioniDi(file)
+  const r = await conMutex(mutexConfig(file), 8000, () => {
+    const P = leggiImpostazioniProposte(fp)
+    const v = P.voci[repo]
+    if (!v || v.id !== id) return [4, 'proposal no longer there']
+    delete P.voci[repo]
+    P.versione += 1
+    scriviAtomico(fp, JSON.stringify(P, null, 2))
+    // Ricontrollata anche all'uscita: una voce scaduta o di forma non valida non arriva al pannello.
+    if (!(Date.now() - Date.parse(v.quando) <= SCADENZA_PROPOSTA) || propostaImpostazioniNonValida(v.proposta)) return [4, 'proposal expired or not valid']
+    return [0, JSON.stringify(v)]
+  })
+  return r.occupato ? [3, 'mutex occupato'] : r.valore
+}
+
 /**
  * stdin: `{ repo, proponente: { id, titolo }, motivo, profilo?, regolazioni?, partenza: { profilo, pesi }, revisione, risultato: { profilo, pesi } }`.
  * La partenza deve essere ancora quella del config (valori e revisione). Oltre 3 in attesa la più vecchia scade.
@@ -1059,6 +1161,8 @@ async function main(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {}) {
   if (cmd === 'board-prenota' && a.length === 5) return esci(...(await boardPrenota(...a)))
   if (cmd === 'board-finalizza' && a.length === 5) return esci(...(await boardFinalizza(...a, stdin())))
   if (cmd === 'pesi-proponi' && a.length === 1) return esci(...(await pesiProponi(a[0], stdin())))
+  if (cmd === 'impostazioni-proponi' && a.length === 1) return esci(...(await impostazioniProponi(a[0], stdin())))
+  if (cmd === 'impostazioni-prendi' && a.length === 3) return esci(...(await impostazioniPrendi(...a)))
   if (cmd === 'pesi-decidi' && a.length === 6) return esci(...(await pesiDecidi(...a)))
   if (cmd === 'pesi-annulla' && a.length === 4) return esci(...(await pesiAnnulla(...a)))
   esci(2, 'uso: cas <file> <versione|nuovo> | prenota <cartella> | occupata <mutex|codex> | corsia-codex [--revisione] -- <comando>')
@@ -1070,7 +1174,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, scriviAtomico, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, scriviAtomico, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

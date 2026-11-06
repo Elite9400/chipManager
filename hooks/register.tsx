@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { ControlloEsecuzione, LockApi, StatoEsecuzione, StatoImpostazioni, TipoAccesso, Vista } from '../types'
+import type { ControlloEsecuzione, LockApi, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni, Vista } from '../types'
 import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Limite, Motore, Pendenti, Permessi, Peso, PropostaPesi, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
-import { alLavoroDa, cambiatiAltrove, contestoPerModello, propostaDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
+import { alLavoroDa, cambiatiAltrove, campoNonValido, contestoPerModello, impostazioniCorrenti, propostaDa, propostaImpostazioniDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
 import {
   attive,
   bilancia,
@@ -68,7 +68,7 @@ import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salv
 import type { Lingua, Msg } from './lingua'
 import { disegna } from './pannello'
 import type { EsitoApplica } from './pannello'
-import { ripristinaImpostazioni } from './vista-impostazioni'
+import { ripristinaImpostazioni, versaProposta } from './vista-impostazioni'
 import { fonte, INSTALLAZIONE, nomeLimiteIn, nomiStrumenti, osservaRisorse, RISORSE_VUOTE } from './risorse'
 
 // Lo scanner dello stato vuole l'atomo scritto nel file che lo usa: register e pannello ne tengono
@@ -511,6 +511,38 @@ async function leggiProposte($: Eng) {
     const nuove = proposteDa(json, chi.repo)
     if (!uguale(await read($, propostePesi), nuove)) await update($, propostePesi, () => nuove)
   } catch { /* file in scrittura o cartella non valida: resta la lista letta prima */ }
+  await prendiImpostazioni($).catch(() => {})
+}
+
+/**
+ * F7.1: la proposta di impostazioni del progetto, se c'è, si prende dal file (una volta sola, dall'helper) e va in coda
+ * nella vista Impostazioni; da lì entra nella bozza appena questa è vuota e nessun «Applica» scrive.
+ */
+async function prendiImpostazioni($: Eng) {
+  const chi = (await read($, contesto)) ?? (await chiSonoIo($))
+  if (!chi.repo) return
+  const stato = await read($, impostazioni)
+  let voce: VoceImpostazioni | undefined
+  const f = (await fileConfig($)).replace(/\\/g, '/').replace(/[^/]*$/, 'proposte-impostazioni.json')
+  if (!stato.propostaInCoda && (await $.fs.exists(f).catch(() => false))) {
+    const json = JSON.parse(String(await $.fs.read(f))) as { voci?: Record<string, { id?: unknown }> }
+    const id = json.voci?.[chi.repo]?.id
+    if (typeof id === 'string' && /^i-[a-z0-9]{6,20}$/.test(id)) {
+      const r = await helper($, ['impostazioni-prendi', await fileConfig($), chi.repo, id])
+      if (r.codice === 0) {
+        const v = JSON.parse(r.testo) as VoceImpostazioni
+        const forma = propostaImpostazioniDa(v.proposta)
+        if ('proposta' in forma) voce = { id: v.id, quando: v.quando, proponente: { id: String(v.proponente?.id ?? '').slice(0, 200), titolo: String(v.proponente?.titolo ?? '').slice(0, 80) }, proposta: forma.proposta }
+      }
+    }
+  }
+  if (!voce && !stato.propostaInCoda) return
+  const T = await lingue($)
+  const esito = await versaProposta($, T, (await leggiRegole($)).risorse, await leggiLingua($), voce)
+  if (esito === 'riempita') {
+    $.ui.toast(T('imp.propostaArrivata'))
+    void $.ui.open({ id: PANE, title: TITOLO })
+  }
 }
 
 /** Applica o rifiuta una proposta alla versione vista: la chiave della decisione nasce qui, alla pressione. */
@@ -1711,6 +1743,11 @@ async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pend
     base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])),
     immediati: daProposta(ora) && cambiati.some(k => k === 'pesi' || k === 'profilo') ? ['pesi', 'profilo'].filter(k => k in p.campi) : [],
   })
+  // F7.1: la lingua messa in bozza da una proposta, cambiata intanto altrove (anche da un altro progetto): lo si chiede.
+  if (p.lingua && p.linguaBase) {
+    const salvata = await leggiLingua($)
+    if (salvata !== p.linguaBase) return { cambiati: ['lingua'], base: { lingua: salvata } }
+  }
   let ora = (await leggiRegole($)).risorse
   if (cambiatiAltrove(p, ora).length) return conflitto(ora, cambiatiAltrove(p, ora))
   const progetto = Object.keys(p.campi).length > 0
@@ -1831,6 +1868,39 @@ export const register: Register = (on, options) => {
       isDeferred: true,
     })
     await $.tool.register({
+      name: 'proponi_impostazioni',
+      description:
+        'Only when the user explicitly asks for it: proposes settings of this project (current values in `risorse_agenti`). It changes nothing: ' +
+        'a valid proposal fills the Settings draft in the panel, and the owner applies or discards it. Any unknown or forbidden field ' +
+        '(keys, guards, permissions, providers, destinations) rejects the whole proposal.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          motivo: { type: 'string', description: 'Why, up to 300 characters.' },
+          profilo: { type: 'string', enum: ['automatico', 'risparmio', 'qualita', 'velocita', 'personalizzato'] },
+          soglie: {
+            type: 'object',
+            additionalProperties: false,
+            description: 'Per provider: warning and critical percent (1-100, warning below critical), or null for none.',
+            properties: Object.fromEntries(['claude', 'codex', 'deepseek', 'freellmapi'].map(f => [f, {
+              type: ['object', 'null'], additionalProperties: false, required: ['attenzione', 'critica'],
+              properties: { attenzione: { type: 'integer', minimum: 1, maximum: 100 }, critica: { type: 'integer', minimum: 1, maximum: 100 } },
+            }])),
+          },
+          board: { type: 'object', additionalProperties: false, required: ['modo'], properties: { modo: { type: 'string', enum: ['spenta', 'accesa', 'riassunti'] } } },
+          consigliere: { type: 'string', enum: ['spento', 'suggerisci', 'applica'] },
+          apiClaude: {
+            type: 'object', additionalProperties: false,
+            properties: { budgetUsd: { type: 'number', minimum: 0.01, maximum: 100000 }, tetto: { type: 'number', minimum: 0.01, maximum: 1000 } },
+          },
+          lingua: { type: 'string', enum: ['en', 'it', 'es', 'fr', 'de', 'pt'] },
+        },
+        required: ['motivo'],
+      },
+      isDeferred: true,
+    })
+    await $.tool.register({
       name: 'aggiorna_azione',
       description:
         'Updates an action of the “chipManager” panel. From the started session: "consegnata" when the work is delivered (branch pushed, ' +
@@ -1928,6 +1998,8 @@ export const register: Register = (on, options) => {
         proposte: proposteBrevi(await read($, propostePesi), adesso),
         // F6: dove può girare una chip di questo progetto e con che margine; della chiave API solo se c'è.
         destinazioni: await destinazioniPerAgenti($, r, chi),
+        // F7.1: le impostazioni che `proponi_impostazioni` può cambiare, con i valori di adesso (nessun segreto).
+        impostazioni: impostazioniCorrenti(r.risorse, await leggiLingua($)),
       }),
     }
   })
@@ -1950,6 +2022,23 @@ export const register: Register = (on, options) => {
     await leggiProposte($)
     void $.ui.open({ id: PANE, title: TITOLO })
     return { result: TESTI_PESI.registrata(id, scadute) }
+  })
+
+  on('tool.call', { tool: 'mcp__chip-manager__proponi_impostazioni' }, async ($, e) => {
+    const [r, chi] = await Promise.all([leggiRegole($), chiSonoIo($)])
+    if (!chi.repo) return { deny: 'proponi_impostazioni: this session is not in a repository' }
+    if (!r.lette) return { deny: `proponi_impostazioni: rules not read (${testo('en', r.motivo)}): the settings cannot be checked` }
+    const { tool: _tool, tool_use_id: _id, ...args } = e as unknown as Record<string, unknown>
+    const forma = propostaImpostazioniDa(args)
+    if ('errore' in forma) return { deny: `proponi_impostazioni: ${forma.errore}` }
+    // I valori contro le impostazioni di adesso, con la validazione della bozza: si nomina il campo, mai il valore.
+    const campo = campoNonValido(forma.proposta, r.risorse)
+    if (campo) return { deny: `proponi_impostazioni: field "${campo}" has a value the Settings would not accept now: the whole proposal is rejected` }
+    const esito = await helper($, ['impostazioni-proponi', await fileConfig($)], JSON.stringify({ repo: chi.repo, proponente: { id: chi.io, titolo: chi.titolo ?? '' }, proposta: forma.proposta }))
+    if (esito.codice !== 0) return { deny: `proponi_impostazioni: ${esito.testo.slice(0, 300) || 'proposal not recorded'}` }
+    await prendiImpostazioni($).catch(() => {})
+    void $.ui.open({ id: PANE, title: TITOLO })
+    return { result: 'Settings proposal recorded: it fills the Settings draft in the panel. Nothing changes until the owner presses Apply; they can also discard it.' }
   })
 
   on('tool.call', { tool: 'mcp__chip-manager__aggiorna_azione' }, async ($, e) => {

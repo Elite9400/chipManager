@@ -887,6 +887,12 @@ const de: Dizionario = {
   "ese.fonte.flag": "Einstellungen der Befehlszeile (--settings)",
   "ese.copiaPercorso": "Pfad kopieren",
   "ese.percorsoCopiato": "Pfad kopiert",
+  // F7.1 settings proposals
+  "imp.propostaArrivata": "Eine Sitzung hat Einstellungen vorgeschlagen: sie stehen im Entwurf der Einstellungen, prüfe sie und drücke Anwenden",
+  "imp.propostaDa": "Von einer Sitzung vorgeschlagen ({da})",
+  "imp.propostaCome": "Prüfe die Änderungen unten und drücke Anwenden oder Änderungen verwerfen. Bis dahin wird nichts gespeichert.",
+  "imp.propostaInCoda": "Eine Sitzung ({da}) hat Einstellungen vorgeschlagen: sie kommen in den Entwurf, sobald die aktuellen Änderungen angewendet oder verworfen sind",
+  "imp.propostaLavoro": "Von einer Sitzung ({da}) vorgeschlagene Einstellungen warten im Entwurf der Einstellungen",
   // ‹fine›
 }
 

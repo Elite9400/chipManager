@@ -887,6 +887,12 @@ const fr: Dizionario = {
   "ese.fonte.flag": "Paramètres de ligne de commande (--settings)",
   "ese.copiaPercorso": "Copier le chemin",
   "ese.percorsoCopiato": "Chemin copié",
+  // F7.1 settings proposals
+  "imp.propostaArrivata": "Une session a proposé des paramètres : ils sont dans le brouillon des Paramètres, vérifiez-les et appuyez sur Appliquer",
+  "imp.propostaDa": "Proposé par une session ({da})",
+  "imp.propostaCome": "Vérifiez les modifications ci-dessous et appuyez sur Appliquer, ou Annuler les modifications. Rien n'est enregistré avant.",
+  "imp.propostaInCoda": "Une session ({da}) a proposé des paramètres : ils entrent dans le brouillon une fois les modifications actuelles appliquées ou annulées",
+  "imp.propostaLavoro": "Des paramètres proposés par une session ({da}) attendent dans le brouillon des Paramètres",
   // ‹fine›
 }
 

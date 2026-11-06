@@ -5,9 +5,10 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { Fornitore, PassoEsecuzione, Pendenti, Peso, RisorseProgetto, StatoEsecuzione, StatoImpostazioni, TipoAccesso } from '../types'
+import type { Fornitore, PassoEsecuzione, Pendenti, Peso, RisorseProgetto, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni } from '../types'
 import {
   budgetDa,
+  campiDaProposta,
   conBozza,
   conPendente,
   conPosizione,
@@ -27,6 +28,7 @@ import {
   simula,
   SOGLIE_PRESET,
   TIPI_BUDGET,
+  valoreConfig,
 } from './bilanciamento'
 import type { Profilo } from './bilanciamento'
 import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, passiMancanti, piuPieno, sogliaDi, TETTO_API_PREDEFINITO } from './logica'
@@ -150,6 +152,35 @@ export async function applicaBozza($: EngineInterface, c: Ctx, T: T, epoca = epo
   }
 }
 
+/**
+ * F7.1: la proposta presa dal file va in coda (al più una); se la bozza è vuota e nessun «Applica» scrive, la riempie,
+ * con la fascia «proposta da una sessione». Una bozza aperta non si tocca mai: la proposta aspetta.
+ */
+export async function versaProposta($: EngineInterface, T: T, r0: RisorseProgetto, salvata: Lingua, voce?: VoceImpostazioni): Promise<'riempita' | 'in-coda' | 'niente'> {
+  let esito: 'riempita' | 'in-coda' | 'niente' = 'niente'
+  await update($, statoVista, (s): StatoVista => {
+    const v = s.propostaInCoda ?? voce
+    if (!v) return s
+    if (inVolo || piena(s.pendenti)) {
+      esito = 'in-coda'
+      return s.propostaInCoda ? s : { ...s, propostaInCoda: v }
+    }
+    const campi = campiDaProposta(v.proposta, r0)
+    const lingua = v.proposta.lingua && v.proposta.lingua !== salvata ? v.proposta.lingua : undefined
+    // I valori sono stati controllati alla proposta; se intanto le impostazioni sono cambiate e non passano più, si scarta.
+    if (eMsg(conBozza(r0, campi)) || (!Object.keys(campi).length && !lingua)) return { ...s, propostaInCoda: undefined }
+    esito = 'riempita'
+    const pendenti: Pendenti = {
+      campi, base: Object.fromEntries(Object.keys(campi).map(k => [k, valoreConfig(r0, k)])),
+      dove: [...Object.keys(campi), ...(lingua ? ['lingua'] : [])].map(k => `proposta:${k}`),
+      ...(lingua && { lingua, linguaBase: salvata }),
+    }
+    return conEpoca(s, { ...s, pendenti, propostaInCoda: undefined, errore: undefined,
+      proposta: { id: v.id, da: v.proponente.titolo || v.proponente.id.replace(/^local_/, '').slice(0, 8), motivo: v.proposta.motivo } })
+  })
+  return esito
+}
+
 /** Una scrittura sola, con «Applica» in volo (solo questa funzione cambia la bozza finché dura). */
 async function applicaFerma($: EngineInterface, c: Ctx, T: T): Promise<boolean> {
   const p = piena((await read($, statoVista)).pendenti)
@@ -181,9 +212,11 @@ async function applicaFerma($: EngineInterface, c: Ctx, T: T): Promise<boolean> 
         const q = s.pendenti
         if (!q) return s
         const tieni = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([k]) => !via.has(k)))
-        const base = { ...q.base, ...esito.base }
+        const { lingua: linguaOra, ...altre } = esito.base
+        const base = { ...q.base, ...altre }
         const dove = via.size ? q.dove.filter(d => !/^(profilo|peso-)/.test(d)) : q.dove
-        return { ...s, pendenti: piena({ ...q, campi: tieni(q.campi), base: tieni(base), dove }) }
+        const linguaBase = typeof linguaOra === 'string' ? (linguaOra as Lingua) : q.linguaBase
+        return { ...s, pendenti: piena({ ...q, campi: tieni(q.campi), base: tieni(base), dove, ...(linguaBase && { linguaBase }) }) }
       })
       if (via.size) $.ui.toast(T('imp.pesiDaProposta'))
       return applicaFerma($, c, T)
@@ -925,6 +958,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     })
 
   const pendenti = piena(vista.pendenti)?.dove.length ?? 0
+  const propostaVisibile = !!vista.proposta && !!piena(vista.pendenti)?.dove.some(x => x.startsWith('proposta:'))
   const corpo =
     vista.sezione === 'esecuzione' ? await sezioneEsecuzione()
       : vista.sezione === 'legenda' ? legenda()
@@ -945,6 +979,14 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           void cambia(s => ({ ...s, sezione: v as Sezione, errore: undefined }))
         },
       })}
+      {propostaVisibile ? (
+        <Box key="proposta-impostazioni" flexDirection="column" borderStyle="single" paddingX={1}>
+          <Text key="proposta-impostazioni-titolo" weight="semibold" wrap="wrap">{T('imp.propostaDa', { da: vista.proposta!.da })}</Text>
+          <Text key="proposta-impostazioni-motivo" wrap="wrap">{vista.proposta!.motivo}</Text>
+          <Text key="proposta-impostazioni-come" size="caption" dimColor wrap="wrap">{T('imp.propostaCome')}</Text>
+        </Box>
+      ) : null}
+      {vista.propostaInCoda ? nota1('proposta-in-coda', STATO.coda, '◔', T('imp.propostaInCoda', { da: vista.propostaInCoda.proponente.titolo || vista.propostaInCoda.proponente.id.slice(0, 14) })) : null}
       {corpo}
       {pendenti > 0 && (
         <Box key="pendenti" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center" borderStyle="single" borderDimColor paddingX={1}>
