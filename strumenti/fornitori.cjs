@@ -91,6 +91,8 @@ const RIGA_MAX = 256_000
 const GIORNO = 86_400_000
 const testo = (v, n) => (typeof v === 'string' && v && v.length <= n && !/[\x00-\x1f\x7f]/.test(v) ? v : undefined)
 const fileCache = home => path.join(home, '.claude', 'chipmanager', 'cache', 'codex.json')
+/** R11: l'istantanea delle sessioni Codex, accanto alla cache. */
+const fileIstantanea = home => path.join(home, '.claude', 'chipmanager', 'cache', 'sessioni.json')
 
 /** I file recenti, i più nuovi prima: fino a 40 delle ultime 24 ore (sessioni) e 30 degli ultimi 7 giorni (limiti). */
 function elencoCodex(home, adesso) {
@@ -394,7 +396,18 @@ async function main() {
   }
   const chiavi = { anthropic: process.env.CHIPMANAGER_ANTHROPIC_ADMIN_KEY || process.env.ANTHROPIC_ADMIN_KEY,
     deepseek: process.env.CHIPMANAGER_DEEPSEEK_KEY || process.env.DEEPSEEK_API_KEY, freellmapi: process.env.CHIPMANAGER_FREELLMAPI_KEY || process.env.FREELLMAPI_KEY }
-  if (cmd === 'sessioni') { process.stdout.write(JSON.stringify(await sessioniCodexLocali(os.homedir()))); return }
+  if (cmd === 'sessioni') {
+    const r = await sessioniCodexLocali(os.homedir())
+    // R11: un'istantanea per gli altri pannelli (versionata, scritta con file temporaneo e rinomina); chi la legge entro
+    // 20 s non avvia un processo. Un errore di scrittura non tocca la risposta.
+    try {
+      const { scriviAtomico } = require('./disco.cjs')
+      fs.mkdirSync(path.dirname(fileIstantanea(os.homedir())), { recursive: true })
+      scriviAtomico(fileIstantanea(os.homedir()), JSON.stringify({ v: 1, istante: new Date().toISOString(), ...r }))
+    } catch { /* istantanea saltata */ }
+    process.stdout.write(JSON.stringify(r))
+    return
+  }
   const output = cmd === 'limiti' ? await osserva(input, chiavi) : cmd === 'completa' ? { risultato: await completa(input.politica, input, chiavi.freellmapi) } : null
   if (!output) throw new Error('comando non valido')
   const testo = JSON.stringify(output)

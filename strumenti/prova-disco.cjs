@@ -1189,3 +1189,17 @@ test('R16: nessun export morto di modelli in logica (MODELLI non usato)', () => 
   const logica = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'logica.ts'), 'utf8')
   assert.doesNotMatch(logica, /export const MODELLI\b/)
 })
+
+test('R11: il comando sessioni scrive l\'istantanea versionata e atomica accanto alla cache, con la stessa risposta', () => {
+  const home = tmp()
+  const r = spawnSync(process.execPath, [path.join(__dirname, 'fornitori.cjs'), 'sessioni'], { input: '{}', encoding: 'utf8', env: { ...process.env, USERPROFILE: home, HOME: home } })
+  assert.strictEqual(r.status, 0, r.stderr)
+  const risposta = JSON.parse(r.stdout)
+  const cartella = path.join(home, '.claude', 'chipmanager', 'cache')
+  const istantanea = JSON.parse(fs.readFileSync(path.join(cartella, 'sessioni.json'), 'utf8'))
+  assert.strictEqual(istantanea.v, 1)
+  assert.ok(Math.abs(Date.now() - Date.parse(istantanea.istante)) < 60_000)
+  assert.deepStrictEqual(istantanea.sessioni, risposta.sessioni)
+  // Nessun file temporaneo rimasto: la scrittura è un rename.
+  assert.deepStrictEqual(fs.readdirSync(cartella).filter(n => n.startsWith('sessioni') && n !== 'sessioni.json'), [])
+})

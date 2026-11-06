@@ -2565,6 +2565,32 @@ test('R5: elenco degli strumenti e get_session di questa sessione in cache duran
   await ui.unmount()
 })
 
+test('R11: sessioni Codex dall\'istantanea se ha al più 20 s, senza helper; vecchia o rotta, l\'helper come oggi', async ($, on) => {
+  const clock = mock.clock(on)
+  const amb = ambienteSessioni(on, () => Date.now())
+  const ISTANTANEA = 'X:/casa/.claude/chipmanager/cache/sessioni.json'
+  const sessione = { id: 'istantanea-01', cwd: 'X:/repo/.claude/worktrees/da-istantanea', ramo: 'da-istantanea', modello: 'gpt-6-astra', effort: 'high', stato: 'aperto', inCorso: true, attivita: new Date().toISOString() }
+  amb.disco.set(ISTANTANEA, JSON.stringify({ v: 1, istante: new Date().toISOString(), sessioni: [sessione], diagnostica: { byte: 1 } }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const helperSessioni = () => amb.processi.filter(p => p.argv[2] === 'sessioni').length
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  expect(await ui.find({ type: 'Text', text: /^Codex · da-istantanea$/ })).toBeDefined()
+  expect(helperSessioni()).toBe(0)
+  // Vecchia di un minuto: si avvia l'helper.
+  amb.disco.set(ISTANTANEA, JSON.stringify({ v: 1, istante: new Date(Date.now() - 60_000).toISOString(), sessioni: [sessione] }))
+  await ui.press({ key: 'ricarica' })
+  expect(helperSessioni()).toBe(1)
+  // Versione sconosciuta o JSON rotto: l'helper.
+  for (const rotta of [JSON.stringify({ v: 2, istante: new Date().toISOString(), sessioni: [sessione] }), '{"v":1,']) {
+    amb.disco.set(ISTANTANEA, rotta)
+    await ui.press({ key: 'ricarica' })
+  }
+  expect(helperSessioni()).toBe(3)
+  await ui.unmount()
+  void clock
+})
+
 test('R4: scrivi se cambia: uguaglianza sul JSON; il consumo si confronta senza `da`', () => {
   expect(uguale({ a: [1, 2] }, { a: [1, 2] })).toBe(true)
   expect(uguale({ a: [1, 2] }, { a: [2, 1] })).toBe(false)

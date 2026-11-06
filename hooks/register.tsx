@@ -398,6 +398,22 @@ async function chiamaApp($: Eng, tool: string, args: Record<string, unknown>) {
  * Claude da list_sessions (più questa sessione, che l'elenco esclude), Codex dai file locali via helper.
  * Solo metadati: titolo, ramo, modello, effort, stato, contesto e ultima attività.
  */
+/**
+ * R11: le sessioni Codex dall'istantanea dell'helper, se è della versione 1 e ha fra 0 e 20 s; altrimenti `undefined`
+ * (e si avvia l'helper come prima). I suoi contatori sono del pannello che l'ha prodotta: qui non si contano.
+ */
+async function istantaneaSessioni($: Eng, adesso: number): Promise<unknown> {
+  try {
+    const f = `${await casa($)}/.claude/chipmanager/cache/sessioni.json`
+    if (!(await $.fs.exists(f))) return undefined
+    const j = JSON.parse((await $.fs.read(f)) as string) as { v?: unknown; istante?: unknown; sessioni?: unknown }
+    const eta = adesso - Date.parse(String(j?.istante))
+    return j?.v === 1 && Array.isArray(j.sessioni) && eta >= 0 && eta <= 20_000 ? j.sessioni : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function leggiSessioni($: Eng) {
   const { root } = await progettoSessione($)
   if (!root) return void (await update($, sessioni, () => ({ lista: [], nota: 'ses.notaRepo' })))
@@ -443,7 +459,9 @@ async function leggiSessioni($: Eng) {
   let codex: SessioneProgetto[] = []
   if (r.lette && r.risorse.fornitori.includes('codex')) {
     try {
-      codex = sessioniCodex(((await fonte($, {}, 'sessioni', {})) as { sessioni?: unknown } | null)?.sessioni, radice, adesso)
+      // R11: l'istantanea di un altro pannello, se fresca; altrimenti l'helper (che la riscrive).
+      const istantanea = await istantaneaSessioni($, adesso)
+      codex = sessioniCodex(istantanea ?? ((await fonte($, {}, 'sessioni', {})) as { sessioni?: unknown } | null)?.sessioni, radice, adesso)
     } catch {
       note.push('ses.codexNonLette')
     }
