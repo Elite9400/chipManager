@@ -785,6 +785,26 @@ const it: Dizionario = {
   "dove.esito": { one: "1 chip spostata in {dove}", other: "{n} chip spostate in {dove}" },
   "dove.resta": "«{titolo}» resta: {motivo}",
   "dove.statoFisso": "già avviata o chiusa",
+  // F6.2 API Claude lane
+  "err.apiOccupata": "API Claude è occupata: una sola esecuzione alla volta su questo computer. Riprova quando finisce.",
+  "err.apiBudget": "API Claude: il budget del mese non basta ({speso} di {budget} USD spesi o prenotati; ogni esecuzione prenota {tetto} USD)",
+  "err.apiImpostazioni": "API Claude non disponibile: delle impostazioni cambiano chi paga o dove vanno le richieste ({fonti}). Toglile o esegui in locale.",
+  "info.costoApi": "Costo API (stimato): {costo} USD",
+  "info.costoApiIgnoto": "Costo API ignoto: conta il tetto intero",
+  // F6.2 API lane lock
+  "api.lock": "Corsia API Claude tenuta: {motivo}",
+  "api.motivo.inCorso": "un'esecuzione è in corso, o la sua uscita non è stata registrata",
+  "api.motivo.senzaPid": "l'esecuzione non ha registrato il suo processo (si è fermata all'avvio)",
+  "api.motivo.discendenti": "processi rimasti: {n} (PID {pid})",
+  "api.motivo.chiave": "il file-chiave non si è potuto cancellare (cartella chiavi-api nei dati della mod)",
+  "api.motivo.cache": "la copia in memoria di Claude scade fra {min} min (questo non revoca la chiave)",
+  "api.motivo.illeggibile": "il file del lock non si legge",
+  "az.libera": "Libera",
+  "az.termina": "Termina i processi",
+  "pop.liberaApi": "Liberare la corsia API Claude? Fallo solo se sei sicuro che nessuna esecuzione sia ancora in corso: un processo ancora vivo può continuare a spendere finché non revochi la chiave. Si libera solo se il file-chiave non c'è più, nessun processo dell'esecuzione è vivo e sono passati 5 minuti dall'ultima consegna della chiave. Il costo dell'esecuzione conta il tetto intero.",
+  "pop.terminaApi": "Terminare {n} processi lasciati dall'ultima esecuzione API Claude (PID {pid})?",
+  "api.liberata": "Corsia API Claude liberata",
+  "api.nonLiberata": "Non liberata: manca ancora una condizione (vedi la nota)",
   // ‹fine›
 }
 

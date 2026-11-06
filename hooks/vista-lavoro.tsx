@@ -51,7 +51,7 @@ const corto = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…
 // `$` resta un argomento: lo scanner non lo vuole dentro un oggetto.
 export function vistaLavoro($: EngineInterface, d: Dati) {
   const { T, c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, tutteLeSessioni, regoleOra,
-    testoFiltro, lista, visibili, espansa, motiviAperti, scelte, stati, tr, adesso, capacita, boardPronta, fai, modifica, completa,
+    testoFiltro, lista, visibili, espansa, motiviAperti, scelte, lockApiOra, stati, tr, adesso, capacita, boardPronta, fai, modifica, completa,
     apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, titoloSezione, righe,
     alLavoro, cella, MOTORI, motore, oraDi } = d
   const { Box, Text, Button } = d.el
@@ -434,6 +434,10 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
               a.avviataIl ? T('info.da', { durata: durata(adesso - Date.parse(a.avviataIl), T.lingua) }) : undefined,
               vita?.ultimaAttivita ? T('info.ultimaAttivita', { durata: durata(adesso - Date.parse(vita.ultimaAttivita), T.lingua) }) : undefined,
               vita?.ramo,
+              // F6.2: il costo stimato di un'esecuzione a crediti API (ignoto = conta il tetto intero).
+              a.lanciatore === 'api-claude' && a.costoApi !== undefined
+                ? a.costoApi === null ? T('info.costoApiIgnoto') : T('info.costoApi', { costo: T.numero(a.costoApi, 2) })
+                : undefined,
               a.sessione && !mia ? T('info.barraLaterale') : undefined,
             ]
               .filter(Boolean)
@@ -549,6 +553,22 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     }
     await update($, selezionate, () => [])
     $.ui.toast([T('dove.esito', { n: spostate, dove: T(BREVE_DOVE[d]) }), ...restano].join(' · '))
+  }
+  /** F6.2: il lock della corsia API resta tenuto: perché, e «Libera» o «Termina» quando servono. */
+  function notaLockApi() {
+    const l = lockApiOra
+    if (!l) return null
+    const motivo =
+      l.motivo === 'discendenti' ? T('api.motivo.discendenti', { n: l.discendenti?.length ?? 0, pid: (l.discendenti ?? []).join(', ') })
+        : l.motivo === 'cache' ? T('api.motivo.cache', { min: Math.max(1, Math.ceil((l.restaMs ?? 0) / 60_000)) })
+          : T(l.motivo === 'senza-pid' ? 'api.motivo.senzaPid' : l.motivo === 'chiave' ? 'api.motivo.chiave' : l.motivo === 'illeggibile' ? 'api.motivo.illeggibile' : 'api.motivo.inCorso')
+    return (
+      <Box key="lock-api" flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
+        {nota1('lock-api-testo', STATO.attesa, '◐', T('api.lock', { motivo }))}
+        {l.motivo === 'discendenti' && <Button key="termina-api" plain label={T('az.termina')} onPress={fai(c.terminaApi)} />}
+        {['in-corso', 'senza-pid', 'chiave', 'illeggibile'].includes(l.motivo) && <Button key="libera-api" plain label={T('az.libera')} onPress={fai(c.liberaApi)} />}
+      </Box>
+    )
   }
   function barraScelte() {
     const n = tutte.filter(a => scelte.includes(a.id)).length
@@ -921,6 +941,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
           ],
         })}
         {barraScelte()}
+        {notaLockApi()}
         {nessunaParte.length > 0 && nota1('nessuna-parte', STATO.attesa, '◔', T('err.nessunaParte', { motivi: nessunaParte.join(' · ') }))}
         {daAvviare.length === 0 ? (
           <Text dimColor>

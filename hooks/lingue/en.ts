@@ -787,6 +787,26 @@ const en = {
   "dove.esito": { one: "1 chip moved to {dove}", other: "{n} chips moved to {dove}" },
   "dove.resta": "«{titolo}» stays: {motivo}",
   "dove.statoFisso": "already started or closed",
+  // F6.2 API Claude lane
+  "err.apiOccupata": "API Claude is busy: one run at a time on this computer. Try again when it ends.",
+  "err.apiBudget": "API Claude: the monthly budget is not enough ({speso} of {budget} USD spent or reserved; each run reserves {tetto} USD)",
+  "err.apiImpostazioni": "API Claude not available: settings change who pays or where requests go ({fonti}). Remove them or run locally.",
+  "info.costoApi": "API cost (estimated): {costo} USD",
+  "info.costoApiIgnoto": "API cost unknown: counted as the full cap",
+  // F6.2 API lane lock
+  "api.lock": "API Claude lane held: {motivo}",
+  "api.motivo.inCorso": "a run is going on, or its exit was not recorded",
+  "api.motivo.senzaPid": "the run did not register its process (it stopped while starting)",
+  "api.motivo.discendenti": "processes left: {n} (PID {pid})",
+  "api.motivo.chiave": "the key file could not be deleted (folder chiavi-api in the mod's data)",
+  "api.motivo.cache": "Claude's in-memory copy of the key expires in {min} min (this does not revoke the key)",
+  "api.motivo.illeggibile": "the lock file cannot be read",
+  "az.libera": "Release",
+  "az.termina": "End processes",
+  "pop.liberaApi": "Release the API Claude lane? Do it only if you are sure no run is still going: a process still running can keep spending until you revoke the key. It is released only if the key file is gone, no process of the run is alive and 5 minutes have passed since the last key delivery. The run's cost counts as the full cap.",
+  "pop.terminaApi": "End {n} processes left by the last API Claude run (PID {pid})?",
+  "api.liberata": "API Claude lane released",
+  "api.nonLiberata": "Not released: a condition is still missing (see the note)",
   // ‹fine›
 } satisfies Record<string, Voce>
 

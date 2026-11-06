@@ -9,6 +9,7 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
 
+import type { LockApi } from '../types'
 import type { Azione, Chiamante, Consumo, Fornitore, Limite, Motore, Pendenti, Peso, PropostaPesi, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, Traguardi, Vista, Vita } from '../types'
 import { annullabile as pesiAnnullabili, daDecidere, decisaIl, descriviPesi, statoVisto, TESTI_PESI } from './bilanciamento'
 import {
@@ -57,6 +58,7 @@ const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { li
 const vista = atom({ plugin: 'chip-manager', key: 'vista' } as const, 'lavoro' as Vista)
 const tutteSessioni = atom({ plugin: 'chip-manager', key: 'tutteSessioni' } as const, false)
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
+const lockApi = atom({ plugin: 'chip-manager', key: 'lockApi' } as const, null as LockApi | null, { shape: 'lock-api-1' })
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: 0 } as Consumo, { shape: 'consumo-2' })
 const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
 const lingua = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
@@ -83,6 +85,9 @@ export type Ctx = {
   configura: (campi: Record<string, unknown>, attese: RisorseProgetto) => Promise<unknown>
   peso: (peso: Peso, attese: RisorseProgetto) => Promise<unknown>
   installa: (passo: number) => Promise<unknown>
+  /** F6.2: «Libera» e «Termina» del lock della corsia API, ciascuno con il suo popup. */
+  liberaApi: () => Promise<unknown>
+  terminaApi: () => Promise<unknown>
   /** F5.9: applica la bozza delle Impostazioni; `cambiati` non vuoto = cambiati altrove, niente scritto. */
   applica: (p: Pendenti) => Promise<EsitoApplica>
   apriBoard: () => Promise<unknown>
@@ -132,6 +137,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const apertaOra = await read($, aperta)
   const espansa = apertaOra?.startsWith('perche:') ? null : apertaOra
   const scelte = await read($, selezionate)
+  const lockApiOra = await read($, lockApi)
   const motiviAperti = apertaOra?.startsWith('perche:') ? apertaOra.slice('perche:'.length) : null
   const consumoOra = await read($, consumo)
   const stati = await read($, vive)
@@ -295,7 +301,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
 
   return {
     el, T, fonteRegole, c, Select, Input, conVelo, classe, colonne, ui, io, tutte, senzaProgetto, ses, vistaOra, tutteLeSessioni, regoleOra, testoFiltro,
-    lista, visibili, espansa, motiviAperti, scelte, stati, nota, scartata, rotte, tr, adesso, capacita, sb, boardPronta, ultime, configura, fai, modifica,
+    lista, visibili, espansa, motiviAperti, scelte, lockApiOra, stati, nota, scartata, rotte, tr, adesso, capacita, sb, boardPronta, ultime, configura, fai, modifica,
     completa, apriChiudi, apriPerche, ferma, statoDi, nota1, proposte, tentativoAnnullabile, aspettaTe, attese, titoloSezione, righe,
     alLavoro, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, oraDi: T.ora, consumoOra,
     proposteAperte, rigaProposta, registroPesi,

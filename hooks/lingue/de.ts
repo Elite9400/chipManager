@@ -785,6 +785,26 @@ const de: Dizionario = {
   "dove.esito": { one: "1 Chip nach {dove} verschoben", other: "{n} Chips nach {dove} verschoben" },
   "dove.resta": "«{titolo}» bleibt: {motivo}",
   "dove.statoFisso": "bereits gestartet oder geschlossen",
+  // F6.2 API Claude lane
+  "err.apiOccupata": "API Claude ist belegt: eine Ausführung zur Zeit auf diesem Rechner. Versuch es erneut, wenn sie endet.",
+  "err.apiBudget": "API Claude: das Monatsbudget reicht nicht ({speso} von {budget} USD ausgegeben oder reserviert; jede Ausführung reserviert {tetto} USD)",
+  "err.apiImpostazioni": "API Claude nicht verfügbar: Einstellungen ändern, wer zahlt oder wohin Anfragen gehen ({fonti}). Entferne sie oder führe lokal aus.",
+  "info.costoApi": "API-Kosten (geschätzt): {costo} USD",
+  "info.costoApiIgnoto": "API-Kosten unbekannt: es zählt die volle Obergrenze",
+  // F6.2 API lane lock
+  "api.lock": "Spur API Claude belegt: {motivo}",
+  "api.motivo.inCorso": "eine Ausführung läuft, oder ihr Ende wurde nicht erfasst",
+  "api.motivo.senzaPid": "die Ausführung hat ihren Prozess nicht erfasst (beim Start gestoppt)",
+  "api.motivo.discendenti": "verbliebene Prozesse: {n} (PID {pid})",
+  "api.motivo.chiave": "die Schlüsseldatei ließ sich nicht löschen (Ordner chiavi-api in den Daten der Mod)",
+  "api.motivo.cache": "Claudes Kopie im Speicher läuft in {min} Min. ab (das widerruft den Schlüssel nicht)",
+  "api.motivo.illeggibile": "die Sperrdatei ist nicht lesbar",
+  "az.libera": "Freigeben",
+  "az.termina": "Prozesse beenden",
+  "pop.liberaApi": "Spur API Claude freigeben? Nur wenn du sicher bist, dass keine Ausführung mehr läuft: ein noch lebender Prozess kann weiter ausgeben, bis du den Schlüssel widerrufst. Sie wird nur freigegeben, wenn die Schlüsseldatei weg ist, kein Prozess der Ausführung lebt und seit der letzten Schlüsselausgabe 5 Minuten vergangen sind. Die Kosten zählen die volle Obergrenze.",
+  "pop.terminaApi": "{n} Prozesse der letzten API-Claude-Ausführung beenden (PID {pid})?",
+  "api.liberata": "Spur API Claude freigegeben",
+  "api.nonLiberata": "Nicht freigegeben: eine Bedingung fehlt noch (siehe Hinweis)",
   // ‹fine›
 }
 

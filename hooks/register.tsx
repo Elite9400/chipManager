@@ -1,6 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
+import type { LockApi } from '../types'
 import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Limite, Motore, Pendenti, Permessi, Peso, PropostaPesi, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
 import { alLavoroDa, cambiatiAltrove, contestoPerModello, propostaDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
 import {
@@ -23,6 +24,8 @@ import {
   piuPieno,
   sogliaDi,
   mandato,
+  mandatoApi,
+  modalitaDi,
   normalizza,
   parametriAvvio,
   PERMESSI,
@@ -80,6 +83,7 @@ const risorse = atom({ plugin: 'chip-manager', key: 'risorse' } as const, RISORS
 const ultimeMisure = atom({ plugin: 'chip-manager', key: 'ultimeMisure' } as const, {} as Record<string, Limite>, { shape: 'misure-1' })
 const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { lista: [] } as Sessioni, { shape: 'sessioni-1' })
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
+const lockApi = atom({ plugin: 'chip-manager', key: 'lockApi' } as const, null as LockApi | null, { shape: 'lock-api-1' })
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: 0 } as Consumo, { shape: 'consumo-2' })
 const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
 const lingua = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
@@ -590,7 +594,7 @@ async function decidi(
     }
     const lista = delProgetto(tutte, chi)
     const blocchi = violazioniAvvio(a, r, tutte, chi, opz.qui)
-    if (opz.manuale && (chi.lanciatore !== 'desktop' || a.esecutore === 'freellmapi')) blocchi.push(msg('v.manualeDesktop'))
+    if (opz.manuale && (chi.lanciatore !== 'desktop' || a.esecutore === 'freellmapi' || modalitaDi(a) === 'api-claude')) blocchi.push(msg('v.manualeDesktop'))
     if (blocchi.length) return { blocchi }
     // «qui» non occupa un posto di sessione nuova, ma la corsia Codex sì.
     const piano = await conCorsia($, codex => pianifica([a], lista, r, opz.qui ? Number.MAX_SAFE_INTEGER : maxParalleli(options), codex, x => violazioniAvvio(x, r, tutte, chi, opz.qui)))
@@ -624,7 +628,7 @@ async function decidi(
       lanciataDa: chi.io,
       ...salvato('motivoCoda', 'motivo', undefined),
       ...salvato('errore', 'errore', undefined),
-      lanciatore: opz.qui || opz.manuale ? undefined : a.esecutore === 'freellmapi' ? 'freellmapi' : chi.lanciatore === 'cli' ? 'cli' : undefined,
+      lanciatore: opz.qui || opz.manuale ? undefined : modalitaDi(a) === 'api-claude' ? 'api-claude' : a.esecutore === 'freellmapi' ? 'freellmapi' : chi.lanciatore === 'cli' ? 'cli' : undefined,
       risultato: undefined,
     })
     if (presa) return { avvia: presa }
@@ -670,7 +674,7 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
   if (d.blocchi) throw errore('err.nonParte', { motivi: d.blocchi })
   if (!d.avvia) return
   const presa = d.avvia
-  if (presa.lanciatore === 'cli' || presa.lanciatore === 'freellmapi') return avviaAlternativa($, options, presa)
+  if (presa.lanciatore === 'cli' || presa.lanciatore === 'freellmapi' || presa.lanciatore === 'api-claude') return avviaAlternativa($, options, presa)
   const args = parametriAvvio(presa, (await read($, regole)) ?? REGOLE_DEFAULT, strumenti($))
   let risposta: Awaited<ReturnType<Eng['mcp']['call']>>
   // Il gettone resta «in volo» finché la risposta non è SALVATA: fino ad allora non si annulla.
@@ -716,6 +720,7 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
       return aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo
         ? { ...transizione(x, 'consegnata', ora()), risultato: risultato.risultato as string, avviataIl: ora(), ...salvato('errore', 'errore', msg('rec.bozzaFree')) } : null)
     }
+    if (a.lanciatore === 'api-claude') return await avviaApi($, options, a, r)
     const m = mandato(a, r, strumenti($))
     const root = (await $.session.repo())?.root
     if (!root) throw new Error('repository root not available')
@@ -727,6 +732,36 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
     await aggiorna($, a.id, x => x.tentativo === a.tentativo && x.stato === 'in-avvio'
       ? { incerto: true, ...salvato('errore', 'errore', msg('rec.esitoCli')) } : null)
   } finally { inVolo.delete(a.tentativo!) }
+}
+
+/**
+ * F6.2: `claude -p` a crediti API. L'helper prenota il lock della macchina e la spesa del mese prima del processo; la chiave
+ * viaggia solo su stdin dell'helper (mai argv, ambiente, record o log). Un rifiuto dell'helper chiude il tentativo con il
+ * motivo; un esito che non si legge resta incerto, senza riavvio.
+ */
+async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: Regole) {
+  const api = r.risorse.apiClaude
+  const chiave = typeof options.anthropicApiKey === 'string' ? options.anthropicApiKey.trim() : ''
+  const fallisce = (m: Msg) => aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo ? { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', m) } : null)
+  if (!api || !chiave) return fallisce(msg(!chiave ? 'v.apiChiave' : 'v.apiBudget'))
+  const m = mandatoApi(a, r, strumenti($))
+  const root = (await $.session.repo())?.root
+  if (!root) throw new Error('repository root not available')
+  const ingresso = { root, prompt: `${m.background}\n\n${m.prompt}`, modello: m.model, effort: m.effort, permessi: a.permessi ?? 'default', base: a.base,
+    tetto: api.tetto, budget: api.budgetUsd, mese: ora().slice(0, 7), chiave }
+  const esito = await helper($, ['lancia-api', await cartella($), a.id, a.tentativo!], JSON.stringify(ingresso))
+  const dettaglio = (() => {
+    try {
+      return JSON.parse(esito.testo || '{}') as { motivo?: string; fonti?: string[]; speso?: number; budget?: number }
+    } catch {
+      return {}
+    }
+  })()
+  if (esito.codice === 3) return fallisce(msg('err.apiOccupata'))
+  if (esito.codice === 5) return fallisce(msg('err.apiBudget', { speso: Number(dettaglio.speso ?? 0), budget: api.budgetUsd, tetto: api.tetto }))
+  if (esito.codice === 6) return fallisce(msg('err.apiImpostazioni', { fonti: (dettaglio.fonti ?? []).map(f => String(f).slice(0, 12)).join(', ') }))
+  if (esito.codice !== 0) throw new Error('API outcome to be checked')
+  return aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo ? transizione(x, 'avviata', ora()) : null)
 }
 
 /**
@@ -911,7 +946,58 @@ function giro($: Eng, options: Record<string, unknown>, lette?: Letti) {
 }
 
 /** Un giro: file, avvii incerti, sessioni, registro, code. Ogni pannello lo fa; le scritture sono CAS. */
+/**
+ * F6.2: il lock della corsia API. Se il file c'è, l'helper prova a liberarlo (tutte le condizioni) e dice perché no; senza
+ * file nessun processo. Il pannello mostra il motivo, «Libera» e «Termina».
+ */
+async function aggiornaLockApi($: Eng) {
+  const file = `${await casa($)}/.claude/chipmanager/api-claude.json`
+  let tenuto: LockApi | null = null
+  if (await $.fs.exists(file).catch(() => false)) {
+    const r = await helper($, ['stato-api']).catch(() => null)
+    const v = (() => {
+      try {
+        return JSON.parse(r?.testo ?? '') as Record<string, unknown>
+      } catch {
+        return { motivo: 'illeggibile' }
+      }
+    })()
+    if (v.libero !== true)
+      tenuto = {
+        motivo: (['in-corso', 'senza-pid', 'discendenti', 'chiave', 'cache', 'illeggibile', 'mutex'].includes(String(v.motivo)) ? v.motivo : 'illeggibile') as LockApi['motivo'],
+        ...(typeof v.tentativo === 'string' && /^az-[a-z0-9]{6,20}$/.test(v.tentativo) && { tentativo: v.tentativo }),
+        ...(Array.isArray(v.discendenti) && { discendenti: v.discendenti.filter(x => typeof x === 'string').slice(0, 10).map(x => String(x).slice(0, 10)) }),
+        ...(typeof v.restaMs === 'number' && { restaMs: v.restaMs }),
+      }
+  }
+  if (!uguale(await read($, lockApi), tenuto)) await update($, lockApi, () => tenuto)
+}
+
+/** «Libera» (dopo il popup sul rischio) o «Termina» (su conferma) della corsia API; poi si rilegge lo stato. */
+async function decidiLockApi($: Eng, azione: 'libera' | 'termina') {
+  const T = await lingue($)
+  const l = await read($, lockApi)
+  if (!l) return
+  const domanda = azione === 'libera' ? T('pop.liberaApi') : T('pop.terminaApi', { n: l.discendenti?.length ?? 0, pid: (l.discendenti ?? []).join(', ') })
+  const si = T(azione === 'libera' ? 'az.libera' : 'az.termina')
+  const scelta = await $.ui.ask(domanda, { options: [si, T('comune.annulla')], header: 'API Claude' }).catch(() => '')
+  if (scelta !== si) return
+  const r = await helper($, [azione === 'libera' ? 'libera-api' : 'termina-api'])
+  await aggiornaLockApi($)
+  if (azione === 'libera') {
+    const v = (() => {
+      try {
+        return JSON.parse(r.testo) as { libero?: boolean }
+      } catch {
+        return {}
+      }
+    })()
+    $.ui.toast(T(v.libero ? 'api.liberata' : 'api.nonLiberata'))
+  }
+}
+
 async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti) {
+  await aggiornaLockApi($)
   // R4: le azioni appena lette dal battito valgono; senza (Aggiorna, apertura) si leggono qui.
   let tutte = lette && !lette.rotte?.length ? lette : await carica($)
   if (tutte.rotte?.length) tutte = await carica($)
@@ -928,16 +1014,21 @@ async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti)
   }
   const stati: Record<string, Vita> = {}
   for (let a of lista) {
-    if (a.lanciatore === 'cli' && ['in-avvio', 'avviata'].includes(a.stato)) {
+    if ((a.lanciatore === 'cli' || a.lanciatore === 'api-claude') && ['in-avvio', 'avviata'].includes(a.stato)) {
       try {
         // R9: il record dell'esecuzione si legge con $.fs, senza processo; il percorso viene da un gettone valido.
         if (!/^az-[a-z0-9]{6,20}$/.test(a.tentativo ?? '')) throw new Error('invalid attempt token')
         const f = `${await cartella($)}/esecuzioni/${a.tentativo}.json`
-        const s = (await $.fs.exists(f)) ? JSON.parse((await $.fs.read(f)) as string) as { id?: string; tentativo?: string; stato?: string; ramo?: string; errore?: string } : null
+        const s = (await $.fs.exists(f))
+          ? JSON.parse((await $.fs.read(f)) as string) as { id?: string; tentativo?: string; stato?: string; ramo?: string; errore?: string; costo?: unknown; incerto?: unknown }
+          : null
         if (s?.id === a.id && s.tentativo === a.tentativo && ['avviata', 'consegnata', 'fallita'].includes(s.stato ?? '')) {
-          if (a.stato !== s.stato || a.ramoSessione !== s.ramo || a.errore !== s.errore)
+          // F6.2: solo il costo stimato (un numero) o ignoto; nient'altro dell'esecuzione entra nel record.
+          const costo = a.lanciatore !== 'api-claude' ? undefined : typeof s.costo === 'number' && Number.isFinite(s.costo) && s.costo >= 0 ? s.costo : s.stato === 'avviata' && !s.incerto ? undefined : null
+          const incerto = s.incerto === true
+          if (a.stato !== s.stato || a.ramoSessione !== s.ramo || a.errore !== s.errore || a.costoApi !== costo || !!a.incerto !== incerto)
             a = (await aggiorna($, a.id, x => x.tentativo === a.tentativo && ['in-avvio', 'avviata'].includes(x.stato)
-              ? { ...transizione(x, s.stato as StatoAzione, ora()), ramoSessione: s.ramo, incerto: false, ...salvato('errore', 'errore', s.errore) } : null)) ?? a
+              ? { ...transizione(x, s.stato as StatoAzione, ora()), ramoSessione: s.ramo, incerto, ...(costo !== undefined && { costoApi: costo }), ...salvato('errore', 'errore', s.errore) } : null)) ?? a
         }
       } catch { /* record mancante o rotto: nessun riavvio automatico */ }
       if (a.stato === 'in-avvio') continue
@@ -1795,6 +1886,8 @@ export const register: Register = (on, options) => {
         if (!r.lette) throw errore('v.regoleNonLette')
         await configura($, opz, { pesi: [...r.risorse.pesi.filter(p => p.tipo !== peso.tipo || p.nome !== peso.nome), peso] }, attese)
       },
+      liberaApi: () => decidiLockApi($, 'libera'),
+      terminaApi: () => decidiLockApi($, 'termina'),
       installa: async passo => {
         let r = await leggiRegole($)
         if (!r.lette || r.risorse.soloLocale || !r.risorse.fornitori.includes('freellmapi')) throw errore('err.abilitaFree')
@@ -1815,7 +1908,7 @@ export const register: Register = (on, options) => {
       },
       senzaProgetto: come => sistemaSenzaProgetto($, come),
       annullaTentativo: async a => {
-        if (a.lanciatore === 'cli') throw errore('err.cliIncerto')
+        if (a.lanciatore === 'cli' || a.lanciatore === 'api-claude') throw errore('err.cliIncerto')
         const io = (await read($, contesto))?.io ?? (await $.session.id())
         if (a.lanciataDa !== io) throw errore('err.annullaAltrui')
         if (inVolo.has(a.tentativo ?? '')) throw errore('err.inVolo')

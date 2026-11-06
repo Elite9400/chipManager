@@ -191,7 +191,9 @@ export type Azione = {
   erroreCodice?: string
   erroreParametri?: Record<string, unknown>
   /** Esecuzione CLI/proxy: il gettone identifica il record privato nell'helper. */
-  lanciatore?: 'cli' | 'freellmapi'
+  lanciatore?: 'cli' | 'freellmapi' | 'api-claude'
+  /** F6.2: costo stimato in USD dell'esecuzione a crediti API (`total_cost_usd`); null = ignoto (conta il tetto). */
+  costoApi?: number | null
   /** Risultato testuale del proxy, mai eseguito; da approvare e rivedere localmente. */
   risultato?: string
   /** Piano del lavoro: percorso relativo alla radice del repo (`.md` o `.txt`), letto dall'helper. */
@@ -239,6 +241,9 @@ export type Regole = {
   /** F6.2: la chiave API di Claude è nelle opzioni sensibili della mod (solo la presenza, mai il valore). */
   chiaveApi?: boolean
 }
+
+/** F6.2: perché il lock della corsia API resta tenuto: uscita non registrata, discendenti, file-chiave, cache della chiave. */
+export type LockApi = { motivo: 'in-corso' | 'senza-pid' | 'discendenti' | 'chiave' | 'cache' | 'illeggibile' | 'mutex'; tentativo?: string; discendenti?: string[]; restaMs?: number }
 
 /** Una milestone GitHub aperta del repo della sessione. */
 export type Traguardo = {
@@ -318,6 +323,8 @@ declare module 'claude-code' {
       aperta: string | null
       /** F6.1: le chip scelte per «Dove…» su più chip insieme (id). */
       selezionate: Shaped<string[]>
+      /** F6.2: il lock della corsia API della macchina, se resta tenuto (null = libero). */
+      lockApi: Shaped<LockApi | null>
       vive: Shaped<Record<string, Vita>>
       /** L'ultimo errore di un pulsante: codice del dizionario (si traduce) o testo esterno. */
       avviso: Messaggio | null

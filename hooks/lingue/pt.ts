@@ -785,6 +785,26 @@ const pt: Dizionario = {
   "dove.esito": { one: "1 chip movido para {dove}", other: "{n} chips movidos para {dove}" },
   "dove.resta": "«{titolo}» fica: {motivo}",
   "dove.statoFisso": "já iniciada ou fechada",
+  // F6.2 API Claude lane
+  "err.apiOccupata": "API Claude está ocupada: uma execução por vez neste computador. Tente de novo quando terminar.",
+  "err.apiBudget": "API Claude: o orçamento do mês não basta ({speso} de {budget} USD gastos ou reservados; cada execução reserva {tetto} USD)",
+  "err.apiImpostazioni": "API Claude indisponível: há configurações que mudam quem paga ou para onde vão as requisições ({fonti}). Remova-as ou execute localmente.",
+  "info.costoApi": "Custo de API (estimado): {costo} USD",
+  "info.costoApiIgnoto": "Custo de API desconhecido: conta o teto inteiro",
+  // F6.2 API lane lock
+  "api.lock": "Faixa API Claude retida: {motivo}",
+  "api.motivo.inCorso": "uma execução está em andamento, ou a saída dela não foi registrada",
+  "api.motivo.senzaPid": "a execução não registrou o processo dela (parou ao iniciar)",
+  "api.motivo.discendenti": "processos restantes: {n} (PID {pid})",
+  "api.motivo.chiave": "não foi possível apagar o arquivo da chave (pasta chiavi-api nos dados da mod)",
+  "api.motivo.cache": "a cópia em memória do Claude expira em {min} min (isso não revoga a chave)",
+  "api.motivo.illeggibile": "o arquivo do bloqueio não pode ser lido",
+  "az.libera": "Liberar",
+  "az.termina": "Encerrar processos",
+  "pop.liberaApi": "Liberar a faixa API Claude? Só se tiver certeza de que nenhuma execução continua: um processo ainda vivo pode continuar gastando até você revogar a chave. Só é liberada se o arquivo da chave não existir mais, nenhum processo da execução estiver vivo e tiverem passado 5 minutos desde a última entrega da chave. O custo conta o teto inteiro.",
+  "pop.terminaApi": "Encerrar {n} processos deixados pela última execução API Claude (PID {pid})?",
+  "api.liberata": "Faixa API Claude liberada",
+  "api.nonLiberata": "Não liberada: ainda falta uma condição (veja a nota)",
   // ‹fine›
 }
 

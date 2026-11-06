@@ -785,6 +785,26 @@ const fr: Dizionario = {
   "dove.esito": { one: "1 chip déplacé vers {dove}", other: "{n} chips déplacés vers {dove}" },
   "dove.resta": "«{titolo}» reste : {motivo}",
   "dove.statoFisso": "déjà lancée ou fermée",
+  // F6.2 API Claude lane
+  "err.apiOccupata": "API Claude est occupée : une seule exécution à la fois sur cet ordinateur. Réessayez quand elle se termine.",
+  "err.apiBudget": "API Claude : le budget du mois ne suffit pas ({speso} sur {budget} USD dépensés ou réservés ; chaque exécution réserve {tetto} USD)",
+  "err.apiImpostazioni": "API Claude indisponible : des réglages changent qui paie ou où vont les requêtes ({fonti}). Retirez-les ou exécutez en local.",
+  "info.costoApi": "Coût API (estimé) : {costo} USD",
+  "info.costoApiIgnoto": "Coût API inconnu : compté au plafond entier",
+  // F6.2 API lane lock
+  "api.lock": "Voie API Claude retenue : {motivo}",
+  "api.motivo.inCorso": "une exécution est en cours, ou sa sortie n'a pas été enregistrée",
+  "api.motivo.senzaPid": "l'exécution n'a pas enregistré son processus (arrêt au démarrage)",
+  "api.motivo.discendenti": "processus restants : {n} (PID {pid})",
+  "api.motivo.chiave": "le fichier de clé n'a pas pu être supprimé (dossier chiavi-api dans les données de la mod)",
+  "api.motivo.cache": "la copie en mémoire de Claude expire dans {min} min (cela ne révoque pas la clé)",
+  "api.motivo.illeggibile": "le fichier du verrou est illisible",
+  "az.libera": "Libérer",
+  "az.termina": "Terminer les processus",
+  "pop.liberaApi": "Libérer la voie API Claude ? Seulement si vous êtes sûr qu'aucune exécution ne tourne encore : un processus encore vivant peut continuer à dépenser jusqu'à ce que vous révoquiez la clé. Elle n'est libérée que si le fichier de clé n'existe plus, qu'aucun processus de l'exécution n'est vivant et que 5 minutes sont passées depuis la dernière remise de la clé. Le coût compte le plafond entier.",
+  "pop.terminaApi": "Terminer {n} processus laissés par la dernière exécution API Claude (PID {pid}) ?",
+  "api.liberata": "Voie API Claude libérée",
+  "api.nonLiberata": "Non libérée : une condition manque encore (voir la note)",
   // ‹fine›
 }
 

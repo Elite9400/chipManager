@@ -334,7 +334,7 @@ test('codex senza corsia, o routing senza la regola: bloccato', () => {
 // --- il pannello contro un engine finto --------------------------------------------------------------
 
 /** Engine finto: disco in memoria, helper (lock/CAS) e `gh` emulati, servizio di sessione scriptabile. */
-function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown; attesa?: (cmd: string) => Promise<void> | undefined } = {}) {
+function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown; attesa?: (cmd: string) => Promise<void> | undefined; api?: (cmd: string, a: string[], stdin: string | undefined) => [number, string] | undefined } = {}) {
   // Come un disco vero: la data è quella della scrittura, al millisecondo; due scritture nello stesso istante la condividono.
   class Disco extends DiscoIt {
     mtime = new Map<string, number>()
@@ -417,6 +417,11 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
       }
     }
     if (cmd === 'occupata') return fine(0)
+    // F6.2: la corsia API dell'helper, scriptabile dalla prova.
+    if (/-api$/.test(cmd ?? '')) {
+      const [codice, testo] = opz.api?.(cmd!, a, e.init?.stdin) ?? [0, '']
+      return fine(codice, testo)
+    }
     if (cmd === 'configura') {
       const input = JSON.parse(e.init!.stdin!)
       const precedente = disco.get(p(a[0])) ?? null
@@ -840,6 +845,115 @@ test('F6 guardie: una sola modalità effettiva; api-claude solo Claude, senza fo
   // I record accettano la destinazione nuova; un valore sconosciuto no.
   expect('k' in normalizza({ ...a })).toBe(false)
   expect(normalizza({ ...a, destinazione: 'api-codex' })).toEqual({ k: 'rec.campo', p: { campo: 'opzioni' } })
+})
+
+const CHIAVE_API = 'sk-ant-sentinella-0123456789'
+const CONFIG_API = JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 } } } })
+const chipApi = (id: string) => base(id, 1, { repo: AUTORE.repo!, destinazione: 'api-claude', revisore: 'claude' })
+
+test('F6.2 avvio: la chip api-claude va all\'helper con la chiave solo su stdin, tetto e budget del mese; il mandato è quello senza coordinatore', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  const chiamate: { a: string[]; stdin: string | undefined }[] = []
+  const amb = ambiente(on, { api: (cmd, a, stdin) => (cmd === 'lancia-api' ? (chiamate.push({ a, stdin }), [0, '']) : undefined) })
+  amb.disco.set(CONFIG, CONFIG_API)
+  const a = chipApi('a-apiavv01')
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: `avvia-${a.id}` })
+  expect(chiamate.length).toBe(1)
+  const record = amb.disco.get(`X:/orch/azioni/${a.id}.json`)!
+  const r = JSON.parse(record) as Azione
+  expect(r).toMatchObject({ stato: 'avviata', lanciatore: 'api-claude' })
+  expect(chiamate[0]!.a).toEqual(['X:/orch/azioni', a.id, r.tentativo])
+  const ingresso = JSON.parse(chiamate[0]!.stdin!) as Record<string, unknown>
+  expect(ingresso).toMatchObject({ chiave: CHIAVE_API, tetto: 2, budget: 20, modello: 'claude-opus-5-5' })
+  expect(String(ingresso.prompt)).toContain('How this run works')
+  expect(String(ingresso.prompt)).not.toMatch(/coordinator|aggiorna_azione/)
+  // La chiave non sta mai in argv, nel record, nei processi registrati se non sullo stdin dell'helper.
+  expect(amb.processi.some(x => x.argv.join(' ').includes(CHIAVE_API))).toBe(false)
+  expect(record.includes(CHIAVE_API)).toBe(false)
+  await ui.unmount()
+})
+
+test('F6.2 avvio: lock occupato, budget insufficiente e impostazioni vietate chiudono il tentativo con il motivo', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  let risposta: [number, string] = [3, '{"motivo":"in-corso"}']
+  const amb = ambiente(on, { api: cmd => (cmd === 'lancia-api' ? risposta : undefined) })
+  amb.disco.set(CONFIG, CONFIG_API)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  const casi: [[number, string], string][] = [
+    [[3, '{"motivo":"in-corso"}'], 'err.apiOccupata'],
+    [[5, '{"speso":19,"budget":20}'], 'err.apiBudget'],
+    [[6, '{"fonti":["utente","ambiente"]}'], 'err.apiImpostazioni'],
+  ]
+  for (const [i, [esito, chiave]] of casi.entries()) {
+    risposta = esito
+    const a = chipApi(`a-apino00${i}`)
+    amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+    await ui.press({ key: 'ricarica' })
+    await ui.press({ key: `avvia-${a.id}` })
+    const r = JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione
+    expect([chiave, r.stato, r.erroreCodice]).toEqual([chiave, 'fallita', chiave])
+  }
+  const r = JSON.parse(amb.disco.get('X:/orch/azioni/a-apino002.json')!) as Azione
+  expect(r.erroreParametri).toEqual({ fonti: 'utente, ambiente' })
+  await ui.unmount()
+})
+
+test('F6.2 esito: dal file dell\'esecuzione entrano solo stato, ramo e costo stimato; la chip mostra il costo', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.set(CONFIG, CONFIG_API)
+  const a = { ...chipApi('a-apiesi01'), stato: 'avviata' as const, lanciatore: 'api-claude' as const, tentativo: 'az-apiesi01', avviataIl: '2026-11-06T10:00:00Z' }
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+  amb.disco.set('X:/orch/azioni/esecuzioni/az-apiesi01.json', JSON.stringify({ id: a.id, tentativo: a.tentativo, stato: 'consegnata', ramo: 'chipmanager/az-apiesi01', costo: 0.42, result: 'non entra' }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  const r = JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione & { result?: unknown }
+  expect(r).toMatchObject({ stato: 'consegnata', costoApi: 0.42, ramoSessione: 'chipmanager/az-apiesi01' })
+  expect(r.result).toBeUndefined()
+  await ui.press({ key: `mod-${a.id}` })
+  expect(await ui.find({ type: 'Text', text: /Costo API \(stimato\): 0,42 USD/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('F6.2 lock: tenuto dopo un\'esecuzione, il pannello dice perché; «Termina» e «Libera» solo con il loro popup', async ($, on) => {
+  let stato = { libero: false, motivo: 'discendenti', discendenti: ['5151'], tentativo: 'az-lock0001' } as Record<string, unknown>
+  const comandi: string[] = []
+  const amb = ambiente(on, { api: cmd => {
+    comandi.push(cmd)
+    return cmd === 'stato-api' ? [0, JSON.stringify(stato)] : cmd === 'libera-api' ? [0, JSON.stringify({ libero: true })] : [0, '{"chiusi":1}']
+  } })
+  const domande: string[] = []
+  conferme(on, q => (domande.push(q), q.startsWith('Terminare') ? 'Termina i processi' : 'Libera'))
+  // Senza file del lock nessun processo.
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  expect(comandi).toEqual([])
+  amb.disco.set('X:/casa/.claude/chipmanager/api-claude.json', '{}')
+  await ui.press({ key: 'ricarica' })
+  expect(await ui.find({ type: 'Text', text: 'Corsia API Claude tenuta: processi rimasti: 1 (PID 5151)' })).toBeDefined()
+  expect(await ui.find({ key: 'libera-api' })).toBeUndefined()
+  await ui.press({ key: 'termina-api' })
+  expect(domande.at(-1)).toBe('Terminare 1 processi lasciati dall\'ultima esecuzione API Claude (PID 5151)?')
+  expect(comandi).toContain('termina-api')
+  // Uscita non registrata: «Libera», con il popup che spiega il rischio.
+  stato = { libero: false, motivo: 'senza-pid', tentativo: 'az-lock0001' }
+  await ui.press({ key: 'ricarica' })
+  expect(await ui.find({ key: 'termina-api' })).toBeUndefined()
+  stato = { libero: true }
+  await ui.press({ key: 'libera-api' })
+  expect(domande.at(-1)).toMatch(/^Liberare la corsia API Claude\? .*il tetto intero\.$/)
+  expect(comandi).toContain('libera-api')
+  expect(amb.toast.at(-1)).toBe('Corsia API Claude liberata')
+  expect(await ui.find({ key: 'lock-api' })).toBeUndefined()
+  await ui.unmount()
 })
 
 test('F6 guardie: suggerisci_azione accetta api-claude e rifiuta le destinazioni fuori dalla 2.2.0', async ($, on) => {

@@ -754,7 +754,8 @@ export function normalizza(x: unknown): Azione | Msg {
   if (a.sessione !== undefined && !(typeof a.sessione === 'string' && SESSIONE_RE.test(a.sessione))) return msg('rec.campo', { campo: 'sessione' })
   if (!tra('corsia', CORSIE) || !tra('contesto', ['fresh', 'fork']) || !tra('destinazione', ['local', 'cloud', 'api-claude'])) return msg('rec.campo', { campo: 'opzioni' })
   if (!tra('permessi', ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'])) return msg('rec.campo', { campo: 'permessi' })
-  if (!tra('lanciatore', ['cli', 'freellmapi']) || !str('risultato', 30000)) return msg('rec.campo', { campo: 'esecuzione' })
+  if (!tra('lanciatore', ['cli', 'freellmapi', 'api-claude']) || !str('risultato', 30000)) return msg('rec.campo', { campo: 'esecuzione' })
+  if (a.costoApi !== undefined && a.costoApi !== null && !numero(a.costoApi, 0, 1_000_000)) return msg('rec.campo', { campo: 'esecuzione' })
   if (!bool('worktree') || !bool('sveglia') || !bool('sensibile') || !bool('qui') || !bool('incerto') || !bool('manuale') || !bool('presa')) return msg('rec.campo', { campo: 'opzioni' })
   if (a.ramo !== undefined && !(typeof a.ramo === 'string' && RAMO_RE.test(a.ramo))) return msg('rec.campo', { campo: 'ramo' })
   if (a.base !== undefined && !(typeof a.base === 'string' && BASE_RE.test(a.base))) return msg('rec.campo', { campo: 'base' })
@@ -861,6 +862,25 @@ export function mandato(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strument
     model: a.esecutore === 'codex' ? coordinatore : modello,
     effort: a.esecutore === 'codex' ? 'medium' : effort,
   }
+}
+
+/**
+ * F6.2: il mandato di un `claude -p` a crediti API. È un processo senza persone davanti e senza la conversazione di una
+ * sessione: niente frasi da coordinatore né strumenti del pannello; lavora nel suo worktree e si ferma lì.
+ */
+export function mandatoApi(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strumenti) {
+  const m = mandato(a, regole, s)
+  const corsia = corsiaDi(a, regole)
+  const parti: string[] = []
+  if (corsia) parti.push(`**Lane ${corsia}.** Set by the panel: apply the skills and gates the project process requires for this lane.`)
+  parti.push(a.brief.trim())
+  parti.push(
+    '**How this run works.** You run headless, on API credits with a spending cap, in a worktree made for this attempt. ' +
+      'Work only there and commit your changes on its branch. Do not push, merge, open pull requests or start other sessions. ' +
+      'End with a short report: what changed, which tests ran, what is left to check. The review happens after delivery.',
+  )
+  parti.push(`_Suggested action \`${a.id}\`, attempt \`${a.tentativo ?? '-'}\`._`)
+  return { ...m, prompt: parti.join('\n\n') }
 }
 
 /** Gli argomenti di start_session: le stesse opzioni della chip di sessione dell'app. */

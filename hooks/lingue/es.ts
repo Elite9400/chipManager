@@ -785,6 +785,26 @@ const es: Dizionario = {
   "dove.esito": { one: "1 chip movido a {dove}", other: "{n} chips movidos a {dove}" },
   "dove.resta": "«{titolo}» se queda: {motivo}",
   "dove.statoFisso": "ya iniciada o cerrada",
+  // F6.2 API Claude lane
+  "err.apiOccupata": "API Claude está ocupada: una sola ejecución a la vez en este equipo. Vuelve a intentarlo cuando termine.",
+  "err.apiBudget": "API Claude: el presupuesto del mes no alcanza ({speso} de {budget} USD gastados o reservados; cada ejecución reserva {tetto} USD)",
+  "err.apiImpostazioni": "API Claude no disponible: hay ajustes que cambian quién paga o adónde van las solicitudes ({fonti}). Quítalos o ejecuta en local.",
+  "info.costoApi": "Coste API (estimado): {costo} USD",
+  "info.costoApiIgnoto": "Coste API desconocido: cuenta el tope completo",
+  // F6.2 API lane lock
+  "api.lock": "Carril API Claude ocupado: {motivo}",
+  "api.motivo.inCorso": "hay una ejecución en curso, o su salida no se registró",
+  "api.motivo.senzaPid": "la ejecución no registró su proceso (se detuvo al iniciar)",
+  "api.motivo.discendenti": "procesos restantes: {n} (PID {pid})",
+  "api.motivo.chiave": "no se pudo borrar el archivo de clave (carpeta chiavi-api en los datos de la mod)",
+  "api.motivo.cache": "la copia en memoria de Claude caduca en {min} min (esto no revoca la clave)",
+  "api.motivo.illeggibile": "el archivo del bloqueo no se puede leer",
+  "az.libera": "Liberar",
+  "az.termina": "Terminar procesos",
+  "pop.liberaApi": "¿Liberar el carril API Claude? Hazlo solo si estás seguro de que no sigue ninguna ejecución: un proceso aún vivo puede seguir gastando hasta que revoques la clave. Solo se libera si el archivo de clave ya no existe, ningún proceso de la ejecución está vivo y pasaron 5 minutos desde la última entrega de la clave. El coste cuenta el tope completo.",
+  "pop.terminaApi": "¿Terminar {n} procesos dejados por la última ejecución API Claude (PID {pid})?",
+  "api.liberata": "Carril API Claude liberado",
+  "api.nonLiberata": "No liberado: aún falta una condición (ver la nota)",
   // ‹fine›
 }
 
