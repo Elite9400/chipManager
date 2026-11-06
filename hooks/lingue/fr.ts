@@ -205,7 +205,6 @@ const fr: Dizionario = {
   "lim.freeMese": "FreeLLMAPI · requêtes ce mois-ci",
   "lim.deepseek": "Solde DeepSeek",
   "lim.claudeExtra": "Usage extra Claude",
-  "lim.claudeExtraTetto": "Usage extra Claude · plafond {tetto}",
   "lim.pianoNonApplicabile": "limites du forfait non applicables ici",
   "lim.pianoNonLeggibile": "limites du forfait illisibles pour l'instant",
   "lim.fornitoreNonAbilitato": "fournisseur non activé",
@@ -754,6 +753,10 @@ const fr: Dizionario = {
   "imp.uscita": { one: "1 modification des Réglages n'est pas encore enregistrée.", other: "{n} modifications des Réglages ne sont pas encore enregistrées." },
   "imp.scarta": "Abandonner",
   "imp.resta": "Rester",
+  // Review fixes: credits in money, helper refusal, language not saved
+  "car.valoreDi": "{valore} sur {tetto}",
+  "errore.configNonScritta": "Le helper a refusé d'écrire config.json (code {codice})",
+  "imp.linguaNonSalvata": "Réglages du projet enregistrés ; la langue n'a pas été enregistrée : {motivo}",
   // ‹fine›
 }
 

@@ -205,7 +205,6 @@ const pt: Dizionario = {
   "lim.freeMese": "FreeLLMAPI · requisições neste mês",
   "lim.deepseek": "Saldo DeepSeek",
   "lim.claudeExtra": "Uso extra do Claude",
-  "lim.claudeExtraTetto": "Uso extra do Claude · teto {tetto}",
   "lim.pianoNonApplicabile": "limites do plano não se aplicam aqui",
   "lim.pianoNonLeggibile": "limites do plano ilegíveis agora",
   "lim.fornitoreNonAbilitato": "provedor não habilitado",
@@ -754,6 +753,10 @@ const pt: Dizionario = {
   "imp.uscita": { one: "1 alteração nas Configurações ainda não foi salva.", other: "{n} alterações nas Configurações ainda não foram salvas." },
   "imp.scarta": "Descartar",
   "imp.resta": "Ficar",
+  // Review fixes: credits in money, helper refusal, language not saved
+  "car.valoreDi": "{valore} de {tetto}",
+  "errore.configNonScritta": "O helper recusou gravar o config.json (código {codice})",
+  "imp.linguaNonSalvata": "Configurações do projeto salvas; o idioma não foi salvo: {motivo}",
   // ‹fine›
 }
 

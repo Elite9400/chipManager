@@ -333,7 +333,7 @@ test('codex senza corsia, o routing senza la regola: bloccato', () => {
 // --- il pannello contro un engine finto --------------------------------------------------------------
 
 /** Engine finto: disco in memoria, helper (lock/CAS) e `gh` emulati, servizio di sessione scriptabile. */
-function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown } = {}) {
+function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown; attesa?: (cmd: string) => Promise<void> | undefined } = {}) {
   // Come un disco vero: la data è quella della scrittura, al millisecondo; due scritture nello stesso istante la condividono.
   class Disco extends DiscoIt {
     mtime = new Map<string, number>()
@@ -393,8 +393,13 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
     if (exe === 'docker') return fine(0)
     if (e.argv[1]?.endsWith('/fornitori.cjs')) {
       const input = JSON.parse(e.init?.stdin ?? '{}')
-      const risposta = opz.fonte?.(cmd!, input) ?? (cmd === 'limiti' ? { limiti: [], proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } } : { risultato: 'Bozza pronta.' })
-      return fine(0, JSON.stringify(risposta))
+      const rispondi = () => {
+        const risposta = opz.fonte?.(cmd!, input) ?? (cmd === 'limiti' ? { limiti: [], proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } } : { risultato: 'Bozza pronta.' })
+        return fine(0, JSON.stringify(risposta))
+      }
+      // Concorrenza: `attesa` può trattenere una lettura finché un'altra non la raggiunge.
+      const attesa = opz.attesa?.(cmd!)
+      return attesa ? attesa.then(rispondi) : rispondi()
     }
     if (exe === 'gh') {
       const url = e.argv.join(' ')
@@ -1150,7 +1155,10 @@ test('2.0: fonti sconosciute, vecchie, future e manuali non fingono margini fres
   }), letto)
   expect(finestre.map(l => l.id)).toEqual(['claude-weekly-all-models', 'claude-weekly-modello', 'claude-extra'])
   expect(finestre[0]).toMatchObject({ fornitore: 'claude', nome: 'Claude piano · Weekly · all models', percentuale: 12, reset: '2999-01-01T00:00:00Z', fonte: 'ccd_session_mgmt.get_usage' })
-  expect(finestre[2]).toMatchObject({ nome: 'Claude uso extra · tetto 4.00 EUR', percentuale: 25 })
+  // Rilievo 6: l'uso extra è un credito, in soldi: importo e tetto nella loro valuta, mai una percentuale.
+  expect(finestre[2]).toMatchObject({ nome: 'Claude uso extra', valore: 1, tetto: 4, unita: 'EUR' })
+  expect(finestre[2]).not.toHaveProperty('percentuale')
+  expect(usoDesktop(piano({ windows: [], extraUsage: { enabled: true, percentUsed: 25, monthlyLimit: '4.00', currency: 'EUR' } }), letto)).toEqual([])
   expect(limiteFresco(finestre[0]!)).toBe(true)
   expect(usoDesktop(piano({ windows: [], extraUsage: { enabled: false, percentUsed: 0 } }), letto)).toEqual([])
   expect(usoDesktop({ plan: { status: 'not_applicable' } }, letto)[0]).toMatchObject({ id: 'claude', errore: 'lim.pianoNonApplicabile' })
@@ -2155,24 +2163,24 @@ test('2.3.1: un piano vuoto è valido solo con windows [] ed extra assente o spe
   for (const rotto of [null, 'testo', {}, { plan: 'ok' }]) expect(pianoVuoto(rotto)).toBe(false)
 })
 
-test('2.3.1: piano letto senza finestre dopo l\'uso extra al 99%: l\'extra esce subito, non resta critico né grigio', async ($, on) => {
+test('2.3.1: piano letto senza finestre dopo l\'uso extra: l\'extra (in soldi) resta alle letture scartate ed esce subito quando è spento', async ($, on) => {
   let piano: Record<string, unknown> = { status: 'ok', plan: 'Esempio', windows: [], extraUsage: { enabled: true, percentUsed: 99, spent: '9.90', monthlyLimit: '10.00', currency: 'EUR' } }
   ambiente(on, { strumenti: ['mcp__ccd_session_mgmt__get_usage'],
     mcp: (_s, tool) => (tool === 'get_usage' ? { isError: false, content: [{ type: 'text', text: JSON.stringify({ plan: piano }) }] } : undefined) })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   let ui = await $.ui.mount({ ...PANE('terminal') })
-  expect(await ui.find({ type: 'Text', text: /Claude 99% usato, oltre la critica/ })).toBeDefined()
+  // Un credito non è una quota: nessuna soglia, nessuna percentuale nella sintesi.
+  expect(await ui.find({ type: 'Text', text: /Claude \d+%/ })).toBeUndefined()
   await ui.press({ key: 'vista-carico' })
-  expect(await ui.find({ type: 'Text', text: /Claude uso extra · tetto 10\.00 EUR: 99% usato/ })).toBeDefined()
-  await ui.press({ key: 'vista-lavoro' })
+  expect(await ui.find({ type: 'Text', text: /Claude uso extra: 9,9 EUR di 10 EUR$/ })).toBeDefined()
   await ui.unmount()
   // Risposte che il parser scarta (finestre malformate, percentuale non valida, extra non valido) valgono come lettura fallita: l'extra resta.
   for (const scartato of MALFORMATI) {
     piano = scartato
     await clock.advance(300_000)
     ui = await $.ui.mount({ ...PANE('terminal') })
-    expect(await ui.find({ type: 'Text', text: /Claude 99% usato, oltre la critica/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Claude uso extra: 9,9 EUR di 10 EUR$/ })).toBeDefined()
     await ui.unmount()
   }
   piano = { status: 'ok', plan: 'Esempio', windows: [], extraUsage: { enabled: false, percentUsed: 0, spent: '0.00', monthlyLimit: '10.00', currency: 'EUR' } }
@@ -2183,6 +2191,52 @@ test('2.3.1: piano letto senza finestre dopo l\'uso extra al 99%: l\'extra esce 
   expect(await ui.find({ type: 'Text', text: /Claude uso extra/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /^Nessun limite collegato · vai a Impostazioni$/ })).toBeDefined()
   await ui.press({ key: 'vista-lavoro' })
+  await ui.unmount()
+})
+
+test('rilievo 2: due letture dei limiti sovrapposte: quella fallita non riporta indietro la misura appena arrivata', async ($, on) => {
+  const codex = (percentuale: number) => ({ limiti: [{ id: 'codex-primary', fornitore: 'codex', nome: 'Codex piano · primaria', percentuale, unita: '%', letto: new Date().toISOString(), fonte: 'prova' }],
+    proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } })
+  const guasta = { limiti: [{ id: 'codex', fornitore: 'codex', nome: 'Codex piano', fonte: 'prova', errore: 'non leggibile' }], proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } }
+  const risposte: unknown[] = [codex(10)]
+  // Le due letture dei limiti partono insieme; la seconda (quella che fallisce) riprende `passo` microtask dopo la prima.
+  // Si provano tutti gli sfasamenti: in uno di questi la seconda legge l'ultima misura prima che la prima la scriva.
+  let insieme = false
+  let passo = 0
+  const ferme: (() => void)[] = []
+  ambiente(on, {
+    fonte: cmd => (cmd === 'limiti' ? (risposte.length > 1 ? risposte.shift() : risposte[0]) : undefined),
+    attesa: cmd => (cmd !== 'limiti' || !insieme ? undefined : new Promise<void>(r => {
+      ferme.push(r)
+      if (ferme.length === 2) {
+        insieme = false
+        const [prima, seconda] = ferme.splice(0)
+        prima!()
+        void (async () => {
+          for (let i = 0; i < passo; i++) await Promise.resolve()
+          seconda!()
+        })()
+      }
+    })),
+  })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  const altro = await $.ui.mount({ ...PANE('terminal') })
+  await ui.press({ key: 'vista-carico' })
+  const sbagliati: number[] = []
+  for (passo = 0; passo <= 40; passo++) {
+    risposte.splice(0, risposte.length, codex(10))
+    await ui.press({ key: 'ricarica' })
+    expect(await ui.find({ type: 'Text', text: /Codex piano · primaria: 10% usato/ })).toBeDefined()
+    // La prima porta 80%, la seconda fallisce: la misura nuova deve restare.
+    risposte.splice(0, risposte.length, codex(80), guasta, guasta)
+    insieme = true
+    await Promise.all([ui.press({ key: 'ricarica' }), altro.press({ key: 'ricarica' })])
+    if (!(await ui.find({ type: 'Text', text: /Codex piano · primaria: 80% usato/ }))) sbagliati.push(passo)
+  }
+  expect(sbagliati).toEqual([])
+  await altro.unmount()
   await ui.unmount()
 })
 
@@ -2256,10 +2310,11 @@ test('cadenza: dopo una sospensione un solo giro di recupero; dopo un errore si 
 })
 
 test('D6: processi per comando, con le classi di F5.3 (raccolta, orchestrazione, non classificati) nella stessa finestra', () => {
-  for (const c of ['limiti', 'sessioni', 'git-log', 'leggi-piano', 'board-scrivi', 'board-prenota', 'git']) expect([c, classeProcesso(c)]).toEqual([c, 'raccolta'])
-  for (const c of ['occupata', 'prenota', 'stato-cli', 'cas', 'configura', 'configura-utente', 'pesi-decidi', 'gh', 'explorer', 'codex', 'lancia-cli', 'esegui-cli'])
+  // Rilievo 8: la raccolta è un elenco chiuso; spegnere la board è orchestrazione, un board-* ignoto non è classificato.
+  for (const c of ['limiti', 'sessioni', 'git-log', 'leggi-piano', 'board-scrivi', 'board-prenota', 'board-finalizza', 'git']) expect([c, classeProcesso(c)]).toEqual([c, 'raccolta'])
+  for (const c of ['occupata', 'prenota', 'stato-cli', 'cas', 'configura', 'configura-utente', 'pesi-decidi', 'pesi-proponi', 'pesi-annulla', 'board-spegni', 'gh', 'explorer', 'codex', 'corsia-codex', 'lancia-cli', 'esegui-cli'])
     expect([c, classeProcesso(c)]).toEqual([c, 'orchestrazione'])
-  for (const c of ['completa', 'docker', 'qualcosa']) expect([c, classeProcesso(c)]).toEqual([c, 'altri'])
+  for (const c of ['completa', 'docker', 'qualcosa', 'board-altro']) expect([c, classeProcesso(c)]).toEqual([c, 'altri'])
   let secchi = contaConsumo([], 0, { processi: 1 }, 'gh')
   secchi = contaConsumo(secchi, 60_000, { processi: 4 }, 'git')
   secchi = contaConsumo(secchi, 61_000, { processi: 1 }, 'git-log')

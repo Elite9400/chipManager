@@ -205,7 +205,6 @@ const it: Dizionario = {
   "lim.freeMese": "FreeLLMAPI · richieste mese",
   "lim.deepseek": "DeepSeek saldo",
   "lim.claudeExtra": "Claude uso extra",
-  "lim.claudeExtraTetto": "Claude uso extra · tetto {tetto}",
   "lim.pianoNonApplicabile": "limiti di piano non applicabili qui",
   "lim.pianoNonLeggibile": "limiti di piano non leggibili ora",
   "lim.fornitoreNonAbilitato": "fornitore non abilitato",
@@ -754,6 +753,10 @@ const it: Dizionario = {
   "imp.uscita": { one: "1 modifica delle Impostazioni non è ancora salvata.", other: "{n} modifiche delle Impostazioni non sono ancora salvate." },
   "imp.scarta": "Scarta",
   "imp.resta": "Resta",
+  // Review fixes: credits in money, helper refusal, language not saved
+  "car.valoreDi": "{valore} di {tetto}",
+  "errore.configNonScritta": "L'helper ha rifiutato di scrivere config.json (codice {codice})",
+  "imp.linguaNonSalvata": "Impostazioni del progetto salvate; la lingua non è stata salvata: {motivo}",
   // ‹fine›
 }
 

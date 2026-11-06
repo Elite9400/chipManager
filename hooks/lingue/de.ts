@@ -205,7 +205,6 @@ const de: Dizionario = {
   "lim.freeMese": "FreeLLMAPI · Anfragen diesen Monat",
   "lim.deepseek": "DeepSeek-Guthaben",
   "lim.claudeExtra": "Claude-Zusatznutzung",
-  "lim.claudeExtraTetto": "Claude-Zusatznutzung · Obergrenze {tetto}",
   "lim.pianoNonApplicabile": "Plan-Limits gelten hier nicht",
   "lim.pianoNonLeggibile": "Plan-Limits gerade nicht lesbar",
   "lim.fornitoreNonAbilitato": "Anbieter nicht aktiviert",
@@ -754,6 +753,10 @@ const de: Dizionario = {
   "imp.uscita": { one: "1 Änderung in den Einstellungen ist noch nicht gespeichert.", other: "{n} Änderungen in den Einstellungen sind noch nicht gespeichert." },
   "imp.scarta": "Verwerfen",
   "imp.resta": "Bleiben",
+  // Review fixes: credits in money, helper refusal, language not saved
+  "car.valoreDi": "{valore} von {tetto}",
+  "errore.configNonScritta": "Der Helper hat das Schreiben von config.json abgelehnt (Code {codice})",
+  "imp.linguaNonSalvata": "Projekteinstellungen gespeichert; die Sprache wurde nicht gespeichert: {motivo}",
   // ‹fine›
 }
 

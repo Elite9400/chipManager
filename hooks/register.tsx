@@ -59,6 +59,7 @@ import type { Piano as PianoBoard } from './board'
 import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salvato, t, testo, traduttore } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { disegna } from './pannello'
+import type { EsitoApplica } from './pannello'
 import { fonte, INSTALLAZIONE, nomeLimiteIn, nomiStrumenti, osservaRisorse, RISORSE_VUOTE } from './risorse'
 
 // Lo scanner dello stato vuole l'atomo scritto nel file che lo usa: register e pannello ne tengono
@@ -1254,8 +1255,9 @@ async function aggiornaRisorse($: Eng, opz: Record<string, unknown>) {
   const r = await leggiRegole($)
   const lette = await osservaRisorse($, opz, r)
   if (!uguale(await read($, risorse), lette)) await update($, risorse, () => lette)
-  const misure = conUltime(await read($, ultimeMisure), lette.limiti, lette.letti)
-  if (!uguale(await read($, ultimeMisure), misure)) await update($, ultimeMisure, () => misure)
+  // Rilievo 2: la fusione si rifà sul valore corrente dentro l'update; il confronto prima serve solo a non scrivere invano.
+  const prima = await read($, ultimeMisure)
+  if (!uguale(prima, conUltime(prima, lette.limiti, lette.letti))) await update($, ultimeMisure, ora => conUltime(ora, lette.limiti, lette.letti))
 }
 
 async function configura($: Eng, opz: Record<string, unknown>, campi: Record<string, unknown>, attese: RisorseProgetto) {
@@ -1271,7 +1273,9 @@ async function configura($: Eng, opz: Record<string, unknown>, campi: Record<str
     const p = progettoDa(nuovo, chi.repo)
     if (eMsg(p)) throw new Errore(p)
     const esito = await helper($, ['configura', f], JSON.stringify({ atteso, repo: chi.repo, campi }))
-    if (esito.codice !== 0) throw errore('errore.configCambiata')
+    // 4 = CAS: il config è cambiato dopo la lettura. Ogni altro codice è un rifiuto dell'helper.
+    if (esito.codice === 4) throw errore('errore.configCambiata')
+    if (esito.codice !== 0) throw errore('errore.configNonScritta', { codice: esito.codice })
     await aggiornaRisorse($, opz)
 }
 
@@ -1439,16 +1443,37 @@ async function riassumi($: Eng) {
  * mutex). Se un campo della bozza è cambiato altrove dopo il primo tocco non si scrive niente: tornano i campi e i valori
  * di adesso, e il pannello chiede se riapplicare o scartare.
  */
-async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pendenti) {
-  const ora = (await leggiRegole($)).risorse
-  const cambiati = cambiatiAltrove(p, ora)
-  if (cambiati.length) return { cambiati, base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])) }
+async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pendenti): Promise<EsitoApplica> {
+  const conflitto = (ora: RisorseProgetto, cambiati: string[]): EsitoApplica =>
+    ({ cambiati, base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])), scritti: { campi: {} } })
+  let ora = (await leggiRegole($)).risorse
+  if (cambiatiAltrove(p, ora).length) return conflitto(ora, cambiatiAltrove(p, ora))
+  const scritti: EsitoApplica['scritti'] = { campi: {} }
   if (Object.keys(p.campi).length) {
-    await configura($, opz, p.campi, ora)
+    try {
+      await configura($, opz, p.campi, ora)
+    } catch (err) {
+      // Rilievo 3: il CAS (o le risorse attese) è cambiato fra la rilettura e la scrittura: niente scritto, si rilegge e si
+      // chiede come per il controllo preliminare. Se nessun campo della bozza risulta cambiato, si chiede su tutti.
+      if (!(err instanceof Errore) || !['errore.configCambiata', 'err.impostazioniCambiate'].includes(err.msg.k)) throw err
+      ora = (await leggiRegole($)).risorse
+      const cambiati = cambiatiAltrove(p, ora)
+      return conflitto(ora, cambiati.length ? cambiati : Object.keys(p.campi))
+    }
+    scritti.campi = p.campi
     if ('board' in p.campi) await dopoBoard($)
   }
-  if (p.lingua) await scegliLingua($, p.lingua)
-  return { cambiati: [], base: {} }
+  if (p.lingua) {
+    try {
+      await scegliLingua($, p.lingua)
+    } catch (err) {
+      // Rilievo 4: il progetto è già scritto; lo si dice, e in bozza resta solo la lingua.
+      if (!Object.keys(scritti.campi).length) throw err
+      return { cambiati: [], base: {}, scritti, errore: msg('imp.linguaNonSalvata', { motivo: msgDi(err) }) }
+    }
+    scritti.lingua = p.lingua
+  }
+  return { cambiati: [], base: {}, scritti }
 }
 
 /** Dopo un cambio di modo della board: spegnerla davvero o rigenerarla. */

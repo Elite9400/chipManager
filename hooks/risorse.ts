@@ -19,10 +19,7 @@ export function nomeLimiteIn(l: Pick<Limite, 'id' | 'nome' | 'manuale' | 'valore
   if (l.id === 'claude-api') return t(lingua, l.valore !== undefined ? 'lim.claudeApiMese' : 'lim.claudeApi')
   if (l.id === 'freellmapi') return t(lingua, l.valore !== undefined ? 'lim.freeMese' : 'lim.free')
   if (l.id === 'deepseek' || l.id.startsWith('deepseek-')) return t(lingua, 'lim.deepseek')
-  if (l.id === 'claude-extra') {
-    const tetto = l.nome.match(/ · (?:tetto|cap) (\S+ [A-Z]{3})$/)?.[1]
-    return tetto ? t(lingua, 'lim.claudeExtraTetto', { tetto }) : t(lingua, 'lim.claudeExtra')
-  }
+  if (l.id === 'claude-extra') return t(lingua, 'lim.claudeExtra')
   // Una finestra del piano con l'etichetta dell'app: si traduce solo il prefisso.
   const etichetta = l.nome.match(/^Claude (?:piano|plan) · (.+)$/)?.[1]
   return l.id.startsWith('claude-') && etichetta ? `${t(lingua, 'lim.claudePiano')} · ${etichetta}` : l.nome
@@ -112,10 +109,13 @@ export function usoDesktop(json: unknown, letto: string): Limite[] {
       return [{ id, fornitore: 'claude' as const, nome: `Claude piano · ${nome}`, percentuale: w.percentUsed, unita: '%' as const, letto, fonte, reset: quando(w.resetsAt) }]
     })
     const extra = piano.extraUsage as Record<string, unknown> | undefined
-    const tetto = typeof extra?.monthlyLimit === 'string' && /^\d+(\.\d+)?$/.test(extra.monthlyLimit) ? extra.monthlyLimit : undefined
-    const valuta = ['EUR', 'USD', 'CNY'].includes(String(extra?.currency)) ? (extra!.currency as string) : undefined
-    if (extra?.enabled === true && pct(extra.percentUsed))
-      finestre.push({ id: 'claude-extra', fornitore: 'claude', nome: `Claude uso extra${tetto && valuta ? ` · tetto ${tetto} ${valuta}` : ''}`, percentuale: extra.percentUsed, unita: '%', letto, fonte })
+    // Rilievo 6: l'uso extra è un credito: importo speso e tetto nella loro valuta, mai la percentuale dell'app.
+    const importo = (v: unknown) => (typeof v === 'string' && /^\d{1,12}(\.\d+)?$/.test(v) ? Number(v) : undefined)
+    const valuta = ['EUR', 'USD', 'CNY'].includes(String(extra?.currency)) ? (extra!.currency as 'EUR' | 'USD' | 'CNY') : undefined
+    const speso = importo(extra?.spent)
+    const tetto = importo(extra?.monthlyLimit)
+    if (extra?.enabled === true && valuta && speso !== undefined)
+      finestre.push({ id: 'claude-extra', fornitore: 'claude', nome: 'Claude uso extra', valore: speso, ...(tetto !== undefined && { tetto }), unita: valuta, letto, fonte })
     return finestre
   }
   const dati = (j.rate_limits ?? j) as Record<string, unknown>

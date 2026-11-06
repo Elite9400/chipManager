@@ -11,6 +11,7 @@ import {
   conBozza,
   conPendente,
   conPosizione,
+  dopoApplica,
   conProfilo,
   conSoglia,
   manualiDaScrivere,
@@ -19,6 +20,7 @@ import {
   posizioneDi,
   POSIZIONI,
   presetDi,
+  piena,
   PROFILI,
   profiloDi,
   SEZIONE_DI,
@@ -57,9 +59,6 @@ const SEZIONI: { valore: Sezione; testo: Chiave }[] = [
 ]
 const TIPO = (t: string) => t[0]!.toUpperCase() + t.slice(1)
 
-/** Una bozza senza campi né lingua non c'è. */
-const piena = (p: Pendenti | undefined) => (p && (Object.keys(p.campi).length || p.lingua) ? p : undefined)
-
 /**
  * F5.9 «Applica»: la bozza in una sola scrittura. Se un'altra sessione ha cambiato un campo toccato, niente è scritto e un
  * popup chiede «Ricarica e riapplica» (la bozza vince sui valori di adesso) o «Scarta». Vero se la bozza non c'è più.
@@ -70,9 +69,12 @@ export async function applicaBozza($: EngineInterface, c: Ctx, T: T): Promise<bo
   try {
     const esito = await c.applica(p)
     if (!esito.cambiati.length) {
-      await update($, statoVista, (s): StatoVista => ({ ...s, pendenti: undefined, errore: undefined }))
-      $.ui.toast(T('salvato'))
-      return true
+      // Si toglie solo ciò che è stato scritto: una modifica fatta intanto resta in bozza.
+      await update($, statoVista, (s): StatoVista => ({
+        ...s, pendenti: dopoApplica(s.pendenti, esito.scritti), errore: esito.errore && { dove: 'applica', testo: esito.errore },
+      }))
+      if (!esito.errore) $.ui.toast(T('salvato'))
+      return !piena((await read($, statoVista)).pendenti)
     }
     const dove = [...new Set(esito.cambiati.map(k => T(SEZIONE_DI[k] ?? 'imp.sezione.progetto')))].join(', ')
     const scelta = await $.ui
@@ -95,7 +97,7 @@ export async function applicaBozza($: EngineInterface, c: Ctx, T: T): Promise<bo
 export async function lasciaImpostazioni($: EngineInterface, c: Ctx, T: T): Promise<boolean> {
   const p = piena((await read($, statoVista)).pendenti)
   if (!p) return true
-  const n = p.dove.length
+  const n = Object.keys(p.dove).length
   let scelta: string | undefined
   try {
     scelta = await $.ui.ask(T('imp.uscita', { n }), { options: [T('imp.applica'), T('imp.scarta'), T('imp.resta')], header: T('imp.uscitaTitolo') })
@@ -325,7 +327,8 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   // --- Bilanciamento ---------------------------------------------------------------------------------
   const profilo = profiloDi(r)
   const simulazione = () => {
-    const esito = simula(regoleOra, capacita.limiti, d.tutte, io)
+    // Rilievo 7: la simulazione vede le regole con la bozza, come i controlli.
+    const esito = simula({ ...regoleOra, risorse: r }, capacita.limiti, d.tutte, io)
     if (esito.motivi)
       return [
         nota1('simulazione', STATO.attesa, '▲', T('bil.simulazioneNessuna')),
@@ -614,9 +617,10 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           // Nella bozza come il resto; tornare alla lingua di adesso la toglie.
           onCambia: v =>
             void cambia(s => {
-              const p = s.pendenti ?? { campi: {}, base: {}, dove: [] }
+              const p = s.pendenti ?? { campi: {}, base: {}, dove: {} }
               const lingua = v === T.lingua ? undefined : (v as Lingua)
-              const dove = lingua ? [...new Set([...p.dove, 'lingua'])] : p.dove.filter(x => x !== 'lingua')
+              const { lingua: _, ...altri } = p.dove
+              const dove = lingua ? { ...altri, lingua: ['lingua'] } : altri
               return { ...s, pendenti: piena({ ...p, lingua, dove }), errore: undefined }
             }),
         }),
@@ -645,7 +649,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       )),
     })
 
-  const pendenti = piena(vista.pendenti)?.dove.length ?? 0
+  const pendenti = Object.keys(piena(vista.pendenti)?.dove ?? {}).length
   const corpo =
     vista.sezione === 'legenda' ? legenda()
       : vista.sezione === 'lingua' ? lingua()

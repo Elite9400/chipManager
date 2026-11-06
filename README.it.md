@@ -281,7 +281,7 @@ della lettura con i suoi errori; se non ne resta nessuno, **Carico** dice *Nessu
 
 | Fonte | Che cosa legge davvero | Attenzione |
 |---|---|---|
-| Desktop `ccd_session_mgmt.get_usage` | ogni finestra del piano (5 ore, settimanale, settimanale per modello) e l'uso extra se attivo; vecchio formato `five_hour` / `seven_day` | altri formati restano *non disponibili*; un piano non applicabile o non leggibile lo dice con il motivo |
+| Desktop `ccd_session_mgmt.get_usage` | ogni finestra del piano (5 ore, settimanale, settimanale per modello) e l'uso extra se attivo, in soldi (speso su tetto, mai in percentuale); vecchio formato `five_hour` / `seven_day` | altri formati restano *non disponibili*; un piano non applicabile o non leggibile lo dice con il motivo |
 | Status line di Claude CLI | snapshot numerico di `rate_limits` | serve il collegamento d'una riga qui sotto |
 | Codex `~/.codex/sessions` | ultimi eventi `token_count` → `rate_limits` | al massimo 30 file, 512 KiB di coda ciascuno; conta l'istante dell'evento |
 | DeepSeek `GET /user/balance` | saldo in USD o CNY | nessuna percentuale d'uso |

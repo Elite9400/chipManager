@@ -35,7 +35,12 @@ export function vistaCarico(d: Dati) {
     const n = l.percentuale
     const colore = coloreLimite(l, adesso, soglia)
     const livello = n !== undefined && (fresco || l.manuale) ? livelloDi(n, soglia) : undefined
-    const valore = n !== undefined ? T('car.usato', { pct: n }) : l.valore !== undefined ? `${T.numero(l.valore)} ${unitaIn(l.unita, T.lingua)}` : T('car.nonDisponibile')
+    const soldi = (v: number) => `${T.numero(v)} ${unitaIn(l.unita, T.lingua)}`
+    const valore = n !== undefined
+      ? T('car.usato', { pct: n })
+      : l.valore !== undefined
+        ? l.tetto !== undefined ? T('car.valoreDi', { valore: soldi(l.valore), tetto: soldi(l.tetto) }) : soldi(l.valore)
+        : T('car.nonDisponibile')
     // Un valore inserito a mano non invecchia come una misura: dice solo quando è stato scritto.
     const eta = !l.letto
       ? T('car.maiLetto')

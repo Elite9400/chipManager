@@ -281,7 +281,7 @@ provider's reading with its errors; with none left, **Carico** says *Nessun limi
 
 | Source | What it really reads | Caveats |
 |---|---|---|
-| Desktop `ccd_session_mgmt.get_usage` | every plan window (5-hour, weekly, weekly per model) and extra usage when enabled; legacy `five_hour` / `seven_day` | other formats stay *not available*; a plan that does not apply or cannot be read says so, with the reason |
+| Desktop `ccd_session_mgmt.get_usage` | every plan window (5-hour, weekly, weekly per model) and extra usage when enabled, in money (spent of cap, never a percentage); legacy `five_hour` / `seven_day` | other formats stay *not available*; a plan that does not apply or cannot be read says so, with the reason |
 | Claude CLI status line | numeric `rate_limits` snapshot | needs the one-line hook below |
 | Codex `~/.codex/sessions` | latest `token_count` → `rate_limits` events | at most 30 files, 512 KiB tail each; event time, not file time |
 | DeepSeek `GET /user/balance` | balance in USD or CNY | no usage percentage |

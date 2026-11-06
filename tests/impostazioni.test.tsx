@@ -183,6 +183,8 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   const domande: string[] = []
   /** Risposta al popup: una stringa, oppure `null` = popup chiuso (`$.ui.ask` rifiuta). */
   const popup = { risposta: (_: string): string | null => null }
+  /** Concorrenza: `primaDiConfigura` gira una volta appena prima del CAS dell'helper; `rifiutaUtente` fa fallire un configura-utente. */
+  const hook: { primaDiConfigura?: () => void; rifiutaUtente?: boolean } = {}
   const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
   disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING))
   disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': progetto } }))
@@ -214,6 +216,9 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
       }))
     if (cmd === 'configura') {
       // Come l'helper vero: CAS sul testo intero, poi fusione dei campi nella sezione del progetto.
+      const altra = hook.primaDiConfigura
+      hook.primaDiConfigura = undefined
+      altra?.()
       const input = JSON.parse(e.init!.stdin!)
       const prima = disco.get(p(file)) ?? null
       if (prima !== input.atteso) return fine(4)
@@ -223,6 +228,10 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
     }
     if (cmd === 'configura-utente') {
       // Come l'helper vero: stesso CAS, solo campi dell'utente al primo livello.
+      if (hook.rifiutaUtente) {
+        hook.rifiutaUtente = false
+        return fine(4)
+      }
       const input = JSON.parse(e.init!.stdin!)
       const prima = disco.get(p(file)) ?? null
       if (prima !== input.atteso) return fine(4)
@@ -252,7 +261,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   const progettoOra = () => JSON.parse(disco.get(CONFIG)!).progetti['esempio/demo'] as Record<string, unknown>
   const configure = () => processi.filter(p => p[2] === 'configura').length
-  return { disco, toast, domande, popup, progettoOra, configure }
+  return { disco, toast, domande, popup, progettoOra, configure, hook }
 }
 
 const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
@@ -371,6 +380,11 @@ test('F5.7: ogni percentuale di piano è utilizzo 0→100 con «used» in ogni l
   // Un saldo in valuta o un conteggio non diventa mai una percentuale.
   expect(budgetDa('12 USD')).toEqual({ valore: 12, unita: 'USD' })
   expect(budgetDa('500 requests')).toEqual({ valore: 500, unita: 'richieste' })
+  // Rilievo 5: dopo «%» solo la parola «used» di una delle sei lingue; un residuo o una parola qualunque non è un utilizzo.
+  for (const testo of ['90% remaining', '90% rimanente', '90% bananas', '90% left', '90 used'])
+    expect([testo, budgetDa(testo)]).toEqual([testo, testo === '90 used' ? { k: 'budget.unita', p: { unita: 'used' } } : { k: 'budget.formato' }])
+  for (const testo of ['90%', '90% USED', '90% utilisé', '90% genutzt', '90 %usado'])
+    expect([testo, budgetDa(testo)]).toEqual([testo, { percentuale: 90, unita: '%' }])
   for (const l of LINGUE) {
     const usato = t(l, 'car.usato', { pct: 37 })
     for (const k of ['sintesi.uso', 'sintesi.attenzione', 'sintesi.critica', 'sog.uso', 'sog.usoAttenzione', 'sog.usoCritica', 'pop.limiteCritico'] as const)
@@ -591,6 +605,79 @@ test('impostazioni: popup rifiutato, «Collega…» e «Aggiungi budget…» si 
   await ui.press({ key: 'budget-manuale-saldo-via' })
   await ui.press({ key: 'applica' })
   expect((amb.progettoOra().limitiManuali as { id: string }[]).map(l => l.id).some(id => id === 'saldo' || id.startsWith('manuale-'))).toBe(false)
+  await ui.unmount()
+})
+
+test('rilievo 1: una modifica fatta mentre Applica scrive resta nella bozza; si tolgono solo i campi scritti con i valori scritti', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-progetto-premi' })
+  await ui.press({ key: 'rete-locale-premi' })
+  // La seconda modifica arriva mentre l'helper scrive la prima.
+  amb.hook.primaDiConfigura = () => void ui.press({ key: 'milestone-github-premi' })
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra()).toEqual({ soloLocale: true })
+  expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra()).toEqual({ soloLocale: true, milestoneGithub: true })
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('rilievo 3: un conflitto CAS dopo il controllo preliminare (codice 4) apre lo stesso popup; «Ricarica e riapplica» scrive', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-soglie-premi' })
+  await ui.press({ key: 'soglia-claude-nessuna-premi' })
+  // Un'altra sessione scrive le soglie fra la rilettura di Applica e il CAS dell'helper.
+  amb.hook.primaDiConfigura = () => amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { milestoneGithub: true, soglie: { claude: { attenzione: 50, critica: 60 } } } } }))
+  amb.popup.risposta = () => 'Ricarica e riapplica la mia bozza'
+  await ui.press({ key: 'applica' })
+  expect(amb.domande.at(-1)).toBe('Un\'altra sessione ha cambiato Soglie dopo le tue modifiche. Non è stato scritto niente.')
+  expect(amb.progettoOra()).toMatchObject({ milestoneGithub: true, soglie: { claude: null } })
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /cambiate altrove/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('rilievo 4: progetto scritto e lingua rifiutata: lo dice, e in bozza resta solo la lingua', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'fornitore-deepseek-premi' })
+  await ui.press({ key: 'sezione-lingua-premi' })
+  await ui.press({ key: 'lingua-de-premi' })
+  amb.hook.rifiutaUtente = true
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra().fornitori).toEqual(['claude', 'codex', 'deepseek'])
+  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('it')
+  expect(await ui.find({ type: 'Text', text: /Impostazioni del progetto salvate; la lingua non è stata salvata: / })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
+  await ui.press({ key: 'applica' })
+  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('de')
+  expect(amb.configure()).toBe(1)
+  await ui.unmount()
+})
+
+test('rilievo 7: la simulazione usa la bozza: solo rete locale in bozza = nessuna combinazione e il motivo', async ($, on) => {
+  ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-progetto-premi' })
+  await ui.press({ key: 'rete-locale-premi' })
+  await ui.press({ key: 'sezione-bilanciamento-premi' })
+  expect(await ui.find({ type: 'Text', text: /Simulazione: nessuna combinazione avviabile con queste regole/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /progetto solo rete locale/ })).toBeDefined()
   await ui.unmount()
 })
 

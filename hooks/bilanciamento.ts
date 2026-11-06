@@ -1,7 +1,7 @@
 // Logica pura delle Impostazioni (piano grafica, C2 con §9 righe 4, 5 e 7 e §10): profili di bilanciamento, regolazioni
 // a cinque posizioni, soglie, budget manuali e simulazione della scelta. Niente `$`: i test la provano senza engine.
 import type { Azione, Chiamante, Fornitore, Limite, Pendenti, Peso, PesiProfilo, PropostaPesi, Regolazione, Regole, RisorseProgetto, SessioneProgetto, Soglia } from '../types'
-import { ALIAS_UNITA, data, errore, msg, t } from './lingua'
+import { ALIAS_UNITA, data, errore, LINGUE, msg, t } from './lingua'
 import type { Chiave, Lingua, Msg } from './lingua'
 import { bilancia, effortDi, modelloDi, nomeModello, pesoValido, profiloDi, risorseDa, violazioniAvvio } from './logica'
 
@@ -98,22 +98,23 @@ export function conSoglia(soglie: RisorseProgetto['soglie'], f: Fornitore, s: So
 
 /** I tipi di budget: identificatori salvati nel config (il nome del limite), mostrati con la chiave `budget.<tipo>`. */
 export const TIPI_BUDGET = ['giornaliero', 'settimanale', 'mensile'] as const
+/** La parola «usato» nelle sei lingue, dall'etichetta «{pct}% usato» dei dizionari. */
+const USATO = new Set(LINGUE.map(l => t(l, 'car.usato', { pct: 0 }).replace(/^0%\s*/, '').toLowerCase()))
 /** Il nome di un limite: un tipo di budget si traduce, ogni altro nome (dei fornitori) resta com'è. */
 export const nomeLimite = (nome: string, l: Lingua) => ((TIPI_BUDGET as readonly string[]).includes(nome) ? t(l, `budget.${nome as (typeof TIPI_BUDGET)[number]}`) : nome)
 
 /**
- * «40», «40%» o «40% usato» (in qualunque lingua) = quota usata; «12 USD», «500 richieste», «1000 token» = valore. Le unità si scrivono in una qualunque delle
+ * «40», «40%» o «40% usato» (la parola «usato» di una delle sei lingue) = quota usata; «12 USD», «500 richieste», «1000 token» = valore. Le unità si scrivono in una qualunque delle
  * sei lingue (`ALIAS_UNITA`) e si salvano sempre con lo stesso nome. Restituisce il motivo se non si legge.
  */
 export function budgetDa(testo: string): Pick<Limite, 'percentuale' | 'valore' | 'unita'> | Msg {
-  // F5.7: dopo «%» può seguire la parola «usato» dell'esempio, in una lingua qualunque; il valore resta l'utilizzo.
-  const m = testo.trim().replace(',', '.').match(/^(\d+(?:\.\d+)?)\s*(%(?:\s*\p{L}+)?|\p{L}+)?$/iu)
-  if (!m) return msg('budget.formato')
+  // F5.7: dopo «%» può seguire solo la parola «usato» dell'esempio; un residuo o un'altra parola non è un utilizzo.
+  const m = testo.trim().replace(',', '.').match(/^(\d+(?:\.\d+)?)\s*(?:%\s*(\p{L}+)?|(\p{L}+))?$/iu)
+  if (!m || (m[2] && !USATO.has(m[2].toLowerCase()))) return msg('budget.formato')
   const n = Number(m[1])
-  const u = m[2]?.startsWith('%') ? '%' : (m[2] ?? '%').toLowerCase()
-  if (u === '%') return n <= 100 ? { percentuale: n, unita: '%' } : msg('budget.percentuale')
-  const unita = ALIAS_UNITA[u]
-  if (!unita) return msg('budget.unita', { unita: m[2] ?? '' })
+  if (!m[3]) return n <= 100 ? { percentuale: n, unita: '%' } : msg('budget.percentuale')
+  const unita = ALIAS_UNITA[m[3].toLowerCase()]
+  if (!unita) return msg('budget.unita', { unita: m[3] })
   return n <= 1e12 ? { valore: n, unita } : msg('budget.grande')
 }
 
@@ -142,7 +143,30 @@ export const valoreConfig = (r: RisorseProgetto, k: string): unknown =>
 export function conPendente(p: Pendenti | undefined, r: RisorseProgetto, dove: string, campi: Record<string, unknown>): Pendenti {
   const base = { ...p?.base }
   for (const k of Object.keys(campi)) if (!(k in base)) base[k] = valoreConfig(r, k)
-  return { ...p, campi: { ...p?.campi, ...campi }, base, dove: [...new Set([...(p?.dove ?? []), dove])] }
+  return { ...p, campi: { ...p?.campi, ...campi }, base, dove: { ...p?.dove, [dove]: [...new Set([...(p?.dove[dove] ?? []), ...Object.keys(campi)])] } }
+}
+
+/** Una bozza senza campi né lingua non c'è. */
+export const piena = (p: Pendenti | undefined) => (p && (Object.keys(p.campi).length || p.lingua) ? p : undefined)
+
+/**
+ * Dopo «Applica» (rilievo 1): toglie dalla bozza solo ciò che è stato scritto, con il valore scritto. Una modifica arrivata
+ * mentre si scriveva resta; se tocca un campo appena scritto, la sua base diventa il valore scritto (non è un conflitto).
+ */
+export function dopoApplica(p: Pendenti | undefined, scritti: { campi: Record<string, unknown>; lingua?: string }): Pendenti | undefined {
+  if (!p) return undefined
+  const campi = { ...p.campi }
+  const base = { ...p.base }
+  for (const [k, v] of Object.entries(scritti.campi)) {
+    if (!(k in campi)) continue
+    if (JSON.stringify(campi[k]) === JSON.stringify(v)) {
+      delete campi[k]
+      delete base[k]
+    } else base[k] = v
+  }
+  const lingua = scritti.lingua !== undefined && p.lingua === scritti.lingua ? undefined : p.lingua
+  const dove = Object.fromEntries(Object.entries(p.dove).filter(([, ks]) => ks.some(k => (k === 'lingua' ? !!lingua : k in campi))))
+  return piena({ campi, base, dove, ...(lingua && { lingua }) })
 }
 
 /** Le risorse come le vedrà il config con la bozza applicata; il motivo se la bozza non passa la validazione di oggi. */

@@ -207,7 +207,6 @@ const en = {
   "lim.freeMese": "FreeLLMAPI · requests this month",
   "lim.deepseek": "DeepSeek balance",
   "lim.claudeExtra": "Claude extra usage",
-  "lim.claudeExtraTetto": "Claude extra usage · cap {tetto}",
   "lim.pianoNonApplicabile": "plan limits do not apply here",
   "lim.pianoNonLeggibile": "plan limits cannot be read now",
   "lim.fornitoreNonAbilitato": "provider not enabled",
@@ -756,6 +755,10 @@ const en = {
   "imp.uscita": { one: "1 change in Settings is not saved yet.", other: "{n} changes in Settings are not saved yet." },
   "imp.scarta": "Discard",
   "imp.resta": "Stay",
+  // Review fixes: credits in money, helper refusal, language not saved
+  "car.valoreDi": "{valore} of {tetto}",
+  "errore.configNonScritta": "The helper refused to write config.json (code {codice})",
+  "imp.linguaNonSalvata": "Project settings saved; the language was not saved: {motivo}",
   // ‹fine›
 } satisfies Record<string, Voce>
 

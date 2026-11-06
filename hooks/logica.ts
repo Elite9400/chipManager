@@ -1178,8 +1178,10 @@ export function contaConsumo(secchi: Secchi, adesso: number, delta: Partial<Omit
 }
 
 export type ClasseProcesso = 'raccolta' | 'orchestrazione' | 'altri'
-const RACCOLTA = /^(limiti|sessioni|git-log|leggi-piano|board-[a-z]+|git)$/
-const ORCHESTRAZIONE = /^(occupata|prenota|stato-cli|cas|configura(-utente)?|pesi-[a-z]+|gh|explorer|apri|codex|corsia-codex|lancia-cli|esegui-cli)$/
+// Rilievo 8: la raccolta è un elenco chiuso (letture dei fornitori e cache Codex, git, piano, scrittura e generazione
+// della board); spegnere la board è orchestrazione; un comando nuovo non elencato resta «non classificato».
+const RACCOLTA = /^(limiti|sessioni|git-log|git|leggi-piano|board-scrivi|board-prenota|board-finalizza)$/
+const ORCHESTRAZIONE = /^(occupata|prenota|stato-cli|cas|configura(-utente)?|pesi-[a-z]+|board-spegni|gh|explorer|apri|codex|corsia-codex|lancia-cli|esegui-cli)$/
 /** La classe di un comando (F5.3): raccolta, orchestrazione o non classificato. Vale anche per il registratore esterno. */
 export const classeProcesso = (comando: string): ClasseProcesso => (RACCOLTA.test(comando) ? 'raccolta' : ORCHESTRAZIONE.test(comando) ? 'orchestrazione' : 'altri')
 /** I processi per comando sommati per classe; ogni classe c'è sempre, anche a zero. */

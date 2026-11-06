@@ -83,11 +83,19 @@ export type Ctx = {
   peso: (peso: Peso, attese: RisorseProgetto) => Promise<unknown>
   installa: (passo: number) => Promise<unknown>
   /** F5.9: applica la bozza delle Impostazioni; `cambiati` non vuoto = cambiati altrove, niente scritto. */
-  applica: (p: Pendenti) => Promise<{ cambiati: string[]; base: Record<string, unknown> }>
+  applica: (p: Pendenti) => Promise<EsitoApplica>
   apriBoard: () => Promise<unknown>
   /** Applica o rifiuta una proposta di pesi alla versione vista; l'helper rifiuta se è cambiata. */
   decidiPesi: (p: PropostaPesi, esito: 'applica' | 'rifiuta') => Promise<unknown>
   annullaPesi: (p: PropostaPesi) => Promise<unknown>
+}
+
+/** L'esito di «Applica»: campi cambiati altrove (niente scritto) con i loro valori di adesso, ciò che è stato scritto, e un errore parziale. */
+export type EsitoApplica = {
+  cambiati: string[]
+  base: Record<string, unknown>
+  scritti: { campi: Record<string, unknown>; lingua?: Lingua }
+  errore?: Msg
 }
 
 const MOTORI = ['claude', 'codex', 'freellmapi'] as const
