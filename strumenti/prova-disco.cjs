@@ -915,3 +915,18 @@ test('2.4.2 cache Codex: dopo un salto tutti gli ultimi campi vengono dalla sola
   assert.strictEqual(calda.token, undefined)
   assert.strictEqual(calda.modello, 'modello-a', 'il primo turno della testa resta')
 })
+
+test('2.4.2 cache Codex: una voce senza meta.id o senza meta.cwd non vale: si ricostruisce e la sessione resta', async () => {
+  for (const campo of ['id', 'cwd']) {
+    const { home, f } = codexDiProva()
+    fs.writeFileSync(f, metaEs + avvio)
+    const giusta = await unaSessione(home)
+    assert.strictEqual(giusta.id, 'sessione-esempio')
+    const cache = JSON.parse(fs.readFileSync(fonti.fileCache(home), 'utf8'))
+    for (const v of Object.values(cache.voci)) delete v.meta[campo]
+    fs.writeFileSync(fonti.fileCache(home), JSON.stringify(cache))
+    const r = await fonti.sessioniCodexLocali(home)
+    assert.strictEqual(r.diagnostica.aperti, 1, `senza meta.${campo} la voce si rilegge`)
+    assert.deepStrictEqual(r.sessioni[0], giusta)
+  }
+})

@@ -126,7 +126,8 @@ function vocePulita(v) {
   const n = x => typeof x === 'number' && Number.isFinite(x) && x >= 0
   const solo = (o, chiavi) => !!o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).every(k => chiavi.includes(k))
   const forse = (x, ok) => x === undefined || ok(x)
-  const t = max => x => testo(x, max) === x
+  // Sempre una stringa valida: undefined non passa (i campi facoltativi passano da forse()). id e cwd sono obbligatori.
+  const t = max => x => typeof x === 'string' && testo(x, max) === x
   const istante = x => typeof x === 'string' && Number.isFinite(Date.parse(x))
   if (!solo(v, ['dimensione', 'mtimeMs', 'ino', 'offset', 'meta', 'primoTurno', 'ultimo', 'limiti']) ||
     !n(v.dimensione) || !n(v.mtimeMs) || !n(v.ino) || !n(v.offset) || v.offset > v.dimensione) return null
