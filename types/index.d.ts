@@ -278,7 +278,8 @@ export type SessioneProgetto = {
 }
 export type Sessioni = { lista: SessioneProgetto[]; letto?: string; nota?: string }
 /** Il consumo di QUESTA sessione negli ultimi 10 minuti (D6): processi, chiamate all'app, byte letti dall'helper Codex, salti. */
-export type Consumo = { processi: number; app: number; byte: number; byteLimiti: number; salti: number; da: number }
+/** Il consumo di questa sessione negli ultimi 10 minuti; `comandi` divide i processi per comando (D6). */
+export type Consumo = { processi: number; app: number; byte: number; byteLimiti: number; salti: number; comandi?: Record<string, number>; da: number }
 export type Vista = 'lavoro' | 'carico' | 'impostazioni'
 /** Ciò che il pannello sa della board: il file scritto dall'helper, perché non si scrive, stato dei riassunti. */
 export type StatoBoard = { percorso?: string; motivo?: string; riassunti?: string }

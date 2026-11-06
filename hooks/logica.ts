@@ -1160,28 +1160,52 @@ export function segnaLavori(c: Cadenza, fatti: readonly Lavoro[], adesso: number
 export type Secchi = { minuto: number; v: Omit<Consumo, 'da'> }[]
 const FINESTRA_MIN = 10
 
-export function contaConsumo(secchi: Secchi, adesso: number, delta: Partial<Omit<Consumo, 'da'>>): Secchi {
+export function contaConsumo(secchi: Secchi, adesso: number, delta: Partial<Omit<Consumo, 'da' | 'comandi'>>, comando?: string): Secchi {
   const minuto = Math.floor(adesso / 60_000)
   const tenuti = secchi.filter(x => x.minuto > minuto - FINESTRA_MIN && x.minuto <= minuto)
   let ultimo = tenuti[tenuti.length - 1]
-  if (!ultimo || ultimo.minuto !== minuto) tenuti.push((ultimo = { minuto, v: { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0 } }))
-  else tenuti[tenuti.length - 1] = ultimo = { minuto, v: { ...ultimo.v } }
-  for (const [k, n] of Object.entries(delta) as [keyof Omit<Consumo, 'da'>, number][]) if (Number.isFinite(n) && n > 0) ultimo.v[k] += n
+  if (!ultimo || ultimo.minuto !== minuto) tenuti.push((ultimo = { minuto, v: { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {} } }))
+  else tenuti[tenuti.length - 1] = ultimo = { minuto, v: { ...ultimo.v, comandi: { ...ultimo.v.comandi } } }
+  for (const [k, n] of Object.entries(delta) as [keyof Omit<Consumo, 'da' | 'comandi'>, number][]) if (Number.isFinite(n) && n > 0) ultimo.v[k] += n
+  // D6 per comando: al più 20 chiavi per secchio, le altre in «altro» (non classificato).
+  const n = delta.processi ?? 0
+  if (comando && Number.isFinite(n) && n > 0) {
+    const c = ultimo.v.comandi ?? (ultimo.v.comandi = {})
+    const chiave = comando in c || Object.keys(c).length < 20 ? comando : 'altro'
+    c[chiave] = (c[chiave] ?? 0) + n
+  }
   return tenuti
+}
+
+export type ClasseProcesso = 'raccolta' | 'orchestrazione' | 'altri'
+const RACCOLTA = /^(limiti|sessioni|git-log|leggi-piano|board-[a-z]+|git)$/
+const ORCHESTRAZIONE = /^(occupata|prenota|stato-cli|cas|configura(-utente)?|pesi-[a-z]+|gh|explorer|apri|codex|corsia-codex|lancia-cli|esegui-cli)$/
+/** La classe di un comando (F5.3): raccolta, orchestrazione o non classificato. Vale anche per il registratore esterno. */
+export const classeProcesso = (comando: string): ClasseProcesso => (RACCOLTA.test(comando) ? 'raccolta' : ORCHESTRAZIONE.test(comando) ? 'orchestrazione' : 'altri')
+/** I processi per comando sommati per classe; ogni classe c'è sempre, anche a zero. */
+export function classiDi(comandi: Record<string, number> = {}): Record<ClasseProcesso, number> {
+  const tot: Record<ClasseProcesso, number> = { raccolta: 0, orchestrazione: 0, altri: 0 }
+  for (const [c, n] of Object.entries(comandi)) tot[classeProcesso(c)] += n
+  return tot
 }
 
 /** Somma degli ultimi 10 minuti; `da` è l'inizio della finestra, o l'avvio della mod se più recente. */
 export function sommaSecchi(secchi: Secchi, adesso: number, avvio: number): Consumo {
   const minuto = Math.floor(adesso / 60_000)
-  const tot: Consumo = { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, da: Math.max(avvio, adesso - FINESTRA_MIN * 60_000) }
-  for (const x of secchi) if (x.minuto > minuto - FINESTRA_MIN && x.minuto <= minuto) for (const k of ['processi', 'app', 'byte', 'byteLimiti', 'salti'] as const) tot[k] += x.v[k]
+  const tot: Consumo = { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: Math.max(avvio, adesso - FINESTRA_MIN * 60_000) }
+  for (const x of secchi)
+    if (x.minuto > minuto - FINESTRA_MIN && x.minuto <= minuto) {
+      for (const k of ['processi', 'app', 'byte', 'byteLimiti', 'salti'] as const) tot[k] += x.v[k]
+      for (const [c, n] of Object.entries(x.v.comandi ?? {})) tot.comandi![c] = (tot.comandi![c] ?? 0) + n
+    }
   return tot
 }
 
 // I contatori di QUESTA sessione: in memoria, mai su disco. Ogni punto che avvia un processo o chiama l'app li tocca.
 const AVVIO = Date.now()
 let secchi: Secchi = []
-export const conta = (delta: Partial<Omit<Consumo, 'da'>>) => void (secchi = contaConsumo(secchi, Date.now(), delta))
+/** Conta processi e chiamate; `comando` dice quale processo, per la divisione per classe (D6). */
+export const conta = (delta: Partial<Omit<Consumo, 'da' | 'comandi'>>, comando?: string) => void (secchi = contaConsumo(secchi, Date.now(), delta, comando))
 export const sommaConsumo = () => sommaSecchi(secchi, Date.now(), AVVIO)
 
 /** R4: due valori di stato uguali nel JSON: scriverli di nuovo farebbe solo ridisegnare chi li legge. */
@@ -1194,7 +1218,7 @@ export function rigaConsumo(c: Consumo, adesso: number, l: Lingua = 'en'): strin
   const min = Math.max(1, Math.round((adesso - c.da) / 60_000))
   const mb = (n: number) => `${scriviNumero(l, n / 1_048_576, 1)} MB`
   return [
-    t(l, min >= FINESTRA_MIN ? 'consumo.dieci' : 'consumo.minuti', { n: min, processi: t(l, 'consumo.processi', { n: c.processi }) }),
+    t(l, min >= FINESTRA_MIN ? 'consumo.dieci' : 'consumo.minuti', { n: min, processi: `${t(l, 'consumo.processi', { n: c.processi })} (${t(l, 'consumo.classi', classiDi(c.comandi))})` }),
     t(l, 'consumo.app', { n: c.app }),
     t(l, c.byteLimiti ? 'consumo.byteLimiti' : 'consumo.byte', { mb: mb(c.byte), limiti: mb(c.byteLimiti) }),
     t(l, 'consumo.salti', { n: c.salti }),

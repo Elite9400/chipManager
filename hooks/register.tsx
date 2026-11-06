@@ -78,7 +78,7 @@ const risorse = atom({ plugin: 'chip-manager', key: 'risorse' } as const, RISORS
 const ultimeMisure = atom({ plugin: 'chip-manager', key: 'ultimeMisure' } as const, {} as Record<string, Limite>, { shape: 'misure-1' })
 const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { lista: [] } as Sessioni, { shape: 'sessioni-1' })
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
-const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, da: 0 } as Consumo, { shape: 'consumo-1' })
+const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: 0 } as Consumo, { shape: 'consumo-2' })
 const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
 const lingua = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
 
@@ -167,7 +167,7 @@ const ora = () => new Date().toISOString()
 const gettone = () => `az-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 7)}`
 
 async function helper($: Eng, args: string[], stdin?: string) {
-  conta({ processi: 1 })
+  conta({ processi: 1 }, args[0])
   const r = await $.process.run(['node', strumenti($).disco, ...args], { stdin, timeoutMs: 20_000 })
   return { codice: r.exitCode, testo: r.stdout.trim(), errore: r.stderr.trim() }
 }
@@ -1084,7 +1084,7 @@ async function leggiTraguardi($: Eng) {
   if (!repo) return update($, traguardi, () => null)
   const letto = ora()
   const gh = async (args: string[]) => {
-    conta({ processi: 1 })
+    conta({ processi: 1 }, 'gh')
     const r = await $.process.run(['gh', ...args], { timeoutMs: 20_000 })
     if (r.exitCode !== 0) throw new Error(r.stderr.trim().split('\n')[0]?.slice(0, 120) || `gh exited with ${r.exitCode}`)
     return JSON.parse(r.stdout) as unknown
@@ -1337,7 +1337,7 @@ async function generaBoard($: Eng) {
   if (root && (!commitBoard || commitBoard.chiave !== chiaveCommit || oraBattito - commitBoard.quando >= 5 * 60_000 - 1_000 || oraBattito < commitBoard.quando)) {
     const x = await helper($, ['git-log', root]).catch(() => undefined)
     // I `git` avviati dall'helper (su stderr) contano nel consumo come processi.
-    conta({ processi: Number(/git=(\d+)/.exec(x?.errore ?? '')?.[1] ?? 0) })
+    conta({ processi: Number(/git=(\d+)/.exec(x?.errore ?? '')?.[1] ?? 0) }, 'git')
     let voci: { sha: string; data: string; oggetto: string }[] = []
     try { voci = x?.codice === 0 ? JSON.parse(x.testo) : [] } catch { /* risposta illeggibile: nessun commit */ }
     commitBoard = { chiave: chiaveCommit, quando: oraBattito, voci }
@@ -1454,10 +1454,10 @@ async function apriBoard($: Eng) {
   const percorso = percorsoBoard((await read($, statoBoard)).percorso ?? '')
   if (!percorso || !(await $.fs.exists(percorso))) throw errore('err.boardNonCe')
   // explorer.exe esce con 1 anche quando apre: l'esito non si legge dal codice.
-  conta({ processi: 1 })
+  conta({ processi: 1 }, 'explorer')
   if ((await $.env.get('OS')) === 'Windows_NT') return void (await $.process.run(['explorer.exe', percorso.replace(/\//g, '\\')], { timeoutMs: 10_000 }))
   for (const apri of ['xdg-open', 'open']) {
-    conta({ processi: 1 })
+    conta({ processi: 1 }, 'apri')
     const r = await $.process.run([apri, percorso], { timeoutMs: 10_000 }).catch(() => undefined)
     if (r?.exitCode === 0) return
   }
@@ -1747,7 +1747,7 @@ export const register: Register = (on, options) => {
         if (await $.ui.ask(T('pop.installa', { comando: comando.join(' ') }), { options: [T('pop.esegui'), T('comune.annulla')], header: T('pop.installazione') }) !== T('pop.esegui')) return
         r = await leggiRegole($)
         if (!r.lette || r.risorse.soloLocale || !r.risorse.fornitori.includes('freellmapi')) throw errore('err.politicaCambiata')
-        conta({ processi: 1 })
+        conta({ processi: 1 }, 'docker')
         const esito = await $.process.run(comando, { timeoutMs: 600_000 })
         if (esito.exitCode !== 0) throw errore('err.docker')
         await aggiornaRisorse($, opz)

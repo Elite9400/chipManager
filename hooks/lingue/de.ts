@@ -721,6 +721,7 @@ const de: Dizionario = {
   "err.strumento": "{tool} nicht verfügbar",
   "board.aspettaCommittente": "Wartet auf Verantwortliche",
   "board.sintesiAttesa": "{n} auf Verantwortliche wartend",
+  "consumo.classi": "Erfassung {raccolta} · Steuerung {orchestrazione} · nicht zugeordnet {altri}",
   // ‹fine›
 }
 

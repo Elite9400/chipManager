@@ -4,6 +4,8 @@ import type { TestBody } from 'claude-code/testing'
 import {
   CADENZA_INIZIALE,
   rigaConsumo,
+  classeProcesso,
+  classiDi,
   contaConsumo,
   diagnosticaHelper,
   passoCadenza,
@@ -2249,12 +2251,34 @@ test('cadenza: dopo una sospensione un solo giro di recupero; dopo un errore si 
   expect(passoCadenza(r.cadenza, 1_000, { pendente: false, aSchermo: false }).fare).toEqual(['giro', 'sessioni', 'traguardi', 'risorse'])
 })
 
+test('D6: processi per comando, con le classi di F5.3 (raccolta, orchestrazione, non classificati) nella stessa finestra', () => {
+  for (const c of ['limiti', 'sessioni', 'git-log', 'leggi-piano', 'board-scrivi', 'board-prenota', 'git']) expect([c, classeProcesso(c)]).toEqual([c, 'raccolta'])
+  for (const c of ['occupata', 'prenota', 'stato-cli', 'cas', 'configura', 'configura-utente', 'pesi-decidi', 'gh', 'explorer', 'codex', 'lancia-cli', 'esegui-cli'])
+    expect([c, classeProcesso(c)]).toEqual([c, 'orchestrazione'])
+  for (const c of ['completa', 'docker', 'qualcosa']) expect([c, classeProcesso(c)]).toEqual([c, 'altri'])
+  let secchi = contaConsumo([], 0, { processi: 1 }, 'gh')
+  secchi = contaConsumo(secchi, 60_000, { processi: 4 }, 'git')
+  secchi = contaConsumo(secchi, 61_000, { processi: 1 }, 'git-log')
+  secchi = contaConsumo(secchi, 62_000, { processi: 1 }, 'docker')
+  const tot = sommaSecchi(secchi, 120_000, 0)
+  expect(tot.comandi).toEqual({ gh: 1, git: 4, 'git-log': 1, docker: 1 })
+  expect(classiDi(tot.comandi)).toEqual({ raccolta: 5, orchestrazione: 1, altri: 1 })
+  // Al più 20 chiavi: le altre si sommano in «altro», che resta non classificato.
+  let molti = contaConsumo([], 0, {})
+  for (let i = 0; i < 30; i++) molti = contaConsumo(molti, 0, { processi: 1 }, `comando-${i}`)
+  const somma = sommaSecchi(molti, 0, 0)
+  expect(Object.keys(somma.comandi ?? {}).length).toBeLessThanOrEqual(21)
+  expect(Object.values(somma.comandi ?? {}).reduce((a, b) => a + b, 0)).toBe(30)
+  // «Non classificati» compare anche a zero.
+  expect(rigaConsumo({ processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: 0 }, 60_000)).toContain('unclassified 0')
+})
+
 test('consumo: finestra mobile di 10 minuti a secchi, memoria limitata; diagnostica dell’helper validata', () => {
   let secchi = contaConsumo([], 0, { processi: 1 })
   for (let m = 1; m <= 30; m++) secchi = contaConsumo(secchi, m * 60_000, { processi: 2, app: 1, byte: 1000, salti: 0 })
   expect(secchi.length).toBeLessThanOrEqual(10)
   const tot = sommaSecchi(secchi, 30 * 60_000, 0)
-  expect(tot).toEqual({ processi: 20, app: 10, byte: 10_000, byteLimiti: 0, salti: 0, da: 20 * 60_000 })
+  expect(tot).toEqual({ processi: 20, app: 10, byte: 10_000, byteLimiti: 0, salti: 0, comandi: {}, da: 20 * 60_000 })
   expect(sommaSecchi(secchi, 60 * 60_000, 0).processi).toBe(0)
   expect(diagnosticaHelper({ diagnostica: { byte: 5, byteLimiti: 2, salti: 1, testo: 'x' } })).toEqual({ byte: 5, byteLimiti: 2, salti: 1 })
   expect(diagnosticaHelper({ diagnostica: { byte: '5', salti: -1 } })).toEqual({ byte: 0, byteLimiti: 0, salti: 0 })
@@ -2384,9 +2408,9 @@ test('banco D7: a schermo con lavoro in corso, raccolta a 3,2 processi/min e dat
 
 test('consumo: riga grigia della sessione; lo stato Codex ignoto non è in corso e si segna', () => {
   const c = { processi: 7, app: 1, byte: 3 * 1_048_576, byteLimiti: 1_048_576, salti: 2, da: 0 }
-  expect(rigaConsumo(c, 10 * 60_000)).toBe('This session, last 10 minutes: 7 processes · 1 call to the app · 3.0 MB read by the Codex helper (1.0 MB for the limits) · 2 backlog skips')
-  expect(rigaConsumo(c, 10 * 60_000, 'it')).toBe("Questa sessione, ultimi 10 minuti: 7 processi · 1 chiamata all'app · 3,0 MB letti dall'helper Codex (1,0 MB per i limiti) · 2 salti d'arretrato")
-  expect(rigaConsumo({ ...c, byteLimiti: 0, salti: 1, processi: 1 }, 3 * 60_000, 'it')).toBe("Questa sessione, ultimi 3 min: 1 processo · 1 chiamata all'app · 3,0 MB letti dall'helper Codex · 1 salto d'arretrato")
+  expect(rigaConsumo(c, 10 * 60_000)).toBe('This session, last 10 minutes: 7 processes (collection 0 · orchestration 0 · unclassified 0) · 1 call to the app · 3.0 MB read by the Codex helper (1.0 MB for the limits) · 2 backlog skips')
+  expect(rigaConsumo(c, 10 * 60_000, 'it')).toBe("Questa sessione, ultimi 10 minuti: 7 processi (raccolta 0 · orchestrazione 0 · non classificati 0) · 1 chiamata all'app · 3,0 MB letti dall'helper Codex (1,0 MB per i limiti) · 2 salti d'arretrato")
+  expect(rigaConsumo({ ...c, byteLimiti: 0, salti: 1, processi: 1, comandi: { gh: 1 } }, 3 * 60_000, 'it')).toBe("Questa sessione, ultimi 3 min: 1 processo (raccolta 0 · orchestrazione 1 · non classificati 0) · 1 chiamata all'app · 3,0 MB letti dall'helper Codex · 1 salto d'arretrato")
   const adesso = Date.parse('2026-11-05T12:00:00Z')
   const s = (stato: string, inCorso: boolean) => sessioniCodex([{ id: 'esempio-0001', cwd: 'X:/repo', attivita: '2026-11-05T11:59:00Z', stato, inCorso }], radiceProgetto('X:/repo'), adesso)[0]!
   expect(s('ignoto', false).stato).toBe('ignota')
@@ -2401,7 +2425,7 @@ test('vista Carico: in fondo la riga del consumo di questa sessione', async ($, 
   await clock.advance(20_000)
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: 'vista-carico' })
-  expect((await ui.find({ type: 'Text', text: /^Questa sessione, ultimi/ }))?.text).toMatch(/process[oi] · \d+ chiamat[ae] all'app · [\d,]+ MB letti dall'helper Codex/)
+  expect((await ui.find({ type: 'Text', text: /^Questa sessione, ultimi/ }))?.text).toMatch(/process[oi] \(raccolta \d+ · orchestrazione \d+ · non classificati \d+\) · \d+ chiamat[ae] all'app · [\d,]+ MB letti dall'helper Codex/)
   await ui.unmount()
 })
 

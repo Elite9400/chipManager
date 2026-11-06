@@ -723,6 +723,7 @@ const en = {
   "err.strumento": "{tool} not available",
   "board.aspettaCommittente": "Waiting for the owner",
   "board.sintesiAttesa": "{n} waiting for the owner",
+  "consumo.classi": "collection {raccolta} · orchestration {orchestrazione} · unclassified {altri}",
   // ‹fine›
 } satisfies Record<string, Voce>
 

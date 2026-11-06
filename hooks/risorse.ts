@@ -46,7 +46,7 @@ export async function fonte($: EngineInterface, options: Record<string, unknown>
   if (typeof options.deepseekKey === 'string' && options.deepseekKey) env.CHIPMANAGER_DEEPSEEK_KEY = options.deepseekKey
   if (typeof options.freellmapiKey === 'string' && options.freellmapiKey) env.CHIPMANAGER_FREELLMAPI_KEY = options.freellmapiKey
   try {
-    conta({ processi: 1 })
+    conta({ processi: 1 }, comando)
     const r = await $.process.run(['node', `${$.plugin.root.replace(/\\/g, '/')}/strumenti/fornitori.cjs`, comando],
       { stdin: JSON.stringify(input), env, timeoutMs: comando === 'completa' ? 35_000 : 20_000 })
     if (r.exitCode !== 0 || r.isStdoutTruncated) throw new Error('source not available')

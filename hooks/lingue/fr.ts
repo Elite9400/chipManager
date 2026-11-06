@@ -721,6 +721,7 @@ const fr: Dizionario = {
   "err.strumento": "{tool} non disponible",
   "board.aspettaCommittente": "En attente du responsable",
   "board.sintesiAttesa": "{n} en attente du responsable",
+  "consumo.classi": "collecte {raccolta} · orchestration {orchestrazione} · non classés {altri}",
   // ‹fine›
 }
 

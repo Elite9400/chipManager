@@ -721,6 +721,7 @@ const it: Dizionario = {
   "err.strumento": "{tool} non disponibile",
   "board.aspettaCommittente": "Aspetta il committente",
   "board.sintesiAttesa": "{n} in attesa del committente",
+  "consumo.classi": "raccolta {raccolta} · orchestrazione {orchestrazione} · non classificati {altri}",
   // ‹fine›
 }
 

@@ -56,7 +56,7 @@ const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { li
 const vista = atom({ plugin: 'chip-manager', key: 'vista' } as const, 'lavoro' as Vista)
 const tutteSessioni = atom({ plugin: 'chip-manager', key: 'tutteSessioni' } as const, false)
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
-const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, da: 0 } as Consumo, { shape: 'consumo-1' })
+const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: 0 } as Consumo, { shape: 'consumo-2' })
 const propostePesi = atom({ plugin: 'chip-manager', key: 'proposte' } as const, [] as PropostaPesi[], { shape: 'proposte-1' })
 const lingua = atom({ plugin: 'chip-manager', key: 'lingua' } as const, 'en' as Lingua)
 
