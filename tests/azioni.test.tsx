@@ -2417,9 +2417,12 @@ test('carica: dopo un conflitto il record si rilegge dal disco, anche se riscrit
   const due = { ...uno, versione: 2 }
   expect(JSON.stringify(due).length).toBe(JSON.stringify(uno).length)
   amb.disco.stessoIstante(f, JSON.stringify(due))
+  const elenchi = amb.elenchi.length
   const r = await $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id: 'a-stesso01', stato: 'scartata' } as never)
   expect((r as { deny?: unknown }).deny).toBeUndefined()
   expect(JSON.parse(amb.disco.get(f)!)).toMatchObject({ stato: 'scartata', versione: 3 })
+  // Dopo il conflitto si rilegge solo il proprio file: la cartella si elenca una volta (la lettura iniziale), non due.
+  expect(amb.elenchi.slice(elenchi).filter(d => d === 'X:/orch/azioni').length).toBe(1)
 })
 
 test('carica: una riscrittura nello stesso istante si vede al più alla rilettura completa dei 5 minuti', async ($, on) => {

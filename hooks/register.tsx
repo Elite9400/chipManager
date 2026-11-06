@@ -287,10 +287,20 @@ async function prenota($: Eng, letti: Letti, a: Azione) {
 }
 
 /** Aggiornamento di sistema: rilegge, applica, CAS; su conflitto rilegge e riprova (fino a 3 volte). */
+/** Il solo record `id` riletto dal disco (dopo un conflitto): illeggibile o assente = undefined. */
+async function rileggiUna($: Eng, id: string): Promise<Azione | undefined> {
+  try {
+    const a = normalizza(JSON.parse((await $.fs.read(`${await cartella($)}/${id}.json`)) as string))
+    return eMsg(a) ? undefined : a
+  } catch {
+    return undefined
+  }
+}
+
 async function aggiorna($: Eng, id: string, fn: (a: Azione) => Partial<Azione> | null) {
   for (let i = 0; i < 3; i++) {
-    // Dopo un conflitto il record si rilegge dal disco, mai dalla cache.
-    const a = (await carica($, { fresca: i > 0 })).find(x => x.id === id)
+    // Dopo un conflitto si rilegge dal disco solo il proprio file, mai dalla cache (né tutta la cartella).
+    const a = i === 0 ? (await carica($)).find(x => x.id === id) : await rileggiUna($, id)
     if (!a) return undefined
     const campi = fn(a)
     if (!campi) return a
@@ -308,8 +318,10 @@ async function aggiorna($: Eng, id: string, fn: (a: Azione) => Partial<Azione> |
 const testoMcp = (r: { content: readonly { type: string; text?: string }[] }) =>
   r.content.map(c => (c.type === 'text' ? c.text ?? '' : '')).join('\n')
 
-/** Questa sessione COM'È ADESSO: progetto, modello, effort e permessi effettivi (get_session "self"). */
-/** R5: chi è questa sessione, in cache 60 s per i giri; ogni altra chiamata (avvii, decisioni, strumenti) rilegge. */
+/**
+ * Questa sessione COM'È ADESSO: progetto, modello, effort e permessi effettivi (get_session "self").
+ * R5: in cache 60 s per i giri; ogni altra chiamata (avvii, decisioni, strumenti) rilegge.
+ */
 let chiInCache: { quando: number; c: Chiamante } | undefined
 async function chiSonoIo($: Eng, opz: { cache?: boolean } = {}): Promise<Chiamante> {
   const adesso = await $.clock.now()
