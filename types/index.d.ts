@@ -29,6 +29,8 @@ export type RisorseProgetto = {
   soglie: Record<Fornitore, Soglia | null>
   /** Board di progetto in HTML: `generazione` cresce a ogni cambio di `modo` (lo incrementa l'helper sotto il lock del config). */
   board: BoardProgetto
+  /** F6.2: crediti API di Claude. Assente = non configurata. Budget del mese e tetto per tentativo, in USD. */
+  apiClaude?: { budgetUsd: number; tetto: number }
   /** Profilo di bilanciamento scelto nelle Impostazioni: tocca solo i pesi di motori ed effort. Assente = nessuna scelta. */
   profilo?: 'automatico' | 'risparmio' | 'qualita' | 'velocita' | 'personalizzato'
   /** Cresce a ogni scrittura di profilo o pesi (la incrementa l'helper). Assente = 0. */
@@ -96,7 +98,8 @@ export type StatoAzione =
 /** Le opzioni della chip di sessione dell'app (start_session). */
 export type Permessi = 'default' | 'acceptEdits' | 'plan' | 'auto' | 'bypassPermissions'
 export type Contesto = 'fresh' | 'fork'
-export type Destinazione = 'local' | 'cloud'
+/** Dove gira un'azione (F6, 2.2.0): sulla macchina, nel cloud di Claude Code, o qui a crediti API di Claude. */
+export type Destinazione = 'local' | 'cloud' | 'api-claude'
 
 /** Una riga del pannello: un file JSON in `<dir azioni>/<id>.json`, scritto solo con CAS atomico. */
 export type Azione = {
@@ -233,6 +236,8 @@ export type Regole = {
   /** Perché le regole non si leggono: codice del dizionario o testo esterno. */
   motivo?: Messaggio
   risorse: RisorseProgetto
+  /** F6.2: la chiave API di Claude è nelle opzioni sensibili della mod (solo la presenza, mai il valore). */
+  chiaveApi?: boolean
 }
 
 /** Una milestone GitHub aperta del repo della sessione. */

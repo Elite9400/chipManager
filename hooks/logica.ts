@@ -16,6 +16,8 @@ export const BACKGROUND_GENERICO =
  * ogni avvio: le regole non si allentano mai in silenzio.
  */
 export const SOGLIA_PREDEFINITA: Soglia = { attenzione: 70, critica: 90 }
+/** F6.2: il tetto predefinito di spesa per tentativo (`--max-budget-usd`), in USD; può essere superato. */
+export const TETTO_API_PREDEFINITO = 2
 export const RISORSE_DEFAULT: RisorseProgetto = {
   fornitori: ['claude', 'codex'], soloLocale: false, milestoneGithub: false, pesi: [], limitiManuali: [],
   freellmapi: { livello: 'niente', endpoint: 'http://localhost:3001/v1' },
@@ -198,7 +200,12 @@ export function risorseDa(p: Record<string, unknown>): RisorseProgetto | Msg {
     ? { tipo: o.tipo as NonNullable<RisorseProgetto['pesiOrigine']>['tipo'], ...(typeof o.id === 'string' && { id: o.id.slice(0, 60) }),
         ...(typeof o.voce === 'string' && { voce: o.voce.slice(0, 60) }), ...(Number.isInteger(o.versione) && { versione: o.versione as number }) }
     : undefined
-  return { board, fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
+  // F6.2: budget del mese e tetto per tentativo in USD (l'unità di total_cost_usd); assente = API non configurata.
+  const api = p.apiClaude
+  if (api !== undefined && (!oggettoRisorse(api) || !numero(api.budgetUsd, 0.01, 100_000) || (api.tetto !== undefined && !numero(api.tetto, 0.01, 1_000))))
+    return errore
+  const apiClaude = api && { budgetUsd: api.budgetUsd as number, tetto: (api.tetto as number | undefined) ?? TETTO_API_PREDEFINITO }
+  return { ...(apiClaude && { apiClaude }), board, fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
     freellmapi: { livello: f.livello as RisorseProgetto['freellmapi']['livello'], endpoint: (f.endpoint as string | undefined) ?? RISORSE_DEFAULT.freellmapi.endpoint },
     pesi: pesi.map(x => ({ tipo: x.tipo, nome: x.nome, percentuale: x.percentuale, assoluto: x.assoluto })), limitiManuali,
     soglie: { claude: soglia('claude'), codex: soglia('codex'), deepseek: soglia('deepseek'), freellmapi: soglia('freellmapi') },
@@ -443,6 +450,11 @@ export function revisoreConcreto(a: Azione, regole: Regole): string | undefined 
   return (regole.revisori[autore] ?? []).find(r => r.startsWith('claude-') && r !== autore)
 }
 
+/** Dove gira davvero un'azione (F6): l'esecutore esterno decide da sé, altrimenti la destinazione. */
+export type Modalita = 'local' | 'cloud' | 'api-claude' | 'esterno'
+/** La modalità effettiva: una sola funzione per pannello, strumenti e coda, da cui dipendono le guardie. */
+export const modalitaDi = (a: Pick<Azione, 'esecutore' | 'destinazione'>): Modalita => (a.esecutore === 'freellmapi' ? 'esterno' : (a.destinazione ?? 'local'))
+
 /** Perché un'azione non può partire così com'è: vuoto = può partire. */
 export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] = []): Msg[] {
   const v: Msg[] = []
@@ -451,6 +463,7 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
   const effort = effortDi(a, regole)
   const corsia = corsiaDi(a, regole)
   const politica = regole.risorse
+  const modo = modalitaDi(a)
   if (politica.soloLocale) v.push(msg('v.soloLocale'))
   if (!politica.fornitori.includes(a.esecutore)) v.push(msg('v.fornitoreNonAbilitato', { fornitore: a.esecutore }))
   if (a.revisore !== 'nessuno' && !politica.fornitori.includes(a.revisore)) v.push(msg('v.revisoreNonAbilitato', { revisore: a.revisore }))
@@ -459,7 +472,7 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
     if (!corsia || !['R0', 'R1', ...(politica.freellmapi.livello === 'R2' ? ['R2'] : [])].includes(corsia) || politica.freellmapi.livello === 'niente')
       v.push(msg('v.freeCorsia'))
     if (datiLocali(`${a.titolo}\n${a.brief}\n${a.background ?? ''}\n${regole.background}`)) v.push(msg('v.datiLan'))
-    if (a.contesto === 'fork' || a.destinazione === 'cloud' || a.worktree === false) v.push(msg('v.freeIsolato'))
+    if (a.contesto === 'fork' || (a.destinazione ?? 'local') !== 'local' || a.worktree === false) v.push(msg('v.freeIsolato'))
     if (a.titolo.length + a.brief.length > CLOUD_MAX) v.push(msg('v.freeTesto', { max: CLOUD_MAX }))
     if (a.revisore !== 'claude') v.push(msg('v.freeRevisione'))
     if (effort !== 'low') v.push(msg('v.freeEffort'))
@@ -477,7 +490,16 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
     else if (ammessi && !ammessi.includes(rev))
       v.push(msg('v.revisoreNonAmmesso', { revisore: rev === 'motore:codex' ? 'Codex' : nomeModello(rev), modello: nomeModello(modello) }))
   }
-  if (a.destinazione === 'cloud') {
+  // F6.2: un processo `claude -p` nuovo, su questa macchina, a crediti API: niente conversazione da copiare, un worktree
+  // suo, la chiave nelle opzioni sensibili e un budget del mese. I dati non escono più di quanto fa Claude Code locale.
+  if (modo === 'api-claude') {
+    if (a.esecutore !== 'claude') v.push(msg('v.apiClaude'))
+    if (a.contesto === 'fork') v.push(msg('v.apiFork'))
+    if (a.worktree === false) v.push(msg('v.apiWorktree'))
+    if (!regole.chiaveApi) v.push(msg('v.apiChiave'))
+    if (!politica.apiClaude?.budgetUsd) v.push(msg('v.apiBudget'))
+  }
+  if (modo === 'cloud') {
     if (a.contesto === 'fork') v.push(msg('v.cloudFork'))
     if (a.esecutore === 'codex' || a.revisore === 'codex')
       v.push(msg('v.cloudCodex'))
@@ -502,7 +524,9 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
     if (a.revisore === 'nessuno') v.push(msg('v.r4Revisione'))
     if (a.revisore === 'codex') v.push(msg('v.r4Revisore'))
     if (a.permessi === 'bypassPermissions') v.push(msg('v.r4Bypass'))
-    if (a.destinazione === 'cloud') v.push(msg('v.r4Cloud'))
+    if (modo === 'cloud') v.push(msg('v.r4Cloud'))
+    // Le sensibili solo in locale interattivo, con revisione umana: mai un processo a crediti API senza nessuno davanti.
+    if (modo === 'api-claude') v.push(msg('v.r4Api'))
     if (a.esecutore === 'claude' && !AUTORI_R4.includes(modello)) v.push(msg('v.r4Modello', { modello: nomeModello(modello) }))
     if (regole.effort.indexOf(effort) < regole.effort.indexOf('high')) v.push(msg('v.r4Effort'))
   }
@@ -527,6 +551,12 @@ export function violazioniAvvio(a: Azione, regole: Regole, lista: readonly Azion
   else if (a.repo !== chi.repo) v.push(msg('v.altroProgetto', { repo: a.repo }))
   if (a.esecutore === 'freellmapi') {
     if (qui) v.push(msg('v.freeQui'))
+    return v
+  }
+  // F6.2: l'helper avvia `claude -p` con modello ed effort espliciti: le guardie sulla sessione che avvia non servono.
+  if (modalitaDi(a) === 'api-claude') {
+    if (qui) v.push(msg('v.apiQui'))
+    if (a.permessi === 'bypassPermissions' || a.permessi === 'auto') v.push(msg('v.cliPermessi'))
     return v
   }
   if (!qui && chi.lanciatore === 'ignoto') v.push(msg('v.lanciatoreIgnoto'))
@@ -709,7 +739,7 @@ export function normalizza(x: unknown): Azione | Msg {
     return msg('rec.campo', { campo: 'dipende' })
   if (a.issue !== undefined && !(Number.isInteger(a.issue) && (a.issue as number) > 0)) return msg('rec.campo', { campo: 'issue' })
   if (a.sessione !== undefined && !(typeof a.sessione === 'string' && SESSIONE_RE.test(a.sessione))) return msg('rec.campo', { campo: 'sessione' })
-  if (!tra('corsia', CORSIE) || !tra('contesto', ['fresh', 'fork']) || !tra('destinazione', ['local', 'cloud'])) return msg('rec.campo', { campo: 'opzioni' })
+  if (!tra('corsia', CORSIE) || !tra('contesto', ['fresh', 'fork']) || !tra('destinazione', ['local', 'cloud', 'api-claude'])) return msg('rec.campo', { campo: 'opzioni' })
   if (!tra('permessi', ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'])) return msg('rec.campo', { campo: 'permessi' })
   if (!tra('lanciatore', ['cli', 'freellmapi']) || !str('risultato', 30000)) return msg('rec.campo', { campo: 'esecuzione' })
   if (!bool('worktree') || !bool('sveglia') || !bool('sensibile') || !bool('qui') || !bool('incerto') || !bool('manuale') || !bool('presa')) return msg('rec.campo', { campo: 'opzioni' })

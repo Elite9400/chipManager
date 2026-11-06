@@ -764,6 +764,14 @@ const fr: Dizionario = {
   // Settings draft epoch and proposal-written weights
   "imp.cambiateNelFrattempo": "Les réglages ont changé entre-temps : rien n'a été fait",
   "imp.pesiDaProposta": "Les poids ont été modifiés par une proposition appliquée : ils restent ainsi et quittent votre brouillon",
+  // F6 guards for api-claude
+  "v.apiClaude": "API Claude : seulement pour le moteur Claude",
+  "v.apiFork": "API Claude : un nouveau processus sans conversation, donc pas de fork",
+  "v.apiWorktree": "API Claude : il faut son propre worktree",
+  "v.apiChiave": "API Claude : aucune clé dans les options sensibles de la mod (Réglages → Exécution)",
+  "v.apiBudget": "API Claude : aucun budget mensuel en USD défini (Réglages → Exécution)",
+  "v.r4Api": "un chip sensible ne tourne qu'en local et en interactif, avec relecture humaine : pas en crédits API",
+  "v.apiQui": "API Claude tourne dans son propre processus, pas dans cette session",
   // ‹fine›
 }
 

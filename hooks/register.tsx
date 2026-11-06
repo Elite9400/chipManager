@@ -383,6 +383,8 @@ async function leggiRegole($: Eng) {
     const m = msgDi(err)
     r = { ...REGOLE_DEFAULT, motivo: typeof m === 'string' ? m.slice(0, 60) : m, ...(progetto && !eMsg(progetto) ? { risorse: progetto.risorse } : {}) }
   }
+  // F6.2: della chiave API di Claude si sa solo se c'è; il valore resta nelle opzioni sensibili.
+  r = { ...r, chiaveApi: chiaveApiPresente }
   if (!uguale(await read($, regole), r)) await update($, regole, () => r)
   return r
 }
@@ -1154,7 +1156,7 @@ const ESITI = ['in-corso', 'approvata', 'da-correggere'] as const
 const REVISORI = ['claude', 'codex', 'nessuno'] as const
 const PERMESSI_VALIDI = PERMESSI.map(p => p.value).filter(v => v !== 'eredita')
 const CONTESTI = ['fresh', 'fork'] as const
-const DESTINAZIONI = ['local', 'cloud'] as const
+const DESTINAZIONI = ['local', 'cloud', 'api-claude'] as const
 
 type Suggerita = Omit<Azione, 'id' | 'versione' | 'stato' | 'creata' | 'aggiornata' | 'ordine'> & { ordine?: number }
 
@@ -1190,7 +1192,7 @@ function valida(e: Record<string, unknown>, r: Regole, esistenti: readonly Azion
   if (e.corsia !== undefined && !CORSIE.includes(e.corsia as Corsia)) return `corsia: ${CORSIE.join(', ')}`
   if (e.permessi !== undefined && !PERMESSI_VALIDI.includes(e.permessi as never)) return `permessi: ${PERMESSI_VALIDI.join(', ')}`
   if (e.contesto !== undefined && !CONTESTI.includes(e.contesto as never)) return 'contesto: fresh | fork'
-  if (e.destinazione !== undefined && !DESTINAZIONI.includes(e.destinazione as never)) return 'destinazione: local | cloud'
+  if (e.destinazione !== undefined && !DESTINAZIONI.includes(e.destinazione as never)) return `destinazione: ${DESTINAZIONI.join(' | ')}`
   for (const k of ['worktree', 'sveglia', 'sensibile'] as const)
     if (e[k] !== undefined && typeof e[k] !== 'boolean') return `${k}: true | false`
   if (e.ramo !== undefined && (typeof e.ramo !== 'string' || !RAMO_RE.test(e.ramo))) return 'ramo: [a-z0-9-], up to 40'
@@ -1243,7 +1245,7 @@ const schemaSuggerisci = (r: Regole) => ({
     permessi: { type: 'string', enum: PERMESSI_VALIDI, description: 'Missing: same as who starts it (sensitive: acceptEdits).' },
     worktree: { type: 'boolean', description: 'Default true.' },
     contesto: { type: 'string', enum: CONTESTI, description: 'fresh (default): brief only; fork: the conversation.' },
-    destinazione: { type: 'string', enum: DESTINAZIONI, description: 'cloud only fresh, never sensitive nor with local data.' },
+    destinazione: { type: 'string', enum: DESTINAZIONI, description: 'cloud: fresh, no LAN data; api-claude: API credits. Not sensitive.' },
     ramo: { type: 'string', description: 'Worktree branch, [a-z0-9-].' },
     base: { type: 'string', description: 'Local starting branch; default the base of who starts it.' },
     sveglia: { type: 'boolean', description: 'Wake whoever starts it even if the brief does not arrive.' },
@@ -1515,8 +1517,12 @@ async function apriBoard($: Eng) {
   throw errore('err.boardApri', { percorso })
 }
 
+/** F6.2: la chiave API di Claude è nelle opzioni sensibili della mod? (Solo la presenza, letta alla registrazione.) */
+let chiaveApiPresente = false
+
 export const register: Register = (on, options) => {
   const opz = (options ?? {}) as Record<string, unknown>
+  chiaveApiPresente = typeof opz.anthropicApiKey === 'string' && opz.anthropicApiKey.trim().length > 0
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)

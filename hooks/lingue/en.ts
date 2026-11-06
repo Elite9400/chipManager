@@ -766,6 +766,14 @@ const en = {
   // Settings draft epoch and proposal-written weights
   "imp.cambiateNelFrattempo": "Settings changed in the meantime: nothing was done",
   "imp.pesiDaProposta": "The load weights were changed by an applied proposal: they stay as they are and leave your draft",
+  // F6 guards for api-claude
+  "v.apiClaude": "API Claude: only for the Claude engine",
+  "v.apiFork": "API Claude: a new process without a conversation, so no fork",
+  "v.apiWorktree": "API Claude: needs its own worktree",
+  "v.apiChiave": "API Claude: no key in the mod's sensitive options (Settings → Execution)",
+  "v.apiBudget": "API Claude: no monthly USD budget set (Settings → Execution)",
+  "v.r4Api": "a sensitive chip runs only locally and interactively, with human review: not on API credits",
+  "v.apiQui": "API Claude runs in a process of its own, not in this session",
   // ‹fine›
 } satisfies Record<string, Voce>
 

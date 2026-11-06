@@ -4,6 +4,7 @@ import type { TestBody } from 'claude-code/testing'
 import {
   CADENZA_INIZIALE,
   rigaConsumo,
+  modalitaDi,
   classeProcesso,
   classiDi,
   contaConsumo,
@@ -61,7 +62,7 @@ import {
   violazioni,
   violazioniAvvio,
 } from '../hooks/logica'
-import type { Azione, Chiamante, Consumo, Limite } from '../types'
+import type { Azione, Chiamante, Consumo, Limite, Regole } from '../types'
 import { DiscoIt } from './disco-it'
 import { chiaveOTesto } from '../hooks/lingua'
 import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
@@ -816,6 +817,39 @@ test('suggerisci: titolo di soli spazi rifiutato', async ($, on) => {
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const r = (await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: '   ', brief: 'x' } as never)) as { deny?: string; text?: string }
   expect(r.deny ?? r.text).toContain('missing titolo')
+})
+
+test('F6 guardie: una sola modalità effettiva; api-claude solo Claude, senza fork, col worktree, chiave e budget; mai per le sensibili', () => {
+  expect([base('a-mod00001', 1), base('a-mod00002', 1, { destinazione: 'cloud' }), base('a-mod00003', 1, { destinazione: 'api-claude' }),
+    base('a-mod00004', 1, { esecutore: 'freellmapi', destinazione: 'cloud' })].map(modalitaDi)).toEqual(['local', 'cloud', 'api-claude', 'esterno'])
+  const RA = { ...R, chiaveApi: true, risorse: { ...R.risorse, apiClaude: { budgetUsd: 20, tetto: 2 } } }
+  const a = base('a-api00001', 1, { repo: AUTORE.repo!, destinazione: 'api-claude' })
+  const k = (x: Azione, r: Regole = RA) => violazioni(x, r).map(m => m.k)
+  expect(k(a)).toEqual([])
+  expect(k({ ...a, esecutore: 'codex', revisore: 'claude', corsia: 'R2' })).toContain('v.apiClaude')
+  expect(k({ ...a, contesto: 'fork' })).toContain('v.apiFork')
+  expect(k({ ...a, worktree: false })).toContain('v.apiWorktree')
+  expect(k(a, R)).toEqual(expect.arrayContaining(['v.apiChiave', 'v.apiBudget']))
+  expect(k({ ...a, corsia: 'R4', revisore: 'claude' })).toContain('v.r4Api')
+  // Il filtro dei dati LAN non serve: il lavoro resta su questa macchina, come Claude Code locale.
+  expect(k({ ...a, brief: 'vedi log: 192.168.1.4' })).toEqual([])
+  // Avvio: nessuna guardia sul modello della sessione (il processo parte con --model); mai «qui».
+  expect(violazioniAvvio(a, RA, [a], AUTORE)).toEqual([])
+  expect(violazioniAvvio(a, RA, [a], AUTORE, true).map(m => m.k)).toContain('v.apiQui')
+  expect(violazioniAvvio({ ...a, permessi: 'bypassPermissions' }, RA, [a], AUTORE).map(m => m.k)).toContain('v.cliPermessi')
+  // I record accettano la destinazione nuova; un valore sconosciuto no.
+  expect('k' in normalizza({ ...a })).toBe(false)
+  expect(normalizza({ ...a, destinazione: 'api-codex' })).toEqual({ k: 'rec.campo', p: { campo: 'opzioni' } })
+})
+
+test('F6 guardie: suggerisci_azione accetta api-claude e rifiuta le destinazioni fuori dalla 2.2.0', async ($, on) => {
+  ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const no = (await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Prova', brief: 'x', destinazione: 'api-codex' } as never)) as { deny?: string; text?: string }
+  expect(no.deny ?? no.text).toContain('destinazione: local | cloud | api-claude')
+  const si = (await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Prova', brief: 'x', destinazione: 'api-claude' } as never)) as { deny?: string; result?: string }
+  expect(si.deny).toBeUndefined()
 })
 
 test('registro: un task chiuso e nato prima dell\'invio non si associa mai (anche se aggiornato dopo)', () => {
