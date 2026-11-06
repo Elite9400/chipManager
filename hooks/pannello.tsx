@@ -220,7 +220,9 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   // Proposte di pesi: nessun popup dal giro. Il popup si apre solo da «Rivedi»; Applica e Rifiuta stanno sempre sulla riga.
   const tutteProposte = await read($, propostePesi)
   const proposteAperte = tutteProposte.filter(p => daDecidere(p, adesso))
-  const ultimaDecisa = tutteProposte.find(p => p.stato !== 'attesa')
+  // L'ultima decisione per istante di decisione (o di annullamento), non di proposta.
+  const decisaIl = (p: PropostaPesi) => Date.parse(p.annullamento?.quando ?? p.decisione?.quando ?? p.quando)
+  const ultimaDecisa = tutteProposte.filter(p => p.stato !== 'attesa').sort((a, b) => decisaIl(b) - decisaIl(a))[0]
   // Etichette uniche: con più proposte aperte, il pulsante porta la coda dell'id.
   const suffisso = (p: PropostaPesi) => (proposteAperte.length > 1 ? ` ${p.id.slice(-4)}` : '')
   const rivedi = (p: PropostaPesi) => async () => {
