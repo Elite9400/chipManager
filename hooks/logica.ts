@@ -185,10 +185,14 @@ export function risorseDa(p: Record<string, unknown>): RisorseProgetto | string 
   if (!oggettoRisorse(b) || !['spenta', 'accesa', 'riassunti'].includes(String(b.modo)) ||
       (b.generazione !== undefined && !(Number.isInteger(b.generazione) && (b.generazione as number) >= 0))) return errore
   const board: BoardProgetto = { modo: b.modo as BoardProgetto['modo'], generazione: (b.generazione as number | undefined) ?? 0 }
+  // Una preferenza, non un permesso: ogni forma che non è uno dei cinque nomi vale come assente.
+  const profilo = typeof p.profilo === 'string' && ['automatico', 'risparmio', 'qualita', 'velocita', 'personalizzato'].includes(p.profilo)
+    ? (p.profilo as RisorseProgetto['profilo']) : undefined
   return { board, fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
     freellmapi: { livello: f.livello as RisorseProgetto['freellmapi']['livello'], endpoint: (f.endpoint as string | undefined) ?? RISORSE_DEFAULT.freellmapi.endpoint },
     pesi: pesi.map(x => ({ tipo: x.tipo, nome: x.nome, percentuale: x.percentuale, assoluto: x.assoluto })), limitiManuali,
-    soglie: { claude: soglia('claude'), codex: soglia('codex'), deepseek: soglia('deepseek'), freellmapi: soglia('freellmapi') } }
+    soglie: { claude: soglia('claude'), codex: soglia('codex'), deepseek: soglia('deepseek'), freellmapi: soglia('freellmapi') },
+    ...(profilo && { profilo }) }
 }
 
 export const limiteFresco = (l: Limite, adesso = Date.now()) => !l.errore && !!l.letto && adesso >= Date.parse(l.letto) && adesso - Date.parse(l.letto) <= 300_000 && (!l.reset || Date.parse(l.reset) > adesso)

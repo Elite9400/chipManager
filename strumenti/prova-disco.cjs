@@ -557,6 +557,25 @@ test('2.0 config: CAS preserva altri progetti e rifiuta configurazione corrotta'
   assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"rotto":')
 })
 
+test('2.6 config: soglie, profilo e pesi in una sola scrittura; campi fuori elenco rifiutati senza toccare il file', async () => {
+  const dir = tmp()
+  const file = path.join(dir, 'config.json')
+  const prima = JSON.stringify({ progetti: { 'esempio/demo': { fornitori: ['claude'] } } })
+  fs.writeFileSync(file, prima)
+  const campi = {
+    profilo: 'risparmio',
+    pesi: [{ tipo: 'effort', nome: 'low', percentuale: 40, assoluto: 0 }],
+    soglie: { claude: { attenzione: 60, critica: 80 }, codex: null },
+    limitiManuali: [{ id: 'claude-settimanale-abc', fornitore: 'claude', nome: 'settimanale', letto: '2026-11-05T12:00:00.000Z', percentuale: 40, unita: '%' }],
+  }
+  assert.strictEqual(await configura(file, { atteso: prima, repo: 'esempio/demo', campi }), 0)
+  const dopo = fs.readFileSync(file, 'utf8')
+  assert.deepStrictEqual(JSON.parse(dopo).progetti['esempio/demo'], { fornitori: ['claude'], ...campi })
+  for (const estraneo of [{ chiave: 'x' }, { routing: 'altro.json' }, { sensibili: [] }])
+    assert.strictEqual(await configura(file, { atteso: dopo, repo: 'esempio/demo', campi: { profilo: 'qualita', ...estraneo } }), 2)
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), dopo)
+})
+
 test('2.0 CLI: record già riservato e gettone non corrente non possono fare spawn', async () => {
   const dir = tmp()
   const id = 'a-cli00001'
