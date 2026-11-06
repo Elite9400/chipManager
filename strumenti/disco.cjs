@@ -545,7 +545,11 @@ function leggiPiano(radice, relativo) {
 
 /** Le ultime 15 voci del ramo base (first-parent): SHA corto, data, oggetto. Nient'altro del commit. */
 function gitLog(radice) {
-  const git = args => spawnSync('git', ['-C', radice, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15_000 })
+  // Quanti `git` si avviano davvero (3–5): su stderr, così il pannello li conta senza cambiare la risposta.
+  let avviati = 0
+  process.on('exit', () => process.stderr.write(`git=${avviati}
+`))
+  const git = args => (avviati++, spawnSync('git', ['-C', radice, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15_000 }))
   // Il ramo base LOCALE: il nome che origin/HEAD indica, poi main e master. Mai origin/… (perde i commit locali)
   // né HEAD (nel worktree di un task è il ramo del task).
   const remoto = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])

@@ -2498,3 +2498,31 @@ test('sessioni: una sessione Codex con stato ignoto mostra «—», né in corso
   expect(await ui.find({ type: 'Text', text: /^1 al lavoro/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('R1: board accesa: git-log al più ogni 5 minuti, subito se cambiano le azioni o il registro', async ($, on) => {
+  const amb = ambiente(on)
+  conBoard(amb, { modo: 'accesa', generazione: 1 })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.' } as never)
+  const gitLog = () => comandi(amb).filter(c => c === 'git-log').length
+  await clock.advance(30_000)
+  const primo = gitLog()
+  expect(primo).toBeGreaterThan(0)
+  // Due minuti senza cambiamenti: nessun git-log in più.
+  for (let i = 0; i < 4; i++) await clock.advance(30_000)
+  expect(gitLog()).toBe(primo)
+  // Una chip cambiata: subito.
+  const a = amb.azione()[0]!
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify({ ...a, versione: a.versione + 1, titolo: 'Docs aggiornate' }))
+  await clock.advance(30_000)
+  await clock.advance(30_000)
+  expect(gitLog()).toBe(primo + 1)
+  // Il registro cambiato: subito.
+  amb.disco.set('X:/orch/registro.json', JSON.stringify({ task: {} }))
+  await clock.advance(30_000)
+  expect(gitLog()).toBe(primo + 2)
+  // Cinque minuti dopo l'ultima lettura: di nuovo, anche senza cambiamenti.
+  for (let i = 0; i < 10; i++) await clock.advance(30_000)
+  expect(gitLog()).toBe(primo + 3)
+})

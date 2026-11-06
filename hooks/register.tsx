@@ -1233,6 +1233,8 @@ async function configura($: Eng, opz: Record<string, unknown>, campi: Record<str
 // sono ancora quelli letti qui. I riassunti (facoltativi) girano in un ciclo a parte, fuori dal giro.
 
 let versione: string | undefined
+/** L'ultima lettura dei commit per la board: chiave degli ingressi, istante, risultato. */
+let commitBoard: { chiave: string; quando: number; voci: { sha: string; data: string; oggetto: string }[] } | undefined
 async function versioneMod($: Eng) {
   versione ??= await $.fs
     .read(`${$.plugin.root.replace(/\\/g, '/')}/.claude-plugin/plugin.json`)
@@ -1281,9 +1283,18 @@ async function generaBoard($: Eng) {
   for (const a of mostrate)
     if (a.piano) piani[a.id] = root ? await $.fs.stat(`${root.replace(/\\/g, '/')}/${a.piano}`).then(x => ({ size: x.size, mtimeMs: x.mtimeMs })).catch(() => null) : null
   const registro = await $.fs.stat(`${base}/registro.json`).then(x => x.mtimeMs).catch(() => null)
-  const commit = root
-    ? await helper($, ['git-log', root]).then(x => (x.codice === 0 ? (JSON.parse(x.testo) as { sha: string; data: string; oggetto: string }[]) : [])).catch(() => [])
-    : []
+  // R1: i commit del ramo base al più ogni 5 minuti, subito se cambiano le azioni o il registro.
+  const chiaveCommit = `${root}|${registro}|${tutte.map(a => `${a.id}:${a.versione}`).join(',')}`
+  const oraBattito = await $.clock.now()
+  if (root && (!commitBoard || commitBoard.chiave !== chiaveCommit || oraBattito - commitBoard.quando >= 5 * 60_000 - 1_000 || oraBattito < commitBoard.quando)) {
+    const x = await helper($, ['git-log', root]).catch(() => undefined)
+    // I `git` avviati dall'helper (su stderr) contano nel consumo come processi.
+    conta({ processi: Number(/git=(\d+)/.exec(x?.errore ?? '')?.[1] ?? 0) })
+    let voci: { sha: string; data: string; oggetto: string }[] = []
+    try { voci = x?.codice === 0 ? JSON.parse(x.testo) : [] } catch { /* risposta illeggibile: nessun commit */ }
+    commitBoard = { chiave: chiaveCommit, quando: oraBattito, voci }
+  }
+  const commit = root ? (commitBoard?.voci ?? []) : []
   const riassunti: Record<string, string> = {}
   if (modo.modo === 'riassunti')
     for (const [k, v] of Object.entries(await vociRiassunti($, prima.percorso)))

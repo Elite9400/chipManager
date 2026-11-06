@@ -815,6 +815,9 @@ test('2.4 git-log: oggetto, data e SHA corto del ramo base, al massimo 15', () =
   assert.strictEqual(l[0].oggetto, 'commit 16 <b>')
   assert.match(l[0].sha, /^[0-9a-f]{7,12}$/)
   assert.ok(Number.isFinite(Date.parse(l[0].data)))
+  // R1: quanti `git` sono partiti davvero, su stderr, per il contatore del pannello.
+  const avviati = Number(/git=(\d+)/.exec(r.stderr)?.[1])
+  assert.ok(avviati >= 2 && avviati <= 5, r.stderr)
 })
 
 test('lingue: nelle viste nessun testo fuori dal dizionario (testo fra i tag, label, titoli, didascalie)', () => {
