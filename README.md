@@ -41,8 +41,14 @@ model decides how to use them for the project at hand. Everything project-specif
   to merge, with a notice on the first stall.
 - **Agent limits at a glance** — Claude plan, Codex plan, API spend, balances and manual budgets, each with
   **source and age**. Unknown means unknown: no invented numbers.
-- **Load weights** — boost a provider, a model or an effort level by a percentage or an absolute amount; the
-  panel only ever chooses among combinations your rules allow.
+- **Start one chip easily** — every ready chip has **▶ Start** in the same place, **Start next** (`n`) starts the
+  first one the plan would start now, and a blocked chip says why.
+- **Responsive on desktop and terminal** — titles wrap, actions move below when space runs out, and the layout
+  follows the real pane width on every surface.
+- **Settings by section** — Connections, Thresholds, Balancing, Project, Board and Advanced, built from chips and
+  `−`/`+` steppers instead of free numbers; every control saves on its own.
+- **Load weights** — pick a profile (Automatic, Saving, Quality, Speed) or tune providers, models and effort on a
+  five-step scale; the panel only ever chooses among combinations your rules allow.
 - **FreeLLMAPI, opt-in** — guided Docker install of a pinned version, auto-detection, and usage levels to offload
   short, low-impact text tasks.
 - **Desktop and terminal** — the same panel in the Claude Code app and in the CLI, with a CLI launcher where the

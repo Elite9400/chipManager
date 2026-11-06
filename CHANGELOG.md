@@ -6,6 +6,56 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-11-06
+
+### Changed
+
+- **Settings, rebuilt by section.** Six sections are chosen from a chip row: Connections, Thresholds, Balancing,
+  Project, Board and Advanced. Every control saves on its own and shows a "Saved" toast; an error appears inline.
+- **Connections.** Allowed providers are filter chips, and every provider shows its state. **Connect…** opens a
+  guided pop-up, with an inline fallback when the pop-up is declined.
+- **Thresholds.** Preset chips plus two `−`/`+` steppers. Existing values, `null` and off-step values stay as they
+  are, and "warning < critical" is checked on every path.
+- **Balancing.**
+  - Profiles: Automatic, Saving, Quality, Speed, Custom. They touch only engines and effort, never models, and
+    are saved together with the weights in a single write.
+  - The simulation is declared as such, validated against the start rules, and says when no combination can
+    start.
+  - Manual tuning uses a five-step scale; custom weights are shown in full.
+- **Project.** Network, milestones, data folder, sensitive terms and manual budgets: budgets are removable chips,
+  with a guided **Add…**.
+
+### Fixed
+
+- A malformed `profilo` counts as absent instead of breaking the view.
+- Decimal thresholds can be adjusted.
+- Preset buttons carry the provider in their label, so no two controls share a name.
+
+## [2.5.0] - 2026-11-06
+
+### Changed
+
+- **Work and Load views follow the real pane width** (`bodyColumns`) on every surface, desktop included, in three
+  width classes. Titles wrap, and actions move below when space runs out.
+- **One compact card for every chip**:
+  - state;
+  - who works on it, with model, effort and reviewer;
+  - the first line of the brief;
+  - the actions.
+
+  No action of the previous layout is lost.
+- **▶ Start** sits in the same place on every ready chip.
+- **Start next** (`n`) starts the first chip the real plan (dependencies, slots, Codex lane) would start now.
+- A blocked chip shows its first reason and a **Why** list.
+- **Colours come only from `tema.ts`**: the per-model and per-effort colour maps are gone, and limits take the
+  colour of their level.
+- Button labels are short and unique: they carry the chip's order number.
+
+### Fixed
+
+- **Mark done** is available on started chips directly from the row.
+- Error marks no longer sit on a tint that lowered their contrast.
+
 ## [2.4.2] - 2026-11-06
 
 ### Changed
