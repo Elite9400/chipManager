@@ -763,6 +763,9 @@ const en = {
   "imp.salvando": "Saving…",
   // Settings: previous draft not valid
   "imp.bozzaScartata": "The previous draft was not valid and has been discarded",
+  // Settings draft epoch and proposal-written weights
+  "imp.cambiateNelFrattempo": "Settings changed in the meantime: nothing was done",
+  "imp.pesiDaProposta": "The load weights were changed by an applied proposal: they stay as they are and leave your draft",
   // ‹fine›
 } satisfies Record<string, Voce>
 

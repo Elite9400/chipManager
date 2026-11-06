@@ -761,6 +761,9 @@ const de: Dizionario = {
   "imp.salvando": "Wird gespeichert…",
   // Settings: previous draft not valid
   "imp.bozzaScartata": "Der vorherige Entwurf war ungültig und wurde verworfen",
+  // Settings draft epoch and proposal-written weights
+  "imp.cambiateNelFrattempo": "Die Einstellungen haben sich inzwischen geändert: nichts wurde getan",
+  "imp.pesiDaProposta": "Die Gewichte wurden durch einen angewendeten Vorschlag geändert: Sie bleiben so und verlassen deinen Entwurf",
   // ‹fine›
 }
 

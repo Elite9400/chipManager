@@ -91,7 +91,13 @@ export type Ctx = {
 }
 
 /** L'esito di «Applica»: campi cambiati altrove (niente scritto) con i loro valori di adesso; `errore` = progetto scritto, lingua no. */
-export type EsitoApplica = { cambiati: string[]; base: Record<string, unknown>; errore?: Msg }
+export type EsitoApplica = {
+  cambiati: string[]
+  base: Record<string, unknown>
+  /** Fra i cambiati, quelli scritti da sé da una proposta di pesi: «Riapplica» li toglie dalla bozza invece di sovrascriverli. */
+  immediati?: string[]
+  errore?: Msg
+}
 
 const MOTORI = ['claude', 'codex', 'freellmapi'] as const
 const NOMI_MOTORI: Record<Motore, string> = { claude: 'Claude', codex: 'Codex', freellmapi: 'FreeLLMAPI' }

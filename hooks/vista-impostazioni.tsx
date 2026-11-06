@@ -66,18 +66,33 @@ const TIPO = (t: string) => t[0]!.toUpperCase() + t.slice(1)
  * pressione che arriva durante la scrittura la vede sempre: la bozza resta ferma e la pressione è ignorata con un avviso.
  */
 let inVolo = false
-/** Quanti «Applica» sono partiti: una scelta che ha atteso qualcosa (una lettura) mentre uno partiva non vale più. */
-let applicazioni = 0
 
 /**
- * Cambia la bozza solo se nel momento in cui la si scrive nessun «Applica» è in volo, e nessuno è partito da `epoca`
- * (il valore di `applicazioni` quando l'azione è cominciata, prima delle sue attese). Altrimenti niente cambia e lo si dice.
+ * L'epoca della bozza (nell'atomo): cresce a ogni modifica della bozza e a ogni «Applica» avviato e concluso. Un'azione che
+ * attende qualcosa (popup, lettura) la legge prima dell'attesa e, dopo, agisce solo se è la stessa e nessun «Applica» è in
+ * volo; altrimenti non tocca niente e lo dice.
  */
-async function cambiaBozza($: EngineInterface, T: T, f: (s: StatoVista) => StatoVista, epoca = applicazioni): Promise<boolean> {
-  let ignorata = false
-  await update($, statoVista, s => (inVolo || epoca !== applicazioni ? ((ignorata = true), s) : f(s)))
-  if (ignorata) $.ui.toast(T('imp.salvando'))
-  return !ignorata
+const epocaDi = (s: StatoVista) => s.epoca ?? 0
+export async function epocaBozza($: EngineInterface) {
+  return epocaDi(await read($, statoVista))
+}
+
+/** Perché un'azione non vale più: un «Applica» in volo, o una bozza cambiata dall'epoca letta. */
+function ferma(s: StatoVista, epoca: number | undefined): Chiave | undefined {
+  if (inVolo) return 'imp.salvando'
+  if (epoca !== undefined && epoca !== epocaDi(s)) return 'imp.cambiateNelFrattempo'
+  return undefined
+}
+
+/** Cambia la bozza se l'azione vale ancora nel momento in cui la si scrive (vedi `ferma`); altrimenti lo dice. */
+async function cambiaBozza($: EngineInterface, T: T, f: (s: StatoVista) => StatoVista, epoca?: number): Promise<boolean> {
+  let motivo: Chiave | undefined
+  await update($, statoVista, s => {
+    motivo = ferma(s, epoca)
+    return motivo ? s : { ...f(s), epoca: epocaDi(s) + 1 }
+  })
+  if (motivo) $.ui.toast(T(motivo))
+  return !motivo
 }
 
 /**
@@ -90,53 +105,71 @@ export async function ripristinaImpostazioni($: EngineInterface, T: T) {
     const { applicando: _, pendenti, ...resto } = (s && typeof s === 'object' ? s : { sezione: 'connessioni' }) as StatoVista
     const letta = pendentiDa(pendenti)
     perso = letta.perso
-    return { ...resto, ...(letta.pendenti && { pendenti: letta.pendenti }) }
+    return { ...resto, epoca: (typeof resto.epoca === 'number' ? resto.epoca : 0) + 1, ...(letta.pendenti && { pendenti: letta.pendenti }) }
   })
   if (perso) $.ui.toast(T('imp.bozzaScartata'))
 }
 
 /**
  * F5.9 «Applica»: la bozza in una sola scrittura, ferma finché la scrittura non finisce. Se un'altra sessione ha cambiato un
- * campo toccato, niente è scritto e un popup chiede «Ricarica e riapplica» (la bozza vince) o «Scarta». Vero se la bozza
- * non c'è più.
+ * campo toccato, niente è scritto e un popup chiede «Ricarica e riapplica» (la bozza vince) o «Scarta». `epoca`, se data, è
+ * quella letta prima di un popup: se intanto la bozza è cambiata non si applica. Vero se la bozza non c'è più.
  */
-export async function applicaBozza($: EngineInterface, c: Ctx, T: T): Promise<boolean> {
-  if (inVolo) {
-    $.ui.toast(T('imp.salvando'))
+export async function applicaBozza($: EngineInterface, c: Ctx, T: T, epoca?: number): Promise<boolean> {
+  const motivo = ferma(await read($, statoVista), epoca)
+  if (motivo || inVolo) {
+    $.ui.toast(T(motivo ?? 'imp.salvando'))
     return false
   }
   inVolo = true
-  applicazioni++
   try {
-    await update($, statoVista, (s): StatoVista => ({ ...s, applicando: true }))
+    await update($, statoVista, (s): StatoVista => ({ ...s, applicando: true, epoca: epocaDi(s) + 1 }))
     return await applicaFerma($, c, T)
   } finally {
     inVolo = false
-    await update($, statoVista, (s): StatoVista => ({ ...s, applicando: undefined }))
+    await update($, statoVista, (s): StatoVista => ({ ...s, applicando: undefined, epoca: epocaDi(s) + 1 }))
   }
 }
 
+/** Una scrittura sola, con «Applica» in volo (solo questa funzione cambia la bozza finché dura). */
 async function applicaFerma($: EngineInterface, c: Ctx, T: T): Promise<boolean> {
   const p = piena((await read($, statoVista)).pendenti)
   if (!p) return true
+  const scrivi = (f: (s: StatoVista) => StatoVista) => update($, statoVista, (s): StatoVista => ({ ...f(s), epoca: epocaDi(s) + 1 }))
   try {
     const esito = await c.applica(p)
     if (!esito.cambiati.length) {
       // La bozza non è cambiata durante la scrittura: se ne va tutta, tranne la lingua se il suo salvataggio è fallito.
       const resta = esito.errore && p.lingua ? { campi: {}, base: {}, dove: ['lingua'], lingua: p.lingua } : undefined
-      await update($, statoVista, (s): StatoVista => ({ ...s, pendenti: resta, errore: esito.errore && { dove: 'applica', testo: esito.errore } }))
+      await scrivi(s => ({ ...s, pendenti: resta, errore: esito.errore && { dove: 'applica', testo: esito.errore } }))
       if (!esito.errore) $.ui.toast(T('salvato'))
       return !resta
     }
     const dove = [...new Set(esito.cambiati.map(k => T(SEZIONE_DI[k] ?? 'imp.sezione.progetto')))].join(', ')
+    const prima = await epocaBozza($)
     const scelta = await $.ui
       .ask(T('imp.conflitto', { dove }), { options: [T('imp.riapplica'), T('imp.scartaBozza')], header: T('imp.conflittoTitolo') })
       .catch(() => undefined)
+    // La bozza è ferma, ma la regola vale per ogni attesa: dopo il popup si agisce solo sulla bozza di prima.
+    if ((await epocaBozza($)) !== prima) {
+      $.ui.toast(T('imp.cambiateNelFrattempo'))
+      return false
+    }
     if (scelta === T('imp.riapplica')) {
-      await update($, statoVista, (s): StatoVista => ({ ...s, pendenti: s.pendenti && { ...s.pendenti, base: { ...s.pendenti.base, ...esito.base } } }))
+      // I campi che una proposta di pesi ha scritto da sé escono dalla bozza: «Riapplica» non li sovrascrive mai.
+      const via = new Set(esito.immediati ?? [])
+      await scrivi(s => {
+        const q = s.pendenti
+        if (!q) return s
+        const tieni = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([k]) => !via.has(k)))
+        const base = { ...q.base, ...esito.base }
+        const dove = via.size ? q.dove.filter(d => !/^(profilo|peso-)/.test(d)) : q.dove
+        return { ...s, pendenti: piena({ ...q, campi: tieni(q.campi), base: tieni(base), dove }) }
+      })
+      if (via.size) $.ui.toast(T('imp.pesiDaProposta'))
       return applicaFerma($, c, T)
     }
-    if (scelta === T('imp.scartaBozza')) await update($, statoVista, (s): StatoVista => ({ ...s, pendenti: undefined, errore: undefined }))
+    if (scelta === T('imp.scartaBozza')) await scrivi(s => ({ ...s, pendenti: undefined, errore: undefined }))
     return scelta === T('imp.scartaBozza')
   } catch (err) {
     const m = msgDi(err)
@@ -152,22 +185,27 @@ export async function lasciaImpostazioni($: EngineInterface, c: Ctx, T: T): Prom
     $.ui.toast(T('imp.salvando'))
     return false
   }
-  const p = piena((await read($, statoVista)).pendenti)
+  const s0 = await read($, statoVista)
+  const p = piena(s0.pendenti)
   if (!p) return true
-  const n = p.dove.length
+  const epoca = epocaDi(s0)
   let scelta: string | undefined
   try {
-    scelta = await $.ui.ask(T('imp.uscita', { n }), { options: [T('imp.applica'), T('imp.scarta'), T('imp.resta')], header: T('imp.uscitaTitolo') })
+    scelta = await $.ui.ask(T('imp.uscita', { n: p.dove.length }), { options: [T('imp.applica'), T('imp.scarta'), T('imp.resta')], header: T('imp.uscitaTitolo') })
   } catch {
-    return true
-  }
-  // Dopo il popup si ricontrolla: un «Applica» partito intanto (da un altro pannello) ha la bozza ferma.
-  if (inVolo) {
+    // Popup non disponibile: si esce e la bozza resta, ma non mentre un «Applica» (partito intanto) scrive.
+    if (!inVolo) return true
     $.ui.toast(T('imp.salvando'))
     return false
   }
-  if (scelta === T('imp.applica')) return applicaBozza($, c, T)
-  if (scelta === T('imp.scarta')) return cambiaBozza($, T, (s): StatoVista => ({ ...s, pendenti: undefined, errore: undefined }))
+  // Dopo il popup si agisce solo sulla bozza che il popup ha mostrato, e mai con un «Applica» in volo.
+  const motivo = ferma(await read($, statoVista), epoca)
+  if (motivo) {
+    $.ui.toast(T(motivo))
+    return false
+  }
+  if (scelta === T('imp.applica')) return applicaBozza($, c, T, epoca)
+  if (scelta === T('imp.scarta')) return cambiaBozza($, T, (s): StatoVista => ({ ...s, pendenti: undefined, errore: undefined }), epoca)
   return false
 }
 
@@ -183,7 +221,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const conB = vista.pendenti ? conBozza(r0, vista.pendenti.campi) : r0
   const r = eMsg(conB) ? r0 : conB
   const cambia = (f: (s: StatoVista) => StatoVista) => update($, statoVista, f)
-  /** Cambia la bozza solo se «Applica» non sta scrivendo; altrimenti niente cambia e lo si dice. */
+  /** Cambia la bozza solo se l'azione vale ancora quando la si scrive (nessun «Applica» in volo, `epoca` invariata). */
   const inBozza = (f: (s: StatoVista) => StatoVista, epoca?: number) => cambiaBozza($, T, f, epoca)
   const nomeTipo = (x: (typeof TIPI_BUDGET)[number]) => TIPO(T(`budget.${x}`))
 
@@ -514,16 +552,9 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
             void esegui('budget', async () => {
               const misura = budgetDa(testo)
               if ('k' in misura) throw new Errore(misura)
-              // La procedura guidata scrive da sé, sui limiti letti; un elenco già nella bozza riceve lo stesso budget.
-              const nuovo = nuovoBudget(b.fornitore!, b.tipo!, misura, Date.now())
-              const scritti = [...manualiDaScrivere(r0.limitiManuali), nuovo]
-              await configura({ limitiManuali: scritti })
-              await inBozza(s => {
-                const p = s.pendenti
-                if (!p || !('limitiManuali' in p.campi)) return { ...s, bozza: undefined }
-                const campi = { ...p.campi, limitiManuali: [...(p.campi.limitiManuali as unknown[]), nuovo] }
-                return { ...s, bozza: undefined, pendenti: { ...p, campi, base: { ...p.base, limitiManuali: scritti } } }
-              })
+              // La procedura guidata scrive da sé, sui limiti letti: i budget non stanno nella bozza.
+              await configura({ limitiManuali: [...manualiDaScrivere(r0.limitiManuali), nuovoBudget(b.fornitore!, b.tipo!, misura, Date.now())] })
+              await cambia(s => ({ ...s, bozza: undefined }))
             })
           }
         />
@@ -574,7 +605,8 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
             {r.limitiManuali.map(l =>
               u.Chip({
                 chiave: `budget-${l.id}`, testo: budgetScritto(l), segno: '•',
-                onRimuovi: salva('budget', () => ({ limitiManuali: manualiDaScrivere(r.limitiManuali.filter(x => x.id !== l.id)) })),
+                // Il budget scrive subito, come la procedura che lo aggiunge: non sta nella bozza.
+                onRimuovi: () => void esegui('budget', () => configura({ limitiManuali: manualiDaScrivere(r0.limitiManuali.filter(x => x.id !== l.id)) })),
               }),
             )}
             {!vista.bozza && <Button key="aggiungi-budget" variant="secondary" label={T('pro.aggiungiBudget')} onPress={() => void aggiungiBudget()} />}
@@ -682,7 +714,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
               // Il congelamento si controlla quando la scelta entra nella bozza, dopo la lettura: un «Applica» partito
               // nel frattempo (anche già finito) rende vecchia la lingua letta.
               if (inVolo) return void $.ui.toast(T('imp.salvando'))
-              const epoca = applicazioni
+              const epoca = await epocaBozza($)
               const salvata = await read($, linguaSalvata)
               await inBozza(s => {
                 const p = s.pendenti ?? { campi: {}, base: {}, dove: [] }

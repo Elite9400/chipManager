@@ -761,6 +761,9 @@ const es: Dizionario = {
   "imp.salvando": "Guardando…",
   // Settings: previous draft not valid
   "imp.bozzaScartata": "El borrador anterior no era válido y se descartó",
+  // Settings draft epoch and proposal-written weights
+  "imp.cambiateNelFrattempo": "Los ajustes cambiaron mientras tanto: no se hizo nada",
+  "imp.pesiDaProposta": "Los pesos los cambió una propuesta aplicada: se quedan así y salen de tu borrador",
   // ‹fine›
 }
 

@@ -135,18 +135,21 @@ export const manualiDaScrivere = (limiti: readonly Limite[]) =>
 // Le modifiche restano nella bozza della sessione finché non si preme «Applica»: una sola scrittura CAS. Ogni campo
 // tiene il valore che aveva quando lo si è toccato (`base`), così all'Applica si vede se un'altra sessione l'ha cambiato.
 
+/** I campi del progetto che stanno nella bozza; i budget manuali no: si scrivono subito, e Applica non li tocca mai. */
+export const CAMPI_BOZZA = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'freellmapi', 'board', 'soglie', 'profilo']
 /** Il valore di un campo del progetto nella forma che scrive `configura`. */
-export const valoreConfig = (r: RisorseProgetto, k: string): unknown =>
-  k === 'limitiManuali' ? manualiDaScrivere(r.limitiManuali) : k === 'board' ? { modo: r.board.modo } : (r as Record<string, unknown>)[k]
+export const valoreConfig = (r: RisorseProgetto, k: string): unknown => (k === 'board' ? { modo: r.board.modo } : (r as Record<string, unknown>)[k])
 
 /** Aggiunge alla bozza i `campi` toccati da un controllo (`dove`); la base di un campo è quella del primo tocco. */
 export function conPendente(p: Pendenti | undefined, r: RisorseProgetto, dove: string, campi: Record<string, unknown>): Pendenti {
+  // I budget manuali scrivono subito (procedura guidata e ×): un campo fuori dallo schema della bozza è un errore di chi chiama.
+  const fuori = Object.keys(campi).filter(k => !CAMPI_BOZZA.includes(k))
+  if (fuori.length) throw new Error(`not a draft field: ${fuori.join(', ')}`)
   const base = { ...p?.base }
   for (const k of Object.keys(campi)) if (!(k in base)) base[k] = valoreConfig(r, k)
   return { ...p, campi: { ...p?.campi, ...campi }, base, dove: [...new Set([...(p?.dove ?? []), dove])] }
 }
 
-const CAMPI_BOZZA = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo']
 const oggetto = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)
 /**
  * La bozza come la lascia uno stato conservato (anche da un modulo precedente): la forma di oggi, oppure null se non lo
@@ -176,7 +179,7 @@ export const cambiatiAltrove = (p: Pendenti, r: RisorseProgetto) => Object.keys(
 /** Dove sta un campo, per dire all'utente che cosa è cambiato. */
 export const SEZIONE_DI: Record<string, Chiave> = {
   fornitori: 'imp.sezione.connessioni', soglie: 'imp.sezione.soglie', profilo: 'imp.sezione.bilanciamento', pesi: 'imp.sezione.bilanciamento',
-  soloLocale: 'imp.sezione.progetto', milestoneGithub: 'imp.sezione.progetto', limitiManuali: 'imp.sezione.progetto', board: 'imp.sezione.board',
+  soloLocale: 'imp.sezione.progetto', milestoneGithub: 'imp.sezione.progetto', board: 'imp.sezione.board',
   freellmapi: 'imp.sezione.avanzate',
 }
 

@@ -297,6 +297,8 @@ export type StatoImpostazioni = {
   pendenti?: Pendenti
   /** Vero mentre «Applica» scrive: la barra dice «Salvataggio in corso…» e la bozza è ferma. */
   applicando?: boolean
+  /** Cresce a ogni modifica della bozza e a ogni «Applica» avviato e concluso: un'azione dopo un'attesa la confronta. */
+  epoca?: number
 }
 /**
  * La bozza delle Impostazioni: campi del progetto come li scrive `configura`, il loro valore al primo tocco, i controlli

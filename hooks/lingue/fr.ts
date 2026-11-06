@@ -761,6 +761,9 @@ const fr: Dizionario = {
   "imp.salvando": "Enregistrement…",
   // Settings: previous draft not valid
   "imp.bozzaScartata": "Le brouillon précédent n'était pas valide et a été abandonné",
+  // Settings draft epoch and proposal-written weights
+  "imp.cambiateNelFrattempo": "Les réglages ont changé entre-temps : rien n'a été fait",
+  "imp.pesiDaProposta": "Les poids ont été modifiés par une proposition appliquée : ils restent ainsi et quittent votre brouillon",
   // ‹fine›
 }
 

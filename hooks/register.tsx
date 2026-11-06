@@ -1445,21 +1445,29 @@ async function riassumi($: Eng) {
  * di adesso, e il pannello chiede se riapplicare o scartare.
  */
 async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pendenti): Promise<EsitoApplica> {
-  const conflitto = (ora: RisorseProgetto, cambiati: string[]): EsitoApplica =>
-    ({ cambiati, base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])) })
+  // Profilo e pesi scritti per ultimi da una proposta (o dal suo annullamento) non si sovrascrivono con «Riapplica».
+  const daProposta = (ora: RisorseProgetto) => !!ora.pesiOrigine && ora.pesiOrigine.tipo !== 'manuale'
+  const conflitto = (ora: RisorseProgetto, cambiati: string[]): EsitoApplica => ({
+    cambiati,
+    base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])),
+    immediati: daProposta(ora) ? cambiati.filter(k => k === 'pesi' || k === 'profilo') : [],
+  })
   let ora = (await leggiRegole($)).risorse
   if (cambiatiAltrove(p, ora).length) return conflitto(ora, cambiatiAltrove(p, ora))
   const progetto = Object.keys(p.campi).length > 0
   if (progetto) {
-    try {
-      await configura($, opz, p.campi, ora)
-    } catch (err) {
-      // Rilievo 3: il CAS (o le risorse attese) è cambiato fra la rilettura e la scrittura: niente scritto, si rilegge e si
-      // chiede come per il controllo preliminare. Se nessun campo della bozza risulta cambiato, si chiede su tutti.
-      if (!(err instanceof Errore) || !['errore.configCambiata', 'err.impostazioniCambiate'].includes(err.msg.k)) throw err
-      ora = (await leggiRegole($)).risorse
-      const cambiati = cambiatiAltrove(p, ora)
-      return conflitto(ora, cambiati.length ? cambiati : Object.keys(p.campi))
+    for (let tentativo = 1; ; tentativo++) {
+      try {
+        await configura($, opz, p.campi, ora)
+        break
+      } catch (err) {
+        // Il CAS (o le risorse attese) è cambiato fra la rilettura e la scrittura: niente scritto, si rilegge. Se è cambiato
+        // un campo della bozza si chiede; se è cambiato altro (un budget scritto subito) si riprova sulla versione nuova.
+        if (!(err instanceof Errore) || !['errore.configCambiata', 'err.impostazioniCambiate'].includes(err.msg.k)) throw err
+        ora = (await leggiRegole($)).risorse
+        const cambiati = cambiatiAltrove(p, ora)
+        if (cambiati.length || tentativo >= 3) return conflitto(ora, cambiati.length ? cambiati : Object.keys(p.campi))
+      }
     }
     if ('board' in p.campi) await dopoBoard($)
   }
