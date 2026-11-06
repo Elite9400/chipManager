@@ -128,8 +128,8 @@ async function baseOrch($: Eng) {
   return dir
 }
 const cartella = async ($: Eng) => `${await baseOrch($)}/azioni`
-/** Le proposte di pesi: le scrive solo l'helper, sotto il mutex del config. */
-const fileProposte = async ($: Eng) => `${await baseOrch($)}/proposte-pesi.json`
+/** Le proposte di pesi, accanto al config (le scrive solo l'helper, sotto il suo mutex): un file solo per ogni sessione. */
+const fileProposte = async ($: Eng) => (await fileConfig($)).replace(/\\/g, '/').replace(/[^/]*$/, 'proposte-pesi.json')
 const strumenti = ($: Eng): Strumenti => ({ disco: `${$.plugin.root.replace(/\\/g, '/')}/strumenti/disco.cjs` })
 const ora = () => new Date().toISOString()
 const gettone = () => `az-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 7)}`
@@ -428,7 +428,7 @@ async function decidiPesi($: Eng, opz: Record<string, unknown>, p: PropostaPesi,
   const chi = await chiSonoIo($)
   if (!chi.repo) throw new Error('progetto non noto')
   const chiave = `d-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`
-  const x = await helper($, ['pesi-decidi', await fileConfig($), await fileProposte($), chi.repo, p.id, String(p.versione), esito, chiave])
+  const x = await helper($, ['pesi-decidi', await fileConfig($), chi.repo, p.id, String(p.versione), esito, chiave])
   await leggiProposte($)
   if (x.codice !== 0) throw new Error(`Proposta di pesi: ${x.testo || 'decisione non registrata'}`)
   await aggiornaRisorse($, opz)
@@ -439,7 +439,7 @@ async function annullaPesi($: Eng, opz: Record<string, unknown>, p: PropostaPesi
   const chi = await chiSonoIo($)
   if (!chi.repo) throw new Error('progetto non noto')
   const chiave = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`
-  const x = await helper($, ['pesi-annulla', await fileConfig($), await fileProposte($), chi.repo, p.id, chiave])
+  const x = await helper($, ['pesi-annulla', await fileConfig($), chi.repo, p.id, chiave])
   await leggiProposte($)
   if (x.codice !== 0) throw new Error(`Annulla: ${x.testo || 'non riuscito'}`)
   await aggiornaRisorse($, opz)
@@ -1186,8 +1186,7 @@ async function configura($: Eng, opz: Record<string, unknown>, campi: Record<str
     const nuovo = { ...config, progetti: { ...config.progetti, [chi.repo]: { ...(config.progetti?.[chi.repo] as object ?? {}), ...campi } } }
     const p = progettoDa(nuovo, chi.repo)
     if (typeof p === 'string') throw new Error(p)
-    // `proposte`: l'helper completa l'ultima operazione sui pesi prima di scrivere profilo o pesi.
-    const esito = await helper($, ['configura', f], JSON.stringify({ atteso, repo: chi.repo, campi, proposte: await fileProposte($).catch(() => undefined) }))
+    const esito = await helper($, ['configura', f], JSON.stringify({ atteso, repo: chi.repo, campi }))
     if (esito.codice !== 0) throw new Error('Configurazione cambiata altrove o non scrivibile: ricarica e riprova')
     await aggiornaRisorse($, opz)
 }
@@ -1523,7 +1522,7 @@ export const register: Register = (on, options) => {
     const v = propostaDa(args, r)
     if (typeof v === 'string') return { deny: `proponi_pesi: ${v}` }
     // Il proponente è questa sessione (id dal motore, titolo dall'app), mai un argomento.
-    const esito = await helper($, ['pesi-proponi', await fileConfig($), await fileProposte($)], JSON.stringify({
+    const esito = await helper($, ['pesi-proponi', await fileConfig($)], JSON.stringify({
       repo: chi.repo, proponente: { id: chi.io, titolo: chi.titolo ?? '' }, motivo: v.motivo, profilo: v.profilo, regolazioni: v.regolazioni,
       partenza: { profilo: r.risorse.profilo ?? null, pesi: r.risorse.pesi }, revisione: r.risorse.pesiRevisione ?? 0, risultato: v.risultato,
     }))

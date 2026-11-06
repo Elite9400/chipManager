@@ -195,7 +195,7 @@ test('risorse_agenti: al lavoro per modello ed effort; risposta sotto 4.000 cara
 // --- il pannello contro un engine finto: proposte di pesi --------------------------------------------------
 
 const CONFIG = 'X:/casa/.claude/chipmanager/config.json'
-const PROPOSTE = 'X:/dati/proposte-pesi.json'
+const PROPOSTE = 'X:/casa/.claude/chipmanager/proposte-pesi.json'
 type On = Parameters<TestBody>[1]
 
 /**
@@ -260,25 +260,25 @@ function ambiente(on: On, progetto: Record<string, unknown> = { fornitori: ['cla
       return fine(0, JSON.stringify({ id, scadute: [] }))
     }
     if (cmd === 'pesi-decidi' || cmd === 'pesi-annulla') {
-      const v = P.voci.find(x => x.id === a[3])
+      const v = P.voci.find(x => x.id === a[2])
       if (!v) return fine(4, 'proposta non trovata')
       const prog = progettoDi()
       const R = (prog.pesiRevisione as number) ?? 0
       if (cmd === 'pesi-decidi') {
-        if (v.stato !== 'attesa' || String(v.versione) !== a[4]) return fine(4, 'la proposta è cambiata, rivedi')
-        if (a[5] === 'applica') {
+        if (v.stato !== 'attesa' || String(v.versione) !== a[3]) return fine(4, 'la proposta è cambiata, rivedi')
+        if (a[4] === 'applica') {
           const r = v.risultato as { profilo: string; pesi: unknown[] }
-          Object.assign(prog, { profilo: r.profilo, pesi: r.pesi, pesiRevisione: R + 1, pesiOrigine: { tipo: 'proposta', id: a[6], voce: v.id, versione: v.versione } })
-          Object.assign(v, { stato: 'applicata', decisione: { id: a[6], esito: 'applica', quando: new Date().toISOString(), revisione: R + 1 } })
-        } else Object.assign(v, { stato: 'rifiutata', decisione: { id: a[6], esito: 'rifiuta', quando: new Date().toISOString() } })
+          Object.assign(prog, { profilo: r.profilo, pesi: r.pesi, pesiRevisione: R + 1, pesiOrigine: { tipo: 'proposta', id: a[5], voce: v.id, versione: v.versione } })
+          Object.assign(v, { stato: 'applicata', decisione: { id: a[5], esito: 'applica', quando: new Date().toISOString(), revisione: R + 1 } })
+        } else Object.assign(v, { stato: 'rifiutata', decisione: { id: a[5], esito: 'rifiuta', quando: new Date().toISOString() } })
       } else {
         const d = v.decisione as { id: string; revisione: number }
         if (v.stato !== 'applicata' || R !== d.revisione || (prog.pesiOrigine as { id?: string })?.id !== d.id) return fine(4, 'la configurazione è cambiata dopo l\'applicazione')
         const s = v.partenza as { profilo: string | null; pesi: unknown[] }
-        Object.assign(prog, { pesi: s.pesi, pesiRevisione: R + 1, pesiOrigine: { tipo: 'annullamento', id: a[4] } })
+        Object.assign(prog, { pesi: s.pesi, pesiRevisione: R + 1, pesiOrigine: { tipo: 'annullamento', id: a[3] } })
         if (s.profilo) prog.profilo = s.profilo
         else delete prog.profilo
-        Object.assign(v, { stato: 'annullata', annullamento: { id: a[4], quando: new Date().toISOString(), revisione: R + 1 } })
+        Object.assign(v, { stato: 'annullata', annullamento: { id: a[3], quando: new Date().toISOString(), revisione: R + 1 } })
       }
       v.versione = (v.versione as number) + 1
       scrivi()
@@ -356,8 +356,8 @@ test('Rivedi: il popup solo dal pulsante; chiuso, Applica e Rifiuta restano; App
   amb.popup.risposta = () => 'Applica'
   await ui.press({ key: 'lavoro-pesi-p-esempio01-rivedi' })
   const [cmd] = amb.comandi('pesi-decidi')
-  expect(cmd!.slice(2, 9)).toEqual(['pesi-decidi', CONFIG, PROPOSTE, 'esempio/demo', 'p-esempio01', '0', 'applica'])
-  expect(cmd![9]).toMatch(/^d-[a-z0-9]{6,40}$/)
+  expect(cmd!.slice(2, 8)).toEqual(['pesi-decidi', CONFIG, 'esempio/demo', 'p-esempio01', '0', 'applica'])
+  expect(cmd![8]).toMatch(/^d-[a-z0-9]{6,40}$/)
   expect(amb.progettoOra()).toMatchObject({ profilo: 'personalizzato', pesi: [{ tipo: 'fornitore', nome: 'codex', percentuale: 40, assoluto: 0 }], pesiRevisione: 1 })
   expect(amb.toast).toContain('Pesi applicati')
   expect(await ui.find({ key: 'lavoro-pesi-p-esempio01-rivedi' })).toBeUndefined()
@@ -365,7 +365,7 @@ test('Rivedi: il popup solo dal pulsante; chiuso, Applica e Rifiuta restano; App
   await ui.press({ key: 'vista-carico' })
   expect(await ui.find({ type: 'Text', text: /^Applicata il .*proposta da «Master» \(sessione\): Codex Più$/ })).toBeDefined()
   await ui.press({ key: 'carico-pesi-registro-annulla' })
-  expect(amb.comandi('pesi-annulla')[0]![7]).toMatch(/^u-[a-z0-9]{6,40}$/)
+  expect(amb.comandi('pesi-annulla')[0]![6]).toMatch(/^u-[a-z0-9]{6,40}$/)
   expect(amb.progettoOra()).toMatchObject({ pesi: [], pesiRevisione: 2 })
   expect(amb.progettoOra()).not.toHaveProperty('profilo')
   expect(await ui.find({ key: 'carico-pesi-registro-annulla' })).toBeUndefined()
@@ -384,13 +384,13 @@ test('Rivedi → Apri le impostazioni: la sezione Bilanciamento mostra la propos
   expect(await ui.find({ key: 'pagina-bilanciamento' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /nessun profilo · nessun peso → Velocità · effort low Preferisci.*Motivo: Molte chip di documentazione/ })).toBeDefined()
   await ui.press({ key: 'bil-pesi-p-esempio01-rifiuta' })
-  expect(amb.comandi('pesi-decidi')[0]!.slice(7, 9)).toEqual(['0', 'rifiuta'])
+  expect(amb.comandi('pesi-decidi')[0]!.slice(6, 8)).toEqual(['0', 'rifiuta'])
   expect(amb.progettoOra()).toEqual({ fornitori: ['claude', 'codex'] })
   expect(await ui.find({ key: 'bil-pesi-p-esempio01-rifiuta' })).toBeUndefined()
   await ui.unmount()
 })
 
-test('impostazioni: ogni salvataggio di profilo o pesi passa il file delle proposte all\'helper (recupero prima di scrivere)', async ($, on) => {
+test('impostazioni: un salvataggio di profilo o pesi passa dall\'helper, che incrementa la revisione e segna l\'origine manuale', async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -398,7 +398,7 @@ test('impostazioni: ogni salvataggio di profilo o pesi passa il file delle propo
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-bilanciamento-premi' })
   await ui.press({ key: 'profilo-qualita-premi' })
-  expect(amb.stdin.at(-1)).toMatchObject({ campi: { profilo: 'qualita' }, proposte: PROPOSTE })
+  expect(amb.stdin.at(-1)).toMatchObject({ campi: { profilo: 'qualita' } })
   expect(amb.progettoOra()).toMatchObject({ profilo: 'qualita', pesiRevisione: 1, pesiOrigine: { tipo: 'manuale' } })
   await ui.unmount()
 })

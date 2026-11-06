@@ -266,7 +266,7 @@ function avviaComando(comando, opzioni = {}) {
 
 /**
  * CAS del config intero, senza scartare campi di altri progetti o modifiche di un altro pannello. Una scrittura di
- * `profilo` o `pesi` completa prima l'operazione indicata da `pesiOrigine` (serve `richiesta.proposte`), poi
+ * `profilo` o `pesi` completa prima l'operazione indicata da `pesiOrigine` (file delle proposte accanto al config), poi
  * incrementa `pesiRevisione` e segna l'origine manuale: nessuno dei due si scrive da fuori.
  */
 async function configura(file, richiesta) {
@@ -286,9 +286,8 @@ async function configura(file, richiesta) {
     if ('pesi' in campi || 'profilo' in campi) {
       const o = precedente.pesiOrigine
       if (o && (o.tipo === 'proposta' || o.tipo === 'annullamento')) {
-        if (typeof richiesta.proposte !== 'string' || !path.isAbsolute(richiesta.proposte)) return 2
         try {
-          recupera(c, richiesta.repo, leggiProposte(richiesta.proposte), richiesta.proposte)
+          recupera(c, richiesta.repo, leggiProposte(fileProposteDi(file)), fileProposteDi(file))
         } catch (e) {
           if (e instanceof Rifiuto) return 4
           throw e
@@ -760,6 +759,9 @@ const MAX_VOCI = 10
 const ID_VOCE = /^p-[a-z0-9]{6,40}$/
 const ID_DECISIONE = /^d-[a-z0-9]{6,40}$/
 const ID_ANNULLAMENTO = /^u-[a-z0-9]{6,40}$/
+// Accanto al config, non nella cartella dei dati: config e mutex sono uno solo, la cartella dei dati può cambiare fra
+// sessioni (CHIPMANAGER_DIR, «cartella»). Così decisione, recupero e `configura` leggono sempre lo stesso file.
+const fileProposteDi = file => path.join(path.dirname(file), 'proposte-pesi.json')
 // I testi che arrivano al committente, raccolti qui.
 const TESTI_PESI = {
   argomenti: 'argomenti non validi',
@@ -861,16 +863,16 @@ function scadi(P, repo, adesso) {
 }
 
 /** Sotto il mutex del config: legge config e proposte, recupera, poi `fn(c, P)`. */
-async function conPesi(file, fileProposte, repo, fn) {
-  if (typeof repo !== 'string' || !repo || repo.length > 400 || typeof fileProposte !== 'string' || !path.isAbsolute(fileProposte)) return [2, TESTI_PESI.argomenti]
+async function conPesi(file, repo, fn) {
+  if (typeof repo !== 'string' || !repo || repo.length > 400 || typeof file !== 'string' || !path.isAbsolute(file)) return [2, TESTI_PESI.argomenti]
+  const fileProposte = fileProposteDi(file)
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.mkdirSync(path.dirname(fileProposte), { recursive: true })
   const r = await conMutex(mutexConfig(file), 8000, () => {
     try {
       const c = leggiConfigPesi(file)
       const P = leggiProposte(fileProposte)
       recupera(c, repo, P, fileProposte)
-      return fn(c, P)
+      return fn(c, P, fileProposte)
     } catch (e) {
       if (e instanceof Rifiuto) return [e.codice, e.message]
       throw e
@@ -883,7 +885,7 @@ async function conPesi(file, fileProposte, repo, fn) {
  * stdin: `{ repo, proponente: { id, titolo }, motivo, profilo?, regolazioni?, partenza: { profilo, pesi }, revisione, risultato: { profilo, pesi } }`.
  * La partenza deve essere ancora quella del config (valori e revisione). Oltre 3 in attesa la più vecchia scade.
  */
-async function pesiProponi(file, fileProposte, q) {
+async function pesiProponi(file, q) {
   const ammessi = ['repo', 'proponente', 'motivo', 'profilo', 'regolazioni', 'partenza', 'revisione', 'risultato']
   if (!oggetto(q) || Object.keys(q).some(k => !ammessi.includes(k))) return [2, TESTI_PESI.campi]
   const chi = q.proponente
@@ -894,7 +896,7 @@ async function pesiProponi(file, fileProposte, q) {
         oggetto(x) && ['fornitore', 'modello', 'effort'].includes(x.tipo) && typeof x.nome === 'string' && x.nome.length <= 100 && Number.isInteger(x.posizione) && x.posizione >= 0 && x.posizione <= 4))) ||
       (q.profilo === undefined && q.regolazioni === undefined) ||
       !Number.isInteger(q.revisione) || q.revisione < 0 || !pesiProfiloOk(q.partenza) || !pesiProfiloOk(q.risultato) || !q.risultato.profilo) return [2, TESTI_PESI.campi]
-  return conPesi(file, fileProposte, q.repo, (c, P) => {
+  return conPesi(file, q.repo, (c, P, fileProposte) => {
     const prog = c.progetti?.[q.repo] ?? {}
     if (revisioneDi(prog) !== q.revisione || !ugualiPesi(pesiProfiloDi(prog), q.partenza)) return [4, TESTI_PESI.primaDellaProposta]
     const adesso = Date.now()
@@ -929,9 +931,9 @@ async function pesiProponi(file, fileProposte, q) {
  * Applica o rifiuta la voce alla `versione` vista. Primo controllo: la stessa chiave di decisione ha già deciso →
  * l'esito registrato, senza riscrivere. `opz.dopoConfig` esiste solo per le prove (arresto fra le due scritture).
  */
-async function pesiDecidi(file, fileProposte, repo, idVoce, versione, esito, idDecisione, opz = {}) {
+async function pesiDecidi(file, repo, idVoce, versione, esito, idDecisione, opz = {}) {
   if (!ID_VOCE.test(idVoce) || !/^\d{1,9}$/.test(String(versione)) || !['applica', 'rifiuta'].includes(esito) || !ID_DECISIONE.test(idDecisione)) return [2, TESTI_PESI.argomenti]
-  return conPesi(file, fileProposte, repo, (c, P) => {
+  return conPesi(file, repo, (c, P, fileProposte) => {
     const v = P.voci.find(x => x.id === idVoce && x.progetto === repo)
     if (!v) return [4, TESTI_PESI.nonTrovata]
     if (v.decisione?.id === idDecisione) return [0, JSON.stringify({ stato: v.stato, decisione: v.decisione })]
@@ -957,9 +959,9 @@ async function pesiDecidi(file, fileProposte, repo, idVoce, versione, esito, idD
 }
 
 /** Ripristina la partenza solo se il config porta ancora la revisione e l'origine di quella applicazione. */
-async function pesiAnnulla(file, fileProposte, repo, idVoce, idAnnullamento, opz = {}) {
+async function pesiAnnulla(file, repo, idVoce, idAnnullamento, opz = {}) {
   if (!ID_VOCE.test(idVoce) || !ID_ANNULLAMENTO.test(idAnnullamento)) return [2, TESTI_PESI.argomenti]
-  return conPesi(file, fileProposte, repo, (c, P) => {
+  return conPesi(file, repo, (c, P, fileProposte) => {
     const v = P.voci.find(x => x.id === idVoce && x.progetto === repo)
     if (!v) return [4, TESTI_PESI.nonTrovata]
     if (v.annullamento?.id === idAnnullamento) return [0, JSON.stringify({ stato: v.stato, annullamento: v.annullamento })]
@@ -1005,9 +1007,9 @@ async function main(argv, { mutexCodex = MUTEX_CODEX } = {}) {
   if (cmd === 'board-spegni' && a.length === 4) return esci(...(await boardSpegni(...a)))
   if (cmd === 'board-prenota' && a.length === 5) return esci(...(await boardPrenota(...a)))
   if (cmd === 'board-finalizza' && a.length === 5) return esci(...(await boardFinalizza(...a, stdin())))
-  if (cmd === 'pesi-proponi' && a.length === 2) return esci(...(await pesiProponi(a[0], a[1], stdin())))
-  if (cmd === 'pesi-decidi' && a.length === 7) return esci(...(await pesiDecidi(...a)))
-  if (cmd === 'pesi-annulla' && a.length === 5) return esci(...(await pesiAnnulla(...a)))
+  if (cmd === 'pesi-proponi' && a.length === 1) return esci(...(await pesiProponi(a[0], stdin())))
+  if (cmd === 'pesi-decidi' && a.length === 6) return esci(...(await pesiDecidi(...a)))
+  if (cmd === 'pesi-annulla' && a.length === 4) return esci(...(await pesiAnnulla(...a)))
   esci(2, 'uso: cas <file> <versione|nuovo> | prenota <cartella> | occupata <mutex|codex> | corsia-codex [--revisione] -- <comando>')
 }
 
