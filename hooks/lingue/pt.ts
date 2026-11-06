@@ -757,6 +757,8 @@ const pt: Dizionario = {
   "car.valoreDi": "{valore} de {tetto}",
   "errore.configNonScritta": "O helper recusou gravar o config.json (código {codice})",
   "imp.linguaNonSalvata": "Configurações do projeto salvas; o idioma não foi salvo: {motivo}",
+  // Settings: draft frozen while Apply writes
+  "imp.salvando": "Salvando…",
   // ‹fine›
 }
 

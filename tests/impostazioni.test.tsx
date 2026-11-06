@@ -183,8 +183,25 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   const domande: string[] = []
   /** Risposta al popup: una stringa, oppure `null` = popup chiuso (`$.ui.ask` rifiuta). */
   const popup = { risposta: (_: string): string | null => null }
-  /** Concorrenza: `primaDiConfigura` gira una volta appena prima del CAS dell'helper; `rifiutaUtente` fa fallire un configura-utente. */
-  const hook: { primaDiConfigura?: () => void; primaDiUtente?: () => void; rifiutaUtente?: boolean } = {}
+  /**
+   * Concorrenza: `primaDiConfigura` gira una volta appena prima del CAS dell'helper; `rifiutaUtente` fa fallire un
+   * configura-utente; `trattieni()` ferma la prossima scrittura (configura o configura-utente) finché il test non la apre.
+   */
+  const hook: { primaDiConfigura?: () => void; rifiutaUtente?: boolean; cancello?: { attesa: Promise<void>; segnala: () => void } } = {}
+  const trattieni = () => {
+    let apri!: () => void
+    let segnala!: () => void
+    const arrivato = new Promise<void>(ok => (segnala = ok))
+    hook.cancello = { attesa: new Promise<void>(ok => (apri = ok)), segnala }
+    return { arrivato, apri }
+  }
+  const scrittura = (scrivi: () => unknown) => {
+    const c = hook.cancello
+    if (!c) return scrivi()
+    hook.cancello = undefined
+    c.segnala()
+    return c.attesa.then(scrivi)
+  }
   const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
   disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING))
   disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': progetto } }))
@@ -214,33 +231,32 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
         limiti: [{ id: 'claude-weekly', fornitore: 'claude', nome: 'Claude piano · settimanale', fonte: 'app', percentuale: 37, unita: '%', letto: new Date().toISOString() }],
         proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false },
       }))
-    if (cmd === 'configura') {
-      // Come l'helper vero: CAS sul testo intero, poi fusione dei campi nella sezione del progetto.
-      const altra = hook.primaDiConfigura
-      hook.primaDiConfigura = undefined
-      altra?.()
-      const input = JSON.parse(e.init!.stdin!)
-      const prima = disco.get(p(file)) ?? null
-      if (prima !== input.atteso) return fine(4)
-      const c = prima === null ? {} : JSON.parse(prima)
-      disco.set(p(file), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: { ...c.progetti?.[input.repo], ...input.campi } } }))
-      return fine(0)
-    }
-    if (cmd === 'configura-utente') {
-      // Come l'helper vero: stesso CAS, solo campi dell'utente al primo livello.
-      if (hook.rifiutaUtente) {
-        hook.rifiutaUtente = false
-        return fine(4)
-      }
-      const altra = hook.primaDiUtente
-      hook.primaDiUtente = undefined
-      altra?.()
-      const input = JSON.parse(e.init!.stdin!)
-      const prima = disco.get(p(file)) ?? null
-      if (prima !== input.atteso) return fine(4)
-      disco.set(p(file), JSON.stringify({ ...(prima === null ? {} : JSON.parse(prima)), ...input.campi }))
-      return fine(0)
-    }
+    if (cmd === 'configura')
+      return scrittura(() => {
+        // Come l'helper vero: CAS sul testo intero, poi fusione dei campi nella sezione del progetto.
+        const altra = hook.primaDiConfigura
+        hook.primaDiConfigura = undefined
+        altra?.()
+        const input = JSON.parse(e.init!.stdin!)
+        const prima = disco.get(p(file)) ?? null
+        if (prima !== input.atteso) return fine(4)
+        const c = prima === null ? {} : JSON.parse(prima)
+        disco.set(p(file), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: { ...c.progetti?.[input.repo], ...input.campi } } }))
+        return fine(0)
+      }) as never
+    if (cmd === 'configura-utente')
+      return scrittura(() => {
+        // Come l'helper vero: stesso CAS, solo campi dell'utente al primo livello.
+        if (hook.rifiutaUtente) {
+          hook.rifiutaUtente = false
+          return fine(4)
+        }
+        const input = JSON.parse(e.init!.stdin!)
+        const prima = disco.get(p(file)) ?? null
+        if (prima !== input.atteso) return fine(4)
+        disco.set(p(file), JSON.stringify({ ...(prima === null ? {} : JSON.parse(prima)), ...input.campi }))
+        return fine(0)
+      }) as never
     return fine(cmd === 'occupata' ? 0 : 2)
   })
   on('mcp.call', (_, e) => ({
@@ -264,7 +280,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   const progettoOra = () => JSON.parse(disco.get(CONFIG)!).progetti['esempio/demo'] as Record<string, unknown>
   const configure = () => processi.filter(p => p[2] === 'configura').length
-  return { disco, toast, domande, popup, progettoOra, configure, hook }
+  return { disco, toast, domande, popup, progettoOra, configure, hook, trattieni }
 }
 
 const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
@@ -611,70 +627,76 @@ test('impostazioni: popup rifiutato, «Collega…» e «Aggiungi budget…» si 
   await ui.unmount()
 })
 
-test('rilievo 1: una modifica fatta mentre Applica scrive resta nella bozza; si tolgono solo i campi scritti con i valori scritti', async ($, on) => {
+// Durante un Applica in volo la bozza è ferma (giro 4 della revisione): le corse dei giri 1–3 (una modifica, una lingua o
+// «Annulla modifiche» arrivati mentre l'helper scrive) non sono più possibili. Un secondo pannello preme durante la scrittura.
+test('congelamento: durante Applica un controllo, la lingua, «Annulla modifiche» e un secondo Applica non toccano la bozza e dicono «Salvataggio in corso…»', async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
+  const altro = await $.ui.mount({ ...PANE('terminal') })
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-progetto-premi' })
   await ui.press({ key: 'rete-locale-premi' })
-  // La seconda modifica arriva mentre l'helper scrive la prima.
-  amb.hook.primaDiConfigura = () => void ui.press({ key: 'milestone-github-premi' })
-  await ui.press({ key: 'applica' })
+  const { arrivato, apri } = amb.trattieni()
+  const applica = ui.press({ key: 'applica' })
+  await arrivato
+  expect(await altro.find({ type: 'Text', text: 'Salvataggio in corso…' })).toBeDefined()
+  await altro.press({ key: 'milestone-github-premi' })
+  await altro.press({ key: 'sezione-lingua-premi' })
+  await altro.press({ key: 'lingua-de-premi' })
+  await altro.press({ key: 'annulla-modifiche' })
+  await altro.press({ key: 'applica' })
+  expect(amb.toast).toEqual(Array(4).fill('Salvataggio in corso…'))
+  apri()
+  await applica
+  expect(amb.configure()).toBe(1)
   expect(amb.progettoOra()).toEqual({ soloLocale: true })
-  expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
-  await ui.press({ key: 'applica' })
-  expect(amb.progettoOra()).toEqual({ soloLocale: true, milestoneGithub: true })
+  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('it')
   expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  expect(amb.toast.at(-1)).toBe('Salvato')
+  // Finita la scrittura, i controlli tornano a scrivere nella bozza.
+  await ui.press({ key: 'lingua-de-premi' })
+  expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
+  await altro.unmount()
   await ui.unmount()
 })
 
-test('giro 2, rilievo 1: tornare alla lingua di partenza mentre Applica scrive l\'altra resta pendente e non si perde', async ($, on) => {
+test('congelamento: i due casi del giro 4 (scelta della lingua durante la scrittura; Annulla durante la scrittura poi de→it→fr) non perdono niente', async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
+  const altro = await $.ui.mount({ ...PANE('terminal') })
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-lingua-premi' })
+  // Caso 1: de in bozza, Applica sospeso, si sceglie fr: ignorato e detto; si salva de, niente resta pendente in silenzio.
   await ui.press({ key: 'lingua-de-premi' })
-  // Mentre l'helper scrive `de`, si riseleziona `it` (la lingua di partenza).
-  amb.hook.primaDiUtente = () => void ui.press({ key: 'lingua-it-premi' })
-  await ui.press({ key: 'applica' })
+  let cancello = amb.trattieni()
+  let applica = ui.press({ key: 'applica' })
+  await cancello.arrivato
+  await altro.press({ key: 'lingua-fr-premi' })
+  cancello.apri()
+  await applica
   expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('de')
-  expect(await ui.find({ type: 'Text', text: '1 ungespeicherte Änderung' })).toBeDefined()
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  expect(amb.toast).toEqual(['Salvataggio in corso…', 'Salvato'])
+  // Caso 2: fr in bozza, Applica sospeso, «Annulla modifiche» ignorato; poi de→it→fr: l'ultima scelta resta.
+  await ui.press({ key: 'lingua-fr-premi' })
+  cancello = amb.trattieni()
+  applica = ui.press({ key: 'applica' })
+  await cancello.arrivato
+  await altro.press({ key: 'annulla-modifiche' })
+  cancello.apri()
+  await applica
+  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('fr')
+  for (const l of ['de', 'it', 'fr']) await ui.press({ key: `lingua-${l}-premi` })
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  for (const l of ['de', 'it']) await ui.press({ key: `lingua-${l}-premi` })
   expect((await ui.find({ key: 'lingua-it-premi' }))?.props.variant).toBe('primary')
   await ui.press({ key: 'applica' })
   expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('it')
-  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
-  await ui.unmount()
-})
-
-test('giro 3: it→de→it, poi fr da un altro pannello, poi de con Applica sospeso e riselezione fr: resta pendente fr, non it', async ($, on) => {
-  const amb = ambiente(on)
-  const clock = mock.clock(on)
-  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const ui = await $.ui.mount({ ...PANE('desktop') })
-  await ui.press({ key: 'impostazioni' })
-  await ui.press({ key: 'sezione-lingua-premi' })
-  await ui.press({ key: 'lingua-de-premi' })
-  await ui.press({ key: 'lingua-it-premi' })
-  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
-  // Un altro pannello sceglie fr: arriva al battito; la scelta di prima (it, allora quella salvata) non diventa pendente.
-  amb.disco.set(CONFIG, JSON.stringify({ lingua: 'fr', progetti: { 'esempio/demo': {} } }))
-  await clock.advance(20_000)
-  expect(await ui.find({ type: 'Text', text: 'Langue' })).toBeDefined()
-  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
-  await ui.press({ key: 'lingua-de-premi' })
-  // Mentre l'helper scrive de, si riseleziona fr (la lingua salvata quando Applica è partito).
-  amb.hook.primaDiUtente = () => void ui.press({ key: 'lingua-fr-premi' })
-  await ui.press({ key: 'applica' })
-  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('de')
-  expect(await ui.find({ type: 'Text', text: '1 ungespeicherte Änderung' })).toBeDefined()
-  expect((await ui.find({ key: 'lingua-fr-premi' }))?.props.variant).toBe('primary')
-  await ui.press({ key: 'applica' })
-  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('fr')
-  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  await altro.unmount()
   await ui.unmount()
 })
 

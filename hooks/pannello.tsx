@@ -90,15 +90,8 @@ export type Ctx = {
   annullaPesi: (p: PropostaPesi) => Promise<unknown>
 }
 
-/** L'esito di «Applica»: campi cambiati altrove (niente scritto) con i loro valori di adesso, ciò che è stato scritto, e un errore parziale. */
-export type EsitoApplica = {
-  cambiati: string[]
-  base: Record<string, unknown>
-  scritti: { campi: Record<string, unknown> }
-  /** La lingua salvata adesso, riletta dopo la scrittura. */
-  lingua: Lingua
-  errore?: Msg
-}
+/** L'esito di «Applica»: campi cambiati altrove (niente scritto) con i loro valori di adesso; `errore` = progetto scritto, lingua no. */
+export type EsitoApplica = { cambiati: string[]; base: Record<string, unknown>; errore?: Msg }
 
 const MOTORI = ['claude', 'codex', 'freellmapi'] as const
 const NOMI_MOTORI: Record<Motore, string> = { claude: 'Claude', codex: 'Codex', freellmapi: 'FreeLLMAPI' }

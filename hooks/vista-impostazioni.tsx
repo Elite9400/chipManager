@@ -11,7 +11,6 @@ import {
   conBozza,
   conPendente,
   conPosizione,
-  dopoApplica,
   conProfilo,
   conSoglia,
   manualiDaScrivere,
@@ -62,21 +61,42 @@ const SEZIONI: { valore: Sezione; testo: Chiave }[] = [
 const TIPO = (t: string) => t[0]!.toUpperCase() + t.slice(1)
 
 /**
- * F5.9 «Applica»: la bozza in una sola scrittura. Se un'altra sessione ha cambiato un campo toccato, niente è scritto e un
- * popup chiede «Ricarica e riapplica» (la bozza vince sui valori di adesso) o «Scarta». Vero se la bozza non c'è più.
+ * Vero mentre «Applica» scrive (dalla pressione alla fine, popup di conflitto compreso). Si legge senza attese, così una
+ * pressione che arriva durante la scrittura la vede sempre: la bozza resta ferma e la pressione è ignorata con un avviso.
+ */
+let inVolo = false
+
+/**
+ * F5.9 «Applica»: la bozza in una sola scrittura, ferma finché la scrittura non finisce. Se un'altra sessione ha cambiato un
+ * campo toccato, niente è scritto e un popup chiede «Ricarica e riapplica» (la bozza vince) o «Scarta». Vero se la bozza
+ * non c'è più.
  */
 export async function applicaBozza($: EngineInterface, c: Ctx, T: T): Promise<boolean> {
-  const p = (await read($, statoVista)).pendenti
+  if (inVolo) {
+    $.ui.toast(T('imp.salvando'))
+    return false
+  }
+  inVolo = true
+  try {
+    await update($, statoVista, (s): StatoVista => ({ ...s, applicando: true }))
+    return await applicaFerma($, c, T)
+  } finally {
+    inVolo = false
+    await update($, statoVista, (s): StatoVista => ({ ...s, applicando: undefined }))
+  }
+}
+
+async function applicaFerma($: EngineInterface, c: Ctx, T: T): Promise<boolean> {
+  const p = piena((await read($, statoVista)).pendenti)
   if (!p) return true
   try {
     const esito = await c.applica(p)
     if (!esito.cambiati.length) {
-      // Si toglie solo ciò che è stato scritto: una modifica fatta intanto resta in bozza.
-      await update($, statoVista, (s): StatoVista => ({
-        ...s, pendenti: dopoApplica(s.pendenti, esito.scritti, p.tocchi, esito.lingua), errore: esito.errore && { dove: 'applica', testo: esito.errore },
-      }))
+      // La bozza non è cambiata durante la scrittura: se ne va tutta, tranne la lingua se il suo salvataggio è fallito.
+      const resta = esito.errore && p.lingua ? { campi: {}, base: {}, dove: ['lingua'], lingua: p.lingua } : undefined
+      await update($, statoVista, (s): StatoVista => ({ ...s, pendenti: resta, errore: esito.errore && { dove: 'applica', testo: esito.errore } }))
       if (!esito.errore) $.ui.toast(T('salvato'))
-      return !piena((await read($, statoVista)).pendenti)
+      return !resta
     }
     const dove = [...new Set(esito.cambiati.map(k => T(SEZIONE_DI[k] ?? 'imp.sezione.progetto')))].join(', ')
     const scelta = await $.ui
@@ -84,7 +104,7 @@ export async function applicaBozza($: EngineInterface, c: Ctx, T: T): Promise<bo
       .catch(() => undefined)
     if (scelta === T('imp.riapplica')) {
       await update($, statoVista, (s): StatoVista => ({ ...s, pendenti: s.pendenti && { ...s.pendenti, base: { ...s.pendenti.base, ...esito.base } } }))
-      return applicaBozza($, c, T)
+      return applicaFerma($, c, T)
     }
     if (scelta === T('imp.scartaBozza')) await update($, statoVista, (s): StatoVista => ({ ...s, pendenti: undefined, errore: undefined }))
     return scelta === T('imp.scartaBozza')
@@ -97,9 +117,14 @@ export async function applicaBozza($: EngineInterface, c: Ctx, T: T): Promise<bo
 
 /** Uscendo dalle Impostazioni con una bozza: Applica / Scarta / Resta. Popup non disponibile: si esce e la bozza resta. */
 export async function lasciaImpostazioni($: EngineInterface, c: Ctx, T: T): Promise<boolean> {
+  // Mentre «Applica» scrive si resta: la scrittura finisce qui, con il suo esito e i suoi popup.
+  if (inVolo) {
+    $.ui.toast(T('imp.salvando'))
+    return false
+  }
   const p = piena((await read($, statoVista)).pendenti)
   if (!p) return true
-  const n = Object.keys(p.dove).length
+  const n = p.dove.length
   let scelta: string | undefined
   try {
     scelta = await $.ui.ask(T('imp.uscita', { n }), { options: [T('imp.applica'), T('imp.scarta'), T('imp.resta')], header: T('imp.uscitaTitolo') })
@@ -126,10 +151,16 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const conB = vista.pendenti ? conBozza(r0, vista.pendenti.campi) : r0
   const r = eMsg(conB) ? r0 : conB
   const cambia = (f: (s: StatoVista) => StatoVista) => update($, statoVista, f)
+  /** Cambia la bozza solo se «Applica» non sta scrivendo; altrimenti niente cambia e lo si dice. */
+  const inBozza = (f: (s: StatoVista) => StatoVista) => {
+    let ignorata = false
+    return cambia(s => (inVolo ? ((ignorata = true), s) : f(s))).then(() => void (ignorata && $.ui.toast(T('imp.salvando'))))
+  }
   const nomeTipo = (x: (typeof TIPI_BUDGET)[number]) => TIPO(T(`budget.${x}`))
 
   /** Esegue, poi toast se va (senza `conferma`, nessun toast) e errore in linea sotto `dove` se non va. */
   const esegui = async (dove: string, fn: () => Promise<unknown>, conferma = T('salvato')) => {
+    if (inVolo) return void $.ui.toast(T('imp.salvando'))
     try {
       await fn()
       await cambia(s => ({ ...s, errore: undefined }))
@@ -141,7 +172,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   }
   /** F5.9: la modifica va nella bozza, validata come la scriverebbe `configura`; l'errore resta in linea sotto `dove`. */
   const salva = (dove: string, campi: () => Record<string, unknown>) => () =>
-    void cambia(s => {
+    void inBozza(s => {
       try {
         const p = conPendente(s.pendenti, r0, dove, campi())
         const prova = conBozza(r0, p.campi)
@@ -616,17 +647,15 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         u.GruppoChip({
           chiave: 'lingua', etichetta: T('imp.lingua.etichetta'), modo: 'scelta', valore: vista.pendenti?.lingua ?? T.lingua,
           voci: LINGUE.map(l => ({ valore: l, testo: NOMI_LINGUE[l] })),
-          // Nella bozza come il resto. Pendente solo se diversa dalla lingua salvata quando la scelta arriva (riletta, non
-          // quella del disegno); l'ultima scelta e il numero di scelte servono se intanto Applica sta scrivendo.
+          // Nella bozza come il resto; pendente solo se diversa dalla lingua salvata quando la scelta arriva (riletta).
           onCambia: v =>
             void (async () => {
               const salvata = await read($, linguaSalvata)
-              await cambia(s => {
-                const p = s.pendenti ?? { campi: {}, base: {}, dove: {} }
+              await inBozza(s => {
+                const p = s.pendenti ?? { campi: {}, base: {}, dove: [] }
                 const lingua = v === salvata ? undefined : (v as Lingua)
-                const { lingua: _, ...altri } = p.dove
-                const dove = lingua ? { ...altri, lingua: ['lingua'] } : altri
-                return { ...s, pendenti: { ...p, lingua, scelta: v as Lingua, tocchi: (p.tocchi ?? 0) + 1, dove }, errore: undefined }
+                const dove = [...p.dove.filter(x => x !== 'lingua'), ...(lingua ? ['lingua'] : [])]
+                return { ...s, pendenti: piena({ ...p, lingua, dove }), errore: undefined }
               })
             })(),
         }),
@@ -655,7 +684,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       )),
     })
 
-  const pendenti = Object.keys(piena(vista.pendenti)?.dove ?? {}).length
+  const pendenti = piena(vista.pendenti)?.dove.length ?? 0
   const corpo =
     vista.sezione === 'legenda' ? legenda()
       : vista.sezione === 'lingua' ? lingua()
@@ -675,9 +704,9 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       {corpo}
       {pendenti > 0 && (
         <Box key="pendenti" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center" borderStyle="single" borderDimColor paddingX={1}>
-          <Text key="pendenti-n">{T('imp.nonSalvate', { n: pendenti })}</Text>
+          <Text key="pendenti-n">{vista.applicando ? T('imp.salvando') : T('imp.nonSalvate', { n: pendenti })}</Text>
           <Button key="applica" variant="primary" hotkey="s" label={T('imp.applica')} onPress={() => void applicaBozza($, c, T)} />
-          <Button key="annulla-modifiche" plain dimColor label={T('imp.annullaModifiche')} onPress={() => void cambia(s => ({ ...s, pendenti: undefined, errore: undefined }))} />
+          <Button key="annulla-modifiche" plain dimColor label={T('imp.annullaModifiche')} onPress={() => void inBozza(s => ({ ...s, pendenti: undefined, errore: undefined }))} />
         </Box>
       )}
       {errore('applica')}

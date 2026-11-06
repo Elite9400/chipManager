@@ -295,20 +295,14 @@ export type StatoImpostazioni = {
   gruppo?: 'fornitore' | 'modello' | 'effort'
   /** F5.9: le modifiche non ancora applicate; solo in memoria della sessione, mai su disco. */
   pendenti?: Pendenti
+  /** Vero mentre «Applica» scrive: la barra dice «Salvataggio in corso…» e la bozza è ferma. */
+  applicando?: boolean
 }
 /**
  * La bozza delle Impostazioni: campi del progetto come li scrive `configura`, il loro valore al primo tocco, i controlli
- * toccati con i campi di ciascuno (`lingua` per la lingua), la lingua pendente (diversa da quella salvata quando la si è
- * scelta), l'ultima lingua scelta e quante volte la si è scelta (per riconoscere una scelta fatta mentre Applica scrive).
+ * toccati, la lingua (pendente solo se diversa da quella salvata quando la si sceglie). Ferma mentre «Applica» scrive.
  */
-export type Pendenti = {
-  campi: Record<string, unknown>
-  base: Record<string, unknown>
-  dove: Record<string, string[]>
-  lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
-  scelta?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
-  tocchi?: number
-}
+export type Pendenti = { campi: Record<string, unknown>; base: Record<string, unknown>; dove: string[]; lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt' }
 
 declare module 'claude-code' {
   interface PluginState {

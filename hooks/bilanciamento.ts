@@ -143,35 +143,11 @@ export const valoreConfig = (r: RisorseProgetto, k: string): unknown =>
 export function conPendente(p: Pendenti | undefined, r: RisorseProgetto, dove: string, campi: Record<string, unknown>): Pendenti {
   const base = { ...p?.base }
   for (const k of Object.keys(campi)) if (!(k in base)) base[k] = valoreConfig(r, k)
-  return { ...p, campi: { ...p?.campi, ...campi }, base, dove: { ...p?.dove, [dove]: [...new Set([...(p?.dove[dove] ?? []), ...Object.keys(campi)])] } }
+  return { ...p, campi: { ...p?.campi, ...campi }, base, dove: [...new Set([...(p?.dove ?? []), dove])] }
 }
 
 /** Una bozza senza campi né lingua non c'è. */
 export const piena = (p: Pendenti | undefined) => (p && (Object.keys(p.campi).length || p.lingua) ? p : undefined)
-
-/**
- * Dopo «Applica» (rilievo 1): toglie dalla bozza solo ciò che è stato scritto, con il valore scritto. Una modifica arrivata
- * mentre si scriveva resta; se tocca un campo appena scritto, la sua base diventa il valore scritto (non è un conflitto).
- * La lingua si confronta con quella salvata adesso (`linguaOra`, riletta): se è stata scelta di nuovo mentre si scriveva
- * (`tocchiPrima` diverso) vale l'ultima scelta; pendente solo se diversa da `linguaOra`.
- */
-export function dopoApplica(p: Pendenti | undefined, scritti: { campi: Record<string, unknown> }, tocchiPrima: number | undefined, linguaOra: Pendenti['lingua']): Pendenti | undefined {
-  if (!p) return undefined
-  const campi = { ...p.campi }
-  const base = { ...p.base }
-  for (const [k, v] of Object.entries(scritti.campi)) {
-    if (!(k in campi)) continue
-    if (JSON.stringify(campi[k]) === JSON.stringify(v)) {
-      delete campi[k]
-      delete base[k]
-    } else base[k] = v
-  }
-  const voluta = (p.tocchi ?? 0) !== (tocchiPrima ?? 0) ? p.scelta : p.lingua
-  const lingua = voluta && voluta !== linguaOra ? voluta : undefined
-  const dove = Object.fromEntries(Object.entries(p.dove).filter(([, ks]) => ks.some(k => (k === 'lingua' ? !!lingua : k in campi))))
-  const conLingua = lingua ? { ...dove, lingua: ['lingua'] } : dove
-  return piena({ campi, base, dove: conLingua, ...(lingua && { lingua, scelta: lingua }), ...(p.tocchi !== undefined && { tocchi: p.tocchi }) })
-}
 
 /** Le risorse come le vedrà il config con la bozza applicata; il motivo se la bozza non passa la validazione di oggi. */
 export const conBozza = (r: RisorseProgetto, campi: Record<string, unknown>) =>

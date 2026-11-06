@@ -1444,12 +1444,12 @@ async function riassumi($: Eng) {
  * di adesso, e il pannello chiede se riapplicare o scartare.
  */
 async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pendenti): Promise<EsitoApplica> {
-  const conflitto = async (ora: RisorseProgetto, cambiati: string[]): Promise<EsitoApplica> =>
-    ({ cambiati, base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])), scritti: { campi: {} }, lingua: await leggiLingua($) })
+  const conflitto = (ora: RisorseProgetto, cambiati: string[]): EsitoApplica =>
+    ({ cambiati, base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])) })
   let ora = (await leggiRegole($)).risorse
   if (cambiatiAltrove(p, ora).length) return conflitto(ora, cambiatiAltrove(p, ora))
-  const scritti: EsitoApplica['scritti'] = { campi: {} }
-  if (Object.keys(p.campi).length) {
+  const progetto = Object.keys(p.campi).length > 0
+  if (progetto) {
     try {
       await configura($, opz, p.campi, ora)
     } catch (err) {
@@ -1460,7 +1460,6 @@ async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pend
       const cambiati = cambiatiAltrove(p, ora)
       return conflitto(ora, cambiati.length ? cambiati : Object.keys(p.campi))
     }
-    scritti.campi = p.campi
     if ('board' in p.campi) await dopoBoard($)
   }
   // La lingua si scrive solo se diversa da quella salvata adesso (riletta: un altro pannello può averla cambiata).
@@ -1469,11 +1468,11 @@ async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pend
       await scegliLingua($, p.lingua)
     } catch (err) {
       // Rilievo 4: il progetto è già scritto; lo si dice, e in bozza resta solo la lingua.
-      if (!Object.keys(scritti.campi).length) throw err
-      return { cambiati: [], base: {}, scritti, lingua: await leggiLingua($), errore: msg('imp.linguaNonSalvata', { motivo: msgDi(err) }) }
+      if (!progetto) throw err
+      return { cambiati: [], base: {}, errore: msg('imp.linguaNonSalvata', { motivo: msgDi(err) }) }
     }
   }
-  return { cambiati: [], base: {}, scritti, lingua: await leggiLingua($) }
+  return { cambiati: [], base: {} }
 }
 
 /** Dopo un cambio di modo della board: spegnerla davvero o rigenerarla. */

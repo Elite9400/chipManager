@@ -757,6 +757,8 @@ const de: Dizionario = {
   "car.valoreDi": "{valore} von {tetto}",
   "errore.configNonScritta": "Der Helper hat das Schreiben von config.json abgelehnt (Code {codice})",
   "imp.linguaNonSalvata": "Projekteinstellungen gespeichert; die Sprache wurde nicht gespeichert: {motivo}",
+  // Settings: draft frozen while Apply writes
+  "imp.salvando": "Wird gespeichert…",
   // ‹fine›
 }
 

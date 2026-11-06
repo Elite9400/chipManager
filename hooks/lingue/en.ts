@@ -759,6 +759,8 @@ const en = {
   "car.valoreDi": "{valore} of {tetto}",
   "errore.configNonScritta": "The helper refused to write config.json (code {codice})",
   "imp.linguaNonSalvata": "Project settings saved; the language was not saved: {motivo}",
+  // Settings: draft frozen while Apply writes
+  "imp.salvando": "Saving…",
   // ‹fine›
 } satisfies Record<string, Voce>
 
