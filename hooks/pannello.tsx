@@ -32,7 +32,7 @@ import {
 import { traduttore } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { RISORSE_VUOTE } from './risorse'
-import { ACCENTO, ALFA_VELO, GRIGIO, STATO } from './tema'
+import { ACCENTO, ALFA_VELO, GRIGIO, STATO, VELO } from './tema'
 import { classeDi, componenti } from './ui'
 import { vistaCarico } from './vista-carico'
 import { apriBilanciamento, apriImpostazioni, lasciaImpostazioni, vistaImpostazioni } from './vista-impostazioni'
@@ -428,7 +428,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
           )}
       </Box>
       {scartata && (
-        <Box flexDirection="row" gap={1} alignItems="center" flexWrap="wrap" backgroundColor={conVelo ? velo(GRIGIO, '1F') : undefined} paddingX={1}>
+        <Box flexDirection="row" gap={1} alignItems="center" flexWrap="wrap" backgroundColor={conVelo ? velo(GRIGIO, VELO.testata) : undefined} paddingX={1}>
           <Text>{T('testata.scartata', { titolo: scartata.titolo })}</Text>
           <Button key="annulla-scarto" plain hotkey="u" label={T('comune.annulla')} onPress={fai(() => c.annullaScarto(scartata.id))} />
         </Box>

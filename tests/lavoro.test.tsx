@@ -5,6 +5,7 @@ import type { TestBody } from 'claude-code/testing'
 
 import { ACCENTO, contrasto, GRIGIO, ICONA, MOTORE, SFONDI, sopra, STATO } from '../hooks/tema'
 import type { Azione, Limite } from '../types'
+import { t } from '../hooks/lingua'
 import { DiscoIt } from './disco-it'
 
 type On = Parameters<TestBody>[1]
@@ -677,4 +678,80 @@ test('F7.4 lingue: «Chi lavora» con preset in anteprima, Dettagli aperti e id 
       }
       await ui.unmount()
     }
+})
+
+// --- F8.1 / F8.2 / F8.4 -----------------------------------------------------------------------------------------------
+
+type NodoF8 = { type?: string; props?: Record<string, unknown> & { key?: string; display?: string }; hover?: { scope?: string }; children?: unknown }
+const figliF8 = (n: NodoF8) => [n.children].flat(9).filter((x): x is NodoF8 => !!x && typeof x === 'object')
+/** Ogni nodo con i suoi fratelli (per controllare le chiavi). */
+function visitaF8(n: unknown, f: (x: NodoF8, fratelli: NodoF8[]) => void, fratelli: NodoF8[] = []) {
+  if (!n || typeof n !== 'object') return
+  if (Array.isArray(n)) return void n.forEach(x => visitaF8(x, f, n as NodoF8[]))
+  const x = n as NodoF8
+  f(x, fratelli)
+  const fs = figliF8(x)
+  fs.forEach(c => visitaF8(c, f, fs))
+}
+
+test('F8.2 albero: ogni hover sta su un Box con chiave unica fra i fratelli (o in uno scope); niente display:none sopra un pulsante; nel terminale nessun hover e le stesse azioni', async ($, on) => {
+  ambiente(on, MATRICE)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const azioni: Record<string, string[]> = {}
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount(PANE(surface, 100))
+    await ui.press({ key: 'ricarica' })
+    const albero = await ui.drawn()
+    let hover = 0
+    const errori: string[] = []
+    visitaF8(albero, (x, fratelli) => {
+      if (x.hover) {
+        hover++
+        const k = x.props?.key
+        if (!x.hover.scope && (x.type !== 'Box' || typeof k !== 'string' || fratelli.filter(y => y.props?.key === k).length !== 1)) errori.push(`hover senza chiave unica: ${x.type} ${k}`)
+      }
+      if (x.props?.display === 'none' && pulsanti(x).length) errori.push(`display:none sopra un pulsante: ${x.props.key}`)
+    })
+    expect([surface, errori]).toEqual([surface, []])
+    expect([surface, hover > 0]).toEqual([surface, surface === 'desktop'])
+    azioni[surface] = pulsanti(albero).map(b => b.key ?? '').filter(k => /^(avvia|riprova|mod|scarta|qui)-/.test(k)).sort()
+    await ui.unmount()
+  }
+  // Nessuna azione dipende dall'hover: nel terminale ci sono tutte quelle del desktop.
+  expect(azioni.terminal).toEqual(azioni.desktop)
+})
+
+test('F8.4 «Chi lavora»: nella scheda compatta l\'auditor è una riga con «Copy», le note solo a chip aperta; i dettagli senza titolo ripetuto né righe vuote', async ($, on) => {
+  const a = az('a-f84cmp01', 1, { revisore: 'claude', corsia: 'R3', auditor: 'fable' })
+  ambiente(on, [a])
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount(PANE('terminal', 60))
+  await ui.press({ key: 'ricarica' })
+  expect(await ui.find({ type: 'Text', text: /^auditor: attivalo tu con \/advisor fable/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^\/advisor cambia il tuo default/ })).toBeUndefined()
+  await ui.press({ key: `mod-${a.id}` })
+  expect(await ui.find({ type: 'Text', text: /^\/advisor cambia il tuo default/ })).toBeDefined()
+  await ui.press({ key: `chi-dettagli-${a.id}` })
+  const dettagli = await ui.find({ key: `g-chi-dettagli-${a.id}` }) as unknown as NodoF8
+  expect(dettagli.props?.gap).toBeUndefined()
+  // Il pulsante dice già «Nascondi dettagli»: nessun titolo «Dettagli» ripetuto dentro.
+  expect(await ui.find({ type: 'Text', text: 'Dettagli' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('F8.1 guardia: le schede delle viste hanno come etichetta il solo nome, in sei lingue; le chiavi di stato dei pulsanti non esistono', async ($, on) => {
+  const amb = ambiente(on, [])
+  mock.clock(on)
+  for (const lingua of ['en', 'it', 'es', 'fr', 'de', 'pt'] as const) {
+    amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua, progetti: { 'acme/progetto': {} } }))
+    await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+    const ui = await $.ui.mount(PANE('desktop', 100))
+    await ui.press({ key: 'ricarica' })
+    const etichette = pulsanti(await ui.drawn()).filter(b => ['vista-lavoro', 'vista-carico', 'impostazioni'].includes(b.key ?? '')).map(b => b.label)
+    expect([lingua, etichette]).toEqual([lingua, [t(lingua, 'vista.lavoro'), t(lingua, 'vista.carico'), t(lingua, 'vista.impostazioni')]])
+    await ui.unmount()
+  }
+  for (const k of ['ui.selezionato', 'ui.nonSelezionato', 'vista.etichettaScelta']) expect(t('it', k as never)).toBe(k)
 })

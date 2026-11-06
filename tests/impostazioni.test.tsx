@@ -1604,3 +1604,17 @@ test('F7 giro 2, rilievo 2: progetto scritto e lingua cambiata altrove intanto: 
   expect(await ui.find({ key: 'pendenti' })).toBeDefined()
   await ui.unmount()
 })
+
+test('F8 un solo primario: «Configura Esecuzione» è secondario (il primario resta la vista scelta e Applica)', async ($, on) => {
+  const amb = ambiente(on)
+  amb.esec.stato = () => JSON.stringify({ claude: { trovato: true, loggedIn: false }, github: { trovato: true, loggedIn: true, remote: true }, fonti: [] })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  await finoA(() => amb.esec.controlli > 0)
+  await ui.press({ key: 'ese-ricontrolla' })
+  expect((await ui.find({ key: 'ese-guida' }))?.props).toMatchObject({ variant: 'secondary' })
+  await ui.unmount()
+})

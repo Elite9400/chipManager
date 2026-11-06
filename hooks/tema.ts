@@ -5,10 +5,24 @@
 /** Solo l'icona della mod: sul chiaro non regge 3:1, quindi mai nell'interfaccia. */
 export const ICONA = '#00BFFF'
 
-/** Selezione, chip attiva, primario, fuoco della Gamma. Nient'altro. */
+/** Selezione, chip attiva, primario, fuoco della Gamma: solo grafica (bordi, barre, segni, velo), mai il testo. */
 export const ACCENTO = '#0A86C9'
 /** Opacità del velo dell'accento (12%): il segno nell'accento sopra il proprio velo regge ancora 3:1. */
 export const ALFA_VELO = '1F'
+
+/**
+ * F8.3: le opacità dei veli (esadecimale su 255), una scala sola. Le viste non ne scrivono altre: lo controlla prova-disco.
+ * `hover` è lo sfondo di una riga sotto il puntatore; `carico` la scala delle celle della vista Carico.
+ */
+export const VELO = {
+  scelta: ALFA_VELO,
+  hover: '14',
+  riquadro: '14',
+  testata: '1F',
+  vuoto: '33',
+  traccia: '4D',
+  carico: ['', '26', '4D', '80'],
+} as const
 
 export const STATO = {
   inCorso: '#1A9E4B',
@@ -32,6 +46,23 @@ export const GRIGIO = '#808080'
 
 /** Sfondi su cui si misura il contrasto: tema chiaro e scuro, del desktop e del terminale. */
 export const SFONDI = { chiaro: ['#FFFFFF', '#FAF9F5'], scuro: ['#000000', '#262624'] } as const
+
+/**
+ * F8.3: i valori concreti della board HTML, per tema, dalla stessa fonte. Testo, tenue ed errore sono testo (≥ 4,5:1 sul
+ * fondo); accento e bordo sono grafica (l'accento ≥ 3:1; il bordo separa, non porta informazione). Lo script dei test
+ * misura queste coppie: il contrasto dei temi dell'host (dimColor, hover, fuoco) si guarda al collaudo.
+ */
+export const BOARD = {
+  scuro: { fondo: '#0F1115', testo: '#E5E7EB', tenue: '#9CA3AF', bordo: '#2A2F3A', accento: ACCENTO, errore: '#EF4444' },
+  chiaro: { fondo: '#FFFFFF', testo: '#111827', tenue: '#6B7280', bordo: '#E5E7EB', accento: ACCENTO, errore: STATO.errore },
+} as const
+
+/** Il blocco unico di variabili CSS della board, generato dai valori sopra: scuro di default, chiaro se il sistema lo chiede. */
+export function cssVariabiliBoard() {
+  const v = (t: (typeof BOARD)['scuro' | 'chiaro']) =>
+    `--fondo:${t.fondo};--testo:${t.testo};--tenue:${t.tenue};--bordo:${t.bordo};--accento:${t.accento};--errore:${t.errore};--velo:${GRIGIO}${VELO.riquadro}`
+  return `:root{color-scheme:dark light;${v(BOARD.scuro)};--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}\n@media (prefers-color-scheme:light){:root{${v(BOARD.chiaro)}}}`
+}
 
 /** Luminanza relativa WCAG di un colore `#RRGGBB`. */
 export function luminanza(hex: string) {

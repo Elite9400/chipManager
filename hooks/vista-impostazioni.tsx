@@ -799,7 +799,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
             <Text key="ese-stato-titolo" weight="semibold">{T('ese.statoTitolo')}</Text>
             <Button key="ese-ricontrolla" plain label={es.inCorso ? T('ese.controllando') : T('ese.ricontrolla')} onPress={() => void c.controllaEsecuzione()} />
             {mancanti.length && !passo ? (
-              <Button key="ese-guida" variant="primary" label={T('ese.guida')} onPress={() => void (async () => {
+              <Button key="ese-guida" variant="secondary" label={T('ese.guida')} onPress={() => void (async () => {
                 await update($, esecuzione, s => ({ ...s, guida: { saltati: [] } }))
                 await c.controllaEsecuzione()
               })()} />

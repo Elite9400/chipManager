@@ -45,7 +45,7 @@ import type { Msg } from './lingua'
 import type { Dati } from './pannello'
 import { diversoDa, presetChi, PRESET_CHI, PROFILI } from './bilanciamento'
 import type { PresetChi } from './bilanciamento'
-import { GRIGIO, MOTORE, STATO } from './tema'
+import { ACCENTO, GRIGIO, MOTORE, STATO, VELO } from './tema'
 
 // Copia identica degli atomi di register.tsx (lo scanner li vuole nel file che li usa).
 const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as Msg | string | null)
@@ -71,6 +71,12 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     alLavoro, cella, MOTORI, motore, oraDi } = d
   const { Box, Text, Button } = d.el
   type Riga = Dati['righe'][number]
+  /**
+   * F8.2: sotto il puntatore una riga (chip, sessione) prende un velo d'accento basso; cambia solo lo sfondo. Il terminale
+   * non ha hover: niente, e nessuna azione dipende da esso. Le azioni secondarie restano `dimColor`, che l'host porta a
+   * piena intensità sotto il puntatore o con il fuoco.
+   */
+  const sotto = conVelo ? { backgroundColor: velo(ACCENTO, VELO.hover) } : undefined
   /**
    * La chip nelle etichette dei pulsanti: il numero d'ordine, che la distingue anche da un titolo con lo stesso inizio,
    * e il titolo corto, perché il desktop può disegnare l'etichetta al posto del testo del pulsante.
@@ -181,7 +187,8 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         <Button key={`chi-dettagli-${a.id}`} plain label={`${T(aperti ? 'chi.chiudiDettagli' : 'chi.dettagli')} ${breve(a)}`} onPress={() => void update($, dettagliChi, x => (x === a.id ? null : a.id))}>
           {T(aperti ? 'chi.chiudiDettagli' : 'chi.dettagli')}
         </Button>
-        {aperti && gruppo(`g-chi-dettagli-${a.id}`, T('chi.dettagli'), [
+        {/* F8.4: i dettagli senza un secondo titolo (il pulsante lo dice già) e senza righe vuote fra le scelte. */}
+        {aperti && dettagliChiLavora(`g-chi-dettagli-${a.id}`, [
           scelta(a, 'esec', T('ed.esecutore'), a.esecutore, MOTORI.filter(m => regoleOra.risorse.fornitori.includes(m)).map(m => ({ value: m, label: motore(m) })), v =>
             conAuditorValido(a, { esecutore: v as Motore, modello: undefined, effort: undefined })),
           scelta(a, 'mod', T('ed.modello'), modello, regoleOra.modelli[a.esecutore].map(m => ({ value: m, label: nomeModello(m) })), v => conAuditorValido(a, { modello: v })),
@@ -241,6 +248,12 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     )
   }
 
+  const dettagliChiLavora = (k: string, figli: unknown[]) => (
+    <Box key={k} flexDirection="column">
+      {figli as never}
+    </Box>
+  )
+
   const editor = (a: Azione) => {
     const modello = modelloDi(a, regoleOra)
     return (
@@ -249,7 +262,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         gap={1}
         marginTop={1}
         padding={1}
-        backgroundColor={conVelo ? velo(GRIGIO, '14') : undefined}
+        backgroundColor={conVelo ? velo(GRIGIO, VELO.riquadro) : undefined}
         borderStyle={conVelo ? undefined : 'single'}
         borderDimColor
       >
@@ -506,6 +519,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     return (
       <Box
         key={`riga-${a.id}`}
+        hover={sotto}
         flexDirection="column"
         gap={1}
         borderStyle="round"
@@ -708,7 +722,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
    * F7.3: l'auditor della chip, per modalità. Richiesto (il campo), applicato (solo api-claude, con `--advisor`) o manuale
    * (sessioni: lo digita l'utente con /advisor, che cambia il suo default per tutte le sessioni). Mai «effettivo».
    */
-  function auditorRiga(a: Azione) {
+  function auditorRiga(a: Azione, compatta = false) {
     const st = statoAuditor(a)
     const esito = a.lanciatore === 'api-claude' ? a.advisorEsito : undefined
     if (!st && !esito && !a.advisorNonDisponibile) return null
@@ -729,8 +743,9 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
             </Button>
           </Box>
         )}
-        {st === 'manuale' && <Text key={`auditor-${a.id}-nota`} size="caption" dimColor wrap="wrap">{T('au.manualeNota')}</Text>}
-        {id?.startsWith('claude-fable') && st !== 'senza' && <Text key={`auditor-${a.id}-fable`} size="caption" dimColor wrap="wrap">{T('au.fable')}</Text>}
+        {/* Nella scheda compatta solo la riga e «Copy»: le note lunghe stanno nella chip aperta. */}
+        {st === 'manuale' && !compatta && <Text key={`auditor-${a.id}-nota`} size="caption" dimColor wrap="wrap">{T('au.manualeNota')}</Text>}
+        {id?.startsWith('claude-fable') && st !== 'senza' && !compatta && <Text key={`auditor-${a.id}-fable`} size="caption" dimColor wrap="wrap">{T('au.fable')}</Text>}
         {esito && <Text key={`auditor-${a.id}-esito`} size="caption" dimColor wrap="wrap">{T(`au.esito.${esito.stato}`, { modello: esito.modello ? nomeModello(esito.modello) : '' })}</Text>}
         {a.stato === 'fallita' && a.lanciatore === 'api-claude' && a.advisorNonDisponibile && !a.senzaAuditor && (
           a.senzaAuditorBloccato
@@ -841,6 +856,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     return (
       <Box
         key={`riga-${a.id}`}
+        hover={sotto}
         flexDirection="column"
         borderStyle={conVelo ? 'round' : undefined}
         borderColor={conVelo ? allerta : undefined}
@@ -859,7 +875,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         )}
         {infoLavoro(a)}
         {consiglioRiga(a)}
-        {auditorRiga(a)}
+        {auditorRiga(a, true)}
         {a.stato === 'avviata' && chiLavoraSola(a)}
         {brief && (
           <Text size="caption" dimColor wrap="wrap">
@@ -942,7 +958,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const seconda = [r.ramo, extraSessione(r)].filter(Boolean).join(' · ')
     const { titolo, altri } = titoloSessione(r)
     return (
-      <Box key={`ses-${r.id}`} flexDirection="row">
+      <Box key={`ses-${r.id}`} hover={sotto} flexDirection="row">
         {cella(`c-lav-${r.id}`, COL.lavoro, [
           titolo,
           <Box key={`r2-${r.id}`} flexDirection="row" flexWrap="wrap" columnGap={1}>
@@ -963,7 +979,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const { titolo, altri } = titoloSessione(r)
     const ramoSotto = classe === 'stretta' && !!r.ramo
     return (
-      <Box key={`ses-${r.id}`} flexDirection="column">
+      <Box key={`ses-${r.id}`} hover={sotto} flexDirection="column">
         {testa(`ses1-${r.id}`, titolo, [statoSessione(r), ...altri])}
         {pezzi(`ses2-${r.id}`, [
           chiSessione(r),
@@ -1020,7 +1036,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       gap={1}
       marginTop={1}
       padding={1}
-      backgroundColor={conVelo ? velo(GRIGIO, '14') : undefined}
+      backgroundColor={conVelo ? velo(GRIGIO, VELO.riquadro) : undefined}
       borderStyle={conVelo ? undefined : 'single'}
       borderDimColor
     >

@@ -950,6 +950,7 @@ const en = {
   "cambia.ancoraIncerto": "The session does not show the change yet",
   "cambia.esitoIncerto": "change to {valore}: outcome uncertain",
   "imp.linguaCambiataAltrove": "another project changed the language meanwhile; press Apply again to choose yours",
+  "board.segno.consegnata": "delivered",
   // ‹fine›
 } satisfies Record<string, Voce>
 

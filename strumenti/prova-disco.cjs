@@ -1867,3 +1867,16 @@ test('F7 giro 3: ogni esito incerto contabilizza il tetto intero nel registro de
   const pulita = await eseguiConAdvisor('az-rv9004', {}, fontiCon({}), claudeAdvisor({}, { uscita: JSON.stringify({ is_error: false, total_cost_usd: 0.4, num_turns: 3 }) }))
   assert.deepStrictEqual([pulita.stato, voce(pulita).costo], ['consegnata', 0.4])
 })
+
+// --- F8.3: una sola fonte per colori e opacità ------------------------------------------------------------------------
+
+test('F8.3 nessun colore né opacità scritti a mano nelle viste: solo tema.ts (gettoni dell\'host e variabili CSS della board)', () => {
+  const dir = path.join(__dirname, '..', 'hooks')
+  const trovati = []
+  for (const f of fs.readdirSync(dir).filter(f => /\.tsx?$/.test(f) && f !== 'tema.ts')) {
+    fs.readFileSync(path.join(dir, f), 'utf8').split(/\r?\n/).forEach((riga, i) => {
+      if (/#[0-9A-Fa-f]{3,8}\b|rgba?\(|hsla?\(|opacity|velo\([^)]*'[0-9A-Fa-f]{2}'/.test(riga)) trovati.push(`${f}:${i + 1}`)
+    })
+  }
+  assert.deepStrictEqual(trovati, [])
+})

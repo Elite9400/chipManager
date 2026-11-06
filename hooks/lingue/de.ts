@@ -948,6 +948,7 @@ const de: Dizionario = {
   "cambia.ancoraIncerto": "Die Sitzung zeigt die Änderung noch nicht",
   "cambia.esitoIncerto": "Änderung auf {valore}: Ergebnis unsicher",
   "imp.linguaCambiataAltrove": "inzwischen hat ein anderes Projekt die Sprache geändert; drücke erneut Anwenden, um deine zu wählen",
+  "board.segno.consegnata": "geliefert",
   // ‹fine›
 }
 

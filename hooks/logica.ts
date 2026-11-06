@@ -1219,7 +1219,7 @@ export const COLORE_STATO = {
 } as const
 
 /** Tinta pallida dello stesso colore (alfa ~16%): regge sia sul tema chiaro sia sullo scuro. */
-export const velo = (hex: string, alfa = '29') => `${hex}${alfa}`
+export const velo = (hex: string, alfa: string) => `${hex}${alfa}`
 
 /** L'effort come grandezza, non solo come colore: ▰ pieni su 4. */
 export const barreEffort = (effort: string) => {

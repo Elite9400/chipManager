@@ -79,7 +79,7 @@ test('board: «Legenda» in fondo, chiusa, dallo stesso dizionario del pannello;
 test('board F5.2: scura di default (chiara solo con prefers-color-scheme: light), dati in ui-monospace, errore con ✗', () => {
   const html = board(dati(insieme()))
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'))
-  expect(css).toMatch(/:root\{color-scheme:dark light;--fondo:#0f1115;/)
+  expect(css).toMatch(/:root\{color-scheme:dark light;--fondo:#0F1115;/)
   expect(css).toContain('@media (prefers-color-scheme:light)')
   expect(css).not.toContain('prefers-color-scheme:dark')
   expect(css).toMatch(/font-family:var\(--mono\)/)
@@ -239,4 +239,18 @@ test('R7: la board non dipende da chi la genera: niente chi negli ingressi, bloc
   expect(owner).not.toContain('a-ina00001')
   const ingressi: IngressiBoard = { azioni: [r4], vive: {}, regole: R, piani: {}, registro: null, commit: [], traguardi: null, riassunti: {}, oggi: '2026-11-05', modo: 'accesa', versione: '2.4.0', lingua: 'en' }
   expect('chi' in ingressi).toBe(false)
+})
+
+test('F8 board: consegnata con ✓ e la sua parola; ✗ della fallita nel colore d\'errore; auditor in «Chi»; colonna delle etichette unica; colori solo dalle variabili', () => {
+  const html = board(dati([...insieme(), az('a-aud00001', 10, { auditor: 'fable', modello: 'claude-opus-5-5' })], { lingua: 'en' }))
+  expect(html).toMatch(/<span class="segno">✓<\/span> Lavoro a-cons0001 <span class="tenue">· delivered ·/)
+  expect(html).toMatch(/<span class="segno fallita">✗<\/span> Lavoro a-fall0001/)
+  expect(html).toContain('.segno.fallita{color:var(--errore)}')
+  expect(html).toMatch(/<dt>Auditor<\/dt><dd>Fable 5\.1<\/dd>/)
+  expect(html).toContain('grid-template-columns:minmax(0,11em) 1fr')
+  // Fuori dal blocco generato in tema.ts nessun colore scritto a mano, e mai l'azzurro dell'icona.
+  const css = html.slice(html.indexOf('<style>') + 7, html.indexOf('</style>'))
+  const resto = css.slice(css.indexOf('}}') + 2)
+  expect(resto).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
+  expect(html).not.toContain('#00BFFF')
 })

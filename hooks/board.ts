@@ -2,11 +2,13 @@
 import type { Azione, Regole, Traguardi, Vita } from '../types'
 import {
   attive,
+  auditorDi,
   aspettaTe,
   barreEffort,
   corsiaDi,
   effortDi,
   FASI,
+  idAuditor,
   modelloDi,
   nomeModello,
   percentuale,
@@ -15,6 +17,7 @@ import {
   mandato,
 } from './logica'
 import type { Strumenti } from './logica'
+import { cssVariabiliBoard } from './tema'
 import { giorno, LEGENDA, letto, ora, traduttore } from './lingua'
 import type { Lingua, T } from './lingua'
 
@@ -117,12 +120,15 @@ const SEGNI = {
   prossimo: ['○', 'board.segno.prossimo'],
   fatto: ['✓', 'board.segno.fatto'],
   fallita: ['✗', 'board.segno.fallita'],
+  consegnata: ['✓', 'board.segno.consegnata'],
 } as const
 
 function scheda(T: T, a: Azione, d: DatiBoard, lista: readonly Azione[], segno: keyof typeof SEGNI) {
   const r = d.regole
   const vita = d.vive[a.id]
-  const [s, parola] = a.stato === 'fallita' ? SEGNI.fallita : SEGNI[segno]
+  // Il segno e la parola dicono lo stato della chip, non il gruppo: una consegnata in «In corso» resta «consegnata».
+  const [s, parola] = a.stato === 'fallita' ? SEGNI.fallita : a.stato === 'consegnata' ? SEGNI.consegnata : SEGNI[segno]
+  const classeSegno = a.stato === 'fallita' ? 'segno fallita' : 'segno'
   const rev = revisoreConcreto(a, r)
   const revisore = a.revisore === 'nessuno' ? T('info.senzaRevisione') : `${motore(T, a.revisore)}${rev && rev !== 'motore:codex' ? ` (${nomeModello(rev)})` : ''}`
   const piano = a.piano ? d.piani[a.id] : undefined
@@ -143,7 +149,7 @@ function scheda(T: T, a: Azione, d: DatiBoard, lista: readonly Azione[], segno: 
   // R7: solo le regole di progetto, mai la sessione che genera: la board è la stessa per chiunque la scriva.
   const blocchi = ['proposta', 'accodata'].includes(a.stato) ? violazioni(a, r, d.azioni) : []
   const m = mandato(a, r, d.strumenti)
-  return `<details id="t-${esc(a.id)}"><summary><span class="segno">${s}</span> ${esc(a.titolo)} <span class="tenue">· ${esc(T(parola))} · ${esc(motore(T, a.esecutore))} ${esc(nomeModello(modelloDi(a, r)))}</span></summary>
+  return `<details id="t-${esc(a.id)}"><summary><span class="${classeSegno}">${s}</span> ${esc(a.titolo)} <span class="tenue">· ${esc(T(parola))} · ${esc(motore(T, a.esecutore))} ${esc(nomeModello(modelloDi(a, r)))}</span></summary>
 <div class="corpo">
 ${riassunto ? `<h4>${esc(T('board.riassunto'))}</h4><p>${esc(riassunto)}</p>` : ''}
 ${a.stato === 'fallita' && a.errore ? `<h4>${esc(T('board.errore'))}</h4><p class="errore">✗ ${esc(T.m(letto(a.erroreCodice, a.erroreParametri, a.errore)))}</p>` : ''}
@@ -151,7 +157,7 @@ ${blocchi.length ? `<h4>${esc(T('board.blocchi'))}</h4><ul>${blocchi.map(b => `<
 ${a.motivoCoda ? `<p>${esc(T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) }))}</p>` : ''}
 <h4>${esc(T('ed.piano'))}</h4>${pianoHtml}
 <h4>${esc(T('board.processo'))}</h4><dl>${voce(T('ed.corsia'), esc(corsiaDi(a, r) ?? T('board.nessuna')))}${voce(T('board.passi'), esc(T('board.passiValore', { esecutore: motore(T, a.esecutore), revisore })))}${voce(T('board.fase'), fase ? passi : esc(T('board.nessuna')))}</dl>
-<h4>${esc(T('tab.chi'))}</h4><dl>${voce(T('ed.esecutore'), esc(motore(T, a.esecutore)))}${voce(T('ed.modello'), esc(nomeModello(modelloDi(a, r))))}${voce(T('ed.effort'), `${esc(effortDi(a, r))} ${barreEffort(effortDi(a, r))}`)}${voce(T('ed.permessi'), esc(a.permessi ?? T('board.comeChiAvvia')))}${voce(T('ed.contesto'), esc(a.contesto ?? 'fresh'))}${voce('Worktree', a.worktree === false ? esc(T('op.condivisa')) : `${esc(T('board.proprio'))}${a.ramo ? ` · ${esc(T('board.ramo', { ramo: a.ramo }))}` : ''}${a.ramoSessione ? ` · ${esc(a.ramoSessione)}` : ''}`)}${voce(T('board.destinazione'), esc(a.destinazione ?? 'local'))}</dl>
+<h4>${esc(T('tab.chi'))}</h4><dl>${voce(T('ed.esecutore'), esc(motore(T, a.esecutore)))}${voce(T('ed.modello'), esc(nomeModello(modelloDi(a, r))))}${voce(T('ed.effort'), `${esc(effortDi(a, r))} ${barreEffort(effortDi(a, r))}`)}${voce(T('chi.auditorScelta'), esc(auditorDi(a) ? nomeModello(idAuditor(auditorDi(a)!) ?? auditorDi(a)!) : T('chi.senzaAuditor')))}${voce(T('ed.permessi'), esc(a.permessi ?? T('board.comeChiAvvia')))}${voce(T('ed.contesto'), esc(a.contesto ?? 'fresh'))}${voce('Worktree', a.worktree === false ? esc(T('op.condivisa')) : `${esc(T('board.proprio'))}${a.ramo ? ` · ${esc(T('board.ramo', { ramo: a.ramo }))}` : ''}${a.ramoSessione ? ` · ${esc(a.ramoSessione)}` : ''}`)}${voce(T('board.destinazione'), esc(a.destinazione ?? 'local'))}</dl>
 <h4>${esc(T('board.revisione'))}</h4><dl>${voce(T('board.revisorePrevisto'), esc(revisore))}${esito ? `${voce(T('board.esito'), esc(T(`esito.${esito.esito}`)))}${voce(T('board.riferitaDa'), esc(esito.riferitaDa))}${voce(T('board.quando'), esc(data(T, esito.quando)))}${esito.nota ? voce(T('board.nota'), esc(esito.nota)) : ''}` : voce(T('board.esito'), esc(T('board.nonRiferito')))}</dl>
 <h4>${esc(T('board.tempi'))}</h4><dl>${voce(T('board.creata'), esc(data(T, a.creata)))}${voce(T('stato.avviata'), esc(data(T, a.avviataIl)))}${voce(T('board.consegnata'), esc(data(T, a.consegnataIl)))}${voce(T('board.completata'), esc(data(T, a.completataIl)))}</dl>
 <h4>${esc(T('board.legami'))}</h4><dl>${voce('Issue', a.issue ? `#${a.issue}` : esc(T('board.nessuna')))}${voce(T('board.dipendeDa'), dip.length ? esc(dip.join('; ')) : esc(T('board.nulla')))}${voce(T('board.sblocca'), sblocca.length ? esc(sblocca.join('; ')) : esc(T('board.nulla')))}${voce(T('board.sessione'), esc(a.sessione ?? T('board.nessuna')))}</dl>
@@ -162,15 +168,15 @@ ${a.background ? `<h4>${esc(T('board.background'))}</h4><pre>${esc(a.background)
 }
 
 // F5.2: scuro di default, chiaro solo se il sistema lo chiede; i dati in monospazio di sistema, nessun font esterno.
-const CSS = `:root{color-scheme:dark light;--fondo:#0f1115;--testo:#e5e7eb;--tenue:#9ca3af;--bordo:#2a2f3a;--accento:#00BFFF;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-@media (prefers-color-scheme:light){:root{--fondo:#fff;--testo:#111827;--tenue:#6b7280;--bordo:#e5e7eb}}
+// F8.3: i colori arrivano solo dal blocco di variabili generato in tema.ts; qui nessun valore scritto a mano.
+const CSS = `${cssVariabiliBoard()}
 body{background:var(--fondo);color:var(--testo);font:14px/1.45 system-ui,sans-serif;max-width:960px;margin:0 auto;padding:16px}
 code,pre,dd,summary .tenue{font-family:var(--mono);font-size:13px}
 h1{margin:0 0 4px}h2{border-bottom:2px solid var(--accento);padding-bottom:4px;margin-top:32px}h4{margin:16px 0 4px}
 details{border:1px solid var(--bordo);border-radius:4px;margin:4px 0;padding:4px 10px}summary{cursor:pointer;font-weight:600}
 details:target{outline:2px solid var(--accento)}.segno{color:var(--accento)}.tenue{color:var(--tenue);font-weight:400}
-.errore{color:#dc2626}pre{white-space:pre-wrap;word-break:break-word;background:rgba(127,127,127,.08);padding:8px;border-radius:4px;max-height:480px;overflow:auto}
-dl{display:grid;grid-template-columns:max-content 1fr;gap:0 12px;margin:0}dt{color:var(--tenue)}dd{margin:0}
+.errore,.segno.fallita{color:var(--errore)}pre{white-space:pre-wrap;word-break:break-word;background:var(--velo);padding:8px;border-radius:4px;max-height:480px;overflow:auto}
+dl{display:grid;grid-template-columns:minmax(0,11em) 1fr;gap:0 12px;margin:0}dt{color:var(--tenue)}dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .barra{display:inline-block;width:160px;height:8px;border:1px solid var(--bordo);vertical-align:middle}.barra>span{display:block;height:100%;background:var(--accento)}
 footer{margin-top:40px;color:var(--tenue);font-size:13px;word-break:break-all}`
 

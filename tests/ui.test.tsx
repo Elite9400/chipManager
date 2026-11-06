@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { ACCENTO, ALFA_VELO, contrasto, ICONA, MOTORE, SFONDI, sopra, STATO } from '../hooks/tema'
+import { ACCENTO, ALFA_VELO, BOARD, contrasto, cssVariabiliBoard, ICONA, MOTORE, SFONDI, sopra, STATO, VELO } from '../hooks/tema'
 import { blocchi, classeDi, componenti } from '../hooks/ui'
 
 // Dati d'esempio. I componenti si disegnano con l'hook del test (l'albero passa la validazione della superficie)
@@ -202,6 +202,47 @@ test('F5.2: barra a blocchi da terminale, uguale sul desktop e nel terminale, in
     const { ui } = await monta($, surface, u => u.Barra({ chiave: 'b', pct: 72, colore: STATO.coda, celle: 10, dopo: ' 72%' }))
     const barra = await ui.find({ type: 'Text', text: '▕███████▎  ▏ 72%' })
     expect([surface, barra?.props.mono]).toEqual([surface, true])
+    await ui.unmount()
+  }
+})
+
+// --- F8.3 / F8.2 ----------------------------------------------------------------------------------------------------
+
+test('F8.3 contrasto in due: l\'accento è grafica (≥ 3:1 su ogni sfondo); la board misura testo ≥ 4,5:1 e grafica ≥ 3:1 per tema', () => {
+  for (const sfondo of [...SFONDI.chiaro, ...SFONDI.scuro]) expect([sfondo, contrasto(ACCENTO, sfondo) >= 3]).toEqual([sfondo, true])
+  for (const tema of ['scuro', 'chiaro'] as const) {
+    const t = BOARD[tema]
+    for (const k of ['testo', 'tenue', 'errore'] as const) expect([tema, k, contrasto(t[k], t.fondo) >= 4.5]).toEqual([tema, k, true])
+    expect([tema, 'accento', contrasto(t.accento, t.fondo) >= 3]).toEqual([tema, 'accento', true])
+  }
+  // Il blocco CSS nasce dagli stessi valori; il colore dell'icona non c'entra.
+  const css = cssVariabiliBoard()
+  for (const v of [BOARD.scuro.fondo, BOARD.chiaro.fondo, BOARD.scuro.errore, ACCENTO]) expect(css).toContain(v)
+  expect(css).not.toContain(ICONA)
+})
+
+test('F8.3 la chip di scelta attiva tiene il testo nell\'inchiostro dell\'host: l\'accento resta sul bordo e sul velo', async ($, on) => {
+  const disegna = banco(on)
+  for (const surface of SUPERFICI) {
+    const { albero, ui } = await disegna($, surface, u => u.Chip({ chiave: 'c1', testo: 'Uno', attiva: true }))
+    const trova = (n: unknown): { props?: Record<string, unknown> } | undefined => {
+      if (!n || typeof n !== 'object') return undefined
+      if (Array.isArray(n)) return n.map(trova).find(Boolean)
+      const x = n as { type?: string; props?: Record<string, unknown>; children?: unknown }
+      return x.type === 'Text' && x.props?.key === 'c1-testo' ? x : trova(x.children)
+    }
+    expect([surface, trova(albero)?.props?.color]).toEqual([surface, undefined])
+    await ui.unmount()
+  }
+})
+
+test('F8.2 Riga: sul desktop un hover di solo sfondo sul Box con chiave; nel terminale nessun hover', async ($, on) => {
+  const disegna = banco(on)
+  for (const surface of SUPERFICI) {
+    const { albero, ui } = await disegna($, surface, u => u.Riga({ chiave: 'riga-1', principale: 'Voce', azioni: [], classe: 'larga' }))
+    // Il kit tiene `hover` sul nodo, accanto alle props.
+    const box = albero as { props?: { key?: string }; hover?: Record<string, unknown> }
+    expect([surface, box.props?.key, box.hover]).toEqual([surface, 'riga-1', surface === 'desktop' ? { backgroundColor: `${ACCENTO}${VELO.hover}` } : undefined])
     await ui.unmount()
   }
 })

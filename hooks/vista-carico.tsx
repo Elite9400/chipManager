@@ -16,7 +16,7 @@ import {
 } from './logica'
 import type { Dati } from './pannello'
 import { nomeLimiteIn, unitaIn } from './risorse'
-import { ACCENTO, STATO } from './tema'
+import { ACCENTO, STATO, VELO } from './tema'
 
 export function vistaCarico(d: Dati) {
   const { T, conVelo, classe, tutte, regoleOra, lista, adesso, capacita, nota1, titoloSezione,
@@ -118,7 +118,6 @@ export function vistaCarico(d: Dati) {
   const senzaDati = alLavoroOra.filter(r => !r.modello || !r.effort || !regoleOra.effort.includes(r.effort)).length
   const larghezzaEffort = `${Math.floor(64 / Math.max(1, regoleOra.effort.length))}%`
   // Il velo dell'accento più intenso dove si lavora di più: 1, 2, 3 o più sessioni.
-  const VELI = ['', '26', '4D', '80'] as const
   const griglia = (
     <Box flexDirection="column">
       <Box key="m-testa" flexDirection="row">
@@ -132,7 +131,7 @@ export function vistaCarico(d: Dati) {
             const c = conta2(m, e)
             return (
               <Box key={`m-${m}-${e}`} width={larghezzaEffort} flexDirection="row" justifyContent="flex-end" paddingRight={1}
-                backgroundColor={conVelo && c.lavoro ? velo(ACCENTO, VELI[Math.min(3, c.lavoro)]) : undefined}>
+                backgroundColor={conVelo && c.lavoro ? velo(ACCENTO, VELO.carico[Math.min(3, c.lavoro)]!) : undefined}>
                 <Text tabular>
                   <Text weight={c.lavoro ? 'semibold' : 'regular'} dimColor={!c.lavoro}>{String(c.lavoro)}</Text>
                   {c.coda ? <Text dimColor>{` +${c.coda}`}</Text> : ''}

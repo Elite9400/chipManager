@@ -948,6 +948,7 @@ const es: Dizionario = {
   "cambia.ancoraIncerto": "La sesión aún no muestra el cambio",
   "cambia.esitoIncerto": "cambio a {valore}: resultado incierto",
   "imp.linguaCambiataAltrove": "mientras tanto otro proyecto cambió el idioma; pulsa Aplicar otra vez para elegir el tuyo",
+  "board.segno.consegnata": "entregada",
   // ‹fine›
 }
 

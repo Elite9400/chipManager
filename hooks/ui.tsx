@@ -6,7 +6,7 @@ import type { ElementTable, RenderSurface } from 'claude-code'
 import { t } from './lingua'
 import type { Lingua } from './lingua'
 import { velo } from './logica'
-import { ACCENTO, ALFA_VELO, GRIGIO } from './tema'
+import { ACCENTO, ALFA_VELO, GRIGIO, VELO } from './tema'
 
 /** Classe di larghezza del pannello, in colonne. */
 export type Classe = 'larga' | 'media' | 'stretta'
@@ -50,7 +50,8 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     const nome = `${p.contesto ? `${p.contesto}, ` : ''}${p.testo}`
     const chiusa = terminale && !p.onRimuovi ? ']' : ''
     const corpo = scelta ? (
-      <Text key={`${p.chiave}-testo`} color={p.attiva ? ACCENTO : undefined} dimColor={!p.attiva}>
+      // Il testo resta nell'inchiostro dell'host: la scelta si vede da bordo, velo e variante, l'accento non colora parole.
+      <Text key={`${p.chiave}-testo`} dimColor={!p.attiva}>
         {terminale && p.attiva ? `[${p.testo}]` : p.testo}
       </Text>
     ) : (
@@ -158,7 +159,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     ) : (
       <Box key={`${p.chiave}-traccia`} flexDirection="row" flexGrow={1}>
         {Array.from({ length: celle }, (_, i) => (
-          <Box key={`${p.chiave}-cella-${i}`} flexGrow={1} backgroundColor={i <= qui ? (i === qui ? ACCENTO : velo(ACCENTO, '4D')) : velo(GRIGIO, '33')}>
+          <Box key={`${p.chiave}-cella-${i}`} flexGrow={1} backgroundColor={i <= qui ? (i === qui ? ACCENTO : velo(ACCENTO, VELO.traccia)) : velo(GRIGIO, VELO.vuoto)}>
             <Text size="caption"> </Text>
           </Box>
         ))}
@@ -230,6 +231,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     return (
       <Box
         key={p.chiave}
+        hover={terminale ? undefined : { backgroundColor: velo(ACCENTO, VELO.hover) }}
         flexDirection={sotto ? 'column' : 'row'}
         flexWrap={sotto ? undefined : 'wrap'}
         justifyContent="space-between"
