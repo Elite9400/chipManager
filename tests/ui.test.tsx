@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 import { ACCENTO, ALFA_VELO, contrasto, ICONA, MOTORE, SFONDI, sopra, STATO } from '../hooks/tema'
-import { classeDi, componenti } from '../hooks/ui'
+import { blocchi, classeDi, componenti } from '../hooks/ui'
 
 // Dati d'esempio. I componenti si disegnano con l'hook del test (l'albero passa la validazione della superficie)
 // e si premono chiamando l'`onPress` dell'albero restituito: un hook di test non ha pulsanti premibili per nome.
@@ -185,6 +185,21 @@ test('Sezione e Riga: titolo e stato affiancati sul desktop, stato sotto sul ter
     expect((await ui.find({ key: 'riga-larga' }))?.props).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap' })
     expect((await ui.find({ key: 'riga-media' }))?.props).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap' })
     expect((await ui.find({ key: 'riga-stretta' }))?.props).toMatchObject({ flexDirection: 'column' })
+    await ui.unmount()
+  }
+})
+
+test('F5.2: barra a blocchi da terminale, uguale sul desktop e nel terminale, in carattere monospazio', async ($, on) => {
+  expect(blocchi(72, 10)).toEqual({ pieni: '███████▎', vuoti: '  ' })
+  expect(blocchi(0, 10)).toEqual({ pieni: '', vuoti: ' '.repeat(10) })
+  expect(blocchi(100, 10)).toEqual({ pieni: '█'.repeat(10), vuoti: '' })
+  expect(blocchi(150, 4)).toEqual({ pieni: '████', vuoti: '' })
+  expect(blocchi(-5, 4)).toEqual({ pieni: '', vuoti: '    ' })
+  const monta = banco(on)
+  for (const surface of SUPERFICI) {
+    const { ui } = await monta($, surface, u => u.Barra({ chiave: 'b', pct: 72, colore: STATO.coda, celle: 10, dopo: ' 72%' }))
+    const barra = await ui.find({ type: 'Text', text: '▕███████▎  ▏ 72%' })
+    expect([surface, barra?.props.mono]).toEqual([surface, true])
     await ui.unmount()
   }
 })

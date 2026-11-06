@@ -76,6 +76,18 @@ test('board: «Legenda» in fondo, chiusa, dallo stesso dizionario del pannello;
   expect(board(dati([], { lingua: 'en' }))).toContain('<summary>Legend</summary>')
 })
 
+test('board F5.2: scura di default (chiara solo con prefers-color-scheme: light), dati in ui-monospace, errore con ✗', () => {
+  const html = board(dati(insieme()))
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'))
+  expect(css).toMatch(/:root\{color-scheme:dark light;--fondo:#0f1115;/)
+  expect(css).toContain('@media (prefers-color-scheme:light)')
+  expect(css).not.toContain('prefers-color-scheme:dark')
+  expect(css).toMatch(/font-family:var\(--mono\)/)
+  expect(css).toContain('--mono:ui-monospace,')
+  expect(html).toContain('<p class="errore">✗ ')
+  expect(html).not.toContain('✕')
+})
+
 test('board: escape di ogni testo; nessuno script, nessun href, nessuna risorsa esterna; CSP', () => {
   const cattivo = '<script>alert(1)</script>"onx=1 javascript:alert(1) </details><img src=x>'
   const html = board(dati([az('a-esc00001', 1, { titolo: cattivo, brief: cattivo, background: cattivo, piano: 'docs/p.md' })], {

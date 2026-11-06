@@ -14,6 +14,14 @@ export const classeDi = (colonne: number): Classe => (colonne >= 110 ? 'larga' :
 
 export type Voce = { valore: string; testo: string }
 
+const OTTAVI = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']
+/** Barra a blocchi da terminale (F5.2) in `celle` caratteri, all'ottavo: `pieni` va colorato, `vuoti` sono spazi. */
+export function blocchi(pct: number, celle: number) {
+  const ottavi = Math.round((Math.min(100, Math.max(0, pct)) / 100) * celle * 8)
+  const pieni = '█'.repeat(Math.floor(ottavi / 8)) + OTTAVI[ottavi % 8]
+  return { pieni, vuoti: ' '.repeat(celle - [...pieni].length) }
+}
+
 type Nodo = unknown
 
 export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lingua) {
@@ -228,5 +236,18 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     )
   }
 
-  return { Chip, GruppoChip, Gamma, Sezione, Riga }
+  /** La barra a blocchi fra ▕ e ▏, uguale sul desktop e nel terminale (monospazio); `dopo` è il valore scritto. */
+  function Barra(p: { chiave: string; pct: number; colore: string; celle: number; dopo?: string }) {
+    const b = blocchi(p.pct, p.celle)
+    return (
+      <Text key={p.chiave} mono>
+        <Text dimColor>▕</Text>
+        <Text color={p.colore}>{b.pieni}</Text>
+        <Text dimColor>{`${b.vuoti}▏`}</Text>
+        {p.dopo ?? ''}
+      </Text>
+    )
+  }
+
+  return { Chip, GruppoChip, Gamma, Sezione, Riga, Barra }
 }

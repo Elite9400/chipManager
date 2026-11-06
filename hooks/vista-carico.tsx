@@ -16,49 +16,18 @@ import {
 } from './logica'
 import type { Dati } from './pannello'
 import { nomeLimiteIn, unitaIn } from './risorse'
-import { ACCENTO, GRIGIO, STATO } from './tema'
+import { ACCENTO, STATO } from './tema'
 
 export function vistaCarico(d: Dati) {
   const { T, conVelo, classe, tutte, regoleOra, lista, adesso, capacita, nota1, titoloSezione,
-    righe, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, consumoOra } = d
+    righe, cella, fornitoriInUso, limiti, NOME_FORNITORE, MOTORI, motore, consumoOra, ui } = d
   const { Box, Text } = d.el
 
   const parolaSoglia = (s: Soglia | null) => (s ? T('car.soglie', { attenzione: s.attenzione, critica: s.critica }) : T('car.nessunaSoglia'))
 
-  /** Barra al rapporto vero con entrambi gli estremi: Box in proporzione sul desktop, 20 celle sul terminale. */
-  const barraPct = (k: string, pct: number, colore: string, corta = false) => {
-    const p = Math.min(100, Math.max(0, pct))
-    if (!conVelo) {
-      // Pannello stretto o colonna stretta: 10 celle, così la riga non va a capo.
-      const celle = classe === 'stretta' || corta ? 10 : 20
-      const pieni = Math.round((p / 100) * celle)
-      return (
-        <Text key={k}>
-          <Text dimColor>{'0 '}</Text>
-          <Text color={colore}>{'█'.repeat(pieni)}</Text>
-          <Text dimColor>{`${'░'.repeat(celle - pieni)} 100%`}</Text>
-        </Text>
-      )
-    }
-    return (
-      <Box key={k} flexDirection="row" alignItems="center" gap={1}>
-        <Text size="caption" dimColor>0</Text>
-        <Box flexGrow={1} flexDirection="row" backgroundColor={velo(GRIGIO, '33')}>
-          {p > 0 && (
-            <Box flexGrow={p} backgroundColor={colore}>
-              <Text size="caption"> </Text>
-            </Box>
-          )}
-          {p < 100 && (
-            <Box flexGrow={100 - p}>
-              <Text size="caption"> </Text>
-            </Box>
-          )}
-        </Box>
-        <Text size="caption" dimColor>100%</Text>
-      </Box>
-    )
-  }
+  /** Barra al rapporto vero, a blocchi fra ▕ e ▏ (gli estremi), 20 celle; 10 su pannello o colonna stretti. */
+  const barraPct = (k: string, pct: number, colore: string, corta = false) =>
+    ui.Barra({ chiave: k, pct, colore, celle: classe === 'stretta' || corta ? 10 : 20, dopo: ` ${Math.round(Math.min(100, Math.max(0, pct)))}%` })
 
   const rigaLimite = (l: Limite) => {
     const soglia = sogliaDi(regoleOra.risorse, l.fornitore)

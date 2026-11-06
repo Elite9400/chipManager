@@ -2078,7 +2078,7 @@ test('2.3.1: un fornitore misurato, uno vietato con misura: Carico e sintesi mos
     expect(await ui.find({ type: 'Text', text: /Codex 95%|non letti/ })).toBeUndefined()
     await ui.press({ key: 'vista-carico' })
     expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /100%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^▕.+▏ 37%$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /non disponibile|FreeLLMAPI|Claude API|DeepSeek|Codex piano|Codex \(95%\)|Nessun limite collegato/ })).toBeUndefined()
     // Impostazioni resta il posto dove si vedono tutti i fornitori e, per gli ammessi, gli errori delle sonde.
     await ui.press({ key: 'impostazioni' })
@@ -2110,7 +2110,7 @@ test('2.3.1: giro fallito dopo uno riuscito: la misura resta; a fonte sempre gua
   expect(await ui.find({ type: 'Text', text: /^Limiti non letti: helper non disponibile$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /DeepSeek saldo: 12 USD/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /100%$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^▕.+▏ 37%$/ })).toBeDefined()
   await ui.press({ key: 'impostazioni' })
   expect(await ui.find({ type: 'Text', text: /^Claude: helper non disponibile$/ })).toBeDefined()
   await ui.press({ key: 'vista-lavoro' })

@@ -379,6 +379,18 @@ function testi(n: unknown): string[] {
   return [...['label', 'placeholder', 'submitLabel'].map(k => x.props?.[k]).filter((v): v is string => typeof v === 'string'), ...testi(x.children)]
 }
 
+test('F5.2: stato con glifo e parola (✗ errore, ○ in coda); i dati (modello, effort, durate) in carattere monospazio', async ($, on) => {
+  const amb = ambiente(on, MATRICE_EN)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', progetti: { 'acme/progetto': {} } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 130))
+  for (const testo of ['✗ Start failed', '○ Queued']) expect([testo, !!(await ui.find({ type: 'Text', text: testo }))]).toEqual([testo, true])
+  expect(await ui.find({ type: 'Text', text: /^▲ Start failed/ })).toBeUndefined()
+  expect((await ui.find({ type: 'Text', text: /^Opus 5\.5$/ }))?.props.mono).toBe(true)
+  await ui.unmount()
+})
+
 test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazioni) non hanno parole italiane, a ogni larghezza', async ($, on) => {
   const amb = ambiente(on, MATRICE_EN)
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', progetti: { 'acme/progetto': {} } }))

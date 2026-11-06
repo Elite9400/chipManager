@@ -116,7 +116,7 @@ const SEGNI = {
   corso: ['▶', 'board.segno.corso'],
   prossimo: ['○', 'board.segno.prossimo'],
   fatto: ['✓', 'board.segno.fatto'],
-  fallita: ['✕', 'board.segno.fallita'],
+  fallita: ['✗', 'board.segno.fallita'],
 } as const
 
 function scheda(T: T, a: Azione, d: DatiBoard, lista: readonly Azione[], segno: keyof typeof SEGNI) {
@@ -146,7 +146,7 @@ function scheda(T: T, a: Azione, d: DatiBoard, lista: readonly Azione[], segno: 
   return `<details id="t-${esc(a.id)}"><summary><span class="segno">${s}</span> ${esc(a.titolo)} <span class="tenue">· ${esc(T(parola))} · ${esc(motore(T, a.esecutore))} ${esc(nomeModello(modelloDi(a, r)))}</span></summary>
 <div class="corpo">
 ${riassunto ? `<h4>${esc(T('board.riassunto'))}</h4><p>${esc(riassunto)}</p>` : ''}
-${a.stato === 'fallita' && a.errore ? `<h4>${esc(T('board.errore'))}</h4><p class="errore">✕ ${esc(T.m(letto(a.erroreCodice, a.erroreParametri, a.errore)))}</p>` : ''}
+${a.stato === 'fallita' && a.errore ? `<h4>${esc(T('board.errore'))}</h4><p class="errore">✗ ${esc(T.m(letto(a.erroreCodice, a.erroreParametri, a.errore)))}</p>` : ''}
 ${blocchi.length ? `<h4>${esc(T('board.blocchi'))}</h4><ul>${blocchi.map(b => `<li>▲ ${esc(T.m(b))}</li>`).join('')}</ul>` : ''}
 ${a.motivoCoda ? `<p>${esc(T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) }))}</p>` : ''}
 <h4>${esc(T('ed.piano'))}</h4>${pianoHtml}
@@ -161,14 +161,16 @@ ${a.background ? `<h4>${esc(T('board.background'))}</h4><pre>${esc(a.background)
 </div></details>`
 }
 
-const CSS = `:root{color-scheme:light dark;--fondo:#fff;--testo:#111827;--tenue:#6b7280;--bordo:#e5e7eb;--accento:#00BFFF}
-@media (prefers-color-scheme:dark){:root{--fondo:#0f1115;--testo:#e5e7eb;--tenue:#9ca3af;--bordo:#2a2f3a}}
-body{background:var(--fondo);color:var(--testo);font:15px/1.5 system-ui,sans-serif;max-width:960px;margin:0 auto;padding:16px}
+// F5.2: scuro di default, chiaro solo se il sistema lo chiede; i dati in monospazio di sistema, nessun font esterno.
+const CSS = `:root{color-scheme:dark light;--fondo:#0f1115;--testo:#e5e7eb;--tenue:#9ca3af;--bordo:#2a2f3a;--accento:#00BFFF;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:light){:root{--fondo:#fff;--testo:#111827;--tenue:#6b7280;--bordo:#e5e7eb}}
+body{background:var(--fondo);color:var(--testo);font:14px/1.45 system-ui,sans-serif;max-width:960px;margin:0 auto;padding:16px}
+code,pre,dd,summary .tenue{font-family:var(--mono);font-size:13px}
 h1{margin:0 0 4px}h2{border-bottom:2px solid var(--accento);padding-bottom:4px;margin-top:32px}h4{margin:16px 0 4px}
-details{border:1px solid var(--bordo);border-radius:6px;margin:8px 0;padding:8px 12px}summary{cursor:pointer;font-weight:600}
+details{border:1px solid var(--bordo);border-radius:4px;margin:4px 0;padding:4px 10px}summary{cursor:pointer;font-weight:600}
 details:target{outline:2px solid var(--accento)}.segno{color:var(--accento)}.tenue{color:var(--tenue);font-weight:400}
 .errore{color:#dc2626}pre{white-space:pre-wrap;word-break:break-word;background:rgba(127,127,127,.08);padding:8px;border-radius:4px;max-height:480px;overflow:auto}
-dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 12px;margin:0}dt{color:var(--tenue)}dd{margin:0}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:0 12px;margin:0}dt{color:var(--tenue)}dd{margin:0}
 .barra{display:inline-block;width:160px;height:8px;border:1px solid var(--bordo);vertical-align:middle}.barra>span{display:block;height:100%;background:var(--accento)}
 footer{margin-top:40px;color:var(--tenue);font-size:13px;word-break:break-all}`
 

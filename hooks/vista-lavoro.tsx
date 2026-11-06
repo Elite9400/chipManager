@@ -338,11 +338,11 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const ms = milestoneDi(a)
     return pezzi(`info-${a.id}`, [
       <Text><Text color={MOTORE[a.esecutore]}>{'◆ '}</Text>{motore(a.esecutore)}</Text>,
-      <Text>{nomeModello(modelloDi(a, regoleOra))}</Text>,
-      <Text>{`${barreEffort(effort)} ${effort}`}</Text>,
+      <Text mono>{nomeModello(modelloDi(a, regoleOra))}</Text>,
+      <Text mono>{`${barreEffort(effort)} ${effort}`}</Text>,
       <Text>{a.revisore === 'nessuno' ? T('info.senzaRevisione') : T('info.rivede', { motore: motore(a.revisore) })}</Text>,
-      sensibile(a, regoleOra) ? <Text><Text color={STATO.errore}>{'▲ '}</Text>{T('info.sensibile', { corsia: corsia ?? 'R4' })}</Text> : corsia && <Text>{corsia}</Text>,
-      a.issue && <Text>{`#${a.issue}`}</Text>,
+      sensibile(a, regoleOra) ? <Text><Text color={STATO.errore}>{'▲ '}</Text>{T('info.sensibile', { corsia: corsia ?? 'R4' })}</Text> : corsia && <Text mono>{corsia}</Text>,
+      a.issue && <Text mono>{`#${a.issue}`}</Text>,
       ms && <Text>{`◎ ${corto(ms.titolo, 28)}`}</Text>,
       prima.length > 0 && <Text>{T('info.dopo', { titoli: corto(prima.join(T('info.separatore')), 40) })}</Text>,
     ])
@@ -413,7 +413,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         {blocchi.length > 0 && motivi(a, blocchi, T('motivi.cosi'))}
         {(a.stato === 'avviata' || a.stato === 'consegnata') && pipeline(a, vita?.fase)}
         {(a.stato === 'avviata' || a.stato === 'consegnata') && (
-          <Text size="caption" dimColor tabular wrap="wrap">
+          <Text size="caption" dimColor mono wrap="wrap">
             {[
               a.avviataIl ? T('info.da', { durata: durata(adesso - Date.parse(a.avviataIl), T.lingua) }) : undefined,
               vita?.ultimaAttivita ? T('info.ultimaAttivita', { durata: durata(adesso - Date.parse(vita.ultimaAttivita), T.lingua) }) : undefined,
@@ -666,16 +666,16 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         {cella(`c-lav-${r.id}`, COL.lavoro, [
           titolo,
           <Box key={`r2-${r.id}`} flexDirection="row" flexWrap="wrap" columnGap={1}>
-            {seconda ? <Text size="caption" dimColor wrap="truncate-middle">{seconda}</Text> : null}
+            {seconda ? <Text size="caption" dimColor mono wrap="truncate-middle">{seconda}</Text> : null}
             {altri}
           </Box>,
         ])}
         {cella(`c-chi-${r.id}`, COL.chi, chiSessione(r))}
-        {cella(`c-mod-${r.id}`, COL.modello, <Text wrap="wrap" dimColor={!r.modello}>{r.modello ? nomeModello(r.modello) : '—'}</Text>)}
-        {cella(`c-eff-${r.id}`, COL.effort, r.effort ? <Text>{`${barreEffort(r.effort)} ${r.effort}`}</Text> : <Text dimColor>—</Text>)}
+        {cella(`c-mod-${r.id}`, COL.modello, <Text mono wrap="wrap" dimColor={!r.modello}>{r.modello ? nomeModello(r.modello) : '—'}</Text>)}
+        {cella(`c-eff-${r.id}`, COL.effort, r.effort ? <Text mono>{`${barreEffort(r.effort)} ${r.effort}`}</Text> : <Text dimColor>—</Text>)}
         {cella(`c-st-${r.id}`, COL.stato, statoSessione(r))}
-        {cella(`c-ctx-${r.id}`, COL.contesto, <Text tabular dimColor={r.contesto === undefined}>{r.contesto === undefined ? '—' : `${r.contesto}%`}</Text>, true)}
-        {cella(`c-att-${r.id}`, COL.attivita, <Text tabular dimColor>{r.qui ? T('tempo.adesso') : quando(r.attivita)}</Text>, true)}
+        {cella(`c-ctx-${r.id}`, COL.contesto, <Text mono dimColor={r.contesto === undefined}>{r.contesto === undefined ? '—' : `${r.contesto}%`}</Text>, true)}
+        {cella(`c-att-${r.id}`, COL.attivita, <Text mono dimColor>{r.qui ? T('tempo.adesso') : quando(r.attivita)}</Text>, true)}
       </Box>
     )
   }
@@ -687,20 +687,20 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         {testa(`ses1-${r.id}`, titolo, [statoSessione(r), ...altri])}
         {pezzi(`ses2-${r.id}`, [
           chiSessione(r),
-          <Text dimColor={!r.modello}>{r.modello ? nomeModello(r.modello) : T('ses.modelloIgnoto')}</Text>,
-          r.effort && <Text>{`${barreEffort(r.effort)} ${r.effort}`}</Text>,
+          <Text mono={!!r.modello} dimColor={!r.modello}>{r.modello ? nomeModello(r.modello) : T('ses.modelloIgnoto')}</Text>,
+          r.effort && <Text mono>{`${barreEffort(r.effort)} ${r.effort}`}</Text>,
           r.contesto !== undefined && (
             <Text>
               <Text dimColor>{`${T('ses.contesto')} `}</Text>
-              <Text tabular>{`${r.contesto}%`}</Text>
+              <Text mono>{`${r.contesto}%`}</Text>
             </Text>
           ),
-          <Text dimColor>{r.qui ? T('tempo.adesso') : quando(r.attivita)}</Text>,
-          !ramoSotto && r.ramo && <Text dimColor>{r.ramo}</Text>,
+          <Text mono dimColor>{r.qui ? T('tempo.adesso') : quando(r.attivita)}</Text>,
+          !ramoSotto && r.ramo && <Text mono dimColor>{r.ramo}</Text>,
           extraSessione(r) && <Text dimColor>{extraSessione(r)}</Text>,
         ])}
         {ramoSotto && (
-          <Text size="caption" dimColor wrap="truncate-middle">
+          <Text size="caption" dimColor mono wrap="truncate-middle">
             {r.ramo}
           </Text>
         )}
@@ -726,33 +726,10 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       ? [...new Set([...piano.coda.map(x => T.m(x.motivo)), ...(piano.bloccate.length ? [T('err.bloccateRegole', { n: piano.bloccate.length })] : [])])]
       : []
 
-  /** Barra di avanzamento: due Box in proporzione sul desktop, celle █ sul terminale. */
+  /** Barra di avanzamento a blocchi, uguale sul desktop e nel terminale (la percentuale sta accanto). */
   const barra = (t: Traguardo) => {
     const pct = percentuale(t)
-    const colore = pct >= 100 ? STATO.inCorso : STATO.coda
-    if (!conVelo) {
-      const pieni = Math.round(pct / 5)
-      return (
-        <Text>
-          <Text color={colore}>{'█'.repeat(pieni)}</Text>
-          <Text dimColor>{'░'.repeat(20 - pieni)}</Text>
-        </Text>
-      )
-    }
-    return (
-      <Box key={`barra-${t.numero}`} flexDirection="row" backgroundColor={velo(GRIGIO, '33')}>
-        {pct > 0 && (
-          <Box flexGrow={pct} backgroundColor={colore}>
-            <Text size="caption"> </Text>
-          </Box>
-        )}
-        {pct < 100 && (
-          <Box flexGrow={100 - pct}>
-            <Text size="caption"> </Text>
-          </Box>
-        )}
-      </Box>
-    )
+    return ui.Barra({ chiave: `barra-${t.numero}`, pct, colore: pct >= 100 ? STATO.inCorso : STATO.coda, celle: 20 })
   }
 
   // Footer: quanto manca al rilascio, milestone per milestone. Sta in fondo perché è contesto, non lavoro.
@@ -785,7 +762,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
           <Box key={`tr-${t.numero}`} flexDirection="column">
             <Box flexDirection="row" justifyContent="space-between" alignItems="flex-end" gap={1}>
               <Text weight="semibold" wrap="wrap">{t.titolo}</Text>
-              <Text weight="semibold" tabular>{`${percentuale(t)}%`}</Text>
+              <Text weight="semibold" mono>{`${percentuale(t)}%`}</Text>
             </Box>
             {barra(t)}
             <Text size="caption" dimColor tabular>

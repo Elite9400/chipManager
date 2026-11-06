@@ -147,20 +147,20 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const apriPerche = (id: string) => () => update($, aperta, x => (x === `perche:${id}` ? null : `perche:${id}`))
   const ferma = (a: Azione) => a.stato === 'avviata' && !a.qui && stati[a.id]?.stato === 'ferma'
 
-  /** Stato di una chip: il segno nel colore dello stato, la parola nell'inchiostro. */
+  /** Stato di una chip: il segno nel colore dello stato, la parola nell'inchiostro (F5.2: ● ○ ◐ ? ✓ ✗ ⏸, mai il solo colore). */
   const statoDi = (a: Azione): { colore: string; segno: string; parola: string } => {
     if (a.stato === 'proposta') return { colore: STATO.coda, segno: '○', parola: T('stato.proposta') }
-    if (a.stato === 'accodata') return { colore: STATO.coda, segno: '◔', parola: T('stato.accodata') }
+    if (a.stato === 'accodata') return { colore: STATO.coda, segno: '○', parola: T('stato.accodata') }
     if (a.stato === 'in-avvio')
       return {
         colore: STATO.coda,
-        segno: '◔',
+        segno: a.incerto && !a.manuale ? '?' : '◐',
         parola: T(a.manuale ? 'stato.chiestaQui' : a.incerto ? 'stato.incerto' : 'stato.inAvvio'),
       }
-    if (a.stato === 'fallita') return { colore: STATO.errore, segno: '▲', parola: T('stato.fallita') }
+    if (a.stato === 'fallita') return { colore: STATO.errore, segno: '✗', parola: T('stato.fallita') }
     if (a.stato === 'consegnata') return { colore: STATO.consegnata, segno: '✓', parola: T('stato.consegnata') }
     if (a.qui) return { colore: STATO.inCorso, segno: '●', parola: T('stato.qui') }
-    if (ferma(a)) return { colore: STATO.attesa, segno: '◐', parola: T('stato.ferma') }
+    if (ferma(a)) return { colore: STATO.attesa, segno: '⏸', parola: T('stato.ferma') }
     return { colore: STATO.inCorso, segno: '●', parola: T(stati[a.id] ? 'stato.inCorso' : 'stato.avviata') }
   }
 
@@ -197,7 +197,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
     // Una sessione senza titolo ne prende uno nella lingua del pannello.
     const titolo = s.titolo || T(s.id === 'self' ? 'sessione.questa' : s.motore === 'codex' ? 'sessione.codex' : 'sessione.senzaTitolo')
     if (!a && s.stato === 'ignota') return { ...s, titolo, parola: '—', segno: '○', colore: GRIGIO }
-    return { ...s, azione: a, titolo: a?.titolo ?? titolo, parola: T(fermaOra ? 'sessione.ferma' : 'sessione.inCorso'), segno: fermaOra ? '◐' : '●', colore: fermaOra ? STATO.attesa : STATO.inCorso }
+    return { ...s, azione: a, titolo: a?.titolo ?? titolo, parola: T(fermaOra ? 'sessione.ferma' : 'sessione.inCorso'), segno: fermaOra ? '⏸' : '●', colore: fermaOra ? STATO.attesa : STATO.inCorso }
   })
   for (const a of avviate)
     if (!righe.some(r => r.azione?.id === a.id)) {
@@ -205,7 +205,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
       righe.push({
         id: `chip-${a.id}`, motore: a.esecutore === 'codex' ? 'codex' : 'claude', titolo: a.titolo, ramo: stati[a.id]?.ramo,
         modello: modelloDi(a, regoleOra), effort: effortDi(a, regoleOra), stato: fermaOra ? 'ferma' : 'in-corso', attivita: stati[a.id]?.ultimaAttivita, azione: a,
-        parola: T(a.stato === 'in-avvio' ? 'stato.inAvvio' : fermaOra ? 'sessione.ferma' : 'sessione.inCorso'), segno: a.stato === 'in-avvio' ? '◔' : fermaOra ? '◐' : '●',
+        parola: T(a.stato === 'in-avvio' ? 'stato.inAvvio' : fermaOra ? 'sessione.ferma' : 'sessione.inCorso'), segno: a.stato === 'in-avvio' ? '◐' : fermaOra ? '⏸' : '●',
         colore: a.stato === 'in-avvio' ? STATO.coda : fermaOra ? STATO.attesa : STATO.inCorso,
       })
     }
