@@ -420,6 +420,8 @@ export type StatoImpostazioni = {
   sezione: 'connessioni' | 'soglie' | 'modo' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate' | 'esecuzione' | 'lingua' | 'legenda' | 'setup' | 'doctor'
   /** F11.1: lo strato che la sezione Modo di lavoro modifica (assente = Account). */
   ambitoModo?: 'account' | 'progetto'
+  /** F11.2: il passo della configurazione guidata (0 = Lingua … 6 = Riepilogo). */
+  passoSetup?: number
   errore?: { dove: string; testo: Messaggio }
   guida?: Fornitore
   bozza?: { fornitore?: Fornitore; tipo?: string }

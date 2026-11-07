@@ -531,6 +531,12 @@ test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazi
       }
       await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
       await controlla('doctor')
+      // F11.2: ogni passo del setup.
+      await $.command.run({ command: 'chipmanager', args: '--setup' } as never)
+      for (let i = 1; i <= 7; i++) {
+        await controlla(`setup-${i}`)
+        if (i < 7) await ui.press({ key: 'setup-avanti' })
+      }
       await ui.press({ key: 'vista-lavoro' })
       await ui.unmount()
     }
@@ -610,6 +616,12 @@ test('lingue: a 60 colonne nel terminale nessuna riga supera la larghezza e ness
     // F11.3: la pagina Doctor con ogni rilievo, in ogni lingua.
     await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
     await controlla('doctor')
+    // F11.2: ogni passo del setup, in ogni lingua.
+    await $.command.run({ command: 'chipmanager', args: '--setup' } as never)
+    for (let i = 1; i <= 7; i++) {
+      await controlla(`setup-${i}`)
+      if (i < 7) await ui.press({ key: 'setup-avanti' })
+    }
     await ui.unmount()
   }
 })
@@ -845,6 +857,14 @@ test('F9 non regressione: elenco ordinato dei controlli per vista e per superfic
     for (const s of [...SEZIONI_F9, 'modo']) {
       await ui.press({ key: `sezione-${s}-premi` })
       await foto(`impostazioni-${s}`)
+    }
+    // F11.2 e F11.3: le pagine nuove, tutte nella fotografia di F11.
+    await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+    await foto('impostazioni-doctor')
+    await $.command.run({ command: 'chipmanager', args: '--setup' } as never)
+    for (let i = 1; i <= 7; i++) {
+      await foto(`impostazioni-setup-${i}`)
+      if (i < 7) await ui.press({ key: 'setup-avanti' })
     }
     await ui.press({ key: 'vista-lavoro' })
     await ui.unmount()

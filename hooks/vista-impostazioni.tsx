@@ -58,6 +58,17 @@ export async function apriBilanciamento($: EngineInterface) {
   await update($, statoVista, (s): StatoVista => ({ ...s, sezione: 'bilanciamento', errore: undefined }))
 }
 
+// --- F11.2: preset del modo di lavoro e passi del setup -----------------------------------------------------------
+/** I preset riscrivono lo strato intero; null = nessuna scelta (Consigliato: predefiniti, o l'account per un progetto). */
+const PRESET_MODO = {
+  consigliato: null,
+  economico: { effortPredefinito: { R0: 'low', R1: 'low', R2: 'medium' }, auditorSuggerito: false, revisioneIncrociata: false },
+  qualita: { effortPredefinito: { R0: 'medium', R1: 'high', R2: 'high', R3: 'xhigh', R4: 'xhigh', R5: 'xhigh' }, auditorSuggerito: true, revisioneIncrociata: true },
+} as const
+export const PASSI_SETUP = ['lingua', 'fornitori', 'accessi', 'chiavi', 'limiti', 'modo', 'riepilogo'] as const
+/** I passi che una proposta dell'IA non può riempire (fornitori ammessi, accessi, chiavi): li fai tu. */
+const PASSI_TUOI: readonly string[] = ['fornitori', 'accessi', 'chiavi']
+
 // --- F11.3: il doctor ----------------------------------------------------------------------------------------------
 /** L'ultima diagnosi (in memoria): la scrive il comando, la legge la pagina Doctor. */
 export const statoDoctor = atom({ plugin: 'chip-manager', key: 'doctor' } as const, {} as StatoDoctor, { shape: 'doctor-1' })
@@ -535,6 +546,70 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     })
   }
 
+  // --- Setup (F11.2) ----------------------------------------------------------------------------------
+  // Una vista della bozza F5.9: ogni passo riusa i controlli della sua sezione; «Applica» (in basso) scrive tutto in un CAS.
+  const setup = async () => {
+    const i = Math.min(Math.max(vista.passoSetup ?? 0, 0), PASSI_SETUP.length - 1)
+    const passo = PASSI_SETUP[i]!
+    const stato = T(`set.p.${passo}` as Chiave)
+    const vai = (n: number) => {
+      if (PASSI_SETUP[n] === 'accessi') void c.controllaEsecuzione()
+      void cambia(s => ({ ...s, passoSetup: n, errore: undefined }))
+    }
+    const es = await read($, esecuzione)
+    const k = es.controllo
+    const riga = (chiave: string, ok: boolean | undefined, si: string, no: string, tipo?: TipoAccesso) => (
+      <Box key={chiave} flexDirection="column">
+        {nota1(`${chiave}-stato`, ok === undefined ? GRIGIO : ok ? STATO.inCorso : STATO.attesa, ok === undefined ? '…' : ok ? '✓' : '✗', ok === undefined ? T('ese.controllando') : ok ? si : no)}
+        {ok === false && tipo ? <Button key={`${chiave}-accedi`} variant="secondary" label={`${T('ese.accedi')} · ${tipo === 'gh' ? 'GitHub' : tipo === 'codex' ? 'Codex' : 'Claude'}`} onPress={() => void c.accedi(tipo)} /> : null}
+      </Box>
+    )
+    const accessi = () => [
+      riga('setup-claude', k ? k.claude.loggedIn === true : undefined, T('ese.claudeOk'), T(k?.claude.trovato === false ? 'ese.claudeAssente' : 'ese.claudeNo'), 'claude'),
+      riga('setup-codex', k ? k.codex?.loggedIn === true : undefined, T('set.codexOk'), T(k?.codex?.trovato === false ? 'set.codexAssente' : 'set.codexNo'), 'codex'),
+      riga('setup-gh', k ? k.github.loggedIn : undefined, T('ese.ghOk'), T(k?.github.trovato === false ? 'ese.ghAssente' : 'ese.ghNo'), 'gh'),
+      <Button key="setup-ricontrolla" plain label={T('ese.ricontrolla')} onPress={() => void c.controllaEsecuzione()} />,
+    ]
+    const chiavi = () => [
+      // La chiave non passa mai dal pannello: si dice solo se c'è, e dove si mette (testo da copiare).
+      nota1('setup-chiave-api', regoleOra.chiaveApi ? STATO.inCorso : GRIGIO, regoleOra.chiaveApi ? '✓' : '—', `Anthropic API (credits) · ${T(regoleOra.chiaveApi ? 'set.presente' : 'set.assente')}`),
+      ...(['deepseek', 'freellmapi'] as const).map(f =>
+        nota1(`setup-chiave-${f}`, connesso(regoleOra, f) ? STATO.inCorso : GRIGIO, connesso(regoleOra, f) ? '✓' : '—', `${NOME_FORNITORE[f]} · ${T(connesso(regoleOra, f) ? 'set.presente' : 'set.assente')}`)),
+      <Text key="setup-chiavi-percorso" wrap="wrap">{T('set.percorsoChiavi')}</Text>,
+      <Button key="setup-chiavi-copia" variant="secondary" label={T('set.copiaConfig')}
+        onPress={() => void $.ui.copy({ text: '/config' }).then(x => x.isCopied && $.ui.toast(T('ese.copiato')))} />,
+    ]
+    const riepilogo = () => {
+      const p = piena(vista.pendenti)
+      const sezioni = [...new Set(Object.keys(p?.campi ?? {}).map(x => T(SEZIONE_DI[x] ?? 'imp.sezione.progetto')).concat(p?.lingua ? [T('imp.sezione.lingua')] : []))]
+      return [
+        p ? nota1('setup-riepilogo', STATO.attesa, '●', T('set.modifiche', { n: pendenti, sezioni: sezioni.join(', ') })) : nota1('setup-riepilogo', GRIGIO, '—', T('set.niente')),
+        didascalia('setup-riepilogo-nota', T('set.applicaSotto')),
+      ]
+    }
+    const corpo = passo === 'lingua' ? [lingua()] : passo === 'fornitori' ? [connessioni()] : passo === 'accessi' ? accessi() : passo === 'chiavi' ? chiavi()
+      : passo === 'limiti' ? [soglie()] : passo === 'modo' ? [modoLavoro()] : riepilogo()
+    return u.Sezione({
+      chiave: 'pagina-setup',
+      titolo: T('set.titolo'),
+      descrizione: T('set.descrizione'),
+      stato,
+      figli: [
+        <Text key="setup-passo" weight="semibold" wrap="wrap">
+          {`${T('set.passo', { n: i + 1, m: PASSI_SETUP.length })} · ${T(`set.p.${passo}` as Chiave)}${PASSI_TUOI.includes(passo) ? ` · ${T('set.tu')}` : ''}`}
+        </Text>,
+        didascalia('setup-spiega', T(`set.d.${passo}` as Chiave)),
+        ...corpo,
+        <Box key="setup-azioni" flexDirection="row" flexWrap="wrap" gap={1}>
+          {i > 0 ? <Button key="setup-indietro" plain label={T('set.indietro')} onPress={() => vai(i - 1)} /> : null}
+          {i < PASSI_SETUP.length - 1 ? <Button key="setup-avanti" variant="primary" label={T('set.avanti')} onPress={() => vai(i + 1)} /> : null}
+          {i < PASSI_SETUP.length - 2 ? <Button key="setup-riepilogo-vai" plain label={T('set.salta')} onPress={() => vai(PASSI_SETUP.length - 1)} /> : null}
+          <Button key="setup-chiudi" plain label={T('set.chiudi')} onPress={() => void cambia(s => ({ ...s, sezione: 'connessioni', errore: undefined }))} />
+        </Box>,
+      ],
+    })
+  }
+
   // --- Doctor (F11.3) ---------------------------------------------------------------------------------
   const doctorVista = await read($, statoDoctor)
   const doctor = () => {
@@ -599,6 +674,14 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           onCambia: v => void cambia(s => ({ ...s, ambitoModo: v as 'account' | 'progetto', errore: undefined })),
         }),
         didascalia('modo-ambito-nota', progetto ? T('modo.notaProgetto') : T('imp.valeTuttiProgetti')),
+        // F11.2: tre preset che riscrivono lo strato scelto; «Consigliato» toglie le scelte (valgono i predefiniti o l'account).
+        u.GruppoChip({
+          chiave: 'modo-preset', etichetta: T('modo.preset'), modo: 'scelta',
+          valore: (Object.entries(PRESET_MODO).find(([, v]) => JSON.stringify(v ?? {}) === JSON.stringify(strato))?.[0]) ?? '',
+          voci: [{ valore: 'consigliato', testo: T('modo.pConsigliato') }, { valore: 'economico', testo: T('modo.pEconomico') }, { valore: 'qualita', testo: T('modo.pQualita') }],
+          onCambia: v => salva('modo-preset', () => ({ [campo]: PRESET_MODO[v as keyof typeof PRESET_MODO] }))(),
+        }),
+        errore('modo-preset'),
         ...(['R0', 'R1', 'R2', 'R3', 'R4', 'R5'] as const).map(effort),
         u.GruppoChip({
           chiave: 'modo-codex', etichetta: T('modo.codex'), modo: 'scelta', valore: m.codexSandbox,
@@ -1156,6 +1239,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       : vista.sezione === 'soglie' ? soglie()
       : vista.sezione === 'modo' ? modoLavoro()
       : vista.sezione === 'doctor' ? doctor()
+      : vista.sezione === 'setup' ? await setup()
       : vista.sezione === 'bilanciamento' ? bilanciamento()
         : vista.sezione === 'progetto' ? await progetto()
           : vista.sezione === 'board' ? board()

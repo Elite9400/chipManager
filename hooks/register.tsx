@@ -2239,7 +2239,9 @@ export const register: Register = (on, options) => {
     const parole = (e.args ?? '').trim().split(/\s+/).filter(Boolean)
     const pagina = parole.includes('--doctor') ? ('doctor' as const) : parole.includes('--setup') ? ('setup' as const) : undefined
     if (pagina) {
-      await update($, impostazioni, (s): StatoImpostazioni => ({ ...s, sezione: pagina, errore: undefined }))
+      // Il setup con una proposta dell'IA già nella bozza si apre sul riepilogo: l'utente controlla e conferma.
+      await update($, impostazioni, (s): StatoImpostazioni => ({ ...s, sezione: pagina, errore: undefined,
+        ...(pagina === 'setup' && { passoSetup: s.proposta || s.propostaInCoda ? 6 : 0 }) }))
       await update($, vistaOra, (): Vista => 'impostazioni')
     }
     await $.ui.open({ id: PANE, title: TITOLO, focus: true })
