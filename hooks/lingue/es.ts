@@ -1108,6 +1108,18 @@ const es: Dizionario = {
   "modo.pConsigliato": "Recomendado",
   "modo.pEconomico": "Económico",
   "modo.pQualita": "Calidad",
+  // F11.4: rapporto a chipManager
+  "rap.segnala": "Informar a chipManager",
+  "rap.nota": "Solo códigos: versiones, superficie, forma de los ajustes (nombres de campos, sin valores) y hallazgos. Léelo todo antes de enviarlo.",
+  "rap.gh": "Crear con gh",
+  "rap.apri": "Abrir en GitHub",
+  "rap.copia": "Copiar texto",
+  "rap.chiudi": "No enviar",
+  "rap.confermaGh": "¿Crear un issue público en Elite9400/chipManager con exactamente el texto mostrado?",
+  "rap.confermaUrl": "¿Abrir GitHub con el texto mostrado? Abrir la página ya envía ese texto a GitHub; el issue se crea solo cuando lo envías allí.",
+  "rap.creato": "Issue creado",
+  "rap.aperto": "GitHub abierto en el navegador",
+  "rap.nonRiuscito": "No enviado: copia el texto y envíalo a mano",
   // ‹fine›
 }
 

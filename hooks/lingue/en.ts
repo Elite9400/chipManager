@@ -1110,6 +1110,18 @@ const en = {
   "modo.pConsigliato": "Recommended",
   "modo.pEconomico": "Economy",
   "modo.pQualita": "Quality",
+  // F11.4: rapporto a chipManager
+  "rap.segnala": "Report to chipManager",
+  "rap.nota": "Only codes: versions, surface, the shape of the settings (field names, no values) and the findings. Read it all before sending.",
+  "rap.gh": "Create with gh",
+  "rap.apri": "Open on GitHub",
+  "rap.copia": "Copy text",
+  "rap.chiudi": "Do not send",
+  "rap.confermaGh": "Create a public issue on Elite9400/chipManager with exactly the text shown?",
+  "rap.confermaUrl": "Open GitHub with the text shown? Opening the page already sends that text to GitHub; the issue is created only when you submit it there.",
+  "rap.creato": "Issue created",
+  "rap.aperto": "GitHub opened in the browser",
+  "rap.nonRiuscito": "Not sent: copy the text and file it by hand",
   // ‹fine›
 } satisfies Record<string, Voce>
 

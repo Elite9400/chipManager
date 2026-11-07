@@ -1108,6 +1108,18 @@ const de: Dizionario = {
   "modo.pConsigliato": "Empfohlen",
   "modo.pEconomico": "Sparsam",
   "modo.pQualita": "Qualität",
+  // F11.4: rapporto a chipManager
+  "rap.segnala": "An chipManager melden",
+  "rap.nota": "Nur Codes: Versionen, Oberfläche, Form der Einstellungen (Feldnamen, keine Werte) und Befunde. Vor dem Senden ganz lesen.",
+  "rap.gh": "Mit gh erstellen",
+  "rap.apri": "Auf GitHub öffnen",
+  "rap.copia": "Text kopieren",
+  "rap.chiudi": "Nicht senden",
+  "rap.confermaGh": "Ein öffentliches Issue in Elite9400/chipManager mit genau dem gezeigten Text erstellen?",
+  "rap.confermaUrl": "GitHub mit dem gezeigten Text öffnen? Das Öffnen schickt den Text bereits an GitHub; das Issue entsteht erst, wenn Sie es dort absenden.",
+  "rap.creato": "Issue erstellt",
+  "rap.aperto": "GitHub im Browser geöffnet",
+  "rap.nonRiuscito": "Nicht gesendet: Text kopieren und von Hand einreichen",
   // ‹fine›
 }
 

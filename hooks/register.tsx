@@ -80,6 +80,7 @@ import type { Lingua, Msg } from './lingua'
 import { disegna } from './pannello'
 import type { EsitoApplica } from './pannello'
 import { RILIEVI, ripristinaImpostazioni, versaProposta } from './vista-impostazioni'
+import { rapportoRedatto, TITOLO_RAPPORTO, urlRapporto } from './rapporto'
 import { fonte, INSTALLAZIONE, nomeLimiteIn, nomiStrumenti, osservaRisorse, RISORSE_VUOTE, VERSIONE_MOD } from './risorse'
 
 // Lo scanner dello stato vuole l'atomo scritto nel file che lo usa: register e pannello ne tengono
@@ -1198,6 +1199,27 @@ async function diagnosiDoctor($: Eng) {
   } catch {
     await update($, statoDoctor, (): StatoDoctor => ({ fallita: true }))
   }
+}
+
+/** F11.4: il rapporto redatto (solo codici) dalla diagnosi corrente, mostrato per intero nella pagina Doctor. */
+async function preparaRapporto($: Eng, superficie: 'desktop' | 'terminal') {
+  const [d, r, v] = await Promise.all([read($, statoDoctor), leggiRegole($), $.session.version().catch(() => undefined)])
+  const testo = rapportoRedatto({ versione: VERSIONE_MOD, superficie, host: v?.base, account: r.risorse.account, progetto: r.risorse.strato,
+    codici: (d.trovati ?? []).map(x => x.codice) })
+  await update($, statoDoctor, (s): StatoDoctor => ({ ...s, rapporto: testo }))
+}
+
+/** Invia il rapporto mostrato, solo dopo un sì: con gh (file temporaneo) o aprendo l'URL precompilato (l'apertura invia il testo). */
+async function segnalaRapporto($: Eng, come: 'gh' | 'url') {
+  const T = await lingue($)
+  const testo = (await read($, statoDoctor)).rapporto
+  if (!testo) return
+  const url = urlRapporto(testo)
+  if (come === 'url' && !url) return
+  const si = T(come === 'gh' ? 'rap.gh' : 'rap.apri')
+  if ((await $.ui.ask(T(come === 'gh' ? 'rap.confermaGh' : 'rap.confermaUrl'), { options: [si, T('comune.annulla')], header: 'chipManager' }).catch(() => '')) !== si) return
+  const e = come === 'gh' ? await helper($, ['segnala-gh'], JSON.stringify({ titolo: TITOLO_RAPPORTO, corpo: testo })) : await helper($, ['apri-url', url!])
+  $.ui.toast(T(e.codice === 0 ? (come === 'gh' ? 'rap.creato' : 'rap.aperto') : 'rap.nonRiuscito'))
 }
 
 /** Un rimedio: «Accedi» parte dal clic; ripristino, archivio e «Libera» chiedono conferma. Poi si ricontrolla. */
@@ -2458,6 +2480,8 @@ export const register: Register = (on, options) => {
       controllaEsecuzione: () => controllaEsecuzione($),
       diagnosi: () => diagnosiDoctor($),
       rimedio: r => rimedioDoctor($, opz, r),
+      rapporto: superficie => preparaRapporto($, superficie),
+      segnala: come => segnalaRapporto($, come),
       cambiaSessione: (a, campo, valore) => cambiaSessione($, a.id, campo, valore),
       ricontrollaCambio: a => ricontrollaCambio($, a.id),
       accedi: tipo => accedi($, tipo),

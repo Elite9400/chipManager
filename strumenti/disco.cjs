@@ -80,6 +80,43 @@ function scriviDati(file, testo) {
   scriviAtomico(file, testo)
 }
 
+// --- F11.4: il rapporto a chipManager ---------------------------------------------------------------------------------
+const URL_RAPPORTO = 'https://github.com/Elite9400/chipManager/issues/new?'
+/** Ogni riga del rapporto viene dagli elenchi chiusi del pannello (hooks/rapporto.ts): qui si ricontrolla la forma. */
+const RIGA_RAPPORTO = /^(### chipManager report|- (mod|host): [0-9a-z.-]{1,20}|- surface: [a-z]{1,10}|- (account|project) shape: [A-Za-z:, ]{1,600}|- doctor findings: [A-Za-z., ]{1,800})$/
+const rapportoValido = t => typeof t === 'string' && t.length <= 4000 && t.split('\n').every(r => RIGA_RAPPORTO.test(r))
+
+/** Apre nel browser SOLO l'URL del nuovo issue di chipManager: argv fisso per sistema, mai una shell. */
+function apriUrl(url) {
+  if (typeof url !== 'string' || !url.startsWith(URL_RAPPORTO) || url.length > 7000 || /[\s"'<>^&|]/.test(url)) return [2, '']
+  const argv = process.platform === 'win32' ? ['rundll32', 'url.dll,FileProtocolHandler', url] : process.platform === 'darwin' ? ['open', url] : ['xdg-open', url]
+  try {
+    const [eseguibile, argomenti] = comandoReale(argv)
+    spawn(eseguibile, argomenti, { stdio: 'ignore', detached: true, windowsHide: true }).unref()
+    return [0, '']
+  } catch {
+    return [1, '']
+  }
+}
+
+/** `gh issue create` sul solo repository di chipManager, con il corpo in un file temporaneo cancellato dopo. */
+function segnalaGh(richiesta) {
+  if (!oggetto(richiesta) || richiesta.titolo !== 'chipManager report: doctor findings' || !rapportoValido(richiesta.corpo)) return [2, '']
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'chipmanager-rapporto-'))
+  const file = path.join(dir, 'corpo.md')
+  try {
+    fs.writeFileSync(file, richiesta.corpo, { mode: 0o600 })
+    const [eseguibile, argomenti] = comandoReale(['gh', 'issue', 'create', '--repo', 'Elite9400/chipManager', '--title', richiesta.titolo, '--body-file', file])
+    const r = spawnSync(eseguibile, argomenti, { encoding: 'utf8', windowsHide: true, timeout: 60_000 })
+    const url = /https:\/\/github\.com\/Elite9400\/chipManager\/issues\/\d{1,9}/.exec(r.stdout ?? '')?.[0]
+    return r.status === 0 && url ? [0, JSON.stringify({ url })] : [1, '']
+  } catch {
+    return [1, '']
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 // --- F11.3: copie del config e contatori monotòni ----------------------------------------------------------------
 const COPIE = 3
 const fileContatori = file => `${file}.contatori`
@@ -1395,6 +1432,8 @@ async function comandoHelper(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {
   if (cmd === 'ripristina-config' && a.length === 1) return esci(...(await ripristinaConfig(a[0], stdin())))
   if (cmd === 'diagnosi' && a.length === 4) return esci(0, JSON.stringify(require('./diagnosi.cjs').diagnosi(...a, { dm: dirMacchina })))
   if (cmd === 'archivia-registro' && a.length === 1) return esci(...(await require('./diagnosi.cjs').archiviaRegistro(a[0])))
+  if (cmd === 'apri-url' && a.length === 1) return esci(...apriUrl(a[0]))
+  if (cmd === 'segnala-gh' && !a.length) return esci(...segnalaGh(stdin()))
   if (cmd === 'lancia-cli' && a.length === 3) return esci(await lanciaCli(...a, stdin()))
   if (cmd === 'esegui-cli' && a.length === 3) return esci(await eseguiCli(...a, stdin()))
   if (cmd === 'stato-cli' && a.length === 2 && tentativoValido(a[1])) {
@@ -1431,7 +1470,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, configValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, configValido, apriUrl, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

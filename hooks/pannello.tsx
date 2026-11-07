@@ -97,6 +97,9 @@ export type Ctx = {
   /** F11.3: il doctor: diagnosi in sola lettura e un rimedio su conferma, poi di nuovo la diagnosi. */
   diagnosi: () => Promise<unknown>
   rimedio: (r: Rilievo) => Promise<unknown>
+  /** F11.4: prepara il rapporto (solo codici) e, su conferma, lo apre su GitHub o lo crea con gh. */
+  rapporto: (superficie: 'desktop' | 'terminal') => Promise<unknown>
+  segnala: (come: 'gh' | 'url') => Promise<unknown>
   accedi: (tipo: TipoAccesso) => Promise<unknown>
   apriConfig: () => Promise<unknown>
   /** F6.2: «Libera» e «Termina» del lock della corsia API, ciascuno con il suo popup. */

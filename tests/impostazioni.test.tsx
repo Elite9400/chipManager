@@ -24,6 +24,7 @@ import {
 } from '../hooks/bilanciamento'
 import { bilancia, regoleDa, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
 import { LEGENDA, LINGUE, t } from '../hooks/lingua'
+import { MAX_URL, rapportoRedatto, urlRapporto } from '../hooks/rapporto'
 import { usoDesktop } from '../hooks/risorse'
 import type { Azione, Chiamante, Peso } from '../types'
 import { DiscoIt } from './disco-it'
@@ -354,6 +355,8 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
     }
     if (cmd === 'ripristina-config') return fine(...esec.ripristina(String(e.init?.stdin ?? '')))
     if (cmd === 'archivia-registro') return fine(0, '{"archiviato":true}')
+    if (cmd === 'apri-url') return fine(0)
+    if (cmd === 'segnala-gh') return fine(0, '{"url":"https://github.com/Elite9400/chipManager/issues/1"}')
     if (cmd === 'accedi') {
       esec.accessi.push(String(file))
       return fine(...esec.accedi(String(file)))
@@ -2072,4 +2075,60 @@ test('F11.2 setup: nessuna chiave passa mai dal pannello: il passo delle chiavi 
   await ui.press({ key: 'applica' }).catch(() => undefined)
   expect([...amb.disco.values()].join('\n')).not.toContain('SEGRETO')
   expect(amb.processi.flat().join(' ')).not.toContain('SEGRETO')
+})
+
+// --- F11.4: il rapporto a chipManager ----------------------------------------------------------------------------------
+
+test('F11.4 redattore: su ingressi avversari esce solo da elenchi chiusi (niente percorsi, nomi, codice, chiavi, email)', () => {
+  const SEGRETI = ['X:/casa/persona/progetto-segreto', 'persona@esempio.it', 'sk-ant-SEGRETO', 'ghp_SEGRETO', 'acme/progetto-segreto', 'function rubare()', 'Mario Rossi', 'org-42']
+  const testo = rapportoRedatto({
+    versione: 'sk-ant-SEGRETO', superficie: 'X:/casa/persona/progetto-segreto', host: '2.1.280',
+    account: { apiClaude: { budgetUsd: 5, chiave: 'sk-ant-SEGRETO' }, 'persona@esempio.it': 1, soglie: { claude: null }, freellmapi: { endpoint: 'ghp_SEGRETO' } },
+    progetto: { fornitori: ['acme/progetto-segreto'], profilo: 'Mario Rossi', board: null, 'function rubare()': 'org-42', restrizioni: undefined },
+    codici: ['lock.api', 'config.illeggibile', 'X:/casa/persona/progetto-segreto', 'persona@esempio.it', 'lock.api', 42, { codice: 'ghp_SEGRETO' }],
+  })
+  for (const s of SEGRETI) expect([s, testo.includes(s)]).toEqual([s, false])
+  expect(testo).toBe([
+    '### chipManager report',
+    '- mod: unknown',
+    '- surface: unknown',
+    '- host: 2.1.280',
+    '- account shape: soglie:object, apiClaude:object, freellmapi:object',
+    '- project shape: fornitori:array, board:null, profilo:string',
+    '- doctor findings: config.illeggibile, lock.api',
+  ].join('\n'))
+  // L'URL precompilato ha un limite: oltre, solo il testo da copiare.
+  expect(urlRapporto(testo)!.startsWith('https://github.com/Elite9400/chipManager/issues/new?title=')).toBe(true)
+  expect(urlRapporto('x'.repeat(MAX_URL))).toBeUndefined()
+})
+
+test('F11.4 doctor: «Segnala» mostra il rapporto per intero; apertura e gh solo dopo un sì, con esattamente quel testo', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.disco.set(CONFIG, JSON.stringify({ account: { apiClaude: { budgetUsd: 5 } }, progetti: { 'esempio/demo': { profilo: 'risparmio' } } }))
+  amb.esec.diagnosi = () => JSON.stringify({ trovati: [{ codice: 'lock.api', minuti: 3 }], versione: '2.2.0' })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  // Il controllo dell'esecuzione dice se gh è collegato (il pulsante «Crea con gh» c'è solo allora).
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  await ui.press({ key: 'doctor-segnala' })
+  const testo = testi(await ui.drawn()).find(t => t.startsWith('### chipManager report'))!
+  expect(testo).toContain('- doctor findings: lock.api')
+  expect(testo).not.toContain('esempio/demo')
+  expect(testo).not.toContain('risparmio')
+  const inviati = () => amb.processi.filter(p => p[2] === 'apri-url' || p[2] === 'segnala-gh')
+  expect(inviati().length).toBe(0)
+  amb.popup.risposta = () => 'Cancel'
+  await ui.press({ key: 'doctor-rapporto-apri' })
+  await ui.press({ key: 'doctor-rapporto-gh' })
+  expect(inviati().length).toBe(0)
+  amb.popup.risposta = q => (q.startsWith('Open GitHub') ? 'Open on GitHub' : 'Create with gh')
+  await ui.press({ key: 'doctor-rapporto-apri' })
+  expect(inviati()[0]!.slice(2)).toEqual(['apri-url', urlRapporto(testo)!])
+  await ui.press({ key: 'doctor-rapporto-gh' })
+  expect(amb.processi.filter(p => p[2] === 'segnala-gh').length).toBe(1)
+  expect(amb.toast).toContain('Issue created')
 })

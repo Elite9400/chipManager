@@ -39,6 +39,7 @@ import type { Chiave, Lingua, T } from './lingua'
 import { INSTALLAZIONE, nomeLimiteIn, unitaIn } from './risorse'
 import { ACCENTO, ALFA_VELO, GRIGIO, LIVELLO, STATO } from './tema'
 import { componenti } from './ui'
+import { urlRapporto } from './rapporto'
 
 type StatoVista = StatoImpostazioni
 type Sezione = StatoVista['sezione']
@@ -73,9 +74,7 @@ const PASSI_TUOI: readonly string[] = ['fornitori', 'accessi', 'chiavi']
 /** L'ultima diagnosi (in memoria): la scrive il comando, la legge la pagina Doctor. */
 export const statoDoctor = atom({ plugin: 'chip-manager', key: 'doctor' } as const, {} as StatoDoctor, { shape: 'doctor-1' })
 /** I codici che la pagina sa dire: un codice fuori elenco non si mostra (e non entra mai in un rapporto). */
-export const RILIEVI = ['config.illeggibile', 'config.senzaCopie', 'config.campoIgnoto', 'config.nonValido', 'config.restrizioneLarga', 'config.modoNonValido',
-  'percorso.config', 'percorso.dati', 'percorso.macchina', 'percorso.registro', 'registro.sviluppo', 'lock.api', 'lock.apiIlleggibile', 'chiavi.residue',
-  'azioni.orfane', 'azioni.progettiIgnoti', 'accesso.claude', 'accesso.codex', 'accesso.github', 'host.impostazioniApi', 'host.advisor', 'host.versione', 'connessione']
+export { RILIEVI } from './rapporto'
 /** Gli avvisi (!): il resto blocca qualcosa (✗). */
 const AVVISI = ['config.senzaCopie', 'config.campoIgnoto', 'config.modoNonValido', 'chiavi.residue', 'azioni.orfane', 'azioni.progettiIgnoti', 'host.advisor', 'host.versione', 'connessione']
 /** Il pulsante del rimedio, dove c'è: gli altri rilievi si riportano soltanto. */
@@ -612,7 +611,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
 
   // --- Doctor (F11.3) ---------------------------------------------------------------------------------
   const doctorVista = await read($, statoDoctor)
-  const doctor = () => {
+  const doctor = async () => {
     const dv = doctorVista
     const trovati = dv.trovati ?? []
     const righe = trovati.map(x => ({ r: x, ...testoRilievo(T, x) }))
@@ -637,8 +636,22 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           <Button key="doctor-ricontrolla" variant="primary" label={T('doc.ricontrolla')} onPress={() => void c.diagnosi()} />
           <Button key="doctor-copia" variant="secondary" label={T('doc.copia')}
             onPress={() => void $.ui.copy({ text: rapporto }).then(x => x.isCopied && $.ui.toast(T('doc.copiato')))} />
+          <Button key="doctor-segnala" plain label={T('rap.segnala')} onPress={() => void c.rapporto(terminale ? 'terminal' : 'desktop')} />
           <Button key="doctor-indietro" plain label={T('doc.indietro')} onPress={() => void cambia(s => ({ ...s, sezione: 'connessioni', errore: undefined }))} />
         </Box>,
+        // F11.4: il rapporto si mostra per intero prima di qualunque invio; l'invio chiede ancora conferma.
+        dv.rapporto ? (
+          <Box key="doctor-rapporto" flexDirection="column" borderStyle="single" paddingX={1}>
+            {didascalia('doctor-rapporto-nota', T('rap.nota'))}
+            <Text key="doctor-rapporto-testo" wrap="wrap">{dv.rapporto}</Text>
+            <Box key="doctor-rapporto-azioni" flexDirection="row" flexWrap="wrap" gap={1}>
+              {(await read($, esecuzione)).controllo?.github.loggedIn ? <Button key="doctor-rapporto-gh" variant="secondary" label={T('rap.gh')} onPress={() => void c.segnala('gh')} /> : null}
+              {urlRapporto(dv.rapporto) ? <Button key="doctor-rapporto-apri" variant="secondary" label={T('rap.apri')} onPress={() => void c.segnala('url')} /> : null}
+              <Button key="doctor-rapporto-copia" plain label={T('rap.copia')} onPress={() => void $.ui.copy({ text: dv.rapporto! }).then(x => x.isCopied && $.ui.toast(T('doc.copiato')))} />
+              <Button key="doctor-rapporto-chiudi" plain label={T('rap.chiudi')} onPress={() => void update($, statoDoctor, (s): StatoDoctor => ({ ...s, rapporto: undefined }))} />
+            </Box>
+          </Box>
+        ) : null,
       ],
     })
   }
@@ -1238,7 +1251,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       : vista.sezione === 'lingua' ? lingua()
       : vista.sezione === 'soglie' ? soglie()
       : vista.sezione === 'modo' ? modoLavoro()
-      : vista.sezione === 'doctor' ? doctor()
+      : vista.sezione === 'doctor' ? await doctor()
       : vista.sezione === 'setup' ? await setup()
       : vista.sezione === 'bilanciamento' ? bilanciamento()
         : vista.sezione === 'progetto' ? await progetto()

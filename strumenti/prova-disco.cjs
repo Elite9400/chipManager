@@ -2551,3 +2551,25 @@ test('F11.3 versione: la costante degli hooks è quella del manifesto (il doctor
   const manifesto = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version
   assert.strictEqual(/export const VERSIONE_MOD = '([^']+)'/.exec(hooks)?.[1], manifesto)
 })
+
+test('F11.4 rapporto: apri-url apre solo il nuovo issue di chipManager, mai una shell; segnala-gh solo righe da elenchi chiusi, file temporaneo cancellato', () => {
+  for (const url of ['https://example.org/', 'https://github.com/altro/repo/issues/new?x=1', 'https://github.com/Elite9400/chipManager/issues/new?a=1&b=2" & calc',
+    `https://github.com/Elite9400/chipManager/issues/new?${'x'.repeat(7000)}`])
+    assert.strictEqual(esegui(['apri-url', url]).status, 2, url)
+  const corpo = ['### chipManager report', '- mod: 2.2.0', '- surface: desktop', '- host: 2.1.280', '- account shape: soglie:object', '- project shape: none', '- doctor findings: lock.api'].join('\n')
+  for (const male of [corpo + '\n- path: X:/casa/persona', corpo.replace('desktop', 'X:/casa'), corpo.replace('lock.api', 'persona@esempio.it')])
+    assert.strictEqual(esegui(['segnala-gh'], JSON.stringify({ titolo: 'chipManager report: doctor findings', corpo: male })).status, 2)
+  assert.strictEqual(esegui(['segnala-gh'], JSON.stringify({ titolo: 'altro', corpo })).status, 2)
+  // Con un gh finto: argv fisso sul solo repository di chipManager, corpo dal file, file cancellato dopo.
+  const traccia = path.join(tmp(), 'gh.json')
+  const finti = eseguibiliFinti({ gh: `const fs = require('fs'); const a = process.argv.slice(2); const f = a[a.indexOf('--body-file') + 1];
+fs.writeFileSync(${JSON.stringify(traccia)}, JSON.stringify({ a, corpo: fs.readFileSync(f, 'utf8'), file: f })); process.stdout.write('https://github.com/Elite9400/chipManager/issues/7\\n')` })
+  const env = { ...process.env, PATH: `${finti}${path.delimiter}${path.dirname(process.execPath)}` }
+  const r = spawnSync(process.execPath, [ENTRATA, 'segnala-gh'], { input: JSON.stringify({ titolo: 'chipManager report: doctor findings', corpo }), encoding: 'utf8', env })
+  assert.strictEqual(r.status, 0, r.stderr)
+  assert.deepStrictEqual(JSON.parse(r.stdout), { url: 'https://github.com/Elite9400/chipManager/issues/7' })
+  const t = JSON.parse(fs.readFileSync(traccia, 'utf8'))
+  assert.deepStrictEqual(t.a.slice(0, 6), ['issue', 'create', '--repo', 'Elite9400/chipManager', '--title', 'chipManager report: doctor findings'])
+  assert.strictEqual(t.corpo, corpo)
+  assert.strictEqual(fs.existsSync(t.file), false)
+})
