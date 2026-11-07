@@ -54,12 +54,14 @@ main gaps are missing meaning, not excess length.
   owner the cost, nor fix an accidental R4.
 - Proposal, effective values only: `Action a-… in the panel (position 3, lane R2, claude-sonnet-5-5 · medium →
   review codex; runs: local).` Lane from `corsiaDi`, model and effort from `modelloDi` / `effortDi`, where it runs
-  from `modalitaDi` (`local`, `cloud`, `api-claude`, `esterno`). With no explicit destination say
-  `runs: not set (owner or destination advisor decides)`, since the advisor in `applica` mode can set it later.
+  from `modalitaDi` (`local`, `cloud`, `api-claude`, `esterno`): an omitted destination is `local`, or `esterno`
+  for FreeLLMAPI. Show that effective mode as it is now; the destination advisor in `applica` mode may change it
+  later, like the owner.
 - When `sensibile()` is true, name **one cause**, checked in this order: explicit `sensibile: true`; lane R4/R5 set
-  by the proposer; a built-in term (`SENSIBILE_RE.exec`, `hooks/logica.ts:389`); a project term (the compiled
-  `terminiRe` list, `exec`); the project term list does not compile, so all text counts as sensitive (`TUTTO`,
-  fail-closed). Needs a small `causaSensibile` helper beside `sensibile`, with one test per cause.
+  by the proposer; a built-in term (`SENSIBILE_RE.exec`, `hooks/logica.ts:389`); the project term list does not
+  compile, so all text counts as sensitive (`terminiRe` returned `TUTTO`, fail-closed; test this by identity
+  **before** any project match, since `TUTTO.exec` matches every text); a project term (the compiled `terminiRe`
+  list, `exec`). Needs a small `causaSensibile` helper beside `sensibile`, with one test per cause.
 
 ### 4. Sensitive-term false positives — known, record only; no regex change without full tests
 

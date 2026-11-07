@@ -14,8 +14,10 @@ Work that deserves its own session (one branch, one review) goes to the chipMana
   Constraints, Done when (checkable), Verify (exact commands). No "as discussed above".
 - Do not repeat what the mod adds: lane, review step, reporting step, project background.
 - Always set `corsia`: R0 text, R1 small with tests, R2 ordinary, R3 large, R4–R5 sensitive.
-- Leave `esecutore`, `modello`, `effort`, `destinazione` out unless you have a reason: the panel balances them
-  within `routing.json` and live limits. On well-specified R1–R2 work set `effort: "medium"`.
+- Leave `esecutore`, `modello`, `effort` out unless you have a reason: the panel balances them within
+  `routing.json` and live limits. On well-specified R1–R2 work set `effort: "medium"`.
+- Leave `destinazione` out unless the work needs one place: it runs locally unless the owner or the destination
+  advisor changes it; the balancer never sets it.
 - Sensitive work (auth, permissions, personal data): always set `corsia: "R4"` and `sensibile: true` yourself.
 - Text detection also forces R4 (Opus/Fable, effort high, local, Claude review) on: words starting with `auth`
   (also `author`), `login`, `password`, `passwd`, `mfa`, `otp`, `csrf`, `permess…`, `PII`, `dati personali`,
