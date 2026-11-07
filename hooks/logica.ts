@@ -1,5 +1,5 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
-import type { Azione, BoardProgetto, Chiamante, Consumo, ControlloEsecuzione, Corsia, Destinazione, Fornitore, Limite, PassoEsecuzione, Peso, Regole, RisorseProgetto, SessioneProgetto, Soglia, StatoAzione, Traguardo, Vita } from '../types'
+import type { Azione, BoardProgetto, Chiamante, Consumo, ControlloEsecuzione, Corsia, Destinazione, Fornitore, Limite, PassoEsecuzione, Peso, Regole, Restrizioni, RisorseProgetto, SessioneProgetto, Soglia, SogliePerStrato, StratoAccount, StatoAzione, StratoProgetto, Traguardo, Vita } from '../types'
 import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { GRIGIO, LIVELLO, STATO } from './tema'
@@ -20,18 +20,20 @@ export const SOGLIA_PREDEFINITA: Soglia = { attenzione: 70, critica: 90 }
  * F6.4: la spesa a crediti API del mese, dal registro dell'helper (`spesa-api.json`): contato = costo stimato (ignoto =
  * tetto), prenotato = tetto. null se il registro non ha la forma attesa. Stessa somma dell'helper che prenota.
  */
-export function spesaDelMese(s: unknown, mese: string): number | null {
+export function spesaDelMese(s: unknown, mese: string, progetto?: string): number | null {
   if (!s || typeof s !== 'object' || (s as { v?: unknown }).v !== 1) return null
   const voci = (s as { voci?: unknown }).voci
   if (!voci || typeof voci !== 'object') return null
   let tot = 0
   for (const v of Object.values(voci as Record<string, unknown>)) {
     if (!v || typeof v !== 'object') return null
-    const x = v as { mese?: unknown; tetto?: unknown; costo?: unknown; stato?: unknown }
+    const x = v as { mese?: unknown; tetto?: unknown; costo?: unknown; stato?: unknown; progetto?: unknown }
+    // F10: il registro dell'account; ogni voce porta il progetto (come la convalida l'helper).
+    if (typeof x.progetto !== 'string' || !x.progetto || x.progetto.length > 400) return null
     // Una voce non valida rende illeggibile tutto il registro (l'helper, per lo stesso motivo, non prenota più).
     if (typeof x.mese !== 'string' || !/^\d{4}-\d{2}$/.test(x.mese) || typeof x.tetto !== 'number' || !Number.isFinite(x.tetto) || x.tetto <= 0) return null
     if (x.stato === 'prenotato' ? x.costo !== undefined : x.stato !== 'contato' || !(x.costo === null || (typeof x.costo === 'number' && Number.isFinite(x.costo) && x.costo >= 0))) return null
-    if (x.mese !== mese) continue
+    if (x.mese !== mese || (progetto !== undefined && x.progetto !== progetto)) continue
     tot += x.stato === 'contato' && typeof x.costo === 'number' ? x.costo : x.tetto
   }
   return Math.round(tot * 100) / 100
@@ -44,6 +46,8 @@ export const RISORSE_DEFAULT: RisorseProgetto = {
   freellmapi: { livello: 'niente', endpoint: 'http://localhost:3001/v1' },
   soglie: { claude: SOGLIA_PREDEFINITA, codex: SOGLIA_PREDEFINITA, deepseek: SOGLIA_PREDEFINITA, freellmapi: SOGLIA_PREDEFINITA },
   board: { modo: 'spenta', generazione: 0 },
+  account: { soglie: {}, limitiManuali: [] },
+  strato: { soglie: {}, freellmapi: { livello: 'niente' }, restrizioni: {} },
 }
 export const REGOLE_DEFAULT: Regole = {
   lette: false,
@@ -125,13 +129,18 @@ const PROGETTO_PREDEFINITO: Progetto = { routing: ROUTING_PREDEFINITO, sensibili
  * motivo per cui la configurazione non vale: chi chiama tratta il motivo come regole non lette (nessun avvio).
  */
 export function progettoDa(config: unknown, repo: string | null): Progetto | Msg {
-  if (config === null || config === undefined) return PROGETTO_PREDEFINITO
+  // Un config assente vale come vuoto: la stessa lettura (e la stessa forma) di quella fatta prima di scriverlo.
+  if (config === null || config === undefined) return progettoDa({}, repo)
   const oggetto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
   if (!oggetto(config)) return msg('cfg.nonOggetto')
   const progetti = config.progetti ?? {}
   if (!oggetto(progetti)) return msg('cfg.progetti')
   const p = repo ? progetti[repo] : undefined
-  if (p === undefined) return PROGETTO_PREDEFINITO
+  // F10: l'account vale anche per un progetto senza sezione nel config.
+  if (p === undefined) {
+    const risorse = risorseDa({}, config.account)
+    return eMsg(risorse) ? risorse : { ...PROGETTO_PREDEFINITO, risorse }
+  }
   if (!oggetto(p)) return msg('cfg.progetto', { repo: repo ?? '' })
   const { routing, sensibili, background } = p
   if (routing !== undefined && (typeof routing !== 'string' || !routing || /^([a-z]:)?[\\/]/i.test(routing) || /(^|[\\/])\.\.([\\/]|$)/.test(routing)))
@@ -149,7 +158,7 @@ export function progettoDa(config: unknown, repo: string | null): Progetto | Msg
     return msg('cfg.cartella')
   if (background !== undefined && (typeof background !== 'string' || background.length > 2000))
     return msg('cfg.background')
-  const risorse = risorseDa(p)
+  const risorse = risorseDa(p, config.account)
   if (eMsg(risorse)) return risorse
   return {
     routing: (routing as string | undefined) ?? ROUTING_PREDEFINITO,
@@ -172,8 +181,120 @@ export function pesoValido(p: unknown): p is Peso {
     numero(p.percentuale, -100, 1000) && numero(p.assoluto, -100, 1000)
 }
 
-/** Copia solo campi conosciuti: un config non può portare credenziali dentro lo stato. */
-export function risorseDa(p: Record<string, unknown>): RisorseProgetto | Msg {
+/** Soglie di uno strato senza predefiniti (assente = eredita, null = nessuna); undefined se la forma non vale. */
+function soglieDa(v: unknown): SogliePerStrato | undefined {
+  const soglie = v ?? {}
+  if (!oggettoRisorse(soglie) || !Object.entries(soglie).every(([k, s]) => FORNITORI.includes(k as Fornitore) &&
+      (s === null || (oggettoRisorse(s) && numero(s.attenzione, 1, 100) && numero(s.critica, 1, 100) && s.attenzione < s.critica)))) return undefined
+  return Object.fromEntries(Object.entries(soglie).map(([k, s]) => [k, s === null ? null : { attenzione: (s as Soglia).attenzione, critica: (s as Soglia).critica }]))
+}
+
+/** I budget manuali di uno strato, nella forma letta (id con il prefisso `manuale-`); undefined se la forma non vale. */
+function manualiDa(v: unknown, progetto: boolean): Limite[] | undefined {
+  const manuali = v ?? []
+  if (!Array.isArray(manuali) || manuali.length > 30) return undefined
+  const limitiManuali: Limite[] = []
+  for (const x of manuali) {
+    if (!oggettoRisorse(x) || !FORNITORI.includes(x.fornitore as Fornitore) || typeof x.id !== 'string' || !/^[a-z0-9-]{1,60}$/.test(x.id) ||
+        typeof x.nome !== 'string' || !/^[\p{L}\p{N} .()%-]{1,60}$/u.test(x.nome) ||
+        typeof x.letto !== 'string' || !Number.isFinite(Date.parse(x.letto)) || Date.parse(x.letto) > Date.now() + 60_000 ||
+        (x.percentuale !== undefined && !numero(x.percentuale, 0, 100)) ||
+        (x.valore !== undefined && !numero(x.valore, 0, 1e12)) || !['%', 'USD', 'CNY', 'EUR', 'richieste', 'token'].includes(String(x.unita)) ||
+        (x.percentuale === undefined && x.valore === undefined)) return undefined
+    limitiManuali.push({ id: `manuale-${x.id}`, fornitore: x.fornitore as Fornitore, nome: x.nome, letto: x.letto,
+      percentuale: x.percentuale as number | undefined, valore: x.valore as number | undefined, unita: x.unita as Limite['unita'], fonte: 'manuale', manuale: true,
+      ...(progetto && { progetto: true as const }) })
+  }
+  return limitiManuali
+}
+
+/**
+ * F10: lo strato Account (`account` nella radice del config). Assente = vuoto; una forma non valida ferma tutto (nel
+ * dubbio si blocca). Campi sconosciuti ignorati: una versione più nuova può aggiungerne.
+ */
+export function accountDa(v: unknown): StratoAccount | Msg {
+  const errore = msg('cfg.account')
+  if (v === undefined || v === null) return { soglie: {}, limitiManuali: [] }
+  if (!oggettoRisorse(v)) return errore
+  const soglie = soglieDa(v.soglie)
+  const limitiManuali = manualiDa(v.limitiManuali, false)
+  if (!soglie || !limitiManuali) return errore
+  const api = v.apiClaude === null ? undefined : v.apiClaude
+  if (api !== undefined && (!oggettoRisorse(api) || !numero(api.budgetUsd, 0.01, 100_000) || (api.tetto !== undefined && !numero(api.tetto, 0.01, 1_000)))) return errore
+  const f = v.freellmapi === null ? undefined : v.freellmapi
+  if (f !== undefined && (!oggettoRisorse(f) || (f.endpoint !== undefined && !endpointLocale(f.endpoint)))) return errore
+  return { soglie, limitiManuali, ...(api && { apiClaude: { budgetUsd: api.budgetUsd as number, tetto: (api.tetto as number | undefined) ?? TETTO_API_PREDEFINITO } }),
+    ...(f && typeof f.endpoint === 'string' && { freellmapi: { endpoint: f.endpoint } }) }
+}
+
+/** F10: le restrizioni del progetto (`progetti[repo].restrizioni`); undefined se la forma non vale. */
+export function restrizioniDa(v: unknown): Restrizioni | undefined {
+  if (v === undefined || v === null) return {}
+  if (!oggettoRisorse(v)) return undefined
+  const soglie = v.soglie === undefined ? undefined : soglieDa(v.soglie)
+  if (v.soglie !== undefined && !soglie) return undefined
+  if (v.apiLimiteMeseUsd !== undefined && !numero(v.apiLimiteMeseUsd, 0.01, 100_000)) return undefined
+  if (v.apiTetto !== undefined && !numero(v.apiTetto, 0.01, 1_000)) return undefined
+  return { ...(soglie && { soglie }), ...(v.apiLimiteMeseUsd !== undefined && { apiLimiteMeseUsd: v.apiLimiteMeseUsd as number }),
+    ...(v.apiTetto !== undefined && { apiTetto: v.apiTetto as number }) }
+}
+
+/** Tre stati per strato: assente eredita, null non mette soglie, un valore vince su null; fra due valori il più severo per livello. */
+export function sogliaPiuSevera(a: Soglia | null | undefined, b: Soglia | null | undefined): Soglia | null | undefined {
+  if (a === undefined) return b
+  if (b === undefined || b === null) return a
+  if (a === null) return b
+  return { attenzione: Math.min(a.attenzione, b.attenzione), critica: Math.min(a.critica, b.critica) }
+}
+
+/**
+ * F10: le regole efficaci di un progetto, l'unico punto in cui account e progetto si combinano (gemello CJS in
+ * `strumenti/regole.cjs`, stesso risultato, per l'helper che prenota la spesa). Il progetto può solo restringere:
+ * soglie e tetti al più severo; senza `account.apiClaude` la corsia API è spenta; l'endpoint di progetto sostituisce
+ * quello dell'account (eccezione dichiarata); i budget manuali si sommano, a parità di id vince quello di progetto.
+ */
+export function regoleEfficaci(account: StratoAccount, progetto: StratoProgetto & { limitiManuali: Limite[] }) {
+  const r = progetto.restrizioni
+  const soglie = Object.fromEntries(FORNITORI.map(f => {
+    const s = sogliaPiuSevera(account.soglie[f], sogliaPiuSevera(progetto.soglie[f], r.soglie?.[f]))
+    return [f, s === undefined ? SOGLIA_PREDEFINITA : s]
+  })) as Record<Fornitore, Soglia | null>
+  let apiClaude: RisorseProgetto['apiClaude']
+  if (account.apiClaude) {
+    const tetto = Math.min(account.apiClaude.tetto, r.apiTetto ?? Infinity, progetto.apiClaude?.tetto ?? Infinity)
+    const limite = Math.min(r.apiLimiteMeseUsd ?? Infinity, progetto.apiClaude?.budgetUsd ?? Infinity)
+    apiClaude = { budgetUsd: account.apiClaude.budgetUsd, tetto, ...(limite < account.apiClaude.budgetUsd && { limiteProgettoUsd: limite }) }
+  }
+  const diProgetto = new Set(progetto.limitiManuali.map(l => l.id))
+  return {
+    soglie,
+    apiClaude,
+    endpoint: progetto.freellmapi.endpoint ?? account.freellmapi?.endpoint ?? RISORSE_DEFAULT.freellmapi.endpoint,
+    limitiManuali: [...account.limitiManuali.filter(l => !diProgetto.has(l.id)), ...progetto.limitiManuali],
+  }
+}
+
+/**
+ * F10: perché una restrizione allargherebbe l'account (il progetto può solo restringere), o undefined. Si controlla a ogni
+ * scrittura delle restrizioni: soglie (più severo = valore più basso, anche rispetto ai 70/90 predefiniti), limite del
+ * mese e tetto per tentativo.
+ */
+export function restrizioneLarga(account: StratoAccount, r: Restrizioni): Msg | undefined {
+  for (const f of FORNITORI) {
+    const p = r.soglie?.[f]
+    if (p === undefined) continue
+    const a = account.soglie[f] === undefined ? SOGLIA_PREDEFINITA : account.soglie[f]
+    if (a !== null && (p === null || p.attenzione > a.attenzione || p.critica > a.critica)) return msg('cfg.restrizioneSoglia', { fornitore: f })
+  }
+  if (r.apiLimiteMeseUsd !== undefined && (!account.apiClaude || r.apiLimiteMeseUsd > account.apiClaude.budgetUsd)) return msg('cfg.restrizioneApi')
+  if (r.apiTetto !== undefined && (!account.apiClaude || r.apiTetto > account.apiClaude.tetto)) return msg('cfg.restrizioneApi')
+  return undefined
+}
+
+/** Copia solo campi conosciuti: un config non può portare credenziali dentro lo stato. F10: `account` è la radice `account`. */
+export function risorseDa(p: Record<string, unknown>, accountGrezzo?: unknown): RisorseProgetto | Msg {
+  const account = accountDa(accountGrezzo)
+  if (eMsg(account)) return account
   const errore = msg('cfg.risorse')
   const fornitori = p.fornitori ?? RISORSE_DEFAULT.fornitori
   if (!Array.isArray(fornitori) || !fornitori.every(f => FORNITORI.includes(f))) return errore
@@ -183,27 +304,12 @@ export function risorseDa(p: Record<string, unknown>): RisorseProgetto | Msg {
   if (!oggettoRisorse(f) || !['niente', 'R1', 'R2'].includes(String(f.livello)) || !endpointLocale(f.endpoint ?? RISORSE_DEFAULT.freellmapi.endpoint)) return errore
   const pesi = p.pesi ?? []
   if (!Array.isArray(pesi) || pesi.length > 100 || !pesi.every(pesoValido) || new Set(pesi.map(x => `${x.tipo}:${x.nome}`)).size !== pesi.length) return errore
-  const manuali = p.limitiManuali ?? []
-  if (!Array.isArray(manuali) || manuali.length > 30) return errore
-  const limitiManuali: Limite[] = []
-  for (const x of manuali) {
-    if (!oggettoRisorse(x) || !FORNITORI.includes(x.fornitore as Fornitore) || typeof x.id !== 'string' || !/^[a-z0-9-]{1,60}$/.test(x.id) ||
-        typeof x.nome !== 'string' || !/^[\p{L}\p{N} .()%-]{1,60}$/u.test(x.nome) ||
-        typeof x.letto !== 'string' || !Number.isFinite(Date.parse(x.letto)) || Date.parse(x.letto) > Date.now() + 60_000 ||
-        (x.percentuale !== undefined && !numero(x.percentuale, 0, 100)) ||
-        (x.valore !== undefined && !numero(x.valore, 0, 1e12)) || !['%', 'USD', 'CNY', 'EUR', 'richieste', 'token'].includes(String(x.unita)) ||
-        (x.percentuale === undefined && x.valore === undefined)) return errore
-    limitiManuali.push({ id: `manuale-${x.id}`, fornitore: x.fornitore as Fornitore, nome: x.nome, letto: x.letto,
-      percentuale: x.percentuale as number | undefined, valore: x.valore as number | undefined, unita: x.unita as Limite['unita'], fonte: 'manuale', manuale: true })
-  }
-  // Soglie per fornitore: assente = 70/90, null = nessuna soglia; attenzione sempre sotto la critica.
-  const soglie = p.soglie ?? {}
-  if (!oggettoRisorse(soglie) || !Object.entries(soglie).every(([k, v]) => FORNITORI.includes(k as Fornitore) &&
-      (v === null || (oggettoRisorse(v) && numero(v.attenzione, 1, 100) && numero(v.critica, 1, 100) && v.attenzione < v.critica)))) return errore
-  const soglia = (k: Fornitore): Soglia | null => {
-    const v = soglie[k] as { attenzione: number; critica: number } | null | undefined
-    return v === undefined ? SOGLIA_PREDEFINITA : v && { attenzione: v.attenzione, critica: v.critica }
-  }
+  const manualiProgetto = manualiDa(p.limitiManuali, true)
+  if (!manualiProgetto) return errore
+  // Soglie per fornitore dello strato Progetto: assente = eredita (70/90 se nessuno strato ne ha), null = nessuna soglia.
+  const soglieProgetto = soglieDa(p.soglie)
+  const restrizioni = restrizioniDa(p.restrizioni)
+  if (!soglieProgetto || !restrizioni) return errore
   // Board: assente = spenta; `generazione` la incrementa l'helper a ogni cambio di modo.
   const b = p.board ?? RISORSE_DEFAULT.board
   if (!oggettoRisorse(b) || !['spenta', 'accesa', 'riassunti'].includes(String(b.modo)) ||
@@ -223,17 +329,27 @@ export function risorseDa(p: Record<string, unknown>): RisorseProgetto | Msg {
     : undefined
   // F6.2: budget del mese e tetto per tentativo in USD (l'unità di total_cost_usd); assente = API non configurata.
   // null = tolta dalle Impostazioni (Applica scrive null per togliere un campo): vale come assente.
+  // F10: l'`apiClaude` di progetto viene dai build di sviluppo: vale come restrizione (limite del mese e tetto), non si
+  // riscrive mai in un'altra forma. null = tolto: vale come assente.
   const api = p.apiClaude === null ? undefined : p.apiClaude
   if (api !== undefined && (!oggettoRisorse(api) || !numero(api.budgetUsd, 0.01, 100_000) || (api.tetto !== undefined && !numero(api.tetto, 0.01, 1_000))))
     return errore
-  const apiClaude = api && { budgetUsd: api.budgetUsd as number, tetto: (api.tetto as number | undefined) ?? TETTO_API_PREDEFINITO }
   // F6.5: una preferenza; ogni altra forma vale come spento.
   const consigliere = p.consigliere === 'suggerisci' || p.consigliere === 'applica' ? p.consigliere : undefined
-  return { ...(apiClaude && { apiClaude }), ...(consigliere && { consigliere }), board, fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
-    freellmapi: { livello: f.livello as RisorseProgetto['freellmapi']['livello'], endpoint: (f.endpoint as string | undefined) ?? RISORSE_DEFAULT.freellmapi.endpoint },
-    pesi: pesi.map(x => ({ tipo: x.tipo, nome: x.nome, percentuale: x.percentuale, assoluto: x.assoluto })), limitiManuali,
-    soglie: { claude: soglia('claude'), codex: soglia('codex'), deepseek: soglia('deepseek'), freellmapi: soglia('freellmapi') },
-    ...(profilo && { profilo }), ...(pesiRevisione !== undefined && { pesiRevisione }), ...(pesiOrigine && { pesiOrigine }) }
+  const livello = f.livello as RisorseProgetto['freellmapi']['livello']
+  const strato: StratoProgetto = {
+    soglie: soglieProgetto,
+    ...(api && { apiClaude: { budgetUsd: api.budgetUsd as number, ...(api.tetto !== undefined && { tetto: api.tetto as number }) } }),
+    // Solo un endpoint scritto nel progetto lo sostituisce: il predefinito non vale come eccezione.
+    freellmapi: { livello, ...(p.freellmapi !== undefined && typeof f.endpoint === 'string' && { endpoint: f.endpoint }) },
+    restrizioni,
+  }
+  const e = regoleEfficaci(account, { ...strato, limitiManuali: manualiProgetto })
+  return { ...(e.apiClaude && { apiClaude: e.apiClaude }), ...(consigliere && { consigliere }), board, fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
+    freellmapi: { livello, endpoint: e.endpoint },
+    pesi: pesi.map(x => ({ tipo: x.tipo, nome: x.nome, percentuale: x.percentuale, assoluto: x.assoluto })), limitiManuali: e.limitiManuali,
+    soglie: e.soglie,
+    ...(profilo && { profilo }), ...(pesiRevisione !== undefined && { pesiRevisione }), ...(pesiOrigine && { pesiOrigine }), account, strato }
 }
 
 export const limiteFresco = (l: Limite, adesso = Date.now()) => !l.errore && !!l.letto && adesso >= Date.parse(l.letto) && adesso - Date.parse(l.letto) <= 300_000 && (!l.reset || Date.parse(l.reset) > adesso)
@@ -562,7 +678,7 @@ export type Consiglio = { d: Destinazione; motivi: Msg[] }
  *     GitHub (consuma lo stesso piano: aiuta il parallelismo e la macchina, non il limite); poi l'API; poi il locale.
  * null = niente da consigliare.
  */
-export function consigliaDove(a: Azione, regole: Regole, limiti: readonly Limite[], lista: readonly Azione[], spesaApi?: number | null, adesso = Date.now()): Consiglio | null {
+export function consigliaDove(a: Azione, regole: Regole, limiti: readonly Limite[], lista: readonly Azione[], spesaApi?: number | null, adesso = Date.now(), spesaProgetto?: number | null): Consiglio | null {
   if (a.destinazione !== undefined || a.esecutore === 'freellmapi') return null
   if (sensibile(a, regole)) return { d: 'local', motivi: [msg('cons.sensibile')] }
   const ammesse = destinazioniPer(a, regole, lista, true).filter(x => !x.motivo).map(x => x.d)
@@ -574,7 +690,9 @@ export function consigliaDove(a: Azione, regole: Regole, limiti: readonly Limite
   if (piano === 'critica') fuori.add('cloud')
   const api = regole.risorse.apiClaude
   const apiOk = !!api && typeof spesaApi === 'number' && spesaApi + api.tetto <= api.budgetUsd &&
-    livelloDi(Math.min(100, (spesaApi / api.budgetUsd) * 100), sogliaDi(regole.risorse, 'claude')) !== 'critica'
+    livelloDi(Math.min(100, (spesaApi / api.budgetUsd) * 100), sogliaDi(regole.risorse, 'claude')) !== 'critica' &&
+    // F10: anche il limite del mese del progetto, se c'è (la spesa di questo progetto nel registro dell'account).
+    (api.limiteProgettoUsd === undefined || (typeof spesaProgetto === 'number' && spesaProgetto + api.tetto <= api.limiteProgettoUsd))
   if (!apiOk) fuori.add('api-claude')
   const restanti = ammesse.filter(d => !fuori.has(d))
   if (!restanti.length) return null

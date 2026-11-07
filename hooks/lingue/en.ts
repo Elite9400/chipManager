@@ -953,6 +953,25 @@ const en = {
   "board.segno.consegnata": "delivered",
   "au.manualeBreve": "/advisor changes your default for every session: type /advisor off when done.",
   "au.fableBreve": "Fable as auditor: on some plans it needs a one-time consent (/model fable, never given by the mod) and can bill to usage credits.",
+  // F10 account and project layers
+  "cfg.account": "config.json: invalid “account” (thresholds, manual budgets, API credits or FreeLLMAPI endpoint)",
+  "cfg.restrizioneSoglia": "A project can only be stricter than the account: the {fornitore} threshold would be looser",
+  "cfg.restrizioneApi": "A project can only be stricter than the account: its API month limit and cap per run must stay within the account's",
+  "car.apiRigaProgetto": "API Claude: {progetto} USD this project · {speso} USD of {budget} USD account (estimated, this month)",
+  "car.apiLimiteProgetto": "This project: at most {limite} USD a month",
+  "err.apiRegistroSviluppo": "A spend register from a development build is in {cartella}: archive it (move it out of that folder), then start again",
+  "err.apiLimiteProgetto": "API Claude: this project has used {speso} USD of its {limite} USD month limit; a run reserves {tetto} USD",
+  "err.percorsoDati": "The mod's data must stay outside any repository and any link: {motivo}",
+  "imp.gruppoAccount": "Account · all projects",
+  "imp.gruppoProgetto": "Project · {repo}",
+  "imp.valeTuttiProgetti": "Account setting: it applies to all projects.",
+  "imp.restrizioneSoglia": "Stricter in {repo}: {soglia}",
+  "imp.restrizioneApi": "Stricter in {repo}: at most {limite} USD a month, {tetto} USD per run",
+  "imp.rimuoviRestrizione": "Remove restriction",
+  "imp.endpointProgetto": "{repo} uses its own endpoint (a declared exception)",
+  "imp.rimuoviEccezione": "Use the account endpoint",
+  "imp.pillProgetto": "project",
+  "imp.propostaAccount": "It changes the settings of all projects.",
   // ‹fine›
 } satisfies Record<string, Voce>
 

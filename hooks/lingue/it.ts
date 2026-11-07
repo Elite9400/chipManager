@@ -951,6 +951,25 @@ const it: Dizionario = {
   "board.segno.consegnata": "consegnata",
   "au.manualeBreve": "/advisor cambia il tuo default per tutte le sessioni: a fine lavoro scrivi /advisor off.",
   "au.fableBreve": "Fable come auditor: su alcuni piani serve un consenso una tantum (/model fable, mai dato dalla mod) e può andare sui crediti di utilizzo.",
+  // F10 account and project layers
+  "cfg.account": "config.json: «account» non valido (soglie, budget manuali, crediti API o endpoint FreeLLMAPI)",
+  "cfg.restrizioneSoglia": "Un progetto può solo essere più severo dell'account: la soglia di {fornitore} sarebbe più larga",
+  "cfg.restrizioneApi": "Un progetto può solo essere più severo dell'account: limite del mese e tetto per esecuzione API devono stare entro quelli dell'account",
+  "car.apiRigaProgetto": "API Claude: {progetto} USD questo progetto · {speso} USD di {budget} USD account (stimato, questo mese)",
+  "car.apiLimiteProgetto": "Questo progetto: al massimo {limite} USD al mese",
+  "err.apiRegistroSviluppo": "C'è un registro della spesa di un build di sviluppo in {cartella}: archivialo (spostalo fuori da quella cartella), poi riavvia",
+  "err.apiLimiteProgetto": "API Claude: questo progetto ha usato {speso} USD del suo limite di {limite} USD al mese; un'esecuzione prenota {tetto} USD",
+  "err.percorsoDati": "I dati della mod devono stare fuori da ogni repository e da ogni link: {motivo}",
+  "imp.gruppoAccount": "Account · tutti i progetti",
+  "imp.gruppoProgetto": "Progetto · {repo}",
+  "imp.valeTuttiProgetti": "Impostazione dell'account: vale per tutti i progetti.",
+  "imp.restrizioneSoglia": "Più severa in {repo}: {soglia}",
+  "imp.restrizioneApi": "Più severa in {repo}: al massimo {limite} USD al mese, {tetto} USD per esecuzione",
+  "imp.rimuoviRestrizione": "Rimuovi restrizione",
+  "imp.endpointProgetto": "{repo} usa un endpoint suo (un'eccezione dichiarata)",
+  "imp.rimuoviEccezione": "Usa l'endpoint dell'account",
+  "imp.pillProgetto": "progetto",
+  "imp.propostaAccount": "Cambia le impostazioni di tutti i progetti.",
   // ‹fine›
 }
 

@@ -951,6 +951,25 @@ const de: Dizionario = {
   "board.segno.consegnata": "geliefert",
   "au.manualeBreve": "/advisor ändert deinen Standard für alle Sitzungen: tippe am Ende /advisor off.",
   "au.fableBreve": "Fable als Auditor: bei manchen Plänen braucht es eine einmalige Zustimmung (/model fable, nie von der Mod gegeben) und es kann über Nutzungsguthaben abgerechnet werden.",
+  // F10 account and project layers
+  "cfg.account": "config.json: ungültiges „account“ (Schwellen, manuelle Budgets, API-Guthaben oder FreeLLMAPI-Endpunkt)",
+  "cfg.restrizioneSoglia": "Ein Projekt kann nur strenger sein als das Konto: die Schwelle für {fornitore} wäre lockerer",
+  "cfg.restrizioneApi": "Ein Projekt kann nur strenger sein als das Konto: sein API-Monatslimit und seine Obergrenze pro Lauf müssen innerhalb der Kontowerte bleiben",
+  "car.apiRigaProgetto": "API Claude: {progetto} USD dieses Projekt · {speso} USD von {budget} USD Konto (geschätzt, diesen Monat)",
+  "car.apiLimiteProgetto": "Dieses Projekt: höchstens {limite} USD pro Monat",
+  "err.apiRegistroSviluppo": "In {cartella} liegt ein Ausgabenregister eines Entwicklungs-Builds: archiviere es (verschiebe es aus dem Ordner) und starte dann neu",
+  "err.apiLimiteProgetto": "API Claude: dieses Projekt hat {speso} USD seines Monatslimits von {limite} USD verbraucht; ein Lauf reserviert {tetto} USD",
+  "err.percorsoDati": "Die Daten der Mod müssen außerhalb jedes Repositorys und jedes Links liegen: {motivo}",
+  "imp.gruppoAccount": "Konto · alle Projekte",
+  "imp.gruppoProgetto": "Projekt · {repo}",
+  "imp.valeTuttiProgetti": "Kontoeinstellung: gilt für alle Projekte.",
+  "imp.restrizioneSoglia": "Strenger in {repo}: {soglia}",
+  "imp.restrizioneApi": "Strenger in {repo}: höchstens {limite} USD pro Monat, {tetto} USD pro Lauf",
+  "imp.rimuoviRestrizione": "Einschränkung entfernen",
+  "imp.endpointProgetto": "{repo} nutzt einen eigenen Endpunkt (eine erklärte Ausnahme)",
+  "imp.rimuoviEccezione": "Endpunkt des Kontos verwenden",
+  "imp.pillProgetto": "Projekt",
+  "imp.propostaAccount": "Sie ändert die Einstellungen aller Projekte.",
   // ‹fine›
 }
 

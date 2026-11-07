@@ -10,7 +10,7 @@
 [![tests](https://img.shields.io/badge/tests-287%20%2B%20100%20passing-059669)](#testing)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[Why](#why)** · **[Features](#features)** · **[Screenshots](#screenshots)** · **[Install](#install)** · **[Quick start](#quick-start)** · **[How it works](#how-it-works)** · **[Where it runs](#where-it-runs)** · **[Who works](#who-works)** · **[Auditor](#auditor-advisor)** · **[Settings](#settings)** · **[Configuration](#configuration)** · **[Limits & balancing](#limits--load-balancing)** · **[FreeLLMAPI](#freellmapi)** · **[Languages](#languages)** · **[Terminal](#terminal)** · **[Look and feel](#look-and-feel)** · **[Security](#security--guards)** · **[FAQ](#faq)**
+**[Why](#why)** · **[Features](#features)** · **[Screenshots](#screenshots)** · **[Install](#install)** · **[One project or all](#install-for-one-project-or-globally)** · **[Quick start](#quick-start)** · **[How it works](#how-it-works)** · **[Where it runs](#where-it-runs)** · **[Who works](#who-works)** · **[Auditor](#auditor-advisor)** · **[Account and project](#account-and-project)** · **[Settings](#settings)** · **[Configuration](#configuration)** · **[Limits & balancing](#limits--load-balancing)** · **[FreeLLMAPI](#freellmapi)** · **[Languages](#languages)** · **[Terminal](#terminal)** · **[Look and feel](#look-and-feel)** · **[Security](#security--guards)** · **[FAQ](#faq)**
 
 </div>
 
@@ -57,6 +57,9 @@ Ordered by how often you will use them.
   and age**; percentages always say what is **used** ("76% used"), never what is left. Unknown means unknown.
 - **Settings with Apply** — every change waits in a draft until **Apply** writes it in one go; another session's
   change on the same field asks before overwriting. Sessions can **propose** settings or weights; you decide.
+- **Account and project** — thresholds, budgets and API credits belong to your accounts and apply to every project;
+  each project can only be stricter. Install the mod for all projects or for one repository. See
+  [Account and project](#account-and-project).
 - **Load weights and profiles** — Automatic, Saving, Quality, Speed, or providers, models and effort tuned on a
   five-step scale; the panel only chooses among combinations your rules allow.
 - **Developer style** — states as glyph + word, data in monospace, block bars, accent used only for graphics, the
@@ -118,6 +121,25 @@ A folder install reads from the folder: do not move it. After a change run
 `claude plugin marketplace update chipmanager`; open sessions pick it up on restart.
 
 </details>
+
+### Install for one project or globally
+
+The mod behaves the same at every scope: accounts, keys and the API budget are always yours, and the chips always
+belong to the project of the session that starts them.
+
+| Scope | Command | Where it is enabled |
+|---|---|---|
+| All your projects | `claude plugin install chip-manager@chipmanager --scope user` | your user settings (the default) |
+| One repository, shared with the team | `claude plugin install chip-manager@chipmanager --scope project` | the repository's `.claude/settings.json`, committed |
+| One project, only for you | `claude plugin install chip-manager@chipmanager --scope local` | the repository's `.claude/settings.local.json`, not committed |
+
+- **Accounts stay personal**, also when the mod is installed for the team: each person signs in, sets the keys in
+  `/config` and keeps the account settings in their own user folder.
+- **Nothing goes into the repository.** The mod's data (configuration, data folders, the API spend log, the board)
+  stays in your user folder (`~/.claude/chipmanager`). If you point any of it inside a repository or through a link
+  or junction, the mod refuses and says why.
+- **After an update, reload every open session** (`/reload-plugins`). Until you do, a session keeps the old code: it
+  applies only the project settings and ignores the account ones.
 
 ## Quick start
 
@@ -269,29 +291,57 @@ calls it the **auditor** and lets you pick one per chip: *none*, Sonnet, Opus, F
 - **Fable** as auditor needs, on some plans, a one-time consent that you give yourself with `/model fable` in an
   interactive session; the mod never gives it. Fable usage can bill to usage credits.
 
+## Account and project
+
+Settings come in two layers.
+
+- **Account — all projects.** Thresholds, manual budgets, API Claude credits (monthly budget and cap per run) and the
+  FreeLLMAPI endpoint. Plan percentages, budgets and API spend are the account's, the same in every project.
+- **Project — the session's repository.** Allowed providers, local network only, milestones, balancing (profile and
+  weights), board, destination advisor, FreeLLMAPI level, data folder and sensitive terms.
+- **A project can only be stricter.** It may have lower thresholds, a lower API month limit or a lower cap per run;
+  it can never loosen the account, and a looser value is refused with the reason. Settings shows a project value as
+  «Stricter in owner/repo», with **Remove restriction**.
+- **One API spend log for the account.** Every run is recorded with its project. A run starts only if its cap fits
+  both in what is left of the account's monthly budget and in the project's month limit, if it has one. The **Load**
+  view shows both: "3.20 USD this project · 7.80 USD of 20 USD account".
+- **Upgrading.** Nothing is moved or deleted from your configuration: the account is a new field next to the projects.
+  Thresholds or an API budget saved on a project by a development build count as that project's restrictions; the
+  API Claude lane stays off until you set the budget in **Settings → Execution**.
+
 ## Settings
 
-The **Settings** view has one section at a time: Connections, Thresholds, Balancing, Project, Board, Advanced,
-Execution, Language and Legend.
+The **Settings** view has one section at a time, in two groups: **Account · all projects** (Connections,
+Thresholds with the manual budgets, Execution, Language) and **Project · owner/repo** (Balancing, Project, Board,
+Advanced, Legend).
 
 - **Apply.** Every change goes into a draft and is validated at once (the error stays under the control). **Apply**
-  writes the whole draft in one compare-and-swap; **Discard changes** drops it. If another session changed one of
+  writes the whole draft — project, account and language — in one compare-and-swap; **Discard changes** drops it. If another session changed one of
   the same fields, nothing is written and a popup offers **Reload and reapply my draft** or **Discard my draft**.
   Leaving Settings with a draft asks Apply, Discard or Stay.
 - **Proposals from sessions.** A session can propose settings with `proponi_impostazioni`, but only when you ask it
-  to. It may touch profile, thresholds, board, destination advisor, API budget and cap, and language; any other
-  field (keys, guards, permissions, providers, destinations) rejects the whole proposal. A valid proposal fills the
-  draft under a «Proposed by a session» banner; nothing changes until you press **Apply**. With a draft already open
+  to, as a `progetto` patch (profile, board, destination advisor, restrictions) and an `account` patch (thresholds,
+  API budget and cap), plus the language; any other field (keys, guards, permissions, providers, destinations) rejects
+  the whole proposal. A valid proposal fills the draft under a «Proposed by a session» banner, which says when it
+  changes the settings of all projects; nothing changes until you press **Apply**. With a draft already open
   it waits, one at a time. Weight proposals (`proponi_pesi`) appear as a line in the Work view with **Review**,
   **Apply**, **Reject** and, after applying, **Undo**.
 
 ## Configuration
 
-Everything that belongs to a project lives in a local file outside any repository:
-`~/.claude/chipmanager/config.json` (`CHIPMANAGER_CONFIG` to move it). Without it, generic defaults apply.
+Everything lives in a local file outside any repository: `~/.claude/chipmanager/config.json`
+(`CHIPMANAGER_CONFIG` to move it, never inside a repository). Without it, generic defaults apply. `account` holds the
+settings of all projects, `progetti` those of each project (see [Account and project](#account-and-project)).
 
 ```json
 {
+  "account": {
+    "soglie": { "claude": { "attenzione": 70, "critica": 90 }, "codex": { "attenzione": 80, "critica": 95 } },
+    "apiClaude": { "budgetUsd": 20, "tetto": 2 },
+    "limitiManuali": [
+      { "id": "api-budget", "fornitore": "claude", "nome": "API budget", "valore": 200, "unita": "EUR", "letto": "2026-11-05T08:00:00Z" }
+    ]
+  },
   "progetti": {
     "owner/repo": {
       "cartella": "~/.claude/chipmanager/progetti/owner__repo",
@@ -306,14 +356,10 @@ Everything that belongs to a project lives in a local file outside any repositor
         { "tipo": "modello", "nome": "gpt-6-astra", "percentuale": 30, "assoluto": 0 },
         { "tipo": "effort", "nome": "high", "percentuale": 10, "assoluto": 0 }
       ],
-      "limitiManuali": [
-        { "id": "api-budget", "fornitore": "claude", "nome": "API budget", "valore": 200, "unita": "EUR", "letto": "2026-11-05T08:00:00Z" }
-      ],
-      "soglie": { "claude": { "attenzione": 70, "critica": 90 }, "codex": { "attenzione": 80, "critica": 95 } },
       "profilo": "automatico",
       "board": { "modo": "spenta" },
-      "apiClaude": { "budgetUsd": 20, "tetto": 2 },
-      "consigliere": "suggerisci"
+      "consigliere": "suggerisci",
+      "restrizioni": { "apiLimiteMeseUsd": 5, "soglie": { "claude": { "attenzione": 60, "critica": 80 } } }
     }
   }
 }
@@ -328,19 +374,22 @@ Everything that belongs to a project lives in a local file outside any repositor
 | `fornitori` | `claude`, `codex`, `deepseek`, `freellmapi`; applies to the reviewer too | Claude and Codex only |
 | `soloLocale` | blocks every new LLM launch and every external probe of the mod, local proxy included | `false` |
 | `milestoneGithub` | allows `gh api` for milestones; `soloLocale` disables it anyway | `false` |
-| `freellmapi` | level `niente`, `R1` (R0–R1), `R2` (R0–R2); loopback HTTP endpoint with explicit port and `/v1` | off, localhost:3001 |
+| `freellmapi` | `livello`: `niente`, `R1` (R0–R1), `R2` (R0–R2); a loopback HTTP `endpoint` with explicit port and `/v1` only as a project exception | off |
 | `pesi` | percentage and/or absolute boost per provider, model or effort | none |
-| `limitiManuali` | plans, budgets or percentages you declare, with original time and unit | none |
-| `soglie` | per provider, `attenzione` (warning) and `critica` (critical) as percentages, the first below the second; `null` = no threshold | 70 / 90 |
+| `account.soglie` | per provider, `attenzione` (warning) and `critica` (critical) as percentages, the first below the second; `null` = no threshold | 70 / 90 |
+| `account.apiClaude` | API Claude lane: monthly `budgetUsd` and `tetto` (cap per run), in USD; without it the lane is off | off |
+| `account.limitiManuali` | plans, budgets or percentages you declare, with original time and unit | none |
+| `account.freellmapi.endpoint` | the FreeLLMAPI endpoint; a project `freellmapi.endpoint` replaces it (a declared exception) | localhost:3001 |
+| `restrizioni` | project only, stricter than the account: `soglie`, `apiLimiteMeseUsd` (month limit), `apiTetto` (cap per run) | none |
+| `limitiManuali`, `soglie`, `apiClaude` | on a project, from earlier builds: still read, as project budgets or restrictions | none |
 | `profilo` | balancing profile: `automatico`, `risparmio`, `qualita`, `velocita`, `personalizzato` | automatic |
 | `board` | project board mode: `spenta`, `accesa`, `riassunti` | off |
-| `apiClaude` | API Claude lane: monthly `budgetUsd` and `tetto` (cap per run), in USD | off |
 | `consigliere` | destination advisor: `suggerisci` or `applica` | off |
 
 Config and `routing.json` are re-read before every decision: if either is unreadable or invalid, nothing
 starts and the panel says why. You rarely need to edit the file: the **Settings** view writes it through a draft and
-**Apply** (see [Settings](#settings)), as a compare-and-swap on the whole file that keeps other projects intact. The
-API key is not here: it lives in the plugin options (`/config`).
+**Apply** (see [Settings](#settings)), as a compare-and-swap on the whole file that keeps other projects and unknown
+fields intact. The API key is not here: it lives in the plugin options (`/config`).
 
 Actions saved without a project by an earlier version are not shown in any project. On opening, once per session, a
 popup asks whether to assign them to the current project or discard them (discarding can be undone); if the popup
@@ -543,7 +592,12 @@ The panel follows a developer style, the same on desktop and terminal:
 - **One Codex lane** — held while the Codex command or any descendant lives; waiting reviews go first and prove
   they are alive with a heartbeat every 2 s.
 - **One API run per machine** — a machine lock, freed only when the run, its descendants and its key file are gone;
-  the month's spend is reserved before the start, and an uncertain outcome counts the whole cap.
+  the month's spend is reserved before the start, under the same lock, against the account budget and the project
+  limit read again from the configuration (never the values the panel sent), and an uncertain outcome counts the whole
+  cap. A spend log left in a project data folder by a development build blocks the lane until you archive it.
+- **Data outside repositories** — the configuration, the data folders, the spend log and the board are refused when
+  any folder on their path is a link or junction, when their real path differs from the declared one, or when a
+  `.git` folder or file sits above them.
 - **Cloud** — only title and brief, never background, never on sensitive lanes or with local-data patterns.
 - **Closing** — only from a registry task linked by branch **and** issue, never in a shared folder; otherwise the
   action stays *delivered* until you mark it done.
@@ -638,6 +692,12 @@ English by default, and you can switch to Italian, Spanish, French, German or Br
 **Settings → Language**. See [Languages](#languages).
 </details>
 
+<details><summary><b>Can my team install it in the repository?</b></summary>
+
+Yes, with `--scope project` (see [Install for one project or globally](#install-for-one-project-or-globally)). Each
+person keeps their own accounts, keys and API budget; the repository only records that the mod is enabled.
+</details>
+
 <details><summary><b>Does running on API credits cost money?</b></summary>
 
 Yes: API Claude runs are billed to the API key's credits, within the monthly budget and the cap per run you set.
@@ -668,6 +728,8 @@ The work was planned in phases and blocks, which are not shown in the panel. The
 - **F6** — [where it runs](docs/PIANO-F6.md): cloud, API Claude credits, destination advisor, one-click setup.
 - **F7** — [sessions and the mod](docs/PIANO-F7.md): settings proposals, «Change», auditor, «Who works».
 - **F8** — [graphic review](docs/PIANO-F8.md): status labels, hover, colour tokens, «Who works» polish.
+- **F10** — [account and project](docs/PIANO-F10.md): install per project or globally, account settings for all
+  projects, project restrictions, one API spend log.
 
 ## License
 

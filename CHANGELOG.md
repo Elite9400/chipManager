@@ -10,6 +10,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Added
 
+- **Install for one project or globally.** `claude plugin install chip-manager@chipmanager --scope user` for all
+  your projects, `--scope project` for one repository shared with the team (`.claude/settings.json`), `--scope local`
+  for one project only for you (`.claude/settings.local.json`). The mod behaves the same at every scope: accounts,
+  keys and the API budget stay personal, and the chips belong to the project of the session that starts them.
+  **After updating, reload every open session (`/reload-plugins`)**: until then a session keeps the old code, applies
+  only the project settings and ignores the account ones.
+- **Account and project.** A new `account` field at the root of the configuration holds what belongs to your
+  accounts and applies to every project: thresholds, manual budgets, API Claude credits (monthly budget and cap per
+  run) and the FreeLLMAPI endpoint. Each project keeps its own providers, network, milestones, balancing, board,
+  advisor, FreeLLMAPI level, data folder and sensitive terms, and can only be stricter than the account
+  (`restrizioni`: lower thresholds, a lower API month limit or cap per run). Settings shows the sections in two
+  groups, **Account · all projects** and **Project · owner/repo**; a stricter project value reads «Stricter in
+  owner/repo», with **Remove restriction**.
+- **One API spend log for the account**, next to the machine lock: every run is recorded with its project, and a run
+  starts only if its cap fits both in the account's monthly budget and in the project's month limit. The Load view
+  shows both: "3.20 USD this project · 7.80 USD of 20 USD account".
 - **Work view: who is doing what, right now.** The panel opens on **Work**, a table of every session of the project,
   including sessions opened by hand and Codex sessions, with engine, model, effort, status, context window used and
   last activity. Claude sessions come from the desktop app, Codex sessions from the local `~/.codex/sessions` files
@@ -56,12 +72,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Proposals from sessions.**
   - `proponi_pesi`: a session proposes a profile or weight adjustments; the proposal appears in the Work view with
     **Review**, **Apply**, **Reject** and, once applied, **Undo**, and a log of decisions.
-  - `proponi_impostazioni`: only when you ask, a session proposes profile, thresholds, board mode, destination
-    advisor, API budget and cap, or language. Any other field rejects the whole proposal. A valid proposal fills the
-    Settings draft under «Proposed by a session»; nothing changes until you press **Apply**.
+  - `proponi_impostazioni`: only when you ask, a session proposes a `progetto` patch (profile, board mode,
+    destination advisor, restrictions) and/or an `account` patch (thresholds, API budget and cap), and the language.
+    Any other field rejects the whole proposal, and so does a restriction looser than the account. A valid proposal
+    fills the Settings draft under «Proposed by a session», which says when it changes the settings of all projects;
+    nothing changes until you press **Apply**.
 - **Settings with Apply.** Settings are organised in sections (Connections, Thresholds, Balancing, Project, Board,
   Advanced, Execution, Language, Legend). Every change goes into a draft, validated at once, and **Apply** writes it
-  in one compare-and-swap; **Discard changes** drops it. A change made meanwhile by another session on the same
+  — project, account and language — in one compare-and-swap, so nothing is ever saved halfway; **Discard changes** drops it. A change made meanwhile by another session on the same
   field asks before overwriting; leaving Settings with a draft asks Apply, Discard or Stay. Connections are set up
   with guided pop-ups, manual budgets are removable chips with a guided **Add…**.
 - **Six languages**: English by default, plus Italian, Spanish, French, German and Brazilian Portuguese, chosen in
@@ -127,7 +145,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   the key is reachable by the agent and its tools; afterwards Claude's in-memory copy expires within 5 minutes,
   which does not revoke the key. Use a key dedicated to the mod, in a Console workspace with a low monthly spend
   limit: it is the only cap no local process can exceed.
-- **Spend is reserved before the start**, and a run whose outcome is uncertain counts its whole cap.
+- **Spend is reserved before the start**, and a run whose outcome is uncertain counts its whole cap. Budget and cap
+  are read again from the configuration under the machine lock, never taken from the panel; a project can never
+  loosen the account. A spend log left in a project data folder by a development build blocks the API lane, with
+  its folder, until you archive it.
+- **Data outside repositories.** The configuration, the data folders, the API spend log and the board are refused
+  when any folder on their path is a link or junction, when their real path differs from the declared one, or when a
+  `.git` folder or file sits above them; installed for a project, the mod never writes into the repository.
 - **Settings that change who pays** (a gateway, a login method, an `apiKeyHelper`, credentials or base URLs in `env`)
   block the API lane in any settings source; the mod names the file and never edits it.
 - **The mod never writes your Claude Code settings**, `advisorModel` included, and never gives the Fable consent.
@@ -146,6 +170,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Resources
 
 - Memory footprint across sessions: not measured in this release.
+- The account and project layers are additive: nothing is moved or deleted from an existing configuration. Thresholds
+  or an API budget saved on a project by a development build count as that project's restrictions, and the API Claude
+  lane stays off until the monthly budget is set in **Settings → Execution**.
 - The auditor is set per session only on the API lane; on desktop and terminal sessions `/advisor` changes your
   default for every session.
 - Extra usage credits in the cloud are not documented: check on your account.

@@ -951,6 +951,25 @@ const pt: Dizionario = {
   "board.segno.consegnata": "entregue",
   "au.manualeBreve": "/advisor muda o seu padrão para todas as sessões: ao terminar digite /advisor off.",
   "au.fableBreve": "Fable como auditor: em alguns planos precisa de um consentimento único (/model fable, nunca dado pela mod) e pode ser cobrado nos créditos de uso.",
+  // F10 account and project layers
+  "cfg.account": "config.json: “account” inválido (limiares, orçamentos manuais, créditos de API ou endpoint do FreeLLMAPI)",
+  "cfg.restrizioneSoglia": "Um projeto só pode ser mais rigoroso que a conta: o limiar de {fornitore} ficaria mais folgado",
+  "cfg.restrizioneApi": "Um projeto só pode ser mais rigoroso que a conta: o limite do mês e o teto por execução da API devem ficar dentro dos da conta",
+  "car.apiRigaProgetto": "API Claude: {progetto} USD este projeto · {speso} USD de {budget} USD conta (estimado, este mês)",
+  "car.apiLimiteProgetto": "Este projeto: no máximo {limite} USD por mês",
+  "err.apiRegistroSviluppo": "Há um registro de gastos de uma versão de desenvolvimento em {cartella}: arquive-o (tire-o dessa pasta) e inicie de novo",
+  "err.apiLimiteProgetto": "API Claude: este projeto usou {speso} USD do seu limite de {limite} USD por mês; uma execução reserva {tetto} USD",
+  "err.percorsoDati": "Os dados do mod devem ficar fora de qualquer repositório e de qualquer link: {motivo}",
+  "imp.gruppoAccount": "Conta · todos os projetos",
+  "imp.gruppoProgetto": "Projeto · {repo}",
+  "imp.valeTuttiProgetti": "Ajuste da conta: vale para todos os projetos.",
+  "imp.restrizioneSoglia": "Mais rigoroso em {repo}: {soglia}",
+  "imp.restrizioneApi": "Mais rigoroso em {repo}: no máximo {limite} USD por mês, {tetto} USD por execução",
+  "imp.rimuoviRestrizione": "Remover restrição",
+  "imp.endpointProgetto": "{repo} usa um endpoint próprio (uma exceção declarada)",
+  "imp.rimuoviEccezione": "Usar o endpoint da conta",
+  "imp.pillProgetto": "projeto",
+  "imp.propostaAccount": "Muda os ajustes de todos os projetos.",
   // ‹fine›
 }
 

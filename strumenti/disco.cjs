@@ -16,6 +16,7 @@ const path = require('path')
 const net = require('net')
 const crypto = require('crypto')
 const { spawn, spawnSync } = require('child_process')
+const regole = require('./regole.cjs')
 
 // Il mutex identifica la cartella FISICA: due spellings della stessa cartella (C:/… e D:/… sullo stesso
 // volume, una junction, un link) devono dare la stessa porta. Si chiama dopo che la cartella esiste.
@@ -275,8 +276,12 @@ function comandoReale(comando) {
  * incrementa `pesiRevisione` e segna l'origine manuale: nessuno dei due si scrive da fuori.
  */
 async function configura(file, richiesta) {
-  if (!richiesta || typeof richiesta.repo !== 'string' || !richiesta.repo || !richiesta.campi ||
-      Object.keys(richiesta.campi).some(k => !['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere'].includes(k))) return 2
+  if (!richiesta || typeof richiesta.repo !== 'string' || !richiesta.repo || !richiesta.campi || typeof richiesta.campi !== 'object' || Array.isArray(richiesta.campi) ||
+      Object.keys(richiesta.campi).some(k => !CAMPI_PROGETTO.includes(k))) return 2
+  // F10: nella stessa scrittura anche lo strato Account e la lingua (un solo CAS: niente allentamenti intermedi).
+  const account = richiesta.account ?? {}
+  if (!account || typeof account !== 'object' || Array.isArray(account) || Object.keys(account).some(k => !CAMPI_ACCOUNT.includes(k))) return 2
+  if (richiesta.lingua !== undefined && !CAMPI_UTENTE.lingua(richiesta.lingua)) return 2
   if (richiesta.campi.board !== undefined && !BOARD_MODI.includes(richiesta.campi.board?.modo)) return 2
   const dir = path.dirname(file)
   fs.mkdirSync(dir, { recursive: true })
@@ -307,12 +312,31 @@ async function configura(file, richiesta) {
       const gen = Number.isInteger(b?.generazione) && b.generazione >= 0 ? b.generazione : 0
       campi.board = { modo: campi.board.modo, generazione: b?.modo === campi.board.modo ? gen : gen + 1 }
     }
-    const progetti = { ...c.progetti, [richiesta.repo]: { ...precedente, ...campi } }
-    scriviAtomico(file, JSON.stringify({ ...c, progetti }, null, 2))
+    // null toglie il campo: «Rimuovi restrizione», un consigliere spento, un budget dell'account tolto.
+    const progetto = senzaNull({ ...precedente, ...campi })
+    const acc = c.account === undefined ? {} : c.account
+    if (!acc || typeof acc !== 'object' || Array.isArray(acc)) return 2
+    const nuovoAccount = senzaNull({ ...acc, ...account })
+    try {
+      // Lo strato Account e le restrizioni devono valere; le restrizioni scritte adesso possono solo restringere.
+      regole.regoleEfficaci(nuovoAccount, progetto)
+      if ('restrizioni' in campi && campi.restrizioni !== null && regole.restrizioneLarga(nuovoAccount, campi.restrizioni)) return 2
+    } catch (e) {
+      if (e instanceof regole.NonValido) return 2
+      throw e
+    }
+    const progetti = { ...c.progetti, [richiesta.repo]: progetto }
+    const radice = { ...c, progetti, ...(Object.keys(account).length && { account: nuovoAccount }), ...(richiesta.lingua !== undefined && { lingua: richiesta.lingua }) }
+    scriviAtomico(file, JSON.stringify(radice, null, 2))
     return 0
   })
   return r.occupato ? 3 : r.valore
 }
+
+/** I campi di `progetti[repo]` che `configura` scrive (F10: `restrizioni`); quelli dell'account (`account` nella radice). */
+const CAMPI_PROGETTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere', 'restrizioni']
+const CAMPI_ACCOUNT = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi']
+const senzaNull = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null))
 
 /** I campi di primo livello che appartengono all'utente, non a un progetto, e come devono essere. */
 const CAMPI_UTENTE = { lingua: v => ['en', 'it', 'es', 'fr', 'de', 'pt'].includes(v) }
@@ -358,9 +382,10 @@ class Rifiuto extends Error {
 const nomeBoard = repo =>
   `${repo.replace(/\//g, '__').replace(/[^A-Za-z0-9._-]+/g, '_').slice(-60)}-${crypto.createHash('sha256').update(repo).digest('hex').slice(0, 12)}`
 
-/** Nessun componente da `<cartella>` in giù può essere un link o una junction. */
+/** Nessun componente da `<cartella>` in giù può essere un link o una junction (e ognuno, se c'è, è una cartella). */
 function senzaLink(...percorsi) {
   for (const p of percorsi) {
+    percorsoSicuro(p)
     let st
     try {
       st = fs.lstatSync(p)
@@ -370,6 +395,52 @@ function senzaLink(...percorsi) {
     }
     if (st.isSymbolicLink() || !st.isDirectory()) throw new Rifiuto(6, `helper.collegamento: ${p}`)
   }
+}
+
+/**
+ * F10: un percorso dei dati della mod (config, cartella dell'account, registro della spesa, cartella dati, board) vale
+ * solo se: nessun antenato esistente, dalla radice del volume, è un link o una junction (`lstat`); il percorso reale
+ * coincide con quello dichiarato; nessun antenato del percorso reale contiene `.git`, cartella o file. Ogni errore di
+ * lettura blocca. Restituisce la parte esistente del percorso, reale; lancia un Rifiuto(6) con il motivo.
+ */
+function percorsoSicuro(p) {
+  if (typeof p !== 'string' || !path.isAbsolute(p)) throw new Rifiuto(6, 'helper.percorsoNonAssoluto')
+  const catena = []
+  for (let x = path.resolve(p); ; x = path.dirname(x)) {
+    catena.unshift(x)
+    if (path.dirname(x) === x) break
+  }
+  let esistente
+  for (const x of catena) {
+    let st
+    try {
+      st = fs.lstatSync(x)
+    } catch (e) {
+      if (e.code === 'ENOENT') break
+      throw new Rifiuto(6, `helper.percorsoIlleggibile: ${x}`)
+    }
+    if (st.isSymbolicLink()) throw new Rifiuto(6, `helper.collegamento: ${x}`)
+    esistente = x
+  }
+  if (!esistente) throw new Rifiuto(6, `helper.percorsoIlleggibile: ${p}`)
+  let reale
+  try {
+    reale = fs.realpathSync.native(esistente)
+  } catch {
+    throw new Rifiuto(6, `helper.percorsoIlleggibile: ${esistente}`)
+  }
+  if (!stessoPercorso(path.resolve(reale), esistente)) throw new Rifiuto(6, `helper.percorsoReale: ${esistente}`)
+  for (let x = reale; ; x = path.dirname(x)) {
+    try {
+      fs.lstatSync(path.join(x, '.git'))
+    } catch (e) {
+      if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') throw new Rifiuto(6, `helper.percorsoIlleggibile: ${x}`)
+      if (path.dirname(x) === x) break
+      continue
+    }
+    throw new Rifiuto(6, `helper.dentroWorkingTree: ${x}`)
+  }
+  return reale
 }
 
 /** Un `.git` (cartella o file di un worktree) in `dir` o in uno dei suoi genitori. */
@@ -942,35 +1013,61 @@ const numeroIn = (x, min, max, intero = false) => typeof x === 'number' && Numbe
 function propostaImpostazioniNonValida(x) {
   const solo = (v, ammesse, dove) => Object.keys(v).find(k => !ammesse.includes(k)) && `${dove}${Object.keys(v).find(k => !ammesse.includes(k))}`
   if (!oggetto(x)) return 'proposta'
-  const fuori = solo(x, ['motivo', 'profilo', 'soglie', 'board', 'consigliere', 'apiClaude', 'lingua'], '')
+  // F10: una patch per strato, ciascuna con la sua whitelist (la stessa di `propostaImpostazioniDa` nel pannello).
+  const fuori = solo(x, ['motivo', 'progetto', 'account', 'lingua'], '')
   if (fuori) return fuori
   if (typeof x.motivo !== 'string' || !x.motivo.trim() || x.motivo.length > 300) return 'motivo'
-  if (x.profilo !== undefined && !PROFILI.includes(x.profilo)) return 'profilo'
-  if (x.soglie !== undefined) {
-    if (!oggetto(x.soglie) || !Object.keys(x.soglie).length) return 'soglie'
-    const f = solo(x.soglie, FORNITORI_SOGLIE, 'soglie.')
+  const soglie = (v, dove) => {
+    if (!oggetto(v) || !Object.keys(v).length) return dove
+    const f = solo(v, FORNITORI_SOGLIE, `${dove}.`)
     if (f) return f
-    for (const [k, v] of Object.entries(x.soglie)) {
-      if (v === null) continue
-      if (!oggetto(v)) return `soglie.${k}`
-      const g = solo(v, ['attenzione', 'critica'], `soglie.${k}.`)
+    for (const [k, s] of Object.entries(v)) {
+      if (s === null) continue
+      if (!oggetto(s)) return `${dove}.${k}`
+      const g = solo(s, ['attenzione', 'critica'], `${dove}.${k}.`)
       if (g) return g
-      if (!numeroIn(v.attenzione, 1, 100, true) || !numeroIn(v.critica, 1, 100, true) || v.attenzione >= v.critica) return `soglie.${k}`
+      if (!numeroIn(s.attenzione, 1, 100, true) || !numeroIn(s.critica, 1, 100, true) || s.attenzione >= s.critica) return `${dove}.${k}`
+    }
+    return null
+  }
+  if (x.progetto !== undefined) {
+    const q = x.progetto
+    if (!oggetto(q) || !Object.keys(q).length) return 'progetto'
+    const g = solo(q, ['profilo', 'board', 'consigliere', 'restrizioni'], 'progetto.')
+    if (g) return g
+    if (q.profilo !== undefined && !PROFILI.includes(q.profilo)) return 'progetto.profilo'
+    if (q.board !== undefined) {
+      if (!oggetto(q.board)) return 'progetto.board'
+      const h = solo(q.board, ['modo'], 'progetto.board.')
+      if (h) return h
+      if (!['spenta', 'accesa', 'riassunti'].includes(q.board.modo)) return 'progetto.board.modo'
+    }
+    if (q.consigliere !== undefined && !['spento', 'suggerisci', 'applica'].includes(q.consigliere)) return 'progetto.consigliere'
+    if (q.restrizioni !== undefined) {
+      const r = q.restrizioni
+      if (!oggetto(r) || !Object.keys(r).length) return 'progetto.restrizioni'
+      const h = solo(r, ['soglie', 'apiLimiteMeseUsd', 'apiTetto'], 'progetto.restrizioni.')
+      if (h) return h
+      const sg = r.soglie === undefined ? null : soglie(r.soglie, 'progetto.restrizioni.soglie')
+      if (sg) return sg
+      if (r.apiLimiteMeseUsd !== undefined && !numeroIn(r.apiLimiteMeseUsd, 0.01, 100_000)) return 'progetto.restrizioni.apiLimiteMeseUsd'
+      if (r.apiTetto !== undefined && !numeroIn(r.apiTetto, 0.01, 1_000)) return 'progetto.restrizioni.apiTetto'
     }
   }
-  if (x.board !== undefined) {
-    if (!oggetto(x.board)) return 'board'
-    const g = solo(x.board, ['modo'], 'board.')
+  if (x.account !== undefined) {
+    const a = x.account
+    if (!oggetto(a) || !Object.keys(a).length) return 'account'
+    const g = solo(a, ['soglie', 'apiClaude'], 'account.')
     if (g) return g
-    if (!['spenta', 'accesa', 'riassunti'].includes(x.board.modo)) return 'board.modo'
-  }
-  if (x.consigliere !== undefined && !['spento', 'suggerisci', 'applica'].includes(x.consigliere)) return 'consigliere'
-  if (x.apiClaude !== undefined) {
-    if (!oggetto(x.apiClaude) || !Object.keys(x.apiClaude).length) return 'apiClaude'
-    const g = solo(x.apiClaude, ['budgetUsd', 'tetto'], 'apiClaude.')
-    if (g) return g
-    if (x.apiClaude.budgetUsd !== undefined && !numeroIn(x.apiClaude.budgetUsd, 0.01, 100_000)) return 'apiClaude.budgetUsd'
-    if (x.apiClaude.tetto !== undefined && !numeroIn(x.apiClaude.tetto, 0.01, 1_000)) return 'apiClaude.tetto'
+    const sg = a.soglie === undefined ? null : soglie(a.soglie, 'account.soglie')
+    if (sg) return sg
+    if (a.apiClaude !== undefined) {
+      if (!oggetto(a.apiClaude) || !Object.keys(a.apiClaude).length) return 'account.apiClaude'
+      const h = solo(a.apiClaude, ['budgetUsd', 'tetto'], 'account.apiClaude.')
+      if (h) return h
+      if (a.apiClaude.budgetUsd !== undefined && !numeroIn(a.apiClaude.budgetUsd, 0.01, 100_000)) return 'account.apiClaude.budgetUsd'
+      if (a.apiClaude.tetto !== undefined && !numeroIn(a.apiClaude.tetto, 0.01, 1_000)) return 'account.apiClaude.tetto'
+    }
   }
   if (x.lingua !== undefined && !LINGUE_PROPOSTA.includes(x.lingua)) return 'lingua'
   return Object.keys(x).length < 2 ? 'proposta' : null
@@ -1136,6 +1233,16 @@ async function main(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {}) {
   const stdin = () => JSON.parse(fs.readFileSync(0, 'utf8'))
   // F6.2: la corsia a crediti API di Claude vive in un modulo suo (letto qui, a modulo caricato).
   if (/^((lancia|esegui|stato|libera|termina)-api|stato-esecuzione|accedi)$/.test(cmd ?? '')) return require('./api-claude.cjs').comando(cmd, a, stdin, { dirMacchina })
+  // F10: config e cartelle dei dati fuori da ogni albero git e da ogni link, prima di qualunque lettura o scrittura.
+  const sicuro = cmd === 'cas' ? path.dirname(a[0] ?? '') : /^(configura|configura-utente|board-[a-z]+|pesi-[a-z]+|impostazioni-[a-z]+|prenota|lancia-cli)$/.test(cmd ?? '') ? a[0] : undefined
+  if (sicuro !== undefined) {
+    try {
+      percorsoSicuro(sicuro)
+    } catch (e) {
+      if (e instanceof Rifiuto) return esci(6, e.message)
+      throw e
+    }
+  }
   if (cmd === 'configura' && a.length === 1) return esci(await configura(a[0], stdin()))
   if (cmd === 'configura-utente' && a.length === 1) return esci(await configuraUtente(a[0], stdin()))
   if (cmd === 'lancia-cli' && a.length === 3) return esci(await lanciaCli(...a, stdin()))
@@ -1174,7 +1281,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, scriviAtomico, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, scriviAtomico, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

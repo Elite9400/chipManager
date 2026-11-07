@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { ControlloEsecuzione, LockApi, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni, Vista } from '../types'
 import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Limite, Motore, Pendenti, Permessi, Peso, PropostaPesi, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
-import { alLavoroDa, cambiatiAltrove, campoNonValido, contestoPerModello, impostazioniCorrenti, propostaDa, propostaImpostazioniDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
+import { alLavoroDa, cambiatiAltrove, campoNonValido, conBozza, contestoPerModello, impostazioniCorrenti, perStrato, propostaDa, propostaImpostazioniDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
 import {
   attive,
   bilancia,
@@ -97,7 +97,7 @@ const ultimeMisure = atom({ plugin: 'chip-manager', key: 'ultimeMisure' } as con
 const sessioni = atom({ plugin: 'chip-manager', key: 'sessioni' } as const, { lista: [] } as Sessioni, { shape: 'sessioni-1' })
 const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as StatoBoard, { shape: 'board-1' })
 const lockApi = atom({ plugin: 'chip-manager', key: 'lockApi' } as const, null as LockApi | null, { shape: 'lock-api-1' })
-const spesaApi = atom({ plugin: 'chip-manager', key: 'spesaApi' } as const, null as { mese: string; speso: number | null } | null, { shape: 'spesa-api-1' })
+const spesaApi = atom({ plugin: 'chip-manager', key: 'spesaApi' } as const, null as { mese: string; speso: number | null; progetto?: number | null } | null, { shape: 'spesa-api-2' })
 const esecuzione = atom({ plugin: 'chip-manager', key: 'esecuzione' } as const, {} as StatoEsecuzione, { shape: 'esecuzione-1' })
 const vistaOra = atom({ plugin: 'chip-manager', key: 'vista' } as const, 'lavoro' as Vista)
 const impostazioni = atom({ plugin: 'chip-manager', key: 'impostazioni' } as const, { sezione: 'connessioni' } as StatoImpostazioni, { shape: 'impostazioni-1' })
@@ -818,19 +818,29 @@ async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: 
   // F7.3: l'auditor va con `--advisor` (alias risolto, coppia già controllata dalla guardia); «senza auditor» lo spegne.
   const scelto = auditorDi(a)
   const advisor = scelto && !a.senzaAuditor ? idAuditor(scelto) ?? undefined : undefined
+  // F10: budget e tetto li rilegge l'helper dal config (questi servono solo a mostrarli); il progetto va nella voce di spesa.
+  const repo = (await chiSonoIo($)).repo
+  if (!repo) return fallisce(msg('err.progettoIgnoto'))
   const ingresso = { root, prompt: `${m.background}\n\n${m.prompt}`, modello: m.model, effort: m.effort, permessi: a.permessi ?? 'default', base: a.base,
-    tetto: api.tetto, budget: api.budgetUsd, mese: ora().slice(0, 7), chiave, ...(advisor && { advisor }), ...(a.senzaAuditor && { senzaAdvisor: true }) }
+    tetto: api.tetto, budget: api.budgetUsd, mese: ora().slice(0, 7), chiave, config: await fileConfig($), repo, ...(advisor && { advisor }), ...(a.senzaAuditor && { senzaAdvisor: true }) }
   const esito = await helper($, ['lancia-api', await cartella($), a.id, a.tentativo!], JSON.stringify(ingresso))
   const dettaglio = (() => {
     try {
-      return JSON.parse(esito.testo || '{}') as { motivo?: string; fonti?: string[]; speso?: number; budget?: number; registro?: string }
+      return JSON.parse(esito.testo || '{}') as { motivo?: string; fonti?: string[]; speso?: number; budget?: number; tetto?: number; registro?: string
+        registroSviluppo?: string; spenta?: boolean; config?: string; spesoProgetto?: number; limiteProgetto?: number; percorso?: string }
     } catch {
       return {}
     }
   })()
   if (esito.codice === 3) return fallisce(msg('err.apiOccupata'))
   if (esito.codice === 5 && dettaglio.registro) return fallisce(msg('err.apiRegistro'))
-  if (esito.codice === 5) return fallisce(msg('err.apiBudget', { speso: Number(dettaglio.speso ?? 0), budget: api.budgetUsd, tetto: api.tetto }))
+  if (esito.codice === 5 && dettaglio.registroSviluppo) return fallisce(msg('err.apiRegistroSviluppo', { cartella: String(dettaglio.registroSviluppo).slice(0, 300) }))
+  if (esito.codice === 5 && dettaglio.spenta) return fallisce(msg('v.apiBudget'))
+  if (esito.codice === 5 && dettaglio.config) return fallisce(msg('cfg.illeggibile'))
+  if (esito.codice === 5 && dettaglio.limiteProgetto !== undefined)
+    return fallisce(msg('err.apiLimiteProgetto', { speso: Number(dettaglio.spesoProgetto ?? 0), limite: Number(dettaglio.limiteProgetto), tetto: Number(dettaglio.tetto ?? api.tetto) }))
+  if (esito.codice === 5) return fallisce(msg('err.apiBudget', { speso: Number(dettaglio.speso ?? 0), budget: Number(dettaglio.budget ?? api.budgetUsd), tetto: Number(dettaglio.tetto ?? api.tetto) }))
+  if (esito.codice === 6 && dettaglio.percorso) return fallisce(msg('err.percorsoDati', { motivo: String(dettaglio.percorso).slice(0, 300) }))
   if (esito.codice === 6) return fallisce(msg('err.apiImpostazioni', { fonti: (dettaglio.fonti ?? []).map(f => String(f).slice(0, 12)).join(', ') }))
   if (esito.codice !== 0) throw new Error('API outcome to be checked')
   return aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo ? transizione(x, 'avviata', ora()) : null)
@@ -1067,12 +1077,25 @@ async function destinazioniPerAgenti($: Eng, r: Regole, chi: Chiamante) {
   return {
     local: 'this computer: plan limits',
     cloud: /^[^/\s]+\/[^/\s]+$/.test(chi.repo ?? '') ? 'Claude cloud: same plan limits as local, model chosen by the cloud, confirmed per chip' : 'not available: no GitHub repository',
-    'api-claude': !api ? 'not configured' : !r.chiaveApi ? 'no key in the mod options'
-      : { budgetUsd: api.budgetUsd, capPerRunUsd: api.tetto, spentThisMonthUsd: spesa?.speso ?? 'unknown', estimated: true, lane: lock ? `busy (${lock.motivo})` : 'free' },
+    'api-claude': !api ? 'not configured (the API credits budget is an account setting)' : !r.chiaveApi ? 'no key in the mod options'
+      : { account: { budgetUsd: api.budgetUsd, spentThisMonthUsd: spesa?.speso ?? 'unknown', appliesTo: 'all projects' },
+          project: { capPerRunUsd: api.tetto, spentThisMonthUsd: spesa?.progetto ?? 'unknown', ...(api.limiteProgettoUsd !== undefined && { monthLimitUsd: api.limiteProgettoUsd }) },
+          estimated: true, lane: lock ? `busy (${lock.motivo})` : 'free' },
     advisor: r.risorse.consigliere ?? 'off',
     // F7.3: l'auditor si sceglie per chip nel pannello; qui solo da dove viene la tabella delle coppie.
     auditor: `per chip in the panel: --advisor only on api-claude, /advisor typed by the owner elsewhere; pairs from ${ADVISOR.fonte} (${ADVISOR.letta})`,
   }
+}
+
+/** Lo schema delle soglie per fornitore in `proponi_impostazioni` (account o restrizioni del progetto). */
+const SCHEMA_SOGLIE = {
+  type: 'object',
+  additionalProperties: false,
+  description: 'Per provider: warning and critical percent (1-100, warning below critical), or null for none.',
+  properties: Object.fromEntries(['claude', 'codex', 'deepseek', 'freellmapi'].map(f => [f, {
+    type: ['object', 'null'], additionalProperties: false, required: ['attenzione', 'critica'],
+    properties: { attenzione: { type: 'integer', minimum: 1, maximum: 100 }, critica: { type: 'integer', minimum: 1, maximum: 100 } },
+  }])),
 }
 
 /** «Libera» (dopo il popup sul rischio) o «Termina» (su conferma) della corsia API; poi si rilegge lo stato. */
@@ -1271,18 +1294,21 @@ async function ricontrollaCambio($: Eng, id: string) {
 /** F6.4: la spesa del mese a crediti API, solo se l'API è configurata (la vista Carico la mostra contro il budget). */
 async function aggiornaSpesaApi($: Eng) {
   const r = await read($, regole)
-  let nuova: { mese: string; speso: number | null } | null = null
+  let nuova: { mese: string; speso: number | null; progetto?: number | null } | null = null
   if (r?.risorse.apiClaude) {
     const mese = ora().slice(0, 7)
-    const f = `${await cartella($)}/spesa-api.json`
+    // F10: un solo registro, dell'account, accanto al lock della macchina; ogni voce porta il progetto.
+    const f = `${await casa($)}/.claude/chipmanager/spesa-api.json`
     const testo = (await $.fs.exists(f).catch(() => false)) ? await $.fs.read(f).catch(() => null) : '{"v":1,"voci":{}}'
-    nuova = { mese, speso: (() => {
+    const repo = (await chiSonoIo($)).repo
+    const leggi = (progetto?: string) => {
       try {
-        return spesaDelMese(JSON.parse(String(testo)), mese)
+        return spesaDelMese(JSON.parse(String(testo)), mese, progetto)
       } catch {
         return null
       }
-    })() }
+    }
+    nuova = { mese, speso: leggi(), ...(repo && { progetto: leggi(repo) }) }
   }
   if (!uguale(await read($, spesaApi), nuova)) await update($, spesaApi, () => nuova)
 }
@@ -1304,10 +1330,11 @@ async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti)
   if (completa && regoleGiro?.risorse.consigliere === 'applica') {
     const r = regoleGiro
     const limitiOra = (await read($, risorse)).limiti
-    const speso = (await read($, spesaApi))?.speso
+    const spesa = await read($, spesaApi)
+    const speso = spesa?.speso
     for (const a of lista) {
       if (a.stato !== 'proposta' || a.destinazione !== undefined) continue
-      const cons = consigliaDove(a, r, limitiOra, lista, speso)
+      const cons = consigliaDove(a, r, limitiOra, lista, speso, Date.now(), spesa?.progetto)
       if (cons) await aggiorna($, a.id, x => (x.stato === 'proposta' && x.destinazione === undefined ? { destinazione: cons.d } : null)).catch(() => undefined)
     }
   }
@@ -1665,7 +1692,11 @@ async function aggiornaRisorse($: Eng, opz: Record<string, unknown>) {
   if (!uguale(prima, conUltime(prima, lette.limiti, lette.letti))) await update($, ultimeMisure, ora => conUltime(ora, lette.limiti, lette.letti))
 }
 
-async function configura($: Eng, opz: Record<string, unknown>, campi: Record<string, unknown>, attese: RisorseProgetto) {
+/**
+ * Una scrittura CAS del config: i campi del progetto, quelli dell'account (prefisso `account.`) e la lingua, insieme (F10:
+ * niente scritture in sequenza, niente allentamenti intermedi). Si convalida prima con la stessa regola della bozza.
+ */
+async function configura($: Eng, opz: Record<string, unknown>, campi: Record<string, unknown>, attese: RisorseProgetto, lingua?: Lingua) {
     const chi = await chiSonoIo($)
     if (!chi.repo) throw errore('err.progettoIgnoto')
     const f = await fileConfig($)
@@ -1674,10 +1705,10 @@ async function configura($: Eng, opz: Record<string, unknown>, campi: Record<str
     const precedente = progettoDa(config, chi.repo)
     if (eMsg(precedente)) throw new Errore(precedente)
     if (JSON.stringify(precedente.risorse) !== JSON.stringify(attese)) throw errore('err.impostazioniCambiate')
-    const nuovo = { ...config, progetti: { ...config.progetti, [chi.repo]: { ...(config.progetti?.[chi.repo] as object ?? {}), ...campi } } }
-    const p = progettoDa(nuovo, chi.repo)
+    const p = conBozza(precedente.risorse, campi)
     if (eMsg(p)) throw new Errore(p)
-    const esito = await helper($, ['configura', f], JSON.stringify({ atteso, repo: chi.repo, campi }))
+    const { progetto, account } = perStrato(campi)
+    const esito = await helper($, ['configura', f], JSON.stringify({ atteso, repo: chi.repo, campi: progetto, ...(Object.keys(account).length && { account }), ...(lingua && { lingua }) }))
     // 4 = CAS: il config è cambiato dopo la lettura. Ogni altro codice è un rifiuto dell'helper.
     if (esito.codice === 4) throw errore('errore.configCambiata')
     if (esito.codice !== 0) throw errore('errore.configNonScritta', { codice: esito.codice })
@@ -1857,40 +1888,41 @@ async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pend
     base: Object.fromEntries(Object.keys(p.campi).map(k => [k, valoreConfig(ora, k)])),
     immediati: daProposta(ora) && cambiati.some(k => k === 'pesi' || k === 'profilo') ? ['pesi', 'profilo'].filter(k => k in p.campi) : [],
   })
+  // F10: progetto, account e lingua in UNA scrittura CAS: niente salvataggio parziale. La lingua di una proposta porta la
+  // sua base: se intanto è cambiata altrove è un conflitto come gli altri campi, e non si scrive niente.
+  const linguaCambiata = async () => !!p.linguaBase && (await leggiLingua($)) !== p.linguaBase
+  const tutti = async (ora: RisorseProgetto) => [...cambiatiAltrove(p, ora), ...((await linguaCambiata()) ? ['lingua'] : [])]
+  const conLingua = async (ora: RisorseProgetto, cambiati: string[]): Promise<EsitoApplica> => {
+    const e = conflitto(ora, cambiati.filter(k => k !== 'lingua'))
+    return cambiati.includes('lingua') ? { ...e, cambiati, base: { ...e.base, lingua: await leggiLingua($) } } : e
+  }
   let ora = (await leggiRegole($)).risorse
-  if (cambiatiAltrove(p, ora).length) return conflitto(ora, cambiatiAltrove(p, ora))
-  const progetto = Object.keys(p.campi).length > 0
-  if (progetto) {
-    for (let tentativo = 1; ; tentativo++) {
-      try {
-        await configura($, opz, p.campi, ora)
-        break
-      } catch (err) {
-        // Il CAS (o le risorse attese) è cambiato fra la rilettura e la scrittura: niente scritto, si rilegge. Se è cambiato
-        // un campo della bozza si chiede; se è cambiato altro (un budget scritto subito) si riprova sulla versione nuova.
-        if (!(err instanceof Errore) || !['errore.configCambiata', 'err.impostazioniCambiate'].includes(err.msg.k)) throw err
-        ora = (await leggiRegole($)).risorse
-        const cambiati = cambiatiAltrove(p, ora)
-        if (cambiati.length || tentativo >= 3) return conflitto(ora, cambiati.length ? cambiati : Object.keys(p.campi))
-      }
-    }
-    if ('board' in p.campi) await dopoBoard($)
+  let cambiati = await tutti(ora)
+  if (cambiati.length) return conLingua(ora, cambiati)
+  const lingua = p.lingua && p.lingua !== (await leggiLingua($)) ? p.lingua : undefined
+  if (!Object.keys(p.campi).length && !lingua) return { cambiati: [], base: {} }
+  const chi = await chiSonoIo($)
+  // Solo la lingua, fuori da un repository: il campo dell'utente, con il suo CAS.
+  if (!chi.repo && !Object.keys(p.campi).length) {
+    await scegliLingua($, lingua!)
+    return { cambiati: [], base: {} }
   }
-  // La lingua si scrive solo dopo il progetto, e solo se diversa da quella salvata adesso. Quella di una proposta porta la
-  // sua base, controllata dentro il CAS della lingua: cambiata altrove = conflitto se non si è scritto altro, altrimenti il
-  // salvataggio parziale dichiarato (il progetto è scritto, in bozza resta solo la lingua).
-  if (p.lingua && p.lingua !== (await leggiLingua($))) {
+  for (let tentativo = 1; ; tentativo++) {
     try {
-      if ((await scegliLingua($, p.lingua, p.linguaBase)) === 'cambiata') {
-        if (!progetto) return { cambiati: ['lingua'], base: { lingua: await leggiLingua($) } }
-        return { cambiati: [], base: {}, errore: msg('imp.linguaNonSalvata', { motivo: msg('imp.linguaCambiataAltrove') }) }
-      }
+      await configura($, opz, p.campi, ora, lingua)
+      break
     } catch (err) {
-      // Rilievo 4: il progetto è già scritto; lo si dice, e in bozza resta solo la lingua.
-      if (!progetto) throw err
-      return { cambiati: [], base: {}, errore: msg('imp.linguaNonSalvata', { motivo: msgDi(err) }) }
+      // Il CAS (o le risorse attese) è cambiato fra la rilettura e la scrittura: niente scritto, si rilegge. Se è cambiato
+      // un campo della bozza si chiede; se è cambiato altro (un budget scritto subito) si riprova sulla versione nuova.
+      if (!(err instanceof Errore) || !['errore.configCambiata', 'err.impostazioniCambiate'].includes(err.msg.k)) throw err
+      ora = (await leggiRegole($)).risorse
+      cambiati = await tutti(ora)
+      // Dopo tre CAS mancati senza un campo cambiato si dice comunque conflitto, mai un successo vuoto.
+      if (cambiati.length || tentativo >= 3) return conLingua(ora, cambiati.length ? cambiati : [...Object.keys(p.campi), ...(lingua ? ['lingua'] : [])])
     }
   }
+  if (lingua) await leggiLingua($)
+  if ('board' in p.campi) await dopoBoard($)
   return { cambiati: [], base: {} }
 }
 
@@ -1984,7 +2016,8 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'proponi_impostazioni',
       description:
-        'Only when the user explicitly asks for it: proposes settings of this project (current values in `risorse_agenti`). It changes nothing: ' +
+        'Only when the user explicitly asks for it: proposes settings, as a `progetto` patch (this project) and/or an `account` patch (all projects); ' +
+        'current values in `risorse_agenti`. It changes nothing: ' +
         'a valid proposal fills the Settings draft in the panel, and the owner applies or discards it. Any unknown or forbidden field ' +
         '(keys, guards, permissions, providers, destinations) rejects the whole proposal.',
       inputSchema: {
@@ -1992,21 +2025,27 @@ export const register: Register = (on, options) => {
         additionalProperties: false,
         properties: {
           motivo: { type: 'string', description: 'Why, up to 300 characters.' },
-          profilo: { type: 'string', enum: ['automatico', 'risparmio', 'qualita', 'velocita', 'personalizzato'] },
-          soglie: {
-            type: 'object',
-            additionalProperties: false,
-            description: 'Per provider: warning and critical percent (1-100, warning below critical), or null for none.',
-            properties: Object.fromEntries(['claude', 'codex', 'deepseek', 'freellmapi'].map(f => [f, {
-              type: ['object', 'null'], additionalProperties: false, required: ['attenzione', 'critica'],
-              properties: { attenzione: { type: 'integer', minimum: 1, maximum: 100 }, critica: { type: 'integer', minimum: 1, maximum: 100 } },
-            }])),
+          progetto: {
+            type: 'object', additionalProperties: false, description: 'Settings of this project only.',
+            properties: {
+              profilo: { type: 'string', enum: ['automatico', 'risparmio', 'qualita', 'velocita', 'personalizzato'] },
+              board: { type: 'object', additionalProperties: false, required: ['modo'], properties: { modo: { type: 'string', enum: ['spenta', 'accesa', 'riassunti'] } } },
+              consigliere: { type: 'string', enum: ['spento', 'suggerisci', 'applica'] },
+              restrizioni: {
+                type: 'object', additionalProperties: false, description: 'Only stricter than the account: lower thresholds, a lower API month limit or cap per run.',
+                properties: { soglie: SCHEMA_SOGLIE, apiLimiteMeseUsd: { type: 'number', minimum: 0.01, maximum: 100000 }, apiTetto: { type: 'number', minimum: 0.01, maximum: 1000 } },
+              },
+            },
           },
-          board: { type: 'object', additionalProperties: false, required: ['modo'], properties: { modo: { type: 'string', enum: ['spenta', 'accesa', 'riassunti'] } } },
-          consigliere: { type: 'string', enum: ['spento', 'suggerisci', 'applica'] },
-          apiClaude: {
-            type: 'object', additionalProperties: false,
-            properties: { budgetUsd: { type: 'number', minimum: 0.01, maximum: 100000 }, tetto: { type: 'number', minimum: 0.01, maximum: 1000 } },
+          account: {
+            type: 'object', additionalProperties: false, description: 'Account settings: they change ALL projects.',
+            properties: {
+              soglie: SCHEMA_SOGLIE,
+              apiClaude: {
+                type: 'object', additionalProperties: false,
+                properties: { budgetUsd: { type: 'number', minimum: 0.01, maximum: 100000 }, tetto: { type: 'number', minimum: 0.01, maximum: 1000 } },
+              },
+            },
           },
           lingua: { type: 'string', enum: ['en', 'it', 'es', 'fr', 'de', 'pt'] },
         },

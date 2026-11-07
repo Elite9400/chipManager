@@ -180,7 +180,7 @@ const CONFIG = 'X:/casa/.claude/chipmanager/config.json'
 type On = Parameters<TestBody>[1]
 
 /** Engine finto ridotto: config e helper `configura` (CAS) in memoria, sonda dei limiti, toast e popup scriptabili. */
-function ambiente(on: On, progetto: Record<string, unknown> = {}) {
+function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Record<string, unknown>) {
   const disco = new DiscoIt()
   const toast: string[] = []
   const processi: string[][] = []
@@ -237,7 +237,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   }
   const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
   disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING))
-  disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': progetto } }))
+  disco.set(CONFIG, JSON.stringify({ ...(account && { account }), progetti: { 'esempio/demo': progetto } }))
   on('env.get', (_, e) => ({ value: e.name === 'CHIPMANAGER_DIR' ? 'X:/dati' : e.name === 'USERPROFILE' ? 'X:/casa' : undefined }))
   on('session.id', () => ({ value: 'sessione-esempio' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
@@ -273,7 +273,8 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
     }
     if (cmd === 'configura')
       return scrittura(() => {
-        // Come l'helper vero: CAS sul testo intero, poi fusione dei campi nella sezione del progetto.
+        // Come l'helper vero: CAS sul testo intero, poi fusione dei campi nella sezione del progetto, dell'account nella
+        // radice `account` e la lingua, in una sola scrittura (F10); null toglie il campo.
         const altra = hook.primaDiConfigura
         hook.primaDiConfigura = undefined
         altra?.()
@@ -281,7 +282,9 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
         const prima = disco.get(p(file)) ?? null
         if (prima !== input.atteso) return fine(4)
         const c = prima === null ? {} : JSON.parse(prima)
-        disco.set(p(file), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: { ...c.progetti?.[input.repo], ...input.campi } } }))
+        const senzaNull = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null))
+        disco.set(p(file), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: senzaNull({ ...c.progetti?.[input.repo], ...input.campi }) },
+          ...(input.account && { account: senzaNull({ ...c.account, ...input.account }) }), ...(input.lingua !== undefined && { lingua: input.lingua }) }))
         return fine(0)
       }) as never
     if (cmd === 'configura-utente')
@@ -367,6 +370,8 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
   on('command.register', () => ({ value: { command: 'chipmanager' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   const progettoOra = () => JSON.parse(disco.get(CONFIG)!).progetti['esempio/demo'] as Record<string, unknown>
+  /** F10: lo strato Account, nella radice del config (assente = undefined). */
+  const accountOra = () => JSON.parse(disco.get(CONFIG)!).account as Record<string, unknown> | undefined
   const configure = () => processi.filter(p => p[2] === 'configura').length
   // Una lettura lenta della lingua salvata: il valore si legge subito ma arriva solo dopo `apri()` (una lettura vecchia).
   let letturaFerma: { key: string; attesa: Promise<void>; segnala: () => void } | undefined
@@ -389,7 +394,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}) {
     letturaFerma = { key, attesa: new Promise<void>(ok => (apri = ok)), segnala }
     return { arrivato, apri }
   }
-  return { disco, toast, domande, popup, progettoOra, configure, hook, trattieni, trattieniPopup, trattieniLettura, trattieniLimiti, esec, processi }
+  return { disco, toast, domande, popup, progettoOra, accountOra, configure, hook, trattieni, trattieniPopup, trattieniLettura, trattieniLimiti, esec, processi }
 }
 
 const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
@@ -402,7 +407,7 @@ const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
   }) as const
 const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda'] as const
 
-test('lingua: config assente = inglese; la scelta va nella bozza, Applica la scrive con configura-utente (CAS) e il pannello cambia', async ($, on) => {
+test('lingua: config assente = inglese; la scelta va nella bozza, Applica la scrive con configura (CAS) e il pannello cambia', async ($, on) => {
   const amb = ambiente(on)
   amb.disco.lingua = undefined
   amb.disco.delete(CONFIG)
@@ -417,7 +422,9 @@ test('lingua: config assente = inglese; la scelta va nella bozza, Applica la scr
   expect(amb.disco.get(CONFIG)).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: '1 unsaved change' })).toBeDefined()
   await ui.press({ key: 'applica' })
-  expect(JSON.parse(amb.disco.get(CONFIG)!)).toEqual({ lingua: 'de' })
+  // F10: in un repository la lingua va nello stesso configura del progetto (un solo CAS), mai con configura-utente.
+  expect(JSON.parse(amb.disco.get(CONFIG)!)).toEqual({ lingua: 'de', progetti: { 'esempio/demo': {} } })
+  expect([amb.configure(), amb.processi.filter(x => x[2] === 'configura-utente').length]).toEqual([1, 0])
   expect(await ui.find({ type: 'Text', text: 'Sprache' })).toBeDefined()
   expect((await ui.find({ key: 'lingua-de-premi' }))?.props).toMatchObject({ label: 'Deutsch', variant: 'primary' })
   await ui.unmount()
@@ -572,7 +579,9 @@ test('F5.9: più modifiche in più sezioni vanno nella bozza; la barra le conta;
   expect([amb.configure(), amb.toast]).toEqual([0, []])
   await ui.press({ key: 'applica' })
   expect(amb.configure()).toBe(1)
-  expect(amb.progettoOra()).toMatchObject({ fornitori: ['claude', 'codex', 'deepseek'], profilo: 'personalizzato', soglie: { claude: null } })
+  // F10: le soglie sono dell'account; progetto e account nella stessa scrittura.
+  expect(amb.progettoOra()).toMatchObject({ fornitori: ['claude', 'codex', 'deepseek'], profilo: 'personalizzato' })
+  expect(amb.accountOra()).toMatchObject({ soglie: { claude: null } })
   expect(amb.progettoOra().pesi).toContainEqual(MODELLO)
   expect(amb.toast).toEqual(['Salvato'])
   expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
@@ -607,31 +616,34 @@ test('F5.9: un campo della bozza cambiato altrove: niente scritto, popup; «Rica
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-soglie-premi' })
   // Riapplica: la soglia della bozza vince, il campo cambiato altrove e non toccato resta.
+  // F10: le soglie sono dell'account; il conflitto si vede sul valore grezzo dell'account.
   await ui.press({ key: 'soglia-claude-nessuna-premi' })
-  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { milestoneGithub: true, soglie: { claude: { attenzione: 50, critica: 60 } } } } }))
+  amb.disco.set(CONFIG, JSON.stringify({ account: { soglie: { claude: { attenzione: 50, critica: 60 } } }, progetti: { 'esempio/demo': { milestoneGithub: true } } }))
   amb.popup.risposta = () => 'Ricarica e riapplica la mia bozza'
   await ui.press({ key: 'applica' })
   expect(amb.domande.at(-1)).toBe('Un\'altra sessione ha cambiato Soglie dopo le tue modifiche. Non è stato scritto niente.')
   expect(amb.configure()).toBe(1)
-  expect(amb.progettoOra()).toMatchObject({ milestoneGithub: true, soglie: { claude: null } })
+  expect(amb.progettoOra()).toMatchObject({ milestoneGithub: true })
+  expect(amb.accountOra()).toEqual({ soglie: { claude: null } })
   await clock.advance(20_000)
   // Scarta: niente scritto, la bozza se ne va, l'altro valore resta.
   await ui.press({ key: 'soglia-claude-70/90-premi' })
-  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { soglie: { claude: { attenzione: 40, critica: 60 } } } } }))
+  amb.disco.set(CONFIG, JSON.stringify({ account: { soglie: { claude: { attenzione: 40, critica: 60 } } }, progetti: { 'esempio/demo': {} } }))
   amb.popup.risposta = () => 'Scarta la mia bozza'
   await ui.press({ key: 'applica' })
   expect(amb.configure()).toBe(1)
-  expect(amb.progettoOra()).toEqual({ soglie: { claude: { attenzione: 40, critica: 60 } } })
+  expect([amb.progettoOra(), amb.accountOra()]).toEqual([{}, { soglie: { claude: { attenzione: 40, critica: 60 } } }])
   expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
   await clock.advance(20_000)
   // Un campo cambiato altrove ma non nella bozza non è un conflitto: si scrive il proprio, l'altro resta.
   await ui.press({ key: 'sezione-connessioni-premi' })
   await ui.press({ key: 'fornitore-deepseek-premi' })
-  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { soglie: { claude: { attenzione: 40, critica: 60 } }, milestoneGithub: true } } }))
+  amb.disco.set(CONFIG, JSON.stringify({ account: { soglie: { claude: { attenzione: 40, critica: 60 } } }, progetti: { 'esempio/demo': { milestoneGithub: true } } }))
   const domande = amb.domande.length
   await ui.press({ key: 'applica' })
   expect(amb.domande.length).toBe(domande)
-  expect(amb.progettoOra()).toMatchObject({ milestoneGithub: true, soglie: { claude: { attenzione: 40, critica: 60 } }, fornitori: ['claude', 'codex', 'deepseek'] })
+  expect(amb.progettoOra()).toMatchObject({ milestoneGithub: true, fornitori: ['claude', 'codex', 'deepseek'] })
+  expect(amb.accountOra()).toEqual({ soglie: { claude: { attenzione: 40, critica: 60 } } })
   await ui.unmount()
 })
 
@@ -667,7 +679,9 @@ test('F5.9: uscendo dalle Impostazioni con una bozza: Resta, Applica, oppure pop
 })
 
 test('impostazioni: un errore va in linea sotto il controllo, senza toast; le soglie non scendono sotto il vincolo', async ($, on) => {
-  const amb = ambiente(on, { soglie: { claude: { attenzione: 72, critica: 75 } } })
+  const amb = ambiente(on)
+  // F10: i controlli delle soglie mostrano e scrivono quelle dell'account.
+  amb.disco.set(CONFIG, JSON.stringify({ account: { soglie: { claude: { attenzione: 72, critica: 75 } } }, progetti: { 'esempio/demo': {} } }))
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('terminal') })
@@ -677,20 +691,21 @@ test('impostazioni: un errore va in linea sotto il controllo, senza toast; le so
   expect(await ui.find({ key: 'soglia-claude' })).toBeDefined()
   await ui.press({ key: 'attenzione-claude-piu' })
   await ui.press({ key: 'applica' })
-  expect(amb.progettoOra().soglie).toMatchObject({ claude: { attenzione: 74, critica: 75 } })
+  expect(amb.accountOra()?.soglie).toMatchObject({ claude: { attenzione: 74, critica: 75 } })
   expect(String((await ui.find({ key: 'attenzione-claude-piu' }))?.props.label)).toBe('Aumenta Attenzione da (Claude), al massimo')
   // Un endpoint fuori da questo computer non si salva: la causa e il rimedio in linea.
   await ui.press({ key: 'sezione-avanzate-premi' })
   await ui.input({ key: 'free-endpoint', text: 'http://example.org/v1' })
   expect(await ui.find({ type: 'Text', text: /Endpoint solo su questo computer: http:\/\/localhost/ })).toBeDefined()
   expect(amb.progettoOra()).not.toHaveProperty('freellmapi')
+  expect(amb.accountOra()).not.toHaveProperty('freellmapi')
   await ui.press({ key: 'sezione-soglie-premi' })
-  // Una modifica concorrente dello stesso campo: niente scritto, il popup lo dice, e non c'è un secondo toast.
+  // Una modifica concorrente dello stesso campo (qui l'account tolto altrove): niente scritto, il popup lo dice, e non c'è un secondo toast.
   await ui.press({ key: 'soglia-claude-nessuna-premi' })
   amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { soloLocale: true } } }))
   amb.popup.risposta = () => 'Scarta la mia bozza'
   await ui.press({ key: 'applica' })
-  expect(amb.progettoOra()).toEqual({ soloLocale: true })
+  expect([amb.progettoOra(), amb.accountOra()]).toEqual([{ soloLocale: true }, undefined])
   expect(amb.domande.at(-1)).toMatch(/ha cambiato Soglie/)
   expect(amb.toast).toEqual(['Salvato'])
   await ui.unmount()
@@ -710,7 +725,8 @@ test('impostazioni: popup rifiutato, «Collega…» e «Aggiungi budget…» si 
   await ui.press({ key: 'guida-deepseek-chiudi' })
   expect(await ui.find({ key: 'guida-deepseek' })).toBeUndefined()
 
-  await ui.press({ key: 'sezione-progetto-premi' })
+  // F10: i budget manuali stanno nella sezione Soglie; uno nuovo è dell'account, quello del progetto resta com'è.
+  await ui.press({ key: 'sezione-soglie-premi' })
   await ui.press({ key: 'aggiungi-budget' })
   expect(await ui.find({ key: 'bozza-fornitore' })).toBeDefined()
   await ui.press({ key: 'bozza-fornitore-claude-premi' })
@@ -718,20 +734,23 @@ test('impostazioni: popup rifiutato, «Collega…» e «Aggiungi budget…» si 
   await ui.input({ key: 'bozza-valore', text: '140%' })
   expect(await ui.find({ type: 'Text', text: /Una percentuale va da 0 a 100/ })).toBeDefined()
   await ui.input({ key: 'bozza-valore', text: '40%' })
-  const manuali = amb.progettoOra().limitiManuali as { id: string }[]
-  expect(manuali[0]).toEqual({ id: 'saldo', fornitore: 'deepseek', nome: 'saldo mensile', letto: '2026-11-01T00:00:00Z', valore: 12, unita: 'USD' })
-  expect(manuali[1]).toMatchObject({ fornitore: 'claude', nome: 'settimanale', percentuale: 40, unita: '%' })
-  expect(manuali[1]!.id).toMatch(/^claude-settimanale-[a-z0-9]+$/)
+  expect(amb.progettoOra().limitiManuali).toEqual([{ id: 'saldo', fornitore: 'deepseek', nome: 'saldo mensile', letto: '2026-11-01T00:00:00Z', valore: 12, unita: 'USD' }])
+  const manuali = amb.accountOra()!.limitiManuali as { id: string }[]
+  expect(manuali[0]).toMatchObject({ fornitore: 'claude', nome: 'settimanale', percentuale: 40, unita: '%' })
+  expect(manuali[0]!.id).toMatch(/^claude-settimanale-[a-z0-9]+$/)
   expect(await ui.find({ key: 'bozza-fornitore' })).toBeUndefined()
 
-  // Popup accettato: fornitore e tipo dal popup, il valore in linea; × toglie la voce.
+  // Popup accettato: fornitore e tipo dal popup, il valore in linea; × toglie la voce (qui quella del progetto).
   amb.popup.risposta = q => (q.startsWith('Per quale') ? 'DeepSeek' : 'Mensile')
   await ui.press({ key: 'aggiungi-budget' })
   expect(await ui.find({ key: 'bozza-tipo' })).toBeDefined()
   await ui.input({ key: 'bozza-valore', text: '20 USD' })
-  expect((amb.progettoOra().limitiManuali as unknown[])[2]).toMatchObject({ fornitore: 'deepseek', nome: 'mensile', valore: 20, unita: 'USD' })
+  expect((amb.accountOra()!.limitiManuali as unknown[])[1]).toMatchObject({ fornitore: 'deepseek', nome: 'mensile', valore: 20, unita: 'USD' })
   await ui.press({ key: 'budget-manuale-saldo-via' })
-  expect((amb.progettoOra().limitiManuali as { id: string }[]).map(l => l.id).some(id => id === 'saldo' || id.startsWith('manuale-'))).toBe(false)
+  expect(amb.progettoOra().limitiManuali).toEqual([])
+  // Nessun prefisso raddoppiato nell'account, e i due budget dell'account restano.
+  const ids = (amb.accountOra()!.limitiManuali as { id: string }[]).map(l => l.id)
+  expect([ids.length, ids.some(id => id === 'saldo' || id.startsWith('manuale-'))]).toEqual([2, false])
   await ui.unmount()
 })
 
@@ -822,7 +841,7 @@ test('giro 5, caso 1: «Scarta» nel popup d\'uscita arrivato mentre Applica è 
   const esce = altro.press({ key: 'vista-lavoro' })
   await uscita.arrivato
   // Questo pannello applica e trova un conflitto: il suo popup resta aperto, Applica è in volo.
-  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { soglie: { claude: { attenzione: 50, critica: 60 } } } } }))
+  amb.disco.set(CONFIG, JSON.stringify({ account: { soglie: { claude: { attenzione: 50, critica: 60 } } }, progetti: { 'esempio/demo': {} } }))
   const conflitto = amb.trattieniPopup(q => q.startsWith('Un\'altra sessione'))
   const applica = ui.press({ key: 'applica' })
   await conflitto.arrivato
@@ -834,7 +853,7 @@ test('giro 5, caso 1: «Scarta» nel popup d\'uscita arrivato mentre Applica è 
   conflitto.apri()
   await applica
   expect(amb.configure()).toBe(1)
-  expect(amb.progettoOra()).toMatchObject({ soglie: { claude: null } })
+  expect(amb.accountOra()).toMatchObject({ soglie: { claude: null } })
   expect(amb.toast.at(-1)).toBe('Salvato')
   await altro.unmount()
   await ui.unmount()
@@ -925,7 +944,8 @@ test('giro 6, B: i budget non stanno nella bozza: × scrive subito; un campo fuo
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: 'impostazioni' })
-  await ui.press({ key: 'sezione-progetto-premi' })
+  // F10: i budget manuali stanno nella sezione Soglie.
+  await ui.press({ key: 'sezione-soglie-premi' })
   await ui.press({ key: 'budget-manuale-saldo-via' })
   expect(amb.configure()).toBe(1)
   expect(amb.progettoOra().limitiManuali).toEqual([])
@@ -943,6 +963,8 @@ test('giro 6, B: un budget salvato mentre Applica parte (durante l\'aggiornament
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-progetto-premi' })
   await ui.press({ key: 'milestone-github-premi' })
+  // F10: i budget manuali stanno nella sezione Soglie; uno nuovo va nell'account.
+  await ui.press({ key: 'sezione-soglie-premi' })
   await ui.press({ key: 'budget-manuale-saldo-via' })
   await ui.press({ key: 'aggiungi-budget' })
   await ui.press({ key: 'bozza-fornitore-claude-premi' })
@@ -954,7 +976,8 @@ test('giro 6, B: un budget salvato mentre Applica parte (durante l\'aggiornament
   await altro.press({ key: 'applica' })
   limiti.apri()
   await aggiunge
-  const manuali = amb.progettoOra().limitiManuali as { fornitore: string; nome: string; percentuale?: number }[]
+  expect(amb.progettoOra().limitiManuali).toEqual([])
+  const manuali = amb.accountOra()!.limitiManuali as { fornitore: string; nome: string; percentuale?: number }[]
   expect(manuali.map(l => [l.fornitore, l.nome, l.percentuale])).toEqual([['claude', 'settimanale', 40]])
   expect(amb.progettoOra().milestoneGithub).toBe(true)
   await altro.unmount()
@@ -1107,17 +1130,23 @@ test('F6.6 Esecuzione: la chiave solo come presenza (mai popup, bozza o JSON); b
   expect(await ui.find({ type: 'Text', text: '2 modifiche non salvate' })).toBeDefined()
   expect(amb.disco.get(CONFIG)).toBe(prima)
   await ui.press({ key: 'applica' })
-  expect(amb.progettoOra()).toMatchObject({ apiClaude: { budgetUsd: 15, tetto: 2 }, consigliere: 'suggerisci' })
+  // F10: budget e tetto sono dell'account (tutti i progetti); il consigliere resta del progetto. Il tetto assente vale 2.
+  expect(amb.accountOra()).toMatchObject({ apiClaude: { budgetUsd: 15 } })
+  expect(amb.progettoOra()).toMatchObject({ consigliere: 'suggerisci' })
+  expect(amb.progettoOra()).not.toHaveProperty('apiClaude')
+  expect((await ui.find({ key: 'ese-tetto' }))?.props.value).toBe('2')
   // Il tetto non supera il budget; un valore fuori misura resta in linea, senza bozza.
   await ui.input({ key: 'ese-tetto', text: '30' })
   expect(await ui.find({ type: 'Text', text: /Scrivi un numero da 0,01 a 15$/ })).toBeDefined()
   await ui.input({ key: 'ese-tetto', text: '3' })
   await ui.press({ key: 'applica' })
-  expect(amb.progettoOra()).toMatchObject({ apiClaude: { budgetUsd: 15, tetto: 3 } })
+  expect(amb.accountOra()).toMatchObject({ apiClaude: { budgetUsd: 15, tetto: 3 } })
   await ui.press({ key: 'ese-api-togli' })
   await ui.press({ key: 'consigliere-spento-premi' })
   await ui.press({ key: 'applica' })
-  expect(amb.progettoOra()).toMatchObject({ apiClaude: null, consigliere: null })
+  // null nella scrittura toglie il campo.
+  expect(amb.accountOra()).not.toHaveProperty('apiClaude')
+  expect(amb.progettoOra()).not.toHaveProperty('consigliere')
   // La chiave non passa mai di qui: nessun popup, nessun valore nel config.
   expect(amb.domande).toEqual([])
   expect(amb.disco.get(CONFIG)).not.toContain('sentinella')
@@ -1145,17 +1174,19 @@ test('rilievo 3: un conflitto CAS dopo il controllo preliminare (codice 4) apre 
   await ui.press({ key: 'sezione-soglie-premi' })
   await ui.press({ key: 'soglia-claude-nessuna-premi' })
   // Un'altra sessione scrive le soglie fra la rilettura di Applica e il CAS dell'helper.
-  amb.hook.primaDiConfigura = () => amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { milestoneGithub: true, soglie: { claude: { attenzione: 50, critica: 60 } } } } }))
+  // F10: le soglie sono dell'account.
+  amb.hook.primaDiConfigura = () => amb.disco.set(CONFIG, JSON.stringify({ account: { soglie: { claude: { attenzione: 50, critica: 60 } } }, progetti: { 'esempio/demo': { milestoneGithub: true } } }))
   amb.popup.risposta = () => 'Ricarica e riapplica la mia bozza'
   await ui.press({ key: 'applica' })
   expect(amb.domande.at(-1)).toBe('Un\'altra sessione ha cambiato Soglie dopo le tue modifiche. Non è stato scritto niente.')
-  expect(amb.progettoOra()).toMatchObject({ milestoneGithub: true, soglie: { claude: null } })
+  expect(amb.progettoOra()).toMatchObject({ milestoneGithub: true })
+  expect(amb.accountOra()).toEqual({ soglie: { claude: null } })
   expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /cambiate altrove/ })).toBeUndefined()
   await ui.unmount()
 })
 
-test('rilievo 4: progetto scritto e lingua rifiutata: lo dice, e in bozza resta solo la lingua', async ($, on) => {
+test('rilievo 4: progetto e lingua in una sola scrittura: un CAS mancato non salva niente a metà, il nuovo tentativo scrive tutto', async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -1164,15 +1195,21 @@ test('rilievo 4: progetto scritto e lingua rifiutata: lo dice, e in bozza resta 
   await ui.press({ key: 'fornitore-deepseek-premi' })
   await ui.press({ key: 'sezione-lingua-premi' })
   await ui.press({ key: 'lingua-de-premi' })
+  // F10: configura-utente non serve più in un repository (se servisse, fallirebbe); un'altra sessione cambia un campo
+  // fuori dalla bozza fra la rilettura e il CAS: niente scritto, si rilegge e si riscrive tutto insieme.
   amb.hook.rifiutaUtente = true
+  let scritto: unknown
+  amb.hook.primaDiConfigura = () => {
+    scritto = JSON.parse(amb.disco.get(CONFIG)!)
+    amb.disco.set(CONFIG, JSON.stringify({ lingua: 'it', progetti: { 'esempio/demo': { milestoneGithub: true } } }))
+  }
   await ui.press({ key: 'applica' })
-  expect(amb.progettoOra().fornitori).toEqual(['claude', 'codex', 'deepseek'])
-  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('it')
-  expect(await ui.find({ type: 'Text', text: /Impostazioni del progetto salvate; la lingua non è stata salvata: / })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
-  await ui.press({ key: 'applica' })
+  expect(scritto).toEqual({ lingua: 'it', progetti: { 'esempio/demo': {} } })
+  expect(amb.progettoOra()).toMatchObject({ fornitori: ['claude', 'codex', 'deepseek'], milestoneGithub: true })
   expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('de')
-  expect(amb.configure()).toBe(1)
+  expect(await ui.find({ type: 'Text', text: /la lingua non è stata salvata/ })).toBeUndefined()
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  expect([amb.configure(), amb.processi.filter(x => x[2] === 'configura-utente').length]).toEqual([2, 0])
   await ui.unmount()
 })
 
@@ -1341,7 +1378,9 @@ test('F6.7 Copia: se il login non parte la riga si copia; la chiave apre /config
 })
 
 test('F6.7 procedura guidata: i passi mancanti uno alla volta, ognuno si salta; si chiude da sola quando tutto è ✓', { options: { anthropicApiKey: 'sk-ant-prova' } }, async ($, on) => {
-  const amb = ambiente(on, { apiClaude: { budgetUsd: 20, tetto: 2 } })
+  const amb = ambiente(on)
+  // F10: il budget API è dell'account.
+  amb.disco.set(CONFIG, JSON.stringify({ account: { apiClaude: { budgetUsd: 20, tetto: 2 } }, progetti: { 'esempio/demo': {} } }))
   let fatto = false
   amb.esec.stato = () => JSON.stringify({ ...ESEC_OK, claude: { trovato: true, loggedIn: fatto }, github: { trovato: true, loggedIn: false, remote: true } })
   mock.clock(on)
@@ -1411,20 +1450,26 @@ const proponi = async ($: Parameters<TestBody>[0], args: Record<string, unknown>
 
 test('F7.1 forma: un campo vietato o sconosciuto, anche annidato, rifiuta tutta la proposta col nome e mai col valore', () => {
   const SEGRETO = 'sk-ant-VALORE-SEGRETO'
+  // F10: una patch per strato (`progetto`, `account`); il nome del campo porta il prefisso dello strato.
   for (const [x, campo] of [
-    [{ motivo: 'm', soglie: { claude: { attenzione: 60, critica: 80, chiave: SEGRETO } } }, 'soglie.claude.chiave'],
-    [{ motivo: 'm', apiClaude: { budgetUsd: 5, apiKey: SEGRETO } }, 'apiClaude.apiKey'],
-    [{ motivo: 'm', profilo: 'risparmio', fornitori: [SEGRETO] }, 'fornitori'],
-    [{ motivo: 'm', profilo: 'risparmio', soloLocale: true }, 'soloLocale'],
-    [{ motivo: 'm', board: { modo: 'accesa', colore: SEGRETO } }, 'board.colore'],
-    [{ motivo: 'm', profilo: 'risparmio', permessi: 'bypassPermissions' }, 'permessi'],
-    [{ motivo: 'm', soglie: { gemini: { attenzione: 1, critica: 2 } } }, 'soglie.gemini'],
-    [{ motivo: 'm', soglie: { claude: { attenzione: 90, critica: 80 } } }, 'soglie.claude'],
+    [{ motivo: 'm', account: { soglie: { claude: { attenzione: 60, critica: 80, chiave: SEGRETO } } } }, 'account.soglie.claude.chiave'],
+    [{ motivo: 'm', account: { apiClaude: { budgetUsd: 5, apiKey: SEGRETO } } }, 'account.apiClaude.apiKey'],
+    [{ motivo: 'm', progetto: { profilo: 'risparmio', fornitori: [SEGRETO] } }, 'progetto.fornitori'],
+    [{ motivo: 'm', progetto: { profilo: 'risparmio', soloLocale: true } }, 'progetto.soloLocale'],
+    [{ motivo: 'm', progetto: { board: { modo: 'accesa', colore: SEGRETO } } }, 'progetto.board.colore'],
+    [{ motivo: 'm', progetto: { profilo: 'risparmio' }, permessi: 'bypassPermissions' }, 'permessi'],
+    [{ motivo: 'm', account: { soglie: { gemini: { attenzione: 1, critica: 2 } } } }, 'account.soglie.gemini'],
+    [{ motivo: 'm', account: { soglie: { claude: { attenzione: 90, critica: 80 } } } }, 'account.soglie.claude'],
+    [{ motivo: 'm', progetto: { restrizioni: { soglie: { claude: { attenzione: 60, critica: 80, token: SEGRETO } } } } }, 'progetto.restrizioni.soglie.claude.token'],
+    [{ motivo: 'm', account: { limitiManuali: [SEGRETO] } }, 'account.limitiManuali'],
+    // La forma piatta di prima non vale più: le soglie stanno in uno strato.
+    [{ motivo: 'm', soglie: { claude: { attenzione: 60, critica: 80 } } }, 'soglie'],
   ] as const) {
     const v = propostaImpostazioniDa(x)
     expect([campo, 'errore' in v && v.errore.includes(`"${campo}"`), JSON.stringify(v).includes(SEGRETO)]).toEqual([campo, true, false])
   }
-  expect(propostaImpostazioniDa({ motivo: 'Più margine.', profilo: 'risparmio', consigliere: 'spento', lingua: 'de' })).toEqual({ proposta: { motivo: 'Più margine.', profilo: 'risparmio', consigliere: 'spento', lingua: 'de' } })
+  expect(propostaImpostazioniDa({ motivo: 'Più margine.', progetto: { profilo: 'risparmio', consigliere: 'spento' }, lingua: 'de' }))
+    .toEqual({ proposta: { motivo: 'Più margine.', progetto: { profilo: 'risparmio', consigliere: 'spento' }, lingua: 'de' } })
   expect(propostaImpostazioniDa({ motivo: 'solo motivo' })).toHaveProperty('errore')
 })
 
@@ -1434,7 +1479,7 @@ test('F7.1 proposta valida: riempie la bozza con la fascia, niente si scrive sen
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
   const prima = amb.disco.get(CONFIG)
-  const r = await proponi($, { motivo: 'Il piano è quasi pieno: meglio risparmiare.', profilo: 'risparmio', soglie: { claude: { attenzione: 60, critica: 80 } } })
+  const r = await proponi($, { motivo: 'Il piano è quasi pieno: meglio risparmiare.', progetto: { profilo: 'risparmio' }, account: { soglie: { claude: { attenzione: 60, critica: 80 } } } })
   expect(r.result).toMatch(/^Settings proposal recorded/)
   expect(amb.disco.get(CONFIG)).toBe(prima)
   // Nessuna applicazione senza clic: la proposta è nella bozza, la vista Lavoro lo dice.
@@ -1442,13 +1487,18 @@ test('F7.1 proposta valida: riempie la bozza con la fascia, niente si scrive sen
   await ui.press({ key: 'proposta-impostazioni-rivedi' })
   expect(await ui.find({ type: 'Text', text: /^Proposta da una sessione/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Il piano è quasi pieno: meglio risparmiare.' })).toBeDefined()
+  // F10: la proposta tocca l'account, e la fascia lo dice.
+  expect(await ui.find({ type: 'Text', text: 'Cambia le impostazioni di tutti i progetti.' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '2 modifiche non salvate' })).toBeDefined()
   expect(amb.disco.get(CONFIG)).toBe(prima)
   // L'impronta della board non cambia per una proposta in bozza: tutte le scritture fin qui hanno la stessa.
   const impronte = () => new Set(amb.processi.filter(p => p[2] === 'board-scrivi').map(p => p.at(-1)))
   expect(impronte().size).toBeLessThanOrEqual(1)
   await ui.press({ key: 'applica' })
-  expect(amb.progettoOra()).toMatchObject({ profilo: 'risparmio', soglie: { claude: { attenzione: 60, critica: 80 } }, board: { modo: 'accesa', generazione: 3 } })
+  expect(amb.progettoOra()).toMatchObject({ profilo: 'risparmio', board: { modo: 'accesa', generazione: 3 } })
+  expect(amb.progettoOra()).not.toHaveProperty('soglie')
+  expect(amb.accountOra()).toEqual({ soglie: { claude: { attenzione: 60, critica: 80 } } })
+  expect(amb.configure()).toBe(1)
   expect(await ui.find({ key: 'proposta-impostazioni' })).toBeUndefined()
   await ui.unmount()
 })
@@ -1457,16 +1507,21 @@ test('F7.1 rifiuti: campo vietato annidato, valore che la bozza non accetta, sec
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const r1 = await proponi($, { motivo: 'x', soglie: { claude: { attenzione: 60, critica: 80, token: 'sk-ant-NONECO' } } })
-  expect(r1.deny).toMatch(/"soglie\.claude\.token" can never be proposed/)
+  const r1 = await proponi($, { motivo: 'x', account: { soglie: { claude: { attenzione: 60, critica: 80, token: 'sk-ant-NONECO' } } } })
+  expect(r1.deny).toMatch(/"account\.soglie\.claude\.token" can never be proposed/)
   expect(r1.deny).not.toContain('sk-ant-NONECO')
-  // Un tetto senza budget (API non configurata) non passerebbe la bozza: si nomina il campo.
-  expect((await proponi($, { motivo: 'x', apiClaude: { tetto: 3 } })).deny).toMatch(/field "apiClaude" has a value the Settings would not accept/)
+  // F10: la forma piatta di prima è un campo sconosciuto.
+  expect((await proponi($, { motivo: 'x', soglie: { claude: { attenzione: 60, critica: 80 } } })).deny).toMatch(/field "soglie" is not a settings field this tool accepts/)
+  // Un tetto senza budget (API non configurata) non passerebbe la bozza, e non si inventa un budget: si nomina il campo.
+  expect((await proponi($, { motivo: 'x', account: { apiClaude: { tetto: 3 } } })).deny).toMatch(/field "account\.apiClaude" has a value the Settings would not accept/)
+  // Una restrizione più larga dell'account (qui i 70/90 predefiniti, o l'API spenta) non passa.
+  expect((await proponi($, { motivo: 'x', progetto: { restrizioni: { soglie: { claude: { attenzione: 80, critica: 95 } } } } })).deny).toMatch(/field "restrizioni" has a value the Settings would not accept/)
+  expect((await proponi($, { motivo: 'x', progetto: { restrizioni: { apiTetto: 1 } } })).deny).toMatch(/field "restrizioni" has a value the Settings would not accept/)
   expect(amb.disco.get(FILE_PI)).toBeUndefined()
   // Una proposta già in attesa nel file (un altro pannello non l'ha ancora presa): la seconda è rifiutata.
-  amb.disco.set(FILE_PI, JSON.stringify({ versione: 1, voci: { 'esempio/demo': { id: 'i-attesa01', quando: new Date().toISOString(), proponente: { id: 'altra', titolo: '' }, proposta: { motivo: 'm', profilo: 'qualita' } } } }))
+  amb.disco.set(FILE_PI, JSON.stringify({ versione: 1, voci: { 'esempio/demo': { id: 'i-attesa01', quando: new Date().toISOString(), proponente: { id: 'altra', titolo: '' }, proposta: { motivo: 'm', progetto: { profilo: 'qualita' } } } } }))
   amb.hook.nonPrendere = true
-  expect((await proponi($, { motivo: 'y', profilo: 'risparmio' })).deny).toMatch(/already waiting/)
+  expect((await proponi($, { motivo: 'y', progetto: { profilo: 'risparmio' } })).deny).toMatch(/already waiting/)
 })
 
 test('F7.1 con una bozza aperta la proposta resta in coda e la fascia lo dice; entra dopo «Annulla modifiche»', async ($, on) => {
@@ -1477,7 +1532,7 @@ test('F7.1 con una bozza aperta la proposta resta in coda e la fascia lo dice; e
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-esecuzione-premi' })
   await ui.press({ key: 'consigliere-suggerisci-premi' })
-  expect((await proponi($, { motivo: 'Profilo più economico.', profilo: 'risparmio' })).result).toBeDefined()
+  expect((await proponi($, { motivo: 'Profilo più economico.', progetto: { profilo: 'risparmio' } })).result).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Una sessione \(.*\) ha proposto impostazioni: entrano nella bozza quando/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '1 modifica non salvata' })).toBeDefined()
   await ui.press({ key: 'annulla-modifiche' })
@@ -1488,33 +1543,42 @@ test('F7.1 con una bozza aperta la proposta resta in coda e la fascia lo dice; e
   await ui.unmount()
 })
 
-test('F7.1 Apply con la lingua cambiata altrove (un altro progetto): prima il progetto, poi la lingua non si scrive e lo si dice; un nuovo Applica la sceglie', async ($, on) => {
+test('F7.1 Apply con la lingua cambiata altrove (un altro progetto): niente scritto, il popup nomina la Lingua; «Ricarica e riapplica» scrive tutto in un configura', async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
-  await proponi($, { motivo: 'Qualità e tedesco.', profilo: 'qualita', lingua: 'de' })
+  await proponi($, { motivo: 'Qualità e tedesco.', progetto: { profilo: 'qualita' }, lingua: 'de' })
   await ui.press({ key: 'impostazioni' })
-  // Un altro progetto sceglie il francese mentre la proposta aspetta: il progetto si scrive, la lingua no, e lo si dice.
+  // Un altro progetto sceglie il francese mentre la proposta aspetta: F10, niente salvataggio parziale, è un conflitto.
   amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
+  let alPopup: { lingua?: string; progetti: Record<string, { profilo?: string }> } | undefined
+  amb.popup.risposta = () => ((alPopup = JSON.parse(amb.disco.get(CONFIG)!)), 'Ricarica e riapplica la mia bozza')
   await ui.press({ key: 'applica' })
-  expect(amb.progettoOra().profilo).toBe('qualita')
-  expect(JSON.parse(amb.disco.get(CONFIG)!)).toMatchObject({ lingua: 'fr' })
-  expect(await ui.find({ type: 'Text', text: new RegExp(t('fr', 'imp.linguaCambiataAltrove').slice(0, 30)) })).toBeDefined()
-  // In bozza resta la sola lingua, senza base: un nuovo Applica è la scelta esplicita dell'utente.
-  await ui.press({ key: 'applica' })
+  expect(amb.domande.at(-1)).toMatch(/Lingua|Langue/)
+  expect([alPopup?.lingua, alPopup?.progetti['esempio/demo']?.profilo]).toEqual(['fr', undefined])
+  // Riapplicata, la proposta scrive progetto e lingua insieme: è la scelta esplicita dell'utente.
   expect(JSON.parse(amb.disco.get(CONFIG)!)).toMatchObject({ lingua: 'de' })
+  expect(amb.progettoOra().profilo).toBe('qualita')
+  expect([amb.configure(), amb.processi.filter(x => x[2] === 'configura-utente').length]).toEqual([1, 0])
   await ui.unmount()
 })
 
 test('F7.1 risorse_agenti: le impostazioni proponibili con i valori di adesso, nessun segreto, dentro il tetto', { options: { anthropicApiKey: 'sk-ant-SENTINELLA-77' } }, async ($, on) => {
-  ambiente(on, { profilo: 'qualita', apiClaude: { budgetUsd: 12, tetto: 2 }, consigliere: 'suggerisci' })
+  const amb = ambiente(on)
+  // F10: profilo, board e consigliere del progetto; il budget API dell'account; i valori efficaci a parte.
+  amb.disco.set(CONFIG, JSON.stringify({ account: { apiClaude: { budgetUsd: 12, tetto: 2 } }, progetti: { 'esempio/demo': { profilo: 'qualita', consigliere: 'suggerisci' } } }))
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const r = (await $.tool.call({ tool: 'mcp__chip-manager__risorse_agenti' } as never)) as { result: string }
   expect(r.result.length).toBeLessThanOrEqual(4000)
   expect(r.result).not.toContain('SENTINELLA')
-  expect(JSON.parse(r.result).impostazioni).toMatchObject({ profilo: 'qualita', apiClaude: { budgetUsd: 12, tetto: 2 }, consigliere: 'suggerisci', board: 'spenta', lingua: 'it' })
+  expect(JSON.parse(r.result).impostazioni).toMatchObject({
+    project: { profilo: 'qualita', board: 'spenta', consigliere: 'suggerisci', restrizioni: {} },
+    account: { soglie: {}, apiClaude: { budgetUsd: 12, tetto: 2 }, appliesTo: 'all projects' },
+    effective: { soglie: { claude: { attenzione: 70, critica: 90 } }, apiClaude: { budgetUsd: 12, tetto: 2 } },
+    lingua: 'it',
+  })
 })
 
 // --- revisione F7 (Codex) -------------------------------------------------------------------------------------------
@@ -1524,13 +1588,13 @@ test('F7 rilievo 3: un profilo proposto porta i suoi pesi (Risparmio → Qualit�
   const amb = ambiente(on, { profilo: 'risparmio', pesi: pesiRisparmio })
   const r = risorseDa({ profilo: 'risparmio', pesi: pesiRisparmio })
   if ('k' in r) throw new Error(r.k)
-  const campi = campiDaProposta({ motivo: 'm', profilo: 'qualita' }, r)
+  const campi = campiDaProposta({ motivo: 'm', progetto: { profilo: 'qualita' } }, r)
   expect(campi).toEqual({ profilo: 'qualita', pesi: conProfilo(pesiRisparmio, 'qualita') })
   expect(JSON.stringify(campi.pesi)).not.toMatch(/"nome":"low","percentuale":40/)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
-  await proponi($, { motivo: 'Più qualità.', profilo: 'qualita' })
+  await proponi($, { motivo: 'Più qualità.', progetto: { profilo: 'qualita' } })
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'applica' })
   expect(amb.progettoOra()).toMatchObject({ profilo: 'qualita', pesi: conProfilo(pesiRisparmio, 'qualita') })
@@ -1544,16 +1608,18 @@ test('F7 rilievo 4: la lingua di una proposta non sovrascrive quella salvata da 
   const ui = await $.ui.mount({ ...PANE('desktop') })
   const lingua = () => (JSON.parse(amb.disco.get(CONFIG)!) as { lingua?: string }).lingua
   // 1) Un altro progetto salva il francese mentre si scrive il progetto: alla fine resta la sua scelta, più recente.
-  await proponi($, { motivo: 'Tedesco e qualità.', profilo: 'qualita', lingua: 'de' })
+  await proponi($, { motivo: 'Tedesco e qualità.', progetto: { profilo: 'qualita' }, lingua: 'de' })
   await ui.press({ key: 'impostazioni' })
   amb.hook.primaDiConfigura = () => amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
   amb.popup.risposta = () => null
   await ui.press({ key: 'applica' })
   expect(lingua()).toBe('fr')
+  // F10: un solo CAS, niente salvataggio parziale: neanche il progetto è scritto.
+  expect(amb.progettoOra().profilo).toBeUndefined()
   await ui.unmount()
 })
 
-test('F7 rilievo 4: un\'altra lingua salvata dentro la scrittura della lingua (CAS mancato) porta al popup di conflitto, niente sovrascritto', async ($, on) => {
+test('F7 rilievo 4: un\'altra lingua salvata dentro la scrittura (CAS mancato) porta al popup di conflitto, niente sovrascritto', async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -1561,7 +1627,8 @@ test('F7 rilievo 4: un\'altra lingua salvata dentro la scrittura della lingua (C
   const lingua = () => (JSON.parse(amb.disco.get(CONFIG)!) as { lingua?: string }).lingua
   await proponi($, { motivo: 'Tedesco.', lingua: 'de' })
   await ui.press({ key: 'impostazioni' })
-  amb.hook.primaDiUtente = () => amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
+  // F10: in un repository anche la sola lingua va con configura (un solo CAS sul file intero).
+  amb.hook.primaDiConfigura = () => amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
   amb.popup.risposta = () => null
   await ui.press({ key: 'applica' })
   expect(lingua()).toBe('fr')
@@ -1575,7 +1642,7 @@ test('F7 giro 2, rilievo 2: con il progetto in conflitto la lingua proposta non 
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
   const lingua = () => (JSON.parse(amb.disco.get(CONFIG)!) as { lingua?: string }).lingua
-  await proponi($, { motivo: 'Tedesco e qualità.', profilo: 'qualita', lingua: 'de' })
+  await proponi($, { motivo: 'Tedesco e qualità.', progetto: { profilo: 'qualita' }, lingua: 'de' })
   await ui.press({ key: 'impostazioni' })
   // Un'altra sessione cambia il profilo: Applica va in conflitto e la lingua non deve essere già scritta.
   const c = JSON.parse(amb.disco.get(CONFIG)!)
@@ -1588,18 +1655,19 @@ test('F7 giro 2, rilievo 2: con il progetto in conflitto la lingua proposta non 
   await ui.unmount()
 })
 
-test('F7 giro 2, rilievo 2: progetto scritto e lingua cambiata altrove intanto: salvataggio parziale dichiarato, in bozza resta la lingua', async ($, on) => {
+test('F7 giro 2, rilievo 2: progetto e lingua cambiata altrove intanto: niente salvataggio parziale, popup, in bozza resta tutto', async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
-  await proponi($, { motivo: 'Tedesco e qualità.', profilo: 'qualita', lingua: 'de' })
+  await proponi($, { motivo: 'Tedesco e qualità.', progetto: { profilo: 'qualita' }, lingua: 'de' })
   await ui.press({ key: 'impostazioni' })
-  amb.hook.primaDiUtente = () => amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
-  // Il pannello rilegge prima la lingua salvata: la si cambia appena prima della sua scrittura.
+  // Il pannello rilegge prima la lingua salvata: la si cambia appena prima del CAS (F10: progetto e lingua insieme).
   amb.hook.primaDiConfigura = () => amb.disco.set(CONFIG, JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' }))
+  amb.popup.risposta = () => null
   await ui.press({ key: 'applica' })
-  expect(amb.progettoOra().profilo).toBe('qualita')
+  expect(amb.domande.at(-1)).toMatch(/Lingua|Langue/)
+  expect(amb.progettoOra().profilo).toBeUndefined()
   expect((JSON.parse(amb.disco.get(CONFIG)!) as { lingua?: string }).lingua).toBe('fr')
   expect(await ui.find({ key: 'pendenti' })).toBeDefined()
   await ui.unmount()
@@ -1616,5 +1684,42 @@ test('F8 un solo primario: «Configura Esecuzione» è secondario (il primario r
   await finoA(() => amb.esec.controlli > 0)
   await ui.press({ key: 'ese-ricontrolla' })
   expect((await ui.find({ key: 'ese-guida' }))?.props).toMatchObject({ variant: 'secondary' })
+  await ui.unmount()
+})
+
+// --- F10: strato Account e strato Progetto nelle Impostazioni ---------------------------------------------------------
+
+test('F10 Impostazioni: gruppi Account e Progetto; le restrizioni del progetto si vedono come «più severa» e si tolgono con Applica; budget di progetto con la pillola', async ($, on) => {
+  const budgetProgetto = { id: 'vecchio', fornitore: 'claude', nome: 'Max', letto: '2026-11-01T10:00:00.000Z', percentuale: 40, unita: '%' }
+  const amb = ambiente(on,
+    { soglie: { claude: { attenzione: 50, critica: 60 } }, restrizioni: { apiLimiteMeseUsd: 4, soglie: { codex: { attenzione: 40, critica: 50 } } }, limitiManuali: [budgetProgetto], x: 'resta' },
+    { soglie: { claude: { attenzione: 70, critica: 90 } }, apiClaude: { budgetUsd: 20, tetto: 2 } })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  expect(await ui.find({ type: 'Text', text: 'Account · tutti i progetti' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Progetto · esempio/demo' })).toBeDefined()
+  await ui.press({ key: 'sezione-soglie-premi' })
+  expect(await ui.find({ type: 'Text', text: "Impostazione dell'account: vale per tutti i progetti." })).toBeDefined()
+  // La soglia efficace è la più severa: quella del progetto (50/60), detta accanto ai controlli dell'account (70/90).
+  expect(await ui.find({ type: 'Text', text: /^Più severa in esempio\/demo: / })).toBeDefined()
+  // Il budget del progetto porta la pillola «progetto».
+  expect(await ui.find({ type: 'Text', text: /· progetto$/ })).toBeDefined()
+  const prima = amb.disco.get(CONFIG)
+  await ui.press({ key: 'restrizione-claude-togli' })
+  expect(amb.disco.get(CONFIG)).toBe(prima)
+  await ui.press({ key: 'applica' })
+  // «Rimuovi restrizione» toglie il campo dal progetto; l'account non cambia, i campi sconosciuti restano.
+  expect(amb.progettoOra()).not.toHaveProperty('soglie')
+  expect(amb.progettoOra()).toMatchObject({ x: 'resta', restrizioni: { apiLimiteMeseUsd: 4 } })
+  expect(amb.accountOra()).toEqual({ soglie: { claude: { attenzione: 70, critica: 90 } }, apiClaude: { budgetUsd: 20, tetto: 2 } })
+  // Esecuzione: il limite del mese del progetto si vede e si toglie; l'account resta.
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  expect(await ui.find({ type: 'Text', text: /^Più severa in esempio\/demo: al massimo 4 USD al mese, 2 USD per esecuzione$/ })).toBeDefined()
+  await ui.press({ key: 'ese-restrizione-togli' })
+  await ui.press({ key: 'applica' })
+  expect(amb.progettoOra().restrizioni).toEqual({ soglie: { codex: { attenzione: 40, critica: 50 } } })
+  expect(amb.accountOra()).toMatchObject({ apiClaude: { budgetUsd: 20, tetto: 2 } })
   await ui.unmount()
 })

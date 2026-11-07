@@ -3,7 +3,7 @@
 import type { Azione, Chiamante, Fornitore, Limite, Pendenti, Peso, PesiProfilo, PropostaImpostazioni, PropostaPesi, Regolazione, Regole, RisorseProgetto, SessioneProgetto, Soglia } from '../types'
 import { ALIAS_UNITA, data, eMsg, errore, LINGUE, msg, t } from './lingua'
 import type { Chiave, Lingua, Msg } from './lingua'
-import { bilancia, corsiaDi, effortDi, FORNITORI, idAuditor, modelloDi, motivoAuditor, nomeModello, pesoValido, profiloDi, rangoModello, risorseDa, TETTO_API_PREDEFINITO, violazioni, violazioniAvvio } from './logica'
+import { bilancia, corsiaDi, effortDi, FORNITORI, idAuditor, modelloDi, motivoAuditor, nomeModello, pesoValido, profiloDi, rangoModello, restrizioneLarga, restrizioniDa, risorseDa, violazioni, violazioniAvvio } from './logica'
 
 export type Profilo = NonNullable<RisorseProgetto['profilo']>
 
@@ -135,10 +135,59 @@ export const manualiDaScrivere = (limiti: readonly Limite[]) =>
 // Le modifiche restano nella bozza della sessione finché non si preme «Applica»: una sola scrittura CAS. Ogni campo
 // tiene il valore che aveva quando lo si è toccato (`base`), così all'Applica si vede se un'altra sessione l'ha cambiato.
 
-/** I campi del progetto che stanno nella bozza; i budget manuali no: si scrivono subito, e Applica non li tocca mai. */
-export const CAMPI_BOZZA = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere']
-/** Il valore di un campo del progetto nella forma che scrive `configura`. */
-export const valoreConfig = (r: RisorseProgetto, k: string): unknown => (k === 'board' ? { modo: r.board.modo } : (r as Record<string, unknown>)[k])
+/**
+ * F10: i campi dello strato Account nella bozza, con il prefisso `account.` (lo toglie la scrittura): così base, conflitti
+ * e «Riapplica» funzionano uguali per i due strati, e una modifica all'account nascosta da una restrizione non sfugge.
+ */
+export const CAMPI_ACCOUNT = ['account.soglie', 'account.apiClaude', 'account.freellmapi']
+/**
+ * I campi che stanno nella bozza; i budget manuali no: si scrivono subito, e Applica non li tocca mai. Del progetto, `soglie`
+ * e `apiClaude` (dei build di sviluppo) e `restrizioni` sono restrizioni: la bozza le toglie o le restringe soltanto.
+ */
+export const CAMPI_BOZZA = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere', 'restrizioni', ...CAMPI_ACCOUNT]
+/** Il valore GREZZO di un campo (mai quello efficace) nella forma che scrive `configura`; null = assente. */
+export function valoreConfig(r: RisorseProgetto, k: string): unknown {
+  switch (k) {
+    case 'board': return { modo: r.board.modo }
+    case 'soglie': return r.strato.soglie
+    case 'apiClaude': return r.strato.apiClaude ?? null
+    case 'freellmapi': return r.strato.freellmapi
+    case 'restrizioni': return Object.keys(r.strato.restrizioni).length ? r.strato.restrizioni : null
+    case 'account.soglie': return r.account.soglie
+    case 'account.apiClaude': return r.account.apiClaude ?? null
+    case 'account.freellmapi': return r.account.freellmapi ?? null
+    case 'account.limitiManuali': return manualiDaScrivere(r.account.limitiManuali)
+    case 'limitiManuali': return manualiDaScrivere(r.limitiManuali.filter(l => l.progetto))
+    default: return (r as Record<string, unknown>)[k]
+  }
+}
+
+/** F10: i campi (forma della bozza) divisi nei due strati della scrittura; i valori null tolgono il campo. */
+export function perStrato(campi: Record<string, unknown>) {
+  const progetto: Record<string, unknown> = {}
+  const account: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(campi)) {
+    if (k.startsWith('account.')) account[k.slice('account.'.length)] = v
+    else progetto[k] = v
+  }
+  return { progetto, account }
+}
+
+/** F10: il progetto e l'account grezzi come li riscriverebbe il config, ricostruiti dalle risorse lette (solo campi noti). */
+export function grezzi(r: RisorseProgetto) {
+  const progetto: Record<string, unknown> = {
+    fornitori: r.fornitori, soloLocale: r.soloLocale, milestoneGithub: r.milestoneGithub, pesi: r.pesi, freellmapi: r.strato.freellmapi,
+    soglie: r.strato.soglie, board: r.board, limitiManuali: valoreConfig(r, 'limitiManuali'),
+    ...(r.strato.apiClaude && { apiClaude: r.strato.apiClaude }), ...(r.consigliere && { consigliere: r.consigliere }), ...(r.profilo && { profilo: r.profilo }),
+    ...(Object.keys(r.strato.restrizioni).length && { restrizioni: r.strato.restrizioni }),
+  }
+  const account: Record<string, unknown> = {
+    soglie: r.account.soglie, limitiManuali: valoreConfig(r, 'account.limitiManuali'),
+    ...(r.account.apiClaude && { apiClaude: r.account.apiClaude }), ...(r.account.freellmapi && { freellmapi: r.account.freellmapi }),
+  }
+  return { progetto, account }
+}
+const senzaNull = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null))
 
 /** Aggiunge alla bozza i `campi` toccati da un controllo (`dove`); la base di un campo è quella del primo tocco. */
 export function conPendente(p: Pendenti | undefined, r: RisorseProgetto, dove: string, campi: Record<string, unknown>): Pendenti {
@@ -170,18 +219,28 @@ export function pendentiDa(x: unknown): { pendenti: Pendenti | undefined; perso:
 /** Una bozza senza campi né lingua non c'è. */
 export const piena = (p: Pendenti | undefined) => (p && (Object.keys(p.campi).length || p.lingua) ? p : undefined)
 
-/** Le risorse come le vedrà il config con la bozza applicata; il motivo se la bozza non passa la validazione di oggi. */
-export const conBozza = (r: RisorseProgetto, campi: Record<string, unknown>) =>
-  risorseDa({ ...r, limitiManuali: manualiDaScrivere(r.limitiManuali), ...campi })
+/**
+ * Le risorse come le vedrà il config con la bozza applicata (i due strati); il motivo se la bozza non passa la validazione
+ * di oggi, o se le restrizioni toccate allargherebbero l'account.
+ */
+export function conBozza(r: RisorseProgetto, campi: Record<string, unknown>) {
+  const g = grezzi(r)
+  const { progetto, account } = perStrato(campi)
+  const nuove = risorseDa(senzaNull({ ...g.progetto, ...progetto }), senzaNull({ ...g.account, ...account }))
+  if (eMsg(nuove) || progetto.restrizioni === undefined || progetto.restrizioni === null) return nuove
+  const restrizioni = restrizioniDa(progetto.restrizioni)
+  return (restrizioni && restrizioneLarga(nuove.account, restrizioni)) ?? nuove
+}
 
 /** I campi della bozza che un'altra sessione ha cambiato dopo il primo tocco. */
 export const cambiatiAltrove = (p: Pendenti, r: RisorseProgetto) => Object.keys(p.campi).filter(k => JSON.stringify(p.base[k]) !== JSON.stringify(valoreConfig(r, k)))
 
 /** Dove sta un campo, per dire all'utente che cosa è cambiato. */
 export const SEZIONE_DI: Record<string, Chiave> = {
-  fornitori: 'imp.sezione.connessioni', soglie: 'imp.sezione.soglie', profilo: 'imp.sezione.bilanciamento', pesi: 'imp.sezione.bilanciamento',
-  soloLocale: 'imp.sezione.progetto', milestoneGithub: 'imp.sezione.progetto', board: 'imp.sezione.board',
+  fornitori: 'imp.sezione.progetto', soglie: 'imp.sezione.soglie', profilo: 'imp.sezione.bilanciamento', pesi: 'imp.sezione.bilanciamento',
+  soloLocale: 'imp.sezione.progetto', milestoneGithub: 'imp.sezione.progetto', board: 'imp.sezione.board', restrizioni: 'imp.sezione.progetto',
   freellmapi: 'imp.sezione.avanzate', apiClaude: 'imp.sezione.esecuzione', consigliere: 'imp.sezione.esecuzione', lingua: 'imp.sezione.lingua',
+  'account.soglie': 'imp.sezione.soglie', 'account.apiClaude': 'imp.sezione.esecuzione', 'account.freellmapi': 'imp.sezione.avanzate',
 }
 
 // --- proposte di impostazioni (F7.1) -----------------------------------------------------------------------
@@ -196,7 +255,10 @@ const PROFILI_PROPONIBILI = ['automatico', 'risparmio', 'qualita', 'velocita', '
 const nomeCampo = (s: string) => s.replace(/[^A-Za-z0-9_.-]/g, '?').slice(0, 60)
 const numeroIn = (x: unknown, min: number, max: number, intero = false) => typeof x === 'number' && Number.isFinite(x) && x >= min && x <= max && (!intero || Number.isInteger(x))
 
-/** La forma di una proposta: la proposta normalizzata, o perché no (in inglese, per lo strumento). */
+/**
+ * La forma di una proposta: la proposta normalizzata, o perché no (in inglese, per lo strumento). F10: una patch per strato,
+ * `progetto` (profilo, board, consigliere, restrizioni) e `account` (soglie, crediti API), ciascuna con la sua whitelist.
+ */
 export function propostaImpostazioniDa(x: unknown): { proposta: PropostaImpostazioni } | { errore: string } {
   const o = oggetto
   const no = (campo: string, come: 'sconosciuto' | 'vietato' | 'valore') => ({
@@ -208,49 +270,93 @@ export function propostaImpostazioniDa(x: unknown): { proposta: PropostaImpostaz
     for (const k of Object.keys(v)) if (!ammesse.includes(k)) return no(dove ? `${dove}.${k}` : k, VIETATI.test(k) ? 'vietato' : 'sconosciuto')
     return undefined
   }
+  /** Soglie per fornitore: valori interi, attenzione sotto la critica; null = nessuna soglia. */
+  const soglie = (v: unknown, dove: string): { soglie: Partial<Record<Fornitore, Soglia | null>> } | { errore: string } => {
+    if (!o(v) || !Object.keys(v).length) return no(dove, 'valore')
+    const f = chiavi(v, FORNITORI, dove)
+    if (f) return f
+    const fuori: Partial<Record<Fornitore, Soglia | null>> = {}
+    for (const [k, s] of Object.entries(v)) {
+      if (s !== null) {
+        if (!o(s)) return no(`${dove}.${k}`, 'valore')
+        const g = chiavi(s, ['attenzione', 'critica'], `${dove}.${k}`)
+        if (g) return g
+        if (!numeroIn(s.attenzione, 1, 100, true) || !numeroIn(s.critica, 1, 100, true) || (s.attenzione as number) >= (s.critica as number)) return no(`${dove}.${k}`, 'valore')
+      }
+      fuori[k as Fornitore] = s === null ? null : { attenzione: (s as Soglia).attenzione, critica: (s as Soglia).critica }
+    }
+    return { soglie: fuori }
+  }
   if (!o(x)) return { errore: 'the proposal must be an object' }
-  const fuori = chiavi(x, ['motivo', 'profilo', 'soglie', 'board', 'consigliere', 'apiClaude', 'lingua'], '')
+  const fuori = chiavi(x, ['motivo', 'progetto', 'account', 'lingua'], '')
   if (fuori) return fuori
   const p: PropostaImpostazioni = { motivo: '' }
   if (typeof x.motivo !== 'string' || !x.motivo.trim() || x.motivo.length > 300) return no('motivo', 'valore')
   p.motivo = x.motivo.trim()
-  if (x.profilo !== undefined) {
-    if (!PROFILI_PROPONIBILI.includes(x.profilo as string)) return no('profilo', 'valore')
-    p.profilo = x.profilo as PropostaImpostazioni['profilo']
-  }
-  if (x.soglie !== undefined) {
-    if (!o(x.soglie) || !Object.keys(x.soglie).length) return no('soglie', 'valore')
-    const f = chiavi(x.soglie, FORNITORI, 'soglie')
-    if (f) return f
-    p.soglie = {}
-    for (const [k, v] of Object.entries(x.soglie)) {
-      if (v !== null) {
-        if (!o(v)) return no(`soglie.${k}`, 'valore')
-        const g = chiavi(v, ['attenzione', 'critica'], `soglie.${k}`)
-        if (g) return g
-        if (!numeroIn(v.attenzione, 1, 100, true) || !numeroIn(v.critica, 1, 100, true) || (v.attenzione as number) >= (v.critica as number)) return no(`soglie.${k}`, 'valore')
-      }
-      p.soglie[k as Fornitore] = v === null ? null : { attenzione: (v as Soglia).attenzione, critica: (v as Soglia).critica }
+  if (x.progetto !== undefined) {
+    const q = x.progetto
+    if (!o(q) || !Object.keys(q).length) return no('progetto', 'valore')
+    const g = chiavi(q, ['profilo', 'board', 'consigliere', 'restrizioni'], 'progetto')
+    if (g) return g
+    const pr: NonNullable<PropostaImpostazioni['progetto']> = {}
+    if (q.profilo !== undefined) {
+      if (!PROFILI_PROPONIBILI.includes(q.profilo as string)) return no('progetto.profilo', 'valore')
+      pr.profilo = q.profilo as NonNullable<PropostaImpostazioni['progetto']>['profilo']
     }
+    if (q.board !== undefined) {
+      if (!o(q.board)) return no('progetto.board', 'valore')
+      const h = chiavi(q.board, ['modo'], 'progetto.board')
+      if (h) return h
+      if (!['spenta', 'accesa', 'riassunti'].includes(q.board.modo as string)) return no('progetto.board.modo', 'valore')
+      pr.board = { modo: q.board.modo as 'spenta' | 'accesa' | 'riassunti' }
+    }
+    if (q.consigliere !== undefined) {
+      if (!['spento', 'suggerisci', 'applica'].includes(q.consigliere as string)) return no('progetto.consigliere', 'valore')
+      pr.consigliere = q.consigliere as NonNullable<PropostaImpostazioni['progetto']>['consigliere']
+    }
+    if (q.restrizioni !== undefined) {
+      const rz = q.restrizioni
+      if (!o(rz) || !Object.keys(rz).length) return no('progetto.restrizioni', 'valore')
+      const h = chiavi(rz, ['soglie', 'apiLimiteMeseUsd', 'apiTetto'], 'progetto.restrizioni')
+      if (h) return h
+      const restrizioni: NonNullable<NonNullable<PropostaImpostazioni['progetto']>['restrizioni']> = {}
+      if (rz.soglie !== undefined) {
+        const sg = soglie(rz.soglie, 'progetto.restrizioni.soglie')
+        if ('errore' in sg) return sg
+        restrizioni.soglie = sg.soglie
+      }
+      if (rz.apiLimiteMeseUsd !== undefined) {
+        if (!numeroIn(rz.apiLimiteMeseUsd, 0.01, 100_000)) return no('progetto.restrizioni.apiLimiteMeseUsd', 'valore')
+        restrizioni.apiLimiteMeseUsd = rz.apiLimiteMeseUsd as number
+      }
+      if (rz.apiTetto !== undefined) {
+        if (!numeroIn(rz.apiTetto, 0.01, 1_000)) return no('progetto.restrizioni.apiTetto', 'valore')
+        restrizioni.apiTetto = rz.apiTetto as number
+      }
+      pr.restrizioni = restrizioni
+    }
+    p.progetto = pr
   }
-  if (x.board !== undefined) {
-    if (!o(x.board)) return no('board', 'valore')
-    const g = chiavi(x.board, ['modo'], 'board')
+  if (x.account !== undefined) {
+    const a = x.account
+    if (!o(a) || !Object.keys(a).length) return no('account', 'valore')
+    const g = chiavi(a, ['soglie', 'apiClaude'], 'account')
     if (g) return g
-    if (!['spenta', 'accesa', 'riassunti'].includes(x.board.modo as string)) return no('board.modo', 'valore')
-    p.board = { modo: x.board.modo as 'spenta' | 'accesa' | 'riassunti' }
-  }
-  if (x.consigliere !== undefined) {
-    if (!['spento', 'suggerisci', 'applica'].includes(x.consigliere as string)) return no('consigliere', 'valore')
-    p.consigliere = x.consigliere as PropostaImpostazioni['consigliere']
-  }
-  if (x.apiClaude !== undefined) {
-    if (!o(x.apiClaude) || !Object.keys(x.apiClaude).length) return no('apiClaude', 'valore')
-    const g = chiavi(x.apiClaude, ['budgetUsd', 'tetto'], 'apiClaude')
-    if (g) return g
-    if (x.apiClaude.budgetUsd !== undefined && !numeroIn(x.apiClaude.budgetUsd, 0.01, 100_000)) return no('apiClaude.budgetUsd', 'valore')
-    if (x.apiClaude.tetto !== undefined && !numeroIn(x.apiClaude.tetto, 0.01, 1_000)) return no('apiClaude.tetto', 'valore')
-    p.apiClaude = { ...(x.apiClaude.budgetUsd !== undefined && { budgetUsd: x.apiClaude.budgetUsd as number }), ...(x.apiClaude.tetto !== undefined && { tetto: x.apiClaude.tetto as number }) }
+    const ac: NonNullable<PropostaImpostazioni['account']> = {}
+    if (a.soglie !== undefined) {
+      const sg = soglie(a.soglie, 'account.soglie')
+      if ('errore' in sg) return sg
+      ac.soglie = sg.soglie
+    }
+    if (a.apiClaude !== undefined) {
+      if (!o(a.apiClaude) || !Object.keys(a.apiClaude).length) return no('account.apiClaude', 'valore')
+      const h = chiavi(a.apiClaude, ['budgetUsd', 'tetto'], 'account.apiClaude')
+      if (h) return h
+      if (a.apiClaude.budgetUsd !== undefined && !numeroIn(a.apiClaude.budgetUsd, 0.01, 100_000)) return no('account.apiClaude.budgetUsd', 'valore')
+      if (a.apiClaude.tetto !== undefined && !numeroIn(a.apiClaude.tetto, 0.01, 1_000)) return no('account.apiClaude.tetto', 'valore')
+      ac.apiClaude = { ...(a.apiClaude.budgetUsd !== undefined && { budgetUsd: a.apiClaude.budgetUsd as number }), ...(a.apiClaude.tetto !== undefined && { tetto: a.apiClaude.tetto as number }) }
+    }
+    p.account = ac
   }
   if (x.lingua !== undefined) {
     if (!(LINGUE as readonly unknown[]).includes(x.lingua)) return no('lingua', 'valore')
@@ -260,21 +366,27 @@ export function propostaImpostazioniDa(x: unknown): { proposta: PropostaImpostaz
   return { proposta: p }
 }
 
-/** I campi della bozza (forma di `configura`) che una proposta riempie, completati con i valori correnti di `r`. */
+/**
+ * I campi della bozza (forma di `configura`, account con il prefisso) che una proposta riempie, completati con i valori
+ * GREZZI correnti dello stesso strato. Nessun campo derivato: un tetto proposto da solo non crea un budget, e viceversa.
+ */
 export function campiDaProposta(p: PropostaImpostazioni, r: RisorseProgetto): Record<string, unknown> {
   const campi: Record<string, unknown> = {}
+  const q = p.progetto ?? {}
   // Profilo e pesi sono una coppia: il profilo proposto porta i suoi pesi (i modelli restano), e i conflitti li vedono entrambi.
-  if (p.profilo) {
-    campi.profilo = p.profilo
-    campi.pesi = conProfilo(r.pesi, p.profilo)
+  if (q.profilo) {
+    campi.profilo = q.profilo
+    campi.pesi = conProfilo(r.pesi, q.profilo)
   }
-  if (p.soglie) campi.soglie = { ...r.soglie, ...p.soglie }
-  if (p.board) campi.board = { modo: p.board.modo }
-  if (p.consigliere) campi.consigliere = p.consigliere === 'spento' ? null : p.consigliere
-  if (p.apiClaude) {
-    const budgetUsd = p.apiClaude.budgetUsd ?? r.apiClaude?.budgetUsd
-    campi.apiClaude = budgetUsd === undefined ? { tetto: p.apiClaude.tetto } : { budgetUsd, tetto: p.apiClaude.tetto ?? r.apiClaude?.tetto ?? TETTO_API_PREDEFINITO }
+  if (q.board) campi.board = { modo: q.board.modo }
+  if (q.consigliere) campi.consigliere = q.consigliere === 'spento' ? null : q.consigliere
+  if (q.restrizioni) {
+    const ora = r.strato.restrizioni
+    campi.restrizioni = { ...ora, ...q.restrizioni, ...((ora.soglie || q.restrizioni.soglie) && { soglie: { ...ora.soglie, ...q.restrizioni.soglie } }) }
   }
+  const a = p.account ?? {}
+  if (a.soglie) campi['account.soglie'] = { ...r.account.soglie, ...a.soglie }
+  if (a.apiClaude) campi['account.apiClaude'] = { ...r.account.apiClaude, ...a.apiClaude }
   return campi
 }
 
@@ -285,10 +397,18 @@ export function campoNonValido(p: PropostaImpostazioni, r: RisorseProgetto): str
   return eMsg(conBozza(r, tutti)) ? Object.keys(tutti).join(', ') : undefined
 }
 
-/** Le impostazioni proponibili come le vede l'agente in `risorse_agenti`: valori correnti, nessun segreto. */
+/** F10: una proposta (o una bozza) che tocca lo strato Account cambia le impostazioni di tutti i progetti. */
+export const toccaAccount = (campi: Record<string, unknown>) => Object.keys(campi).some(k => k.startsWith('account.'))
+
+/**
+ * Le impostazioni proponibili come le vede l'agente in `risorse_agenti`, per strato e con i valori efficaci: nessun segreto.
+ * I valori dello strato sono quelli scritti (assente = eredita); gli efficaci sono quelli che il pannello applica.
+ */
 export const impostazioniCorrenti = (r: RisorseProgetto, lingua: Lingua) => ({
-  profilo: profiloDi(r), soglie: r.soglie, board: r.board.modo, consigliere: r.consigliere ?? 'spento',
-  apiClaude: r.apiClaude ?? null, lingua,
+  project: { profilo: profiloDi(r), board: r.board.modo, consigliere: r.consigliere ?? 'spento', restrizioni: r.strato.restrizioni },
+  account: { soglie: r.account.soglie, apiClaude: r.account.apiClaude ?? null, appliesTo: 'all projects' },
+  effective: { soglie: r.soglie, apiClaude: r.apiClaude ?? null },
+  lingua,
 })
 
 // --- «Chi lavora»: preset (F7.4) ---------------------------------------------------------------------------------

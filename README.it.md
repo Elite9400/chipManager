@@ -10,7 +10,7 @@
 [![test](https://img.shields.io/badge/test-287%20%2B%20100%20verdi-059669)](#collaudo)
 [![licenza](https://img.shields.io/badge/licenza-MIT-blue)](LICENSE)
 
-**[Perché](#perché)** · **[Funzioni](#funzioni)** · **[Immagini](#immagini)** · **[Installazione](#installazione)** · **[Primi passi](#primi-passi)** · **[Come funziona](#come-funziona)** · **[Dove eseguire](#dove-eseguire)** · **[Chi lavora](#chi-lavora)** · **[Auditor](#auditor-advisor)** · **[Impostazioni](#impostazioni)** · **[Configurazione](#configurazione)** · **[Limiti e pesi](#limiti-e-bilanciamento)** · **[FreeLLMAPI](#freellmapi)** · **[Lingue](#lingue)** · **[Terminale](#terminale)** · **[Aspetto](#aspetto)** · **[Sicurezza](#sicurezza-e-guardie)** · **[Domande](#domande)**
+**[Perché](#perché)** · **[Funzioni](#funzioni)** · **[Immagini](#immagini)** · **[Installazione](#installazione)** · **[Un progetto o tutti](#installare-per-un-progetto-o-per-tutti)** · **[Primi passi](#primi-passi)** · **[Come funziona](#come-funziona)** · **[Dove eseguire](#dove-eseguire)** · **[Chi lavora](#chi-lavora)** · **[Auditor](#auditor-advisor)** · **[Account e progetto](#account-e-progetto)** · **[Impostazioni](#impostazioni)** · **[Configurazione](#configurazione)** · **[Limiti e pesi](#limiti-e-bilanciamento)** · **[FreeLLMAPI](#freellmapi)** · **[Lingue](#lingue)** · **[Terminale](#terminale)** · **[Aspetto](#aspetto)** · **[Sicurezza](#sicurezza-e-guardie)** · **[Domande](#domande)**
 
 </div>
 
@@ -61,6 +61,9 @@ In ordine di quanto le userai.
 - **Impostazioni con Applica** — ogni modifica aspetta in una bozza finché **Applica** la scrive in un colpo solo; una
   modifica di un'altra sessione sullo stesso campo chiede prima di sovrascrivere. Le sessioni possono **proporre**
   impostazioni o pesi; decidi tu.
+- **Account e progetto** — soglie, budget e crediti API appartengono ai tuoi account e valgono in ogni progetto;
+  ogni progetto può solo essere più severo. La mod si installa per tutti i progetti o per un repository. Vedi
+  [Account e progetto](#account-e-progetto).
 - **Pesi di carico e profili** — Automatico, Risparmio, Qualità, Velocità, oppure fornitori, modelli ed effort
   regolati su una scala di cinque passi; il pannello sceglie solo fra le combinazioni che le tue regole ammettono.
 - **Stile developer** — stati come glifo + parola, dati in monospazio, barre a blocchi, l'accento solo per la
@@ -124,6 +127,25 @@ L'installazione da cartella legge dalla cartella: non spostarla. Dopo una modifi
 `claude plugin marketplace update chipmanager`; le sessioni aperte la ricaricano al riavvio.
 
 </details>
+
+### Installare per un progetto o per tutti
+
+La mod si comporta allo stesso modo in ogni ambito: account, chiavi e budget API sono sempre tuoi, e le chip
+appartengono sempre al progetto della sessione che le avvia.
+
+| Ambito | Comando | Dove si abilita |
+|---|---|---|
+| Tutti i tuoi progetti | `claude plugin install chip-manager@chipmanager --scope user` | le tue impostazioni utente (il predefinito) |
+| Un repository, condiviso con il team | `claude plugin install chip-manager@chipmanager --scope project` | `.claude/settings.json` del repository, nel commit |
+| Un progetto, solo per te | `claude plugin install chip-manager@chipmanager --scope local` | `.claude/settings.local.json` del repository, fuori dal commit |
+
+- **Gli account restano personali**, anche quando la mod è installata per il team: ognuno accede, mette le chiavi in
+  `/config` e tiene le impostazioni dell'account nella propria cartella utente.
+- **Niente finisce nel repository.** I dati della mod (configurazione, cartelle dati, registro della spesa API,
+  board) restano nella tua cartella utente (`~/.claude/chipmanager`). Se ne indichi uno dentro un repository o
+  attraverso un link o una junction, la mod si rifiuta e dice perché.
+- **Dopo un aggiornamento ricarica tutte le sessioni aperte** (`/reload-plugins`). Finché non lo fai, una sessione
+  tiene il codice vecchio: applica solo le impostazioni del progetto e ignora quelle dell'account.
 
 ## Primi passi
 
@@ -281,29 +303,57 @@ modello completo.
 - **Fable** come auditor richiede, su alcuni piani, un consenso una tantum che dai tu con `/model fable` in una sessione
   interattiva; la mod non lo dà mai. L'uso di Fable può essere addebitato ai crediti d'uso.
 
+## Account e progetto
+
+Le impostazioni stanno in due strati.
+
+- **Account — tutti i progetti.** Soglie, budget manuali, crediti API Claude (budget mensile e tetto per esecuzione) ed
+  endpoint FreeLLMAPI. Percentuali dei piani, budget e spesa API sono dell'account, uguali in ogni progetto.
+- **Progetto — il repository della sessione.** Fornitori ammessi, solo rete locale, milestone, bilanciamento (profilo
+  e pesi), board, consigliere di destinazione, livello FreeLLMAPI, cartella dati e termini sensibili.
+- **Un progetto può solo essere più severo.** Può avere soglie più basse, un limite del mese o un tetto per
+  esecuzione API più bassi; non può mai allargare l'account, e un valore più largo è rifiutato con il motivo. Le
+  Impostazioni mostrano un valore del progetto come «Più severa in owner/repo», con **Rimuovi restrizione**.
+- **Un solo registro della spesa API, dell'account.** Ogni esecuzione è registrata con il suo progetto. Parte solo se
+  il suo tetto sta sia in ciò che resta del budget mensile dell'account sia nel limite del mese del progetto, se ne ha
+  uno. La vista **Carico** li mostra entrambi: «3,20 USD questo progetto · 7,80 USD di 20 USD account».
+- **Aggiornamento.** Nella configurazione niente si sposta né si cancella: l'account è un campo nuovo accanto ai
+  progetti. Soglie o budget API salvati su un progetto da un build di sviluppo valgono come restrizioni di quel
+  progetto; la corsia API Claude resta spenta finché non metti il budget in **Impostazioni → Esecuzione**.
+
 ## Impostazioni
 
-La vista **Impostazioni** mostra una sezione alla volta: Connessioni, Soglie, Bilanciamento, Progetto, Board,
-Avanzate, Esecuzione, Lingua e Legenda.
+La vista **Impostazioni** mostra una sezione alla volta, in due gruppi: **Account · tutti i progetti** (Connessioni,
+Soglie con i budget manuali, Esecuzione, Lingua) e **Progetto · owner/repo** (Bilanciamento, Progetto, Board,
+Avanzate, Legenda).
 
 - **Applica.** Ogni modifica va in una bozza e si valida subito (l'errore resta sotto il controllo). **Applica** scrive
-  l'intera bozza con un solo compare-and-swap; **Annulla modifiche** la scarta. Se un'altra sessione ha cambiato uno
+  l'intera bozza — progetto, account e lingua — con un solo compare-and-swap; **Annulla modifiche** la scarta. Se un'altra sessione ha cambiato uno
   degli stessi campi non si scrive niente, e un popup offre **Ricarica e riapplica la mia bozza** o
   **Scarta la mia bozza**. Uscire dalle Impostazioni con una bozza chiede Applica, Annulla o Resta.
 - **Proposte dalle sessioni.** Una sessione può proporre impostazioni con `proponi_impostazioni`, ma solo quando glielo
-  chiedi tu. Può toccare profilo, soglie, board, consigliere di destinazione, budget e tetto API, e lingua; qualunque
-  altro campo (chiavi, guardie, permessi, fornitori, destinazioni) rifiuta l'intera proposta. Una proposta valida
-  riempie la bozza sotto un banner «Proposta da una sessione»; non cambia niente finché non premi **Applica**. Con una
+  chiedi tu, con una patch `progetto` (profilo, board, consigliere di destinazione, restrizioni) e una patch `account`
+  (soglie, budget e tetto API), più la lingua; qualunque altro campo (chiavi, guardie, permessi, fornitori,
+  destinazioni) rifiuta l'intera proposta. Una proposta valida riempie la bozza sotto un banner «Proposta da una
+  sessione», che dice quando cambia le impostazioni di tutti i progetti; non cambia niente finché non premi **Applica**. Con una
   bozza già aperta aspetta, una alla volta. Le proposte di pesi (`proponi_pesi`) compaiono come una riga nella vista
   Lavoro con **Rivedi**, **Applica**, **Rifiuta** e, dopo l'applicazione, **Annulla**.
 
 ## Configurazione
 
-Tutto ciò che è proprio di un progetto sta in un file locale, fuori da ogni repository:
-`~/.claude/chipmanager/config.json` (`CHIPMANAGER_CONFIG` per spostarlo). Senza file valgono i valori generici.
+Tutto sta in un file locale, fuori da ogni repository: `~/.claude/chipmanager/config.json` (`CHIPMANAGER_CONFIG`
+per spostarlo, mai dentro un repository). Senza file valgono i valori generici. `account` contiene le impostazioni di
+tutti i progetti, `progetti` quelle di ciascun progetto (vedi [Account e progetto](#account-e-progetto)).
 
 ```json
 {
+  "account": {
+    "soglie": { "claude": { "attenzione": 70, "critica": 90 }, "codex": { "attenzione": 80, "critica": 95 } },
+    "apiClaude": { "budgetUsd": 20, "tetto": 2 },
+    "limitiManuali": [
+      { "id": "budget-api", "fornitore": "claude", "nome": "Budget API", "valore": 200, "unita": "EUR", "letto": "2026-11-05T08:00:00Z" }
+    ]
+  },
   "progetti": {
     "owner/repo": {
       "cartella": "~/.claude/chipmanager/progetti/owner__repo",
@@ -318,14 +368,10 @@ Tutto ciò che è proprio di un progetto sta in un file locale, fuori da ogni re
         { "tipo": "modello", "nome": "gpt-6-astra", "percentuale": 30, "assoluto": 0 },
         { "tipo": "effort", "nome": "high", "percentuale": 10, "assoluto": 0 }
       ],
-      "limitiManuali": [
-        { "id": "budget-api", "fornitore": "claude", "nome": "Budget API", "valore": 200, "unita": "EUR", "letto": "2026-11-05T08:00:00Z" }
-      ],
-      "soglie": { "claude": { "attenzione": 70, "critica": 90 }, "codex": { "attenzione": 80, "critica": 95 } },
       "profilo": "automatico",
       "board": { "modo": "spenta" },
-      "apiClaude": { "budgetUsd": 20, "tetto": 2 },
-      "consigliere": "suggerisci"
+      "consigliere": "suggerisci",
+      "restrizioni": { "apiLimiteMeseUsd": 5, "soglie": { "claude": { "attenzione": 60, "critica": 80 } } }
     }
   }
 }
@@ -340,19 +386,22 @@ Tutto ciò che è proprio di un progetto sta in un file locale, fuori da ogni re
 | `fornitori` | `claude`, `codex`, `deepseek`, `freellmapi`; vale anche per il revisore | solo Claude e Codex |
 | `soloLocale` | vieta ogni nuovo avvio LLM e ogni sonda esterna della mod, proxy locale incluso | `false` |
 | `milestoneGithub` | autorizza `gh api` per le milestone; `soloLocale` lo disabilita comunque | `false` |
-| `freellmapi` | livello `niente`, `R1` (R0–R1), `R2` (R0–R2); endpoint HTTP loopback con porta esplicita e `/v1` | spento, localhost:3001 |
+| `freellmapi` | `livello`: `niente`, `R1` (R0–R1), `R2` (R0–R2); un `endpoint` HTTP loopback con porta esplicita e `/v1` solo come eccezione del progetto | spento |
 | `pesi` | incremento percentuale e/o assoluto per fornitore, modello o effort | nessuno |
-| `limitiManuali` | piani, budget o percentuali che dichiari tu, con istante originale e unità | nessuno |
-| `soglie` | per fornitore, `attenzione` e `critica` in percentuale (la prima sotto la seconda); `null` = nessuna soglia | 70 / 90 |
+| `account.soglie` | per fornitore, `attenzione` e `critica` in percentuale (la prima sotto la seconda); `null` = nessuna soglia | 70 / 90 |
+| `account.apiClaude` | corsia API Claude: `budgetUsd` mensile e `tetto` per esecuzione, in USD; senza, la corsia è spenta | spenta |
+| `account.limitiManuali` | piani, budget o percentuali che dichiari tu, con istante originale e unità | nessuno |
+| `account.freellmapi.endpoint` | l'endpoint FreeLLMAPI; un `freellmapi.endpoint` di progetto lo sostituisce (eccezione dichiarata) | localhost:3001 |
+| `restrizioni` | solo di progetto, più severe dell'account: `soglie`, `apiLimiteMeseUsd` (limite del mese), `apiTetto` (tetto per esecuzione) | nessuna |
+| `limitiManuali`, `soglie`, `apiClaude` | su un progetto, dai build precedenti: si leggono ancora, come budget o restrizioni del progetto | nessuno |
 | `profilo` | profilo di bilanciamento: `automatico`, `risparmio`, `qualita`, `velocita`, `personalizzato` | automatico |
 | `board` | modo della board di progetto: `spenta`, `accesa`, `riassunti` | spenta |
-| `apiClaude` | corsia API Claude: `budgetUsd` mensile e `tetto` per esecuzione, in USD | spenta |
 | `consigliere` | consigliere di destinazione: `suggerisci` o `applica` | spento |
 
 Configurazione e `routing.json` si rileggono prima di ogni decisione: se uno dei due è illeggibile o non valido
 non parte niente e il pannello dice perché. Di rado serve toccare il file: la vista **Impostazioni** lo scrive
 attraverso una bozza e **Applica** (vedi [Impostazioni](#impostazioni)), con un compare-and-swap sul file intero che
-preserva gli altri progetti. La chiave API non sta qui: vive nelle opzioni del plugin (`/config`).
+preserva gli altri progetti e i campi sconosciuti. La chiave API non sta qui: vive nelle opzioni del plugin (`/config`).
 
 Le azioni salvate da una versione precedente senza progetto non si vedono in nessun progetto. All'apertura, una volta
 per sessione, un popup chiede se assegnarle al progetto corrente o scartarle (lo scarto si annulla); se il popup non
@@ -558,8 +607,13 @@ Il pannello segue uno stile developer, uguale su desktop e terminale:
 - **Una corsia Codex** — tenuta finché vive il comando Codex o un suo discendente; le revisioni in attesa passano
   prima e provano di essere vive con un battito ogni 2 s.
 - **Un'esecuzione API per macchina** — un lock della macchina, liberato solo quando l'esecuzione, i suoi discendenti
-  e il suo file-chiave non ci sono più; la spesa del mese si prenota prima dell'avvio, e un esito incerto conta il
-  tetto intero.
+  e il suo file-chiave non ci sono più; la spesa del mese si prenota prima dell'avvio, sotto lo stesso lock, contro il
+  budget dell'account e il limite del progetto riletti dalla configurazione (mai i valori mandati dal pannello), e un
+  esito incerto conta il tetto intero. Un registro della spesa lasciato in una cartella dati di progetto da un build di
+  sviluppo blocca la corsia finché non lo archivi.
+- **Dati fuori dai repository** — configurazione, cartelle dati, registro della spesa e board sono rifiutati se una
+  cartella del loro percorso è un link o una junction, se il percorso reale è diverso da quello dichiarato, o se sopra
+  di loro c'è una cartella o un file `.git`.
 - **Cloud** — solo titolo e mandato, mai il background, mai sulle corsie sensibili o con schemi di dati locali.
 - **Chiusura** — solo da un compito del registro collegato per ramo **e** issue, mai in una cartella condivisa;
   altrimenti l'azione resta *consegnata* finché non la segni tu.
@@ -657,6 +711,12 @@ In inglese per difetto; puoi passare a italiano, spagnolo, francese, tedesco o p
 **Impostazioni → Lingua**. Vedi [Lingue](#lingue).
 </details>
 
+<details><summary><b>Il mio team può installarla nel repository?</b></summary>
+
+Sì, con `--scope project` (vedi [Installare per un progetto o per tutti](#installare-per-un-progetto-o-per-tutti)).
+Ognuno tiene i propri account, chiavi e budget API; il repository registra solo che la mod è abilitata.
+</details>
+
 <details><summary><b>Eseguire a crediti API costa?</b></summary>
 
 Sì: le esecuzioni API Claude si pagano con i crediti della chiave API, entro il budget mensile e il tetto per
@@ -688,6 +748,8 @@ Il lavoro è stato pianificato in fasi e blocchi, che nel pannello non compaiono
   con un clic.
 - **F7** — [sessioni e mod](docs/PIANO-F7.md): proposte di impostazioni, «Cambia», auditor, «Chi lavora».
 - **F8** — [revisione grafica](docs/PIANO-F8.md): etichette di stato, hover, token dei colori, rifinitura di «Chi lavora».
+- **F10** — [account e progetto](docs/PIANO-F10.md): installazione per progetto o globale, impostazioni dell'account per
+  tutti i progetti, restrizioni del progetto, un solo registro della spesa API.
 
 ## Licenza
 

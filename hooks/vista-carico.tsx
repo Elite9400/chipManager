@@ -74,8 +74,12 @@ export function vistaCarico(d: Dati) {
           {livello && livello !== 'ok' ? <Text color={COLORE_LIVELLO[livello]}>{'▲ '}</Text> : ''}
           {speso === undefined || speso === null
             ? T('car.apiIlleggibile', { budget: T.numero(api.budgetUsd) })
-            : T('car.apiRiga', { speso: T.numero(speso, 2), budget: T.numero(api.budgetUsd) })}
+            // F10: il budget è dell'account (uguale in ogni progetto); la parte di questo progetto si dice accanto.
+            : typeof spesaApiOra?.progetto === 'number'
+              ? T('car.apiRigaProgetto', { progetto: T.numero(spesaApiOra.progetto, 2), speso: T.numero(speso, 2), budget: T.numero(api.budgetUsd) })
+              : T('car.apiRiga', { speso: T.numero(speso, 2), budget: T.numero(api.budgetUsd) })}
         </Text>
+        {api.limiteProgettoUsd !== undefined && <Text dimColor wrap="wrap">{T('car.apiLimiteProgetto', { limite: T.numero(api.limiteProgettoUsd) })}</Text>}
         {speso !== undefined && speso !== null && ui.Barra({ chiave: 'api-claude-barra', pct: (speso / api.budgetUsd) * 100, colore: livello ? COLORE_LIVELLO[livello] : ACCENTO, celle: classe === 'stretta' ? 10 : 20 })}
       </Box>
     )

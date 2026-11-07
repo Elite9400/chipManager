@@ -951,6 +951,25 @@ const es: Dizionario = {
   "board.segno.consegnata": "entregada",
   "au.manualeBreve": "/advisor cambia tu valor por defecto para todas las sesiones: al terminar escribe /advisor off.",
   "au.fableBreve": "Fable como auditor: en algunos planes necesita un consentimiento único (/model fable, nunca lo da la mod) y puede cobrarse a los créditos de uso.",
+  // F10 account and project layers
+  "cfg.account": "config.json: «account» no válido (umbrales, presupuestos manuales, créditos de API o endpoint de FreeLLMAPI)",
+  "cfg.restrizioneSoglia": "Un proyecto solo puede ser más estricto que la cuenta: el umbral de {fornitore} sería más amplio",
+  "cfg.restrizioneApi": "Un proyecto solo puede ser más estricto que la cuenta: su límite mensual y su tope por ejecución de API deben quedar dentro de los de la cuenta",
+  "car.apiRigaProgetto": "API Claude: {progetto} USD este proyecto · {speso} USD de {budget} USD cuenta (estimado, este mes)",
+  "car.apiLimiteProgetto": "Este proyecto: como máximo {limite} USD al mes",
+  "err.apiRegistroSviluppo": "Hay un registro de gasto de una compilación de desarrollo en {cartella}: archívalo (sácalo de esa carpeta) y vuelve a iniciar",
+  "err.apiLimiteProgetto": "API Claude: este proyecto ha usado {speso} USD de su límite de {limite} USD al mes; una ejecución reserva {tetto} USD",
+  "err.percorsoDati": "Los datos del mod deben quedar fuera de cualquier repositorio y de cualquier enlace: {motivo}",
+  "imp.gruppoAccount": "Cuenta · todos los proyectos",
+  "imp.gruppoProgetto": "Proyecto · {repo}",
+  "imp.valeTuttiProgetti": "Ajuste de la cuenta: vale para todos los proyectos.",
+  "imp.restrizioneSoglia": "Más estricto en {repo}: {soglia}",
+  "imp.restrizioneApi": "Más estricto en {repo}: como máximo {limite} USD al mes, {tetto} USD por ejecución",
+  "imp.rimuoviRestrizione": "Quitar restricción",
+  "imp.endpointProgetto": "{repo} usa su propio endpoint (una excepción declarada)",
+  "imp.rimuoviEccezione": "Usar el endpoint de la cuenta",
+  "imp.pillProgetto": "proyecto",
+  "imp.propostaAccount": "Cambia los ajustes de todos los proyectos.",
   // ‹fine›
 }
 

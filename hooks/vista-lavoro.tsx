@@ -768,7 +768,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
   /** F6.5 «Suggerisci»: dove andrebbe una proposta senza destinazione esplicita, e perché (il consigliere non sceglie). */
   function consiglioRiga(a: Azione) {
     if (!regoleOra.risorse.consigliere || a.stato !== 'proposta') return null
-    const cons = consigliaDove(a, regoleOra, d.limiti, tutte, d.spesaApiOra?.speso, adesso)
+    const cons = consigliaDove(a, regoleOra, d.limiti, tutte, d.spesaApiOra?.speso, adesso, d.spesaApiOra?.progetto)
     if (!cons) return null
     return (
       <Text key={`cons-${a.id}`} size="caption" dimColor wrap="wrap">

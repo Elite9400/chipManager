@@ -28,10 +28,11 @@ import {
   simula,
   SOGLIE_PRESET,
   TIPI_BUDGET,
+  toccaAccount,
   valoreConfig,
 } from './bilanciamento'
 import type { Profilo } from './bilanciamento'
-import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, passiMancanti, piuPieno, sogliaDi, TETTO_API_PREDEFINITO } from './logica'
+import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, passiMancanti, piuPieno, SOGLIA_PREDEFINITA, sogliaDi } from './logica'
 import type { Ctx, Dati } from './pannello'
 import { eMsg, Errore, LEGENDA, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
 import type { Chiave, Lingua, T } from './lingua'
@@ -68,6 +69,9 @@ const SEZIONI: { valore: Sezione; testo: Chiave }[] = [
   { valore: 'esecuzione', testo: 'imp.sezione.esecuzione' },
   { valore: 'legenda', testo: 'imp.sezione.legenda' },
 ]
+/** F10: le sezioni dello strato Account (uguali in tutti i progetti) e quelle del Progetto della sessione. */
+// La Legenda resta l'ultima sezione, in fondo al gruppo del Progetto.
+const SEZIONI_ACCOUNT: readonly Sezione[] = ['connessioni', 'soglie', 'esecuzione', 'lingua']
 const TIPO = (t: string) => t[0]!.toUpperCase() + t.slice(1)
 
 /**
@@ -438,10 +442,37 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       </Text>
     )
   }
+  /**
+   * F10: una restrizione del progetto (soglie di un build di sviluppo o `restrizioni`) più severa dell'account, con
+   * «Rimuovi restrizione», che toglie il campo dal progetto (passa per la bozza, come ogni altra modifica).
+   */
+  const restrizioneSoglia = (f: Fornitore) => {
+    const g = r.strato.soglie[f]
+    const z = r.strato.restrizioni.soglie?.[f]
+    if (g === undefined && z === undefined) return null
+    const togli = salva(`soglia-${f}`, () => {
+      const { [f]: _g, ...soglie } = r.strato.soglie
+      const { [f]: _z, ...restanti } = r.strato.restrizioni.soglie ?? {}
+      const { soglie: _s, ...altre } = r.strato.restrizioni
+      const restrizioni = { ...altre, ...(Object.keys(restanti).length && { soglie: restanti }) }
+      return { ...(g !== undefined && { soglie: Object.keys(soglie).length ? soglie : null }), ...(z !== undefined && { restrizioni: Object.keys(restrizioni).length ? restrizioni : null }) }
+    })
+    const e = sogliaDi(r, f)
+    return (
+      <Box key={`restrizione-${f}`} flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center">
+        <Text key={`restrizione-${f}-testo`} size="caption" wrap="wrap">
+          {T('imp.restrizioneSoglia', { repo: io?.repo ?? '—', soglia: e ? T('car.soglie', { attenzione: e.attenzione, critica: e.critica }) : T('car.nessunaSoglia') })}
+        </Text>
+        <Button key={`restrizione-${f}-togli`} plain label={`${T('imp.rimuoviRestrizione')} · ${NOME_FORNITORE[f]}`} onPress={togli} />
+      </Box>
+    )
+  }
   const sogliaUi = (f: Fornitore) => {
-    const s = sogliaDi(r, f)
+    // F10: i controlli scrivono l'account (tutti i progetti); assente = i 70/90 predefiniti.
+    const sa = r.account.soglie[f]
+    const s = sa === undefined ? SOGLIA_PREDEFINITA : sa
     const nome = NOME_FORNITORE[f]
-    const scrivi = (n: typeof s) => salva(`soglia-${f}`, () => ({ soglie: conSoglia(r.soglie, f, n) }))()
+    const scrivi = (n: typeof s) => salva(`soglia-${f}`, () => ({ 'account.soglie': conSoglia(r.account.soglie as Record<Fornitore, typeof s>, f, n) }))()
     return (
       <Box key={`soglie-${f}`} flexDirection="column" gap={1}>
         <Text weight="medium">{nome}</Text>
@@ -460,20 +491,23 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
             formato: v => `${v === null ? '' : T.numero(v)}%`, onCambia: v => scrivi({ ...s, critica: v }),
           })}
         {anteprima(f)}
+        {restrizioneSoglia(f)}
         {errore(`soglia-${f}`)}
       </Box>
     )
   }
   const soglie = () => {
-    const stato = T('sog.stato', { n: d.fornitoriInUso.length })
+    const stato = `${T('sog.stato', { n: d.fornitoriInUso.length })} · ${T('pro.budgetManuali', { n: r.limitiManuali.length })}`
     return u.Sezione({
       chiave: 'pagina-soglie',
       titolo: T('imp.sezione.soglie'),
       descrizione: T('sog.descrizione'),
       stato,
-      figli: d.fornitoriInUso.length
-        ? d.fornitoriInUso.map(sogliaUi)
-        : [didascalia('soglie-vuote', T('sog.vuote'))],
+      figli: [
+        didascalia('soglie-account', T('imp.valeTuttiProgetti')),
+        ...(d.fornitoriInUso.length ? d.fornitoriInUso.map(sogliaUi) : [didascalia('soglie-vuote', T('sog.vuote'))]),
+        budgetUi(),
+      ],
     })
   }
 
@@ -606,7 +640,8 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
               const misura = budgetDa(testo)
               if ('k' in misura) throw new Errore(misura)
               // La procedura guidata scrive da sé, sui limiti letti: i budget non stanno nella bozza.
-              await configura({ limitiManuali: [...manualiDaScrivere(r0.limitiManuali), nuovoBudget(b.fornitore!, b.tipo!, misura, Date.now())] })
+              // F10: un budget nuovo è dell'account (vale in tutti i progetti).
+              await configura({ 'account.limitiManuali': [...manualiDaScrivere(r0.account.limitiManuali), nuovoBudget(b.fornitore!, b.tipo!, misura, Date.now())] })
               await cambia(s => ({ ...s, bozza: undefined }))
             })
           }
@@ -615,9 +650,28 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       <Button key="bozza-annulla" plain dimColor label={T('pro.annullaBudget')} onPress={() => void cambia(s => ({ ...s, bozza: undefined, errore: undefined }))} />
     </Box>
   )
+  /** I budget manuali: dell'account, più quelli di progetto (pillola «progetto»); scrivono subito, non stanno nella bozza. */
+  const budgetUi = () => (
+    <Box key="budget" flexDirection="column" gap={1}>
+      {didascalia('budget-titolo', T('pro.budgetTitolo'))}
+      <Box flexDirection="row" flexWrap="wrap" gap={1}>
+        {r.limitiManuali.map(l =>
+          u.Chip({
+            chiave: `budget-${l.id}`, testo: l.progetto ? `${budgetScritto(l)} · ${T('imp.pillProgetto')}` : budgetScritto(l), segno: '•',
+            onRimuovi: () => void esegui('budget', () => l.progetto
+              ? configura({ limitiManuali: manualiDaScrivere(r0.limitiManuali.filter(x => x.progetto && x.id !== l.id)) })
+              : configura({ 'account.limitiManuali': manualiDaScrivere(r0.account.limitiManuali.filter(x => x.id !== l.id)) })),
+          }),
+        )}
+        {!vista.bozza && <Button key="aggiungi-budget" variant="secondary" label={T('pro.aggiungiBudget')} onPress={() => void aggiungiBudget()} />}
+      </Box>
+      {vista.bozza && bozzaUi(vista.bozza)}
+      {errore('budget')}
+    </Box>
+  )
   const progetto = async () => {
     const { config, cartella } = await percorsi()
-    const stato = `${T(r.soloLocale ? 'pro.soloLocale' : 'pro.abilitati')} · ${T('pro.budgetManuali', { n: r.limitiManuali.length })}`
+    const stato = T(r.soloLocale ? 'pro.soloLocale' : 'pro.abilitati')
     return u.Sezione({
       chiave: 'pagina-progetto',
       titolo: T('imp.sezione.progetto'),
@@ -651,21 +705,6 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           ) : (
             <Text>{T('pro.sensibiliNessuno')}</Text>
           )}
-        </Box>,
-        <Box key="budget" flexDirection="column" gap={1}>
-          {didascalia('budget-titolo', T('pro.budgetTitolo'))}
-          <Box flexDirection="row" flexWrap="wrap" gap={1}>
-            {r.limitiManuali.map(l =>
-              u.Chip({
-                chiave: `budget-${l.id}`, testo: budgetScritto(l), segno: '•',
-                // Il budget scrive subito, come la procedura che lo aggiunge: non sta nella bozza.
-                onRimuovi: () => void esegui('budget', () => configura({ limitiManuali: manualiDaScrivere(r0.limitiManuali.filter(x => x.id !== l.id)) })),
-              }),
-            )}
-            {!vista.bozza && <Button key="aggiungi-budget" variant="secondary" label={T('pro.aggiungiBudget')} onPress={() => void aggiungiBudget()} />}
-          </Box>
-          {vista.bozza && bozzaUi(vista.bozza)}
-          {errore('budget')}
         </Box>,
       ],
     })
@@ -722,8 +761,29 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     if (!Number.isFinite(n) || n < min || n > max) throw new Errore(msg('ese.numero', { min, max }))
     return Math.round(n * 100) / 100
   }
+  /** F10: limite del mese e tetto più severi in questo progetto (o l'`apiClaude` di un build di sviluppo), con «Rimuovi restrizione». */
+  const restrizioneApi = () => {
+    const z = r.strato.restrizioni
+    const g = r.strato.apiClaude
+    if (z.apiLimiteMeseUsd === undefined && z.apiTetto === undefined && !g) return null
+    const togli = salva('api', () => {
+      const { apiLimiteMeseUsd: _l, apiTetto: _t, ...altre } = z
+      return { ...(g && { apiClaude: null }), ...((z.apiLimiteMeseUsd !== undefined || z.apiTetto !== undefined) && { restrizioni: Object.keys(altre).length ? altre : null }) }
+    })
+    const api = r.apiClaude
+    return (
+      <Box key="ese-restrizione" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center">
+        <Text key="ese-restrizione-testo" size="caption" wrap="wrap">
+          {T('imp.restrizioneApi', { repo: io?.repo ?? '—', limite: api?.limiteProgettoUsd !== undefined ? T.numero(api.limiteProgettoUsd) : '—', tetto: api ? T.numero(api.tetto) : '—' })}
+        </Text>
+        <Button key="ese-restrizione-togli" plain label={T('imp.rimuoviRestrizione')} onPress={togli} />
+      </Box>
+    )
+  }
   const sezioneEsecuzione = async () => {
     const api = r.apiClaude
+    // F10: il budget del mese e il tetto si scrivono nell'account (tutti i progetti); senza, la corsia API è spenta.
+    const conto = r.account.apiClaude
     const chiave = !!regoleOra.chiaveApi
     const github = /^[^/\s]+\/[^/\s]+$/.test(io?.repo ?? '')
     const stato = T(api ? 'ese.statoApi' : 'ese.statoLocale')
@@ -836,16 +896,18 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           {didascalia('ese-chiave-dove', T('ese.chiaveDove'))}
           {didascalia('ese-chiave-dedicata', T('ese.chiaveDedicata'))}
           {didascalia('ese-chiave-rischio', T('ese.chiaveRischio'))}
+          {didascalia('ese-api-account', T('imp.valeTuttiProgetti'))}
           {Input ? (
-            <Input key="ese-budget" label={T('ese.budget')} value={api ? String(api.budgetUsd) : ''}
-              onSubmit={v => salva('api', () => ({ apiClaude: { budgetUsd: numeroUsd(v, 0.01, 100_000), tetto: api?.tetto ?? TETTO_API_PREDEFINITO } }))()} />
+            <Input key="ese-budget" label={T('ese.budget')} value={conto ? String(conto.budgetUsd) : ''}
+              onSubmit={v => salva('api', () => ({ 'account.apiClaude': { ...conto, budgetUsd: numeroUsd(v, 0.01, 100_000) } }))()} />
           ) : null}
-          {Input && api ? (
-            <Input key="ese-tetto" label={T('ese.tetto')} value={String(api.tetto)}
-              onSubmit={v => salva('api', () => ({ apiClaude: { budgetUsd: api.budgetUsd, tetto: numeroUsd(v, 0.01, Math.min(1_000, api.budgetUsd)) } }))()} />
+          {Input && conto ? (
+            <Input key="ese-tetto" label={T('ese.tetto')} value={String(conto.tetto)}
+              onSubmit={v => salva('api', () => ({ 'account.apiClaude': { ...conto, tetto: numeroUsd(v, 0.01, Math.min(1_000, conto.budgetUsd)) } }))()} />
           ) : null}
           {didascalia('ese-tetto-nota', T('ese.tettoNota'))}
-          {api && <Button key="ese-api-togli" plain dimColor label={T('ese.apiTogli')} onPress={salva('api', () => ({ apiClaude: null }))} />}
+          {conto && <Button key="ese-api-togli" plain dimColor label={T('ese.apiTogli')} onPress={salva('api', () => ({ 'account.apiClaude': null }))} />}
+          {restrizioneApi()}
           {errore('api')}
         </Box>,
         // Cloud di Claude: niente da configurare qui; si verifica il remote GitHub e si dice che cosa serve.
@@ -875,7 +937,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       figli: [
         u.GruppoChip({
           chiave: 'free-livello', etichetta: T('ava.compiti'), modo: 'scelta', valore: r.freellmapi.livello, voci: LIVELLI,
-          onCambia: v => salva('free-livello', () => ({ freellmapi: { ...r.freellmapi, livello: v } }))(),
+          onCambia: v => salva('free-livello', () => ({ freellmapi: { ...r.strato.freellmapi, livello: v } }))(),
         }),
         errore('free-livello'),
         Input ? (
@@ -886,11 +948,18 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
             onSubmit={v =>
               salva('free-endpoint', () => {
                 if (!endpointLocale(v.trim())) throw new Errore(msg('ava.endpointLocale'))
-                return { freellmapi: { ...r.freellmapi, endpoint: v.trim() } }
+                return { 'account.freellmapi': { endpoint: v.trim() } }
               })()
             }
           />
         ) : null,
+        r.strato.freellmapi.endpoint ? (
+          <Box key="free-endpoint-progetto" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center">
+            <Text key="free-endpoint-progetto-testo" size="caption" wrap="wrap">{T('imp.endpointProgetto', { repo: io?.repo ?? '—' })}</Text>
+            <Button key="free-endpoint-progetto-togli" plain label={T('imp.rimuoviEccezione')}
+              onPress={salva('free-endpoint', () => ({ freellmapi: { livello: r.strato.freellmapi.livello } }))} />
+          </Box>
+        ) : didascalia('free-endpoint-account', T('imp.valeTuttiProgetti')),
         errore('free-endpoint'),
         didascalia('installa-nota', T('ava.installaNota')),
         ...INSTALLAZIONE.map((cmd, i) => (
@@ -973,17 +1042,31 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
 
   return (
     <Box key="configurazione" flexDirection="column" gap={1}>
-      {u.GruppoChip({
-        chiave: 'sezione', etichetta: T('imp.sezione'), modo: 'scelta', valore: vista.sezione, voci: SEZIONI.map(s => ({ valore: s.valore, testo: T(s.testo) })),
-        onCambia: v => {
-          if (v === 'esecuzione') void c.controllaEsecuzione()
-          void cambia(s => ({ ...s, sezione: v as Sezione, errore: undefined }))
-        },
-      })}
+      {/* F10: le sezioni in due gruppi, Account (tutti i progetti) e Progetto (owner/repo). */}
+      <Box key="sezioni" flexDirection="column" gap={1}>
+        {[true, false].map(account => (
+          <Box key={account ? 'sezioni-account' : 'sezioni-progetto'} flexDirection="column">
+            <Text size="caption" dimColor>{account ? T('imp.gruppoAccount') : T('imp.gruppoProgetto', { repo: io?.repo ?? '—' })}</Text>
+            <Box flexDirection="row" flexWrap="wrap" gap={1}>
+              {SEZIONI.filter(s => SEZIONI_ACCOUNT.includes(s.valore) === account).map(s =>
+                u.Chip({
+                  chiave: `sezione-${s.valore}`, testo: T(s.testo), attiva: vista.sezione === s.valore,
+                  onPress: () => {
+                    if (vista.sezione === s.valore) return
+                    if (s.valore === 'esecuzione') void c.controllaEsecuzione()
+                    void cambia(x => ({ ...x, sezione: s.valore, errore: undefined }))
+                  },
+                }),
+              )}
+            </Box>
+          </Box>
+        ))}
+      </Box>
       {propostaVisibile ? (
         <Box key="proposta-impostazioni" flexDirection="column" borderStyle="single" paddingX={1}>
           <Text key="proposta-impostazioni-titolo" weight="semibold" wrap="wrap">{T('imp.propostaDa', { da: vista.proposta!.da })}</Text>
           <Text key="proposta-impostazioni-motivo" wrap="wrap">{vista.proposta!.motivo}</Text>
+          {toccaAccount(vista.pendenti?.campi ?? {}) ? <Text key="proposta-impostazioni-account" weight="semibold" wrap="wrap">{T('imp.propostaAccount')}</Text> : null}
           <Text key="proposta-impostazioni-come" size="caption" dimColor wrap="wrap">{T('imp.propostaCome')}</Text>
         </Box>
       ) : null}

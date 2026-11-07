@@ -395,7 +395,8 @@ test('F5.2: stato con glifo e parola (✗ errore, ○ in coda); i dati (modello,
 })
 
 // --- F6.1: dove gira una chip --------------------------------------------------------------------------------
-const CONFIG_API = JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 } } } })
+// F10: la corsia API si accende solo dall'account (tutti i progetti).
+const CONFIG_API = JSON.stringify({ account: { apiClaude: { budgetUsd: 20 } }, progetti: { 'acme/progetto': {} } })
 
 test('F6.1 Dove: l\'editor offre le destinazioni ammesse; le altre compaiono col motivo; una sensibile solo in locale', { options: { anthropicApiKey: 'sk-ant-prova' } }, async ($, on) => {
   const amb = ambiente(on, [az('a-dove0001', 1, { revisore: 'claude' }), az('a-dove0002', 2, { corsia: 'R4', revisore: 'claude' })])
@@ -540,7 +541,12 @@ test('lingue: a 60 colonne nel terminale nessuna riga supera la larghezza e ness
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda']
   for (const lingua of ['en', 'it', 'es', 'fr', 'de', 'pt']) {
-    amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua, progetti: { 'acme/progetto': {} } }))
+    // F10: account e restrizioni del progetto, così si disegnano anche gruppi, restrizioni, pillole ed eccezioni.
+    amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua,
+      account: { apiClaude: { budgetUsd: 20, tetto: 2 }, soglie: { claude: { attenzione: 70, critica: 90 } } },
+      progetti: { 'acme/progetto': { soglie: { claude: { attenzione: 50, critica: 60 } }, restrizioni: { apiLimiteMeseUsd: 4 },
+        freellmapi: { livello: 'niente', endpoint: 'http://localhost:4000/v1' },
+        limitiManuali: [{ id: 'saldo', fornitore: 'claude', nome: 'Max', letto: '2026-11-01T10:00:00.000Z', percentuale: 40, unita: '%' }] } } }))
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
     const ui = await $.ui.mount(PANE('terminal', 60))
     const controlla = async (dove: string) => {

@@ -9,6 +9,10 @@
 //
 // Uscite: 0 ok · 2 uso · 3 lock occupato · 4 conflitto · 5 budget insufficiente · 6 impostazioni o ambiente vietati.
 //
+// F10: budget e tetto li decide l'helper, rileggendo il config sotto il mutex del lock (strumenti/regole.cjs): quelli che
+// manda il pannello servono solo a mostrarli. Il registro della spesa è uno solo, dell'account, accanto al lock; ogni voce
+// porta il progetto e il tentativo. Un tentativo parte solo se entra nel residuo dell'account E in quello del progetto.
+//
 // Modello di minaccia (PIANO-F6 §12-13). Durante l'esecuzione la chiave è accessibile all'agente e ai suoi strumenti,
 // come qualunque chiave data a un agente. Dopo, su questa macchina e per questa mod: il file-chiave è cancellato (se non
 // si riesce, il lock resta), la copia in memoria di `claude -p` scade (TTL esplicito di 5 minuti dall'ultima consegna:
@@ -19,6 +23,7 @@ const os = require('os')
 const path = require('path')
 const { spawn, spawnSync } = require('child_process')
 const d = require('./disco.cjs')
+const regole = require('./regole.cjs')
 const ACCESSO = path.join(__dirname, 'accesso.cjs')
 
 const MUTEX_API = 'api-claude:macchina'
@@ -39,7 +44,8 @@ const fileLock = dm => path.join(dm, 'api-claude.json')
 const dirChiavi = dm => path.join(dm, 'chiavi-api')
 const fileChiave = (dm, t) => path.join(dirChiavi(dm), `${t}.key`)
 const fileConsegna = (dm, t) => path.join(dirChiavi(dm), `${t}.consegna`)
-const fileSpesa = dir => path.join(dir, 'spesa-api.json')
+/** F10: il registro della spesa dell'account, uno solo, accanto al lock della macchina. */
+const fileSpesa = dm => path.join(dm, 'spesa-api.json')
 
 // --- fonti delle impostazioni (§5.2, §6, §7: fail-closed) ---------------------------------------------------
 
@@ -99,10 +105,10 @@ const blocchiImpostazioni = (fonti, env = process.env) => blocchiDettagliati(fon
 
 // --- spesa: prenotazione e contabilizzazione per tentativo (§4) ----------------------------------------------
 
-function leggiSpesa(dir) {
+function leggiSpesa(dm) {
   let testo
   try {
-    testo = fs.readFileSync(fileSpesa(dir), 'utf8')
+    testo = fs.readFileSync(fileSpesa(dm), 'utf8')
   } catch (e) {
     if (e.code === 'ENOENT') return { v: 1, voci: {} }
     throw e
@@ -113,34 +119,75 @@ function leggiSpesa(dir) {
   return s
 }
 
-/** Una voce del registro: mese, tetto positivo, stato noto; il costo solo se contata (null = ignoto). */
+/** Una voce del registro: progetto, mese, tetto positivo, stato noto; il costo solo se contata (null = ignoto). */
 const voceValida = v => !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.mese === 'string' && /^\d{4}-\d{2}$/.test(v.mese) &&
+  typeof v.progetto === 'string' && v.progetto.length > 0 && v.progetto.length <= 400 &&
   typeof v.tetto === 'number' && Number.isFinite(v.tetto) && v.tetto > 0 &&
   (v.stato === 'prenotato' ? v.costo === undefined : v.stato === 'contato' && (v.costo === null || (Number.isFinite(v.costo) && v.costo >= 0)))
 
-/** Spesa del mese: contato = costo stimato (ignoto = tetto intero), prenotato = tetto intero. */
-const spesoNelMese = (voci, mese) =>
-  Object.values(voci).filter(v => v.mese === mese).reduce((n, v) => n + (v.stato === 'contato' ? (v.costo ?? v.tetto) : v.tetto), 0)
+/** Spesa del mese (di un progetto, se dato): contato = costo stimato (ignoto = tetto intero), prenotato = tetto intero. */
+const spesoNelMese = (voci, mese, progetto) =>
+  Object.values(voci).filter(v => v.mese === mese && (progetto === undefined || v.progetto === progetto))
+    .reduce((n, v) => n + (v.stato === 'contato' ? (v.costo ?? v.tetto) : v.tetto), 0)
 
-/** Prenota il tetto del tentativo sul budget del mese (idempotente). Falso se il residuo non basta. */
-function prenotaSpesa(dir, tentativo, mese, tetto, budget) {
-  const s = leggiSpesa(dir)
+/**
+ * Prenota il tetto del tentativo (idempotente): deve stare nel residuo del mese dell'account e, se c'è, in quello del
+ * progetto. Falso se uno dei due non basta. Da chiamare sotto il mutex del lock.
+ */
+function prenotaSpesa(dm, tentativo, mese, tetto, budget, progetto, limiteProgetto) {
+  if (typeof progetto !== 'string' || !progetto) throw new Error('progetto mancante')
+  const s = leggiSpesa(dm)
   if (s.voci[tentativo]) return true
   if (spesoNelMese(s.voci, mese) + tetto > budget + 1e-9) return false
-  s.voci[tentativo] = { mese, tetto, stato: 'prenotato' }
-  d.scriviAtomico(fileSpesa(dir), JSON.stringify(s))
+  if (limiteProgetto !== undefined && spesoNelMese(s.voci, mese, progetto) + tetto > limiteProgetto + 1e-9) return false
+  s.voci[tentativo] = { progetto, mese, tetto, stato: 'prenotato' }
+  fs.mkdirSync(dm, { recursive: true })
+  d.scriviAtomico(fileSpesa(dm), JSON.stringify(s))
   return true
 }
 
-/** La prenotazione diventa il costo stimato (null = ignoto, conta il tetto). Una seconda contabilizzazione non cambia nulla. */
-async function contaSpesa(dir, tentativo, costo) {
-  await d.conMutex(d.MUTEX_AZIONI(dir), 8000, () => {
-    const s = leggiSpesa(dir)
-    const v = s.voci[tentativo]
-    if (!v || v.stato === 'contato') return
-    s.voci[tentativo] = { ...v, stato: 'contato', costo: typeof costo === 'number' && Number.isFinite(costo) && costo >= 0 ? costo : null }
-    d.scriviAtomico(fileSpesa(dir), JSON.stringify(s))
-  })
+/** La prenotazione diventa il costo stimato (null = ignoto, conta il tetto), senza prendere il mutex (chi chiama lo tiene). */
+function contaSpesaQui(dm, tentativo, costo) {
+  const s = leggiSpesa(dm)
+  const v = s.voci[tentativo]
+  if (!v || v.stato === 'contato') return
+  s.voci[tentativo] = { ...v, stato: 'contato', costo: typeof costo === 'number' && Number.isFinite(costo) && costo >= 0 ? costo : null }
+  d.scriviAtomico(fileSpesa(dm), JSON.stringify(s))
+}
+
+/** Come `contaSpesaQui`, sotto lo stesso mutex del lock che prenota. Una seconda contabilizzazione non cambia nulla. */
+async function contaSpesa(dm, tentativo, costo, deps = {}) {
+  const r = await d.conMutex(mutexApi(deps), 30_000, () => contaSpesaQui(dm, tentativo, costo))
+  if (r.occupato) throw new Error('mutex della spesa occupato')
+}
+
+/**
+ * F10: budget, tetto e limite del progetto dal config riletto adesso (mai quelli del pannello). Rifiuta un config o un
+ * registro fuori posto (in un albero git, oltre un link) e un registro per cartella dei build di sviluppo: nel dubbio si
+ * blocca. Restituisce le regole o `[codice, dettaglio]`.
+ */
+function regoleApi(dir, dm, input) {
+  const sviluppo = path.join(dir, 'spesa-api.json')
+  if (fs.existsSync(sviluppo)) return [5, JSON.stringify({ registroSviluppo: path.dirname(path.resolve(sviluppo)) })]
+  try {
+    d.percorsoSicuro(input.config)
+    d.percorsoSicuro(dm)
+    d.percorsoSicuro(fileSpesa(dm))
+  } catch (e) {
+    return [6, JSON.stringify({ percorso: String(e.message).slice(0, 300) })]
+  }
+  let efficaci
+  try {
+    const c = fs.existsSync(input.config) ? JSON.parse(fs.readFileSync(input.config, 'utf8')) : {}
+    if (!c || typeof c !== 'object' || Array.isArray(c)) throw new Error('config')
+    const progetti = c.progetti ?? {}
+    if (!progetti || typeof progetti !== 'object' || Array.isArray(progetti)) throw new Error('config')
+    efficaci = regole.regoleEfficaci(c.account, progetti[input.repo])
+  } catch {
+    return [5, JSON.stringify({ config: 'non valido' })]
+  }
+  if (!efficaci.apiClaude) return [5, JSON.stringify({ spenta: true })]
+  return efficaci.apiClaude
 }
 
 // --- lock della macchina (§5, §8, §10-13) --------------------------------------------------------------------
@@ -251,7 +298,7 @@ async function liberaApi(dm, deps = {}) {
     if (c.motivo) return { libero: false, tentativo: rec.tentativo, ...c }
     fs.rmSync(fileLock(dm), { force: true })
     fs.rmSync(fileConsegna(dm, rec.tentativo), { force: true })
-    if (!rec.uscita && rec.dir) await contaSpesa(rec.dir, rec.tentativo, null)
+    if (!rec.uscita) contaSpesaQui(dm, rec.tentativo, null)
     return { libero: true, liberato: rec.tentativo }
   })
   return r.occupato ? { libero: false, motivo: 'mutex' } : r.valore
@@ -277,6 +324,9 @@ async function terminaApi(dm, deps = {}) {
 const ingressoValido = input =>
   d.parametriValidi(input) && typeof input.tetto === 'number' && input.tetto >= 0.01 && input.tetto <= 1000 &&
   typeof input.budget === 'number' && input.budget > 0 && /^\d{4}-\d{2}$/.test(input.mese ?? '') &&
+  // F10: il config da rileggere e il progetto della voce di spesa.
+  typeof input.config === 'string' && path.isAbsolute(input.config) && /\.json$/i.test(input.config) && input.config.length <= 1000 &&
+  typeof input.repo === 'string' && input.repo.length > 0 && input.repo.length <= 400 &&
   typeof input.chiave === 'string' && input.chiave.length >= 8 && input.chiave.length <= 500 && !/\s/.test(input.chiave) &&
   // F7.3: l'auditor è un id della tabella (il pannello ha già risolto l'alias); «senza auditor» lo esclude.
   (input.advisor === undefined || (typeof input.advisor === 'string' && /^claude-(haiku|sonnet|opus|fable)-\d+(-\d+)?$/.test(input.advisor))) &&
@@ -373,13 +423,21 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
       fs.rmSync(dirChiavi(dm), { recursive: true, force: true })
       const blocchi = blocchiImpostazioni(deps.fonti ?? fontiImpostazioni(input.root), deps.env ?? process.env)
       if (blocchi.length) return [6, JSON.stringify({ fonti: blocchi })]
+      const api = regoleApi(dir, dm, input)
+      if (Array.isArray(api)) return api
+      // Il tetto che conta è quello efficace: anche `--max-budget-usd` del supervisore lo riceve da qui.
+      input = { ...input, tetto: api.tetto, budget: api.budgetUsd }
       let prenotata
       try {
-        prenotata = prenotaSpesa(dir, tentativo, input.mese, input.tetto, input.budget)
+        prenotata = prenotaSpesa(dm, tentativo, input.mese, api.tetto, api.budgetUsd, input.repo, api.limiteProgettoUsd)
       } catch {
         return [5, JSON.stringify({ registro: 'non valido' })]
       }
-      if (!prenotata) return [5, JSON.stringify({ speso: spesoNelMese(leggiSpesa(dir).voci, input.mese), budget: input.budget })]
+      if (!prenotata) {
+        const voci = leggiSpesa(dm).voci
+        return [5, JSON.stringify({ speso: spesoNelMese(voci, input.mese), budget: api.budgetUsd, tetto: api.tetto,
+          ...(api.limiteProgettoUsd !== undefined && { spesoProgetto: spesoNelMese(voci, input.mese, input.repo), limiteProgetto: api.limiteProgettoUsd }) })]
+      }
       fs.mkdirSync(dm, { recursive: true })
       scriviLock(dm, { tentativo, id, dir, istante: new Date((deps.adesso ?? Date.now)()).toISOString(), stato: 'in-avvio' })
       fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -394,7 +452,11 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
       } catch {
         d.scriviAtomico(file, JSON.stringify({ id, tentativo, stato: 'fallita', lanciatore: 'api-claude', errore: 'processo non avviato' }))
         fs.rmSync(fileLock(dm), { force: true })
-        await contaSpesa(dir, tentativo, 0).catch(() => {})
+        try {
+          contaSpesaQui(dm, tentativo, 0)
+        } catch {
+          // il registro illeggibile resta com'è: la prossima prenotazione lo rifiuta
+        }
         return [1, '']
       }
     })
@@ -518,7 +580,7 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
       // Un JSON con is_error non è una consegna: finita con errore, il lavoro fatto non si sa (num_turns mancante = ignoto).
       else if (esito.errore) scrivi({ stato: 'avviata', ramo, incerto: true, costo: null, ...riportato, ...(esito.turni !== undefined && { turni: esito.turni }), errore: 'esecuzione API terminata con errore: controlla il worktree prima di chiudere', ...adv, ...stderr })
       else scrivi({ stato: 'consegnata', ramo, costo: esito.costo, turni: esito.turni, errore: codice !== 0 ? 'esecuzione API terminata con errore: controlla il worktree prima di chiudere' : undefined, ...adv, ...stderr })
-      await contaSpesa(dir, tentativo, esito && !esito.errore && !rifiutato ? esito.costo : null)
+      await contaSpesa(dm, tentativo, esito && !esito.errore && !rifiutato ? esito.costo : null, deps)
     } catch (e) {
       if (!partito) {
         scrivi({ stato: 'fallita', ramo: fuori.ramo,
@@ -529,7 +591,7 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
         // prossima verifica ritenta la cancellazione prima di liberarlo.
         if (cancellaChiave(dm, tentativo, deps)) fs.rmSync(fileLock(dm), { force: true })
         else scriviLock(dm, { ...rec, uscita: { codice: null, fine: new Date().toISOString() }, chiaveCancellata: false })
-        await contaSpesa(dir, tentativo, 0).catch(() => {})
+        await contaSpesa(dm, tentativo, 0, deps).catch(() => {})
       } else scrivi({ stato: 'avviata', ramo: fuori.ramo, incerto: true, costo: null, errore: 'esito API incerto: controlla il processo e il worktree' })
     }
   })
@@ -634,5 +696,5 @@ async function comando(cmd, a, stdin, opz = {}) {
 
 module.exports = {
   comando, lanciaApi, eseguiApi, booleano, worktreeInvariato, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
-  leggiSpesa, spesoNelMese, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
+  leggiSpesa, spesoNelMese, fileSpesa, regoleApi, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
 }

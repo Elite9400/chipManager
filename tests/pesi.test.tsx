@@ -271,7 +271,11 @@ function ambiente(on: On, progetto: Record<string, unknown> = { fornitori: ['cla
       const q = JSON.parse(e.init!.stdin!)
       stdin.push(q)
       if (disco.get(CONFIG) !== q.atteso) return fine(4)
-      config.progetti[q.repo] = { ...config.progetti[q.repo], ...q.campi, ...('pesi' in q.campi || 'profilo' in q.campi ? { pesiRevisione: ((progettoDi().pesiRevisione as number) ?? 0) + 1, pesiOrigine: { tipo: 'manuale' } } : {}) }
+      // F10: progetto, account e lingua in un solo CAS; null toglie il campo.
+      const senzaNull = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null))
+      config.progetti[q.repo] = senzaNull({ ...config.progetti[q.repo], ...q.campi, ...('pesi' in q.campi || 'profilo' in q.campi ? { pesiRevisione: ((progettoDi().pesiRevisione as number) ?? 0) + 1, pesiOrigine: { tipo: 'manuale' } } : {}) })
+      if (q.account) config.account = senzaNull({ ...config.account, ...q.account })
+      if (q.lingua !== undefined) config.lingua = q.lingua
       scrivi()
       return fine(0)
     }

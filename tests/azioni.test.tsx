@@ -444,7 +444,10 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
       // Come l'helper vero: la generazione della board cresce a ogni cambio di modo.
       const b = c.progetti?.[input.repo]?.board
       if (campi.board) campi.board = { modo: campi.board.modo, generazione: (b?.generazione ?? 0) + (b?.modo === campi.board.modo ? 0 : 1) }
-      disco.set(p(a[0]), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: { ...c.progetti?.[input.repo], ...campi } } }))
+      // F10: progetto, account e lingua in un solo CAS; null toglie il campo.
+      const senzaNull = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null))
+      disco.set(p(a[0]), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: senzaNull({ ...c.progetti?.[input.repo], ...campi }) },
+        ...(input.account && { account: senzaNull({ ...c.account, ...input.account }) }), ...(input.lingua !== undefined && { lingua: input.lingua }) }))
       return fine(0)
     }
     if (cmd === 'git-log') return fine(0, JSON.stringify([{ sha: 'abc1234', data: '2026-11-04T10:00:00Z', oggetto: 'commit d\'esempio' }]))
@@ -861,7 +864,9 @@ test('F6 guardie: una sola modalità effettiva; api-claude solo Claude, senza fo
 })
 
 const CHIAVE_API = 'sk-ant-sentinella-0123456789'
-const CONFIG_API = JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 } } } })
+// F10: la corsia API si accende solo dall'account (tutti i progetti); il registro della spesa è uno, dell'account.
+const CONFIG_API = JSON.stringify({ account: { apiClaude: { budgetUsd: 20 } }, progetti: { 'acme/progetto': {} } })
+const SPESA_API = 'X:/casa/.claude/chipmanager/spesa-api.json'
 const chipApi = (id: string) => base(id, 1, { repo: AUTORE.repo!, destinazione: 'api-claude', revisore: 'claude' })
 
 test('F6.2 avvio: la chip api-claude va all\'helper con la chiave solo su stdin, tetto e budget del mese; il mandato è quello senza coordinatore', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
@@ -881,7 +886,8 @@ test('F6.2 avvio: la chip api-claude va all\'helper con la chiave solo su stdin,
   expect(r).toMatchObject({ stato: 'avviata', lanciatore: 'api-claude' })
   expect(chiamate[0]!.a).toEqual(['X:/orch/azioni', a.id, r.tentativo])
   const ingresso = JSON.parse(chiamate[0]!.stdin!) as Record<string, unknown>
-  expect(ingresso).toMatchObject({ chiave: CHIAVE_API, tetto: 2, budget: 20, modello: 'claude-opus-5-5' })
+  // F10: budget e tetto li rilegge l'helper dal config (qui solo informativi): riceve il file e il progetto.
+  expect(ingresso).toMatchObject({ chiave: CHIAVE_API, tetto: 2, budget: 20, modello: 'claude-opus-5-5', config: CONFIG, repo: 'acme/progetto' })
   expect(String(ingresso.prompt)).toContain('How this run works')
   expect(String(ingresso.prompt)).not.toMatch(/coordinator|aggiorna_azione/)
   // La chiave non sta mai in argv, nel record, nei processi registrati se non sullo stdin dell'helper.
@@ -901,6 +907,11 @@ test('F6.2 avvio: lock occupato, budget insufficiente e impostazioni vietate chi
     [[3, '{"motivo":"in-corso"}'], 'err.apiOccupata'],
     [[5, '{"speso":19,"budget":20}'], 'err.apiBudget'],
     [[6, '{"fonti":["utente","ambiente"]}'], 'err.apiImpostazioni'],
+    // F10: i motivi nuovi dell'helper, che rilegge budget e limiti dal config.
+    [[5, '{"registroSviluppo":"X:/vecchia"}'], 'err.apiRegistroSviluppo'],
+    [[5, '{"spenta":true}'], 'v.apiBudget'],
+    [[5, '{"spesoProgetto":4,"limiteProgetto":5,"tetto":2}'], 'err.apiLimiteProgetto'],
+    [[6, '{"percorso":"dentro un repository"}'], 'err.percorsoDati'],
   ]
   for (const [i, [esito, chiave]] of casi.entries()) {
     risposta = esito
@@ -971,10 +982,16 @@ test('F6.2 lock: tenuto dopo un\'esecuzione, il pannello dice perché; «Termina
 
 test('F6.4 Carico: la spesa API del mese (stimata) contro il budget in USD; senza API configurata nessuna riga; nota sul cloud', async ($, on) => {
   const mese = new Date().toISOString().slice(0, 7)
-  expect(spesaDelMese({ v: 1, voci: { a: { mese, tetto: 2, stato: 'contato', costo: 3.2 }, b: { mese, tetto: 2, stato: 'prenotato' }, c: { mese: '2000-01', tetto: 9, stato: 'prenotato' }, d: { mese, tetto: 2, stato: 'contato', costo: null } } }, mese)).toBe(7.2)
+  // F10: ogni voce porta il progetto (senza, il registro non si legge); la parte del progetto si somma a parte.
+  const progetto = 'acme/progetto'
+  const voci = { a: { progetto, mese, tetto: 2, stato: 'contato', costo: 3.2 }, b: { progetto: 'altro/repo', mese, tetto: 2, stato: 'prenotato' }, c: { progetto, mese: '2000-01', tetto: 9, stato: 'prenotato' }, d: { progetto, mese, tetto: 2, stato: 'contato', costo: null } }
+  expect(spesaDelMese({ v: 1, voci }, mese)).toBe(7.2)
+  expect(spesaDelMese({ v: 1, voci }, mese, progetto)).toBe(5.2)
+  expect(spesaDelMese({ v: 1, voci: { a: { mese, tetto: 2, stato: 'prenotato' } } }, mese)).toBeNull()
   expect(spesaDelMese({ v: 2 }, mese)).toBeNull()
   const amb = ambiente(on)
-  amb.disco.set('X:/orch/azioni/spesa-api.json', JSON.stringify({ v: 1, voci: { 'az-spesa001': { mese, tetto: 2, stato: 'contato', costo: 3.2 }, 'az-spesa002': { mese, tetto: 2, stato: 'prenotato' } } }))
+  amb.disco.set(SPESA_API, JSON.stringify({ v: 1, voci: { 'az-spesa001': { progetto, mese, tetto: 2, stato: 'contato', costo: 3.2 }, 'az-spesa002': { progetto, mese, tetto: 2, stato: 'prenotato' },
+    'az-spesa003': { progetto: 'altro/repo', mese, tetto: 2, stato: 'contato', costo: 1 } } }))
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
@@ -986,9 +1003,10 @@ test('F6.4 Carico: la spesa API del mese (stimata) contro il budget in USD; senz
   // La spesa si legge all'inizio del giro, con le regole del giro prima: la riga compare dal giro dopo il cambio.
   await ui.press({ key: 'ricarica' })
   await ui.press({ key: 'ricarica' })
-  expect(await ui.find({ type: 'Text', text: 'API Claude: 5,20 USD di 20 USD (stimato, questo mese)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'API Claude: 5,20 USD questo progetto · 6,20 USD di 20 USD account (stimato, questo mese)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Questo progetto: al massimo/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /^Il cloud di Claude consuma gli stessi limiti del piano/ })).toBeDefined()
-  amb.disco.set('X:/orch/azioni/spesa-api.json', '{ rotto')
+  amb.disco.set(SPESA_API, '{ rotto')
   await ui.press({ key: 'ricarica' })
   expect(await ui.find({ type: 'Text', text: 'API Claude: budget 20 USD, spesa non leggibile' })).toBeDefined()
   await ui.unmount()
@@ -1025,14 +1043,14 @@ test('F6.5 consigliere: «Suggerisci» mostra dove e perché sulla proposta; «A
   const amb = ambiente(on)
   const a = base('a-cons0002', 1, { repo: AUTORE.repo!, revisore: 'claude' })
   amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
-  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 }, consigliere: 'suggerisci' } } }))
+  amb.disco.set(CONFIG, JSON.stringify({ account: { apiClaude: { budgetUsd: 20 } }, progetti: { 'acme/progetto': { consigliere: 'suggerisci' } } }))
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: 'ricarica' })
   expect(await ui.find({ type: 'Text', text: '→ locale · piano sotto l\'attenzione' })).toBeDefined()
   expect(JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!).destinazione).toBeUndefined()
-  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 }, consigliere: 'applica' } } }))
+  amb.disco.set(CONFIG, JSON.stringify({ account: { apiClaude: { budgetUsd: 20 } }, progetti: { 'acme/progetto': { consigliere: 'applica' } } }))
   await ui.press({ key: 'ricarica' })
   await ui.press({ key: 'ricarica' })
   expect(JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!).destinazione).toBe('local')
@@ -1041,8 +1059,10 @@ test('F6.5 consigliere: «Suggerisci» mostra dove e perché sulla proposta; «A
 
 test('F6 risorse_agenti: destinazioni configurate e margini in inglese, dentro il tetto; della chiave solo la presenza', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
   const amb = ambiente(on)
-  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 }, consigliere: 'suggerisci' } } }))
-  amb.disco.set('X:/orch/azioni/spesa-api.json', JSON.stringify({ v: 1, voci: { 'az-spesa009': { mese: new Date().toISOString().slice(0, 7), tetto: 2, stato: 'contato', costo: 1.5 } } }))
+  amb.disco.set(CONFIG, JSON.stringify({ account: { apiClaude: { budgetUsd: 20 } }, progetti: { 'acme/progetto': { consigliere: 'suggerisci' } } }))
+  const mese = new Date().toISOString().slice(0, 7)
+  amb.disco.set(SPESA_API, JSON.stringify({ v: 1, voci: { 'az-spesa009': { progetto: 'acme/progetto', mese, tetto: 2, stato: 'contato', costo: 1.5 },
+    'az-spesa010': { progetto: 'altro/repo', mese, tetto: 2, stato: 'contato', costo: 1 } } }))
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
@@ -1053,7 +1073,8 @@ test('F6 risorse_agenti: destinazioni configurate e margini in inglese, dentro i
   expect(r.result).not.toContain(CHIAVE_API)
   const d = JSON.parse(r.result) as { destinazioni: Record<string, unknown> }
   expect(d.destinazioni).toMatchObject({
-    'api-claude': { budgetUsd: 20, capPerRunUsd: 2, spentThisMonthUsd: 1.5, estimated: true, lane: 'free' },
+    // F10: il budget è dell'account (tutti i progetti); tetto e spesa di questo progetto a parte.
+    'api-claude': { account: { budgetUsd: 20, spentThisMonthUsd: 2.5, appliesTo: 'all projects' }, project: { capPerRunUsd: 2, spentThisMonthUsd: 1.5 }, estimated: true, lane: 'free' },
     advisor: 'suggerisci',
   })
   expect(String(d.destinazioni.cloud)).toMatch(/^Claude cloud: same plan limits as local/)
@@ -1104,7 +1125,7 @@ test('F6 rilievo 7: una chip fork non riceve consigli cloud o API; «Applica» s
   expect(consigliaDove(fork, RA, piano, [fork], 3)?.d).toBe('local')
   const amb = ambiente(on)
   amb.disco.set(`X:/orch/azioni/${fork.id}.json`, JSON.stringify(fork))
-  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'acme/progetto': { apiClaude: { budgetUsd: 20 }, consigliere: 'applica' } } }))
+  amb.disco.set(CONFIG, JSON.stringify({ account: { apiClaude: { budgetUsd: 20 } }, progetti: { 'acme/progetto': { consigliere: 'applica' } } }))
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
@@ -1945,7 +1966,8 @@ test('2.2: viste con i tasti 1 2 3; la sintesi dice chi lavora e chi aspetta', a
   expect(await ui.find({ type: 'Text', text: /^Limiti e budget$/ })).toBeDefined()
   expect(await ui.find({ key: 'tutte' })).toBeUndefined()
   await ui.press({ key: 'impostazioni' })
-  expect(await ui.find({ key: 'sezione' })).toBeDefined()
+  // F10: le sezioni sono chip in due gruppi (Account e Progetto), non più un gruppo unico «sezione».
+  expect(await ui.find({ key: 'sezione-connessioni-premi' })).toBeDefined()
   await ui.press({ key: 'vista-lavoro' })
   expect(await ui.find({ key: `avvia-${amb.azione()[0]!.id}` })).toBeDefined()
   await ui.unmount()

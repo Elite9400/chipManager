@@ -26,7 +26,8 @@ const ENTRATA = path.join(radiceProve, 'entrata-prove.cjs')
 fs.writeFileSync(ENTRATA, `require(${JSON.stringify(DISCO)}).main(process.argv.slice(2), { mutexCodex: ${JSON.stringify(MUTEX_PROVA)} })
   .catch(e => { process.stdout.write(String(e?.message ?? e)); process.exitCode = 1 })
 `)
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'disco-'))
+// F10: anche i dati delle prove stanno fuori da ogni albero git (l'helper rifiuta config e cartelle dentro un repository).
+const tmp = () => { const d = fs.mkdtempSync(path.join(tmpVero, 'disco-')); fuoriDalRepo.push(d); return d }
 const esegui = (args, input) => spawnSync(process.execPath, [ENTRATA, ...args], { input, encoding: 'utf8' })
 const corri = (codice, args = []) =>
   new Promise(r => {
@@ -777,7 +778,7 @@ test('2.4 board: junction nel percorso o cartella dentro un working tree: board 
   const gd = await imposta(dentro, 'accesa')
   const rd = bc(dentro, 'board-scrivi', gd, ['h'], HTML)
   assert.strictEqual(rd.status, 6)
-  assert.strictEqual(rd.stdout.trim(), 'helper.dentroWorkingTree')
+  assert.match(rd.stdout.trim(), /^helper.dentroWorkingTree/)
   assert.strictEqual(fs.existsSync(path.join(dentro.cartella, 'board')), false)
 })
 
@@ -1238,7 +1239,7 @@ const API_VERA = require('./api-claude.cjs')
 const API = new Proxy(API_VERA, {
   get(m, k) {
     const f = m[k]
-    if (!['lanciaApi', 'eseguiApi', 'statoApi', 'liberaApi', 'terminaApi', 'accedi'].includes(k)) return f
+    if (!['lanciaApi', 'eseguiApi', 'statoApi', 'liberaApi', 'terminaApi', 'accedi', 'contaSpesa'].includes(k)) return f
     // Il deps è l'argomento dopo i posizionali (f.length conta quelli senza valore predefinito).
     return (...a) => f(...a.slice(0, f.length), { ...ISOLA, ...(a[f.length] ?? {}) })
   },
@@ -1260,7 +1261,16 @@ const claudeFinto = (uscita, codice = 0, durante = () => {}) => (argv, opzioni) 
   queueMicrotask(() => p.emit('spawn'))
   return p
 }
-const ingressoApi = root => ({ root, prompt: 'Lavoro di prova.', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', tetto: 2, budget: 5, mese: '2026-11', chiave: CHIAVE_PROVA })
+const PROGETTO_PROVA = 'owner/prova'
+/** F10: il config che l'helper rilegge sotto il lock: crediti API nell'account (budget 5, tetto 2) e i campi del progetto. */
+const configApi = (account = { apiClaude: { budgetUsd: 5, tetto: 2 } }, progetto = {}, altri = {}) => {
+  const f = path.join(tmp(), 'config.json')
+  fs.writeFileSync(f, JSON.stringify({ account, progetti: { [PROGETTO_PROVA]: progetto, ...altri } }))
+  return f
+}
+// Budget e tetto che manda il pannello non contano (li decide il config): qui volutamente diversi.
+const ingressoApi = (root, config = configApi(), repo = PROGETTO_PROVA) =>
+  ({ root, prompt: 'Lavoro di prova.', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', tetto: 9, budget: 999, mese: '2026-11', chiave: CHIAVE_PROVA, config, repo })
 const recordApi = (dir, id, tentativo) => fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ stato: 'in-avvio', lanciatore: 'api-claude', tentativo }))
 const fontiPulite = dir => ['utente', 'progetto', 'locale', 'gestite'].map(nome => ({ nome, file: path.join(dir, `${nome}.json`) }))
 const supervisoreFinto = stdin => () => {
@@ -1293,19 +1303,22 @@ test('F6.2 impostazioni: ogni fonte (utente, progetto, locale, gestite) e l\'amb
 })
 
 test('F6.2 spesa: il tetto si prenota sul budget del mese, la contabilizzazione è idempotente e un costo ignoto vale il tetto', async () => {
-  const dir = tmp()
-  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa01', '2026-11', 2, 5), true)
-  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa01', '2026-11', 2, 5), true)
-  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa02', '2026-11', 2, 5), true)
-  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa03', '2026-11', 2, 5), false)
-  await API.contaSpesa(dir, 'az-spesa01', 0.4)
-  await API.contaSpesa(dir, 'az-spesa01', 9)
-  await API.contaSpesa(dir, 'az-spesa02', null)
-  const s = API.leggiSpesa(dir)
-  assert.deepStrictEqual([s.voci['az-spesa01'].costo, s.voci['az-spesa02'].costo], [0.4, null])
+  const dm = tmp()
+  const P = PROGETTO_PROVA
+  assert.strictEqual(API.prenotaSpesa(dm, 'az-spesa01', '2026-11', 2, 5, P), true)
+  assert.strictEqual(API.prenotaSpesa(dm, 'az-spesa01', '2026-11', 2, 5, P), true)
+  assert.strictEqual(API.prenotaSpesa(dm, 'az-spesa02', '2026-11', 2, 5, P), true)
+  assert.strictEqual(API.prenotaSpesa(dm, 'az-spesa03', '2026-11', 2, 5, P), false)
+  await API.contaSpesa(dm, 'az-spesa01', 0.4)
+  await API.contaSpesa(dm, 'az-spesa01', 9)
+  await API.contaSpesa(dm, 'az-spesa02', null)
+  const s = API.leggiSpesa(dm)
+  assert.deepStrictEqual([s.voci['az-spesa01'].costo, s.voci['az-spesa02'].costo, s.voci['az-spesa01'].progetto], [0.4, null, P])
   assert.strictEqual(API.spesoNelMese(s.voci, '2026-11'), 2.4)
-  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa03', '2026-11', 2, 5), true)
-  assert.strictEqual(API.prenotaSpesa(dir, 'az-spesa04', '2026-12', 2, 5), true)
+  assert.strictEqual(API.prenotaSpesa(dm, 'az-spesa03', '2026-11', 2, 5, P), true)
+  assert.strictEqual(API.prenotaSpesa(dm, 'az-spesa04', '2026-12', 2, 5, P), true)
+  // Senza progetto non si prenota.
+  assert.throws(() => API.prenotaSpesa(dm, 'az-spesa05', '2026-12', 2, 5))
 })
 
 test('F6.2 avvio: lock della macchina e spesa prenotati prima del processo; un secondo avvio non parte; budget e impostazioni bloccano', async () => {
@@ -1327,7 +1340,7 @@ test('F6.2 avvio: lock della macchina e spesa prenotati prima del processo; un s
   assert.deepStrictEqual([codice, JSON.parse(testo).motivo], [3, 'senza-pid'])
   // Lock libero: il budget (5 USD, 2 già prenotati) e le impostazioni decidono.
   const dm2 = tmp()
-  assert.strictEqual((await API.lanciaApi(dir, 'a-api00002', 'az-api0002', { ...ingressoApi(root), tetto: 4 }, { ...deps, dirMacchina: dm2 }))[0], 5)
+  assert.strictEqual((await API.lanciaApi(dir, 'a-api00002', 'az-api0002', ingressoApi(root, configApi({ apiClaude: { budgetUsd: 3, tetto: 4 } })), { ...deps, dirMacchina: dm2 }))[0], 5)
   assert.strictEqual((await API.lanciaApi(dir, 'a-api00002', 'az-api0002', ingressoApi(root), { ...deps, dirMacchina: dm2, env: { ANTHROPIC_API_KEY: 'k' } }))[0], 6)
   assert.strictEqual(fs.existsSync(API.fileLock(dm2)), false)
 })
@@ -1337,12 +1350,16 @@ test('F6.2 supervisore: niente chiave nell\'ambiente o su argv; helper con TTL e
   const dm = tmp()
   const root = tmp()
   recordApi(dir, 'a-api00003', 'az-api0003')
-  const deps = { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }
+  const stdin = []
+  const deps = { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto(stdin) }
   assert.strictEqual((await API.lanciaApi(dir, 'a-api00003', 'az-api0003', ingressoApi(root), deps))[0], 0)
+  // F10: il supervisore riceve budget e tetto del config riletto, non quelli mandati dal pannello (999 e 9).
+  const passato = JSON.parse(stdin[0])
+  assert.deepStrictEqual([passato.budget, passato.tetto], [5, 2])
   const helper = (k, c) => spawnSync(process.execPath, [path.join(__dirname, 'chiave-api.cjs'), k, c], { encoding: 'utf8' })
   let visto
   const uscita = JSON.stringify({ type: 'result', is_error: false, total_cost_usd: 0.42, num_turns: 3, result: `Fatto. La chiave era ${CHIAVE_PROVA}` })
-  const codice = await API.eseguiApi(dir, 'a-api00003', 'az-api0003', ingressoApi(root), {
+  const codice = await API.eseguiApi(dir, 'a-api00003', 'az-api0003', passato, {
     dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], fontiCwd: () => fontiPulite(root),
     env: { PATH: process.env.PATH, ANTHROPIC_BASE_URL: 'http://altrove', ANTHROPIC_AUTH_TOKEN: 'token', CLAUDECODE: '1' },
     avvia: claudeFinto(uscita, 0, (argv, opzioni) => {
@@ -1365,7 +1382,7 @@ test('F6.2 supervisore: niente chiave nell\'ambiente o su argv; helper con TTL e
   const esec = fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0003.json'), 'utf8')
   assert.deepStrictEqual([JSON.parse(esec).stato, JSON.parse(esec).costo], ['consegnata', 0.42])
   assert.ok(!esec.includes(CHIAVE_PROVA) && !esec.includes('sk-ant'))
-  assert.strictEqual(API.leggiSpesa(dir).voci['az-api0003'].costo, 0.42)
+  assert.strictEqual(API.leggiSpesa(dm).voci['az-api0003'].costo, 0.42)
   // Il lock resta finché non scade la copia in memoria della chiave (5 minuti dall'ultima consegna).
   assert.strictEqual((await API.statoApi(dm, { elenco: () => [] })).motivo, 'cache')
   assert.deepStrictEqual(await API.statoApi(dm, { elenco: () => [], adesso: () => Date.now() + API.TTL_MS + 1000 }), { libero: true, liberato: 'az-api0003' })
@@ -1380,7 +1397,7 @@ test('F6.2 supervisore: un esito illeggibile o troncato è incerto e conta il te
   await API.eseguiApi(dir, 'a-api00004', 'az-api0004', ingressoApi(root), { dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], fontiCwd: () => fontiPulite(root), env: {}, avvia: claudeFinto('{"type":"result","total_c') })
   const esec = JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0004.json'), 'utf8'))
   assert.deepStrictEqual([esec.stato, esec.incerto, esec.costo], ['avviata', true, null])
-  assert.strictEqual(API.spesoNelMese(API.leggiSpesa(dir).voci, '2026-11'), 2)
+  assert.strictEqual(API.spesoNelMese(API.leggiSpesa(dm).voci, '2026-11'), 2)
 })
 
 test('F6.2 lock: senza uscita registrata nessuna liberazione automatica; «Libera» solo con file-chiave cancellato, nessun discendente e 5 minuti', async () => {
@@ -1410,7 +1427,7 @@ test('F6.2 lock: senza uscita registrata nessuna liberazione automatica; «Liber
   assert.deepStrictEqual(await API.liberaApi(dm, { elenco: () => [], adesso: dopo }), { libero: true, liberato: 'az-api0005' })
   assert.strictEqual(fs.existsSync(API.fileChiave(dm, 'az-api0005')), false)
   // Il costo di un tentativo liberato a mano è ignoto: conta il tetto intero.
-  assert.deepStrictEqual(API.leggiSpesa(dir).voci['az-api0005'], { mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
+  assert.deepStrictEqual(API.leggiSpesa(dm).voci['az-api0005'], { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
 })
 
 test('F6.2 lock: uscita registrata ma un discendente vivo: resta bloccato finché «Termina» o «Libera»', async () => {
@@ -1460,12 +1477,15 @@ test('F6.2 rilievo 1: supervisore caduto senza uscita registrata: con il process
 
 test('F6.2 rilievo 2: una voce del registro senza tetto, con importi o stati non validi blocca le prenotazioni con il motivo', async () => {
   const mese = '2026-11'
-  for (const voce of [{ mese, stato: 'prenotato' }, { mese, tetto: -1, stato: 'prenotato' }, { mese, tetto: 2, stato: 'boh' }, { mese, tetto: 2, stato: 'contato', costo: 'molto' }, { mese: 'ieri', tetto: 2, stato: 'prenotato' }]) {
+  const P = { progetto: PROGETTO_PROVA }
+  for (const voce of [{ ...P, mese, stato: 'prenotato' }, { ...P, mese, tetto: -1, stato: 'prenotato' }, { ...P, mese, tetto: 2, stato: 'boh' }, { ...P, mese, tetto: 2, stato: 'contato', costo: 'molto' }, { ...P, mese: 'ieri', tetto: 2, stato: 'prenotato' },
+    { mese, tetto: 2, stato: 'prenotato' }, { progetto: 7, mese, tetto: 2, stato: 'prenotato' }]) {
     const dir = tmp()
-    fs.writeFileSync(path.join(dir, 'spesa-api.json'), JSON.stringify({ v: 1, voci: { 'az-vecchio01': voce } }))
-    assert.throws(() => API.prenotaSpesa(dir, 'az-nuovo0001', mese, 2, 1))
+    const dm = tmp()
+    fs.writeFileSync(API.fileSpesa(dm), JSON.stringify({ v: 1, voci: { 'az-vecchio01': voce } }))
+    assert.throws(() => API.prenotaSpesa(dm, 'az-nuovo0001', mese, 2, 1, PROGETTO_PROVA))
     recordApi(dir, 'a-api00013', 'az-api0013')
-    const [codice, testo] = await API.lanciaApi(dir, 'a-api00013', 'az-api0013', { ...ingressoApi(tmp()), budget: 1, tetto: 0.5 }, { dirMacchina: tmp(), fonti: fontiPulite(tmp()), env: {}, supervisore: supervisoreFinto([]) })
+    const [codice, testo] = await API.lanciaApi(dir, 'a-api00013', 'az-api0013', ingressoApi(tmp(), configApi({ apiClaude: { budgetUsd: 1, tetto: 0.5 } })), { dirMacchina: dm, fonti: fontiPulite(tmp()), env: {}, supervisore: supervisoreFinto([]) })
     assert.deepStrictEqual([JSON.stringify(voce), codice, JSON.parse(testo)], [JSON.stringify(voce), 5, { registro: 'non valido' }])
   }
 })
@@ -1508,7 +1528,7 @@ test('F6.2 rilievo 5: impostazioni vietate solo nel worktree: niente chiave né 
   const esec = JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0015.json'), 'utf8'))
   assert.deepStrictEqual([esec.stato, /progetto/.test(esec.errore)], ['fallita', true])
   assert.strictEqual(fs.existsSync(API.fileLock(dm)), false)
-  assert.strictEqual(API.leggiSpesa(dir).voci['az-api0015'].costo, 0)
+  assert.strictEqual(API.leggiSpesa(dm).voci['az-api0015'].costo, 0)
 })
 
 test('F6.2 rilievo 6: il JSON finale arrivato dopo l\'uscita si legge alla chiusura degli stream; la chiave va via subito all\'uscita', async () => {
@@ -1540,7 +1560,7 @@ test('F6.2 rilievo 6: il JSON finale arrivato dopo l\'uscita si legge alla chius
   assert.strictEqual(chiaveDopoUscita, false)
   const esec = JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0016.json'), 'utf8'))
   assert.deepStrictEqual([esec.stato, esec.costo], ['consegnata', 0.25])
-  assert.strictEqual(API.leggiSpesa(dir).voci['az-api0016'].costo, 0.25)
+  assert.strictEqual(API.leggiSpesa(dm).voci['az-api0016'].costo, 0.25)
 })
 
 // --- F6.7: stato della configurazione e accessi a un clic --------------------------------------------------------
@@ -1628,13 +1648,15 @@ test('F6.7 accedi: di GitHub esce solo il codice; l\'output del login non tocca 
 
 test('F6.2 rilievo 2 (giro 2): un campo del tipo sbagliato (mese in un elenco, numeri come testo) blocca le prenotazioni', async () => {
   const mese = '2026-11'
-  for (const voce of [{ mese: [mese], tetto: 4, stato: 'prenotato' }, { mese, tetto: '4', stato: 'prenotato' }, { mese, tetto: [4], stato: 'prenotato' },
-    { mese, tetto: 2, stato: 'contato', costo: '0.5' }, { mese, tetto: 2, stato: ['contato'], costo: 1 }, [mese, 4]]) {
+  const P = { progetto: PROGETTO_PROVA }
+  for (const voce of [{ ...P, mese: [mese], tetto: 4, stato: 'prenotato' }, { ...P, mese, tetto: '4', stato: 'prenotato' }, { ...P, mese, tetto: [4], stato: 'prenotato' },
+    { ...P, mese, tetto: 2, stato: 'contato', costo: '0.5' }, { ...P, mese, tetto: 2, stato: ['contato'], costo: 1 }, [mese, 4], { progetto: [PROGETTO_PROVA], mese, tetto: 2, stato: 'prenotato' }]) {
     const dir = tmp()
-    fs.writeFileSync(path.join(dir, 'spesa-api.json'), JSON.stringify({ v: 1, voci: { 'az-vecchio02': voce } }))
-    assert.throws(() => API.prenotaSpesa(dir, 'az-nuovo0002', mese, 2, 5), undefined, JSON.stringify(voce))
+    const dm = tmp()
+    fs.writeFileSync(API.fileSpesa(dm), JSON.stringify({ v: 1, voci: { 'az-vecchio02': voce } }))
+    assert.throws(() => API.prenotaSpesa(dm, 'az-nuovo0002', mese, 2, 5, PROGETTO_PROVA), undefined, JSON.stringify(voce))
     recordApi(dir, 'a-api00018', 'az-api0018')
-    const [codice, testo] = await API.lanciaApi(dir, 'a-api00018', 'az-api0018', { ...ingressoApi(tmp()), budget: 5, tetto: 2 }, { dirMacchina: tmp(), fonti: fontiPulite(tmp()), env: {}, supervisore: supervisoreFinto([]) })
+    const [codice, testo] = await API.lanciaApi(dir, 'a-api00018', 'az-api0018', ingressoApi(tmp()), { dirMacchina: dm, fonti: fontiPulite(tmp()), env: {}, supervisore: supervisoreFinto([]) })
     assert.deepStrictEqual([JSON.stringify(voce), codice, JSON.parse(testo)], [JSON.stringify(voce), 5, { registro: 'non valido' }])
   }
 })
@@ -1672,7 +1694,7 @@ test('F6.2 rilievo 6 (giro 2): l\'attesa degli stream parte dall\'uscita: dopo 3
   t.mock.timers.reset()
   const esec = JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0019.json'), 'utf8'))
   assert.deepStrictEqual([esec.stato, esec.costo, esec.incerto], ['consegnata', 0.25, undefined])
-  assert.strictEqual(API.leggiSpesa(dir).voci['az-api0019'].costo, 0.25)
+  assert.strictEqual(API.leggiSpesa(dm).voci['az-api0019'].costo, 0.25)
 })
 
 // --- F7.1: proposte di impostazioni nell'helper -------------------------------------------------------------------
@@ -1681,24 +1703,26 @@ test('F7.1 helper: rivalida la forma (campo annidato vietato, valore mai ripetut
   const d = require(DISCO)
   const file = path.join(tmp(), 'config.json')
   const chi = { id: 'local_prova', titolo: 'Sessione di prova' }
-  const [c1, t1] = await d.impostazioniProponi(file, { repo: 'acme/x', proponente: chi, proposta: { motivo: 'm', apiClaude: { budgetUsd: 5, chiave: 'sk-ant-NONQUI' } } })
-  assert.deepStrictEqual([c1, /"apiClaude\.chiave"/.test(t1), t1.includes('sk-ant-NONQUI')], [2, true, false])
+  const [c1, t1] = await d.impostazioniProponi(file, { repo: 'acme/x', proponente: chi, proposta: { motivo: 'm', account: { apiClaude: { budgetUsd: 5, chiave: 'sk-ant-NONQUI' } } } })
+  assert.deepStrictEqual([c1, /"account\.apiClaude\.chiave"/.test(t1), t1.includes('sk-ant-NONQUI')], [2, true, false])
   assert.strictEqual(fs.existsSync(d.fileImpostazioniDi(file)), false)
-  for (const proposta of [{ motivo: 'm' }, { motivo: 'm', soloLocale: true }, { motivo: 'm', soglie: { claude: { attenzione: 80, critica: 70 } } }, { motivo: 'm', lingua: 'xx' }])
+  // F10: una patch per strato; la forma piatta di prima, un campo fuori dalla whitelist dello strato o un valore non valido no.
+  for (const proposta of [{ motivo: 'm' }, { motivo: 'm', soloLocale: true }, { motivo: 'm', account: { soglie: { claude: { attenzione: 80, critica: 70 } } } }, { motivo: 'm', lingua: 'xx' },
+    { motivo: 'm', profilo: 'risparmio' }, { motivo: 'm', progetto: { soglie: {} } }, { motivo: 'm', account: { board: { modo: 'accesa' } } }, { motivo: 'm', progetto: { restrizioni: { apiTetto: 0 } } }, { motivo: 'm', progetto: {} }])
     assert.strictEqual((await d.impostazioniProponi(file, { repo: 'acme/x', proponente: chi, proposta }))[0], 2, JSON.stringify(proposta))
-  const [c2, t2] = await d.impostazioniProponi(file, { repo: 'acme/x', proponente: chi, proposta: { motivo: ' Risparmio. ', profilo: 'risparmio' } })
+  const [c2, t2] = await d.impostazioniProponi(file, { repo: 'acme/x', proponente: chi, proposta: { motivo: ' Risparmio. ', progetto: { profilo: 'risparmio' } } })
   assert.strictEqual(c2, 0)
   const { id } = JSON.parse(t2)
-  assert.strictEqual((await d.impostazioniProponi(file, { repo: 'acme/x', proponente: chi, proposta: { motivo: 'altra', profilo: 'qualita' } }))[0], 4)
+  assert.strictEqual((await d.impostazioniProponi(file, { repo: 'acme/x', proponente: chi, proposta: { motivo: 'altra', progetto: { profilo: 'qualita' } } }))[0], 4)
   // Un altro progetto ha la sua.
-  assert.strictEqual((await d.impostazioniProponi(file, { repo: 'acme/y', proponente: chi, proposta: { motivo: 'y', board: { modo: 'accesa' } } }))[0], 0)
+  assert.strictEqual((await d.impostazioniProponi(file, { repo: 'acme/y', proponente: chi, proposta: { motivo: 'y', progetto: { board: { modo: 'accesa' }, restrizioni: { apiTetto: 1 } }, account: { soglie: { claude: null } } } }))[0], 0)
   const [c3, t3] = await d.impostazioniPrendi(file, 'acme/x', id)
-  assert.deepStrictEqual([c3, JSON.parse(t3).proposta], [0, { motivo: 'Risparmio.', profilo: 'risparmio' }])
+  assert.deepStrictEqual([c3, JSON.parse(t3).proposta], [0, { motivo: 'Risparmio.', progetto: { profilo: 'risparmio' } }])
   assert.strictEqual((await d.impostazioniPrendi(file, 'acme/x', id))[0], 4)
   // Scaduta (oltre 24 ore) o manomessa nel file: non arriva al pannello.
   const fp = d.fileImpostazioniDi(file)
   const P = JSON.parse(fs.readFileSync(fp, 'utf8'))
-  P.voci['acme/z'] = { id: 'i-vecchia01', quando: new Date(Date.now() - 25 * 3_600_000).toISOString(), proponente: chi, proposta: { motivo: 'm', profilo: 'qualita' } }
+  P.voci['acme/z'] = { id: 'i-vecchia01', quando: new Date(Date.now() - 25 * 3_600_000).toISOString(), proponente: chi, proposta: { motivo: 'm', progetto: { profilo: 'qualita' } } }
   P.voci['acme/w'] = { id: 'i-manomessa1', quando: new Date().toISOString(), proponente: chi, proposta: { motivo: 'm', fornitori: ['x'] } }
   fs.writeFileSync(fp, JSON.stringify(P))
   assert.strictEqual((await d.impostazioniPrendi(file, 'acme/z', 'i-vecchia01'))[0], 4)
@@ -1751,7 +1775,7 @@ async function eseguiConAdvisor(tentativo, input, fontiWorktree, figlio, invaria
   await API.eseguiApi(dir, id, tentativo, { ...ingressoApi(root), ...input }, { dirMacchina: dm, git: () => 'a'.repeat(40), elenco: () => [], env: {}, fontiCwd: () => fontiWorktree, avvia: figlio,
     worktreeInvariato: (_cwd, base) => (assert.strictEqual(base, 'a'.repeat(40)), invariato) })
   // La cartella delle azioni viaggia col record (non enumerabile): le prove leggono anche il registro della spesa.
-  return Object.defineProperty(JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', `${tentativo}.json`), 'utf8')), 'dir', { value: dir })
+  return Object.defineProperties(JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', `${tentativo}.json`), 'utf8')), { dir: { value: dir }, dm: { value: dm } })
 }
 const fontiCon = (contenuti) => {
   const dir = tmp()
@@ -1862,16 +1886,16 @@ test('F7 giro 2, rilievo 3: senza stdout ma con il worktree cambiato è incerto;
 })
 
 test('F7 giro 3: ogni esito incerto contabilizza il tetto intero nel registro della spesa (il costo riportato resta solo un\'informazione); stdout troncato non è mai un rifiuto', async () => {
-  const voce = e => API.leggiSpesa(e.dir).voci[e.tentativo]
+  const voce = e => API.leggiSpesa(e.dm).voci[e.tentativo]
   // is_error con costo 0,30 e tetto 2: incerto, nel registro conta 2.
   const errore = await eseguiConAdvisor('az-rv9001', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: JSON.stringify({ is_error: true, total_cost_usd: 0.3, num_turns: 4 }) }))
   assert.deepStrictEqual([errore.stato, errore.incerto, errore.costoRiportato], ['avviata', true, 0.3])
-  assert.deepStrictEqual(voce(errore), { mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
-  assert.strictEqual(API.spesoNelMese(API.leggiSpesa(errore.dir).voci, '2026-11'), 2)
+  assert.deepStrictEqual(voce(errore), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
+  assert.strictEqual(API.spesoNelMese(API.leggiSpesa(errore.dm).voci, '2026-11'), 2)
   // Stdout oltre 1 MiB (un JSON potrebbe esserci), uscita subito con stderr sull'advisor e worktree invariato: incerto.
   const lungo = await eseguiConAdvisor('az-rv9002', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: 'x'.repeat(1024 * 1024 + 10), stderr: 'advisor model rejected' }))
   assert.deepStrictEqual([lungo.stato, lungo.incerto, lungo.advisorNonDisponibile], ['avviata', true, undefined])
-  assert.deepStrictEqual(voce(lungo), { mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
+  assert.deepStrictEqual(voce(lungo), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
   // Il rifiuto all'avvio vero e l'esito senza JSON contano il tetto; una consegna pulita conta il suo costo.
   const rifiuto = await eseguiConAdvisor('az-rv9003', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, stderr: 'advisor model rejected' }))
   assert.deepStrictEqual([rifiuto.stato, rifiuto.advisorNonDisponibile, voce(rifiuto).costo], ['fallita', 'rifiutato', null])
@@ -1915,3 +1939,249 @@ test('corsia API: le prove usano mutex propri; il lock della macchina tenuto da 
   }
 })
 
+// --- F10: strato Account e strato Progetto ---------------------------------------------------------------------------
+
+const D = require(DISCO)
+const RADICE_REPO = path.resolve(__dirname, '..')
+const REV_RILASCIATA = 'f196d1b'
+/**
+ * La logica TS di una revisione (o, senza `rev`, del worktree) in una cartella fuori dal repo, con le importazioni
+ * relative complete di `.ts`: node la carica togliendo i tipi. Restituisce il percorso di `hooks/logica.ts`.
+ */
+function logicaTs(rev) {
+  const dir = fuori()
+  const nomi = rev
+    ? spawnSync('git', ['-C', RADICE_REPO, 'ls-tree', '-r', '--name-only', rev, 'hooks/'], { encoding: 'utf8' }).stdout.trim().split('\n')
+    : ['hooks/logica.ts', 'hooks/lingua.ts', 'hooks/tema.ts', ...fs.readdirSync(path.join(RADICE_REPO, 'hooks', 'lingue')).map(n => `hooks/lingue/${n}`)]
+  for (const n of nomi.filter(n => /^hooks\/(logica|lingua|tema)\.ts$|^hooks\/lingue\/\w+\.ts$/.test(n))) {
+    const testo = rev ? spawnSync('git', ['-C', RADICE_REPO, 'show', `${rev}:${n}`], { encoding: 'utf8' }).stdout : fs.readFileSync(path.join(RADICE_REPO, n), 'utf8')
+    assert.ok(testo, `${rev ?? 'worktree'}:${n}`)
+    fs.mkdirSync(path.dirname(path.join(dir, n)), { recursive: true })
+    fs.writeFileSync(path.join(dir, n), testo.replace(/from '(\.\.?\/[^']+?)'/g, (m, s) => (s.startsWith('../types') ? m : `from '${s}.ts'`)))
+  }
+  return path.join(dir, 'hooks', 'logica.ts')
+}
+/** Esegue `corpo` (ESM, con `vecchia`, `nuova` e `ingresso`) in un node che toglie i tipi; restituisce il JSON stampato. */
+function conLogica(corpo, ingresso) {
+  const url = f => require('node:url').pathToFileURL(f).href
+  const codice = `const vecchia = await import(${JSON.stringify(url(logicaTs(REV_RILASCIATA)))})
+const nuova = await import(${JSON.stringify(url(logicaTs()))})
+const ingresso = ${JSON.stringify(ingresso)}
+${corpo}`
+  const r = spawnSync(process.execPath, ['--experimental-transform-types', '--no-warnings', '--input-type=module', '-e', codice], { encoding: 'utf8' })
+  assert.strictEqual(r.status, 0, r.stderr)
+  return JSON.parse(r.stdout)
+}
+
+// Config come li scrivono la 2.1.0 (solo i campi di allora) e i build di sviluppo (soglie, apiClaude, consigliere, board…).
+const CONFIG_RILASCIATI = [
+  {},
+  { fornitori: ['claude'], soloLocale: true },
+  { fornitori: ['claude', 'codex', 'freellmapi'], milestoneGithub: true, pesi: [{ tipo: 'fornitore', nome: 'codex', percentuale: 50, assoluto: 0 }],
+    limitiManuali: [{ id: 'piano', fornitore: 'claude', nome: 'Max', letto: '2026-11-01T10:00:00.000Z', percentuale: 40, unita: '%' }],
+    freellmapi: { livello: 'R1', endpoint: 'http://127.0.0.1:3101/v1' } },
+]
+const CONFIG_SVILUPPO = [
+  { soglie: { claude: { attenzione: 50, critica: 80 } } },
+  { soglie: { claude: null, codex: { attenzione: 85, critica: 99 } } },
+  { soglie: { deepseek: null, freellmapi: null, claude: null, codex: null }, apiClaude: { budgetUsd: 20, tetto: 3 }, consigliere: 'applica' },
+  { soglie: {}, board: { modo: 'accesa', generazione: 3 }, profilo: 'risparmio', apiClaude: { budgetUsd: 7 } },
+]
+
+test('F10 compatibilità: risorseDa e progettoDa della 2.1.0-dev (f196d1b) ignorano account e restrizioni', () => {
+  const esiti = conLogica(`
+const senza = c => JSON.parse(JSON.stringify(c, (k, v) => (k === 'account' || k === 'restrizioni' ? undefined : v)))
+console.log(JSON.stringify(ingresso.map(c => [vecchia.progettoDa(c, 'owner/prova'), vecchia.progettoDa(senza(c), 'owner/prova')])))`,
+  [...CONFIG_RILASCIATI, ...CONFIG_SVILUPPO].map(p => ({
+    account: { soglie: { claude: { attenzione: 10, critica: 20 } }, apiClaude: { budgetUsd: 1, tetto: 0.5 }, limitiManuali: [], freellmapi: { endpoint: 'http://localhost:3999/v1' }, futuro: { x: 1 } },
+    progetti: { 'owner/prova': { ...p, restrizioni: { soglie: { codex: { attenzione: 5, critica: 6 } }, apiTetto: 0.2, apiLimiteMeseUsd: 0.4 } } },
+  })))
+  for (const [con, senza] of esiti) {
+    assert.ok(!con.k, JSON.stringify(con))
+    assert.deepStrictEqual(con, senza)
+  }
+})
+
+test('F10 compatibilità: il configura della 2.1.0-dev (f196d1b) conserva account, restrizioni, lingua e i campi sconosciuti', async () => {
+  const vecchio = fuori()
+  for (const n of ['disco.cjs', 'api-claude.cjs', 'fornitori.cjs', 'accesso.cjs', 'chiave-api.cjs']) {
+    const r = spawnSync('git', ['-C', RADICE_REPO, 'show', `${REV_RILASCIATA}:strumenti/${n}`], { encoding: 'utf8' })
+    if (r.status === 0) fs.writeFileSync(path.join(vecchio, n), r.stdout)
+  }
+  const D_VECCHIO = require(path.join(vecchio, 'disco.cjs'))
+  const file = path.join(tmp(), 'config.json')
+  const prima = { lingua: 'it', futuro: { annidato: [1, 2] }, account: { soglie: { claude: { attenzione: 60, critica: 80 } }, apiClaude: { budgetUsd: 20, tetto: 2 }, ignoto: true },
+    progetti: { 'owner/prova': { fornitori: ['claude'], restrizioni: { apiTetto: 1, soglie: { claude: null } }, sconosciuto: 'resta' }, 'owner/altro': { soloLocale: true } } }
+  fs.writeFileSync(file, JSON.stringify(prima))
+  assert.strictEqual(await D_VECCHIO.configura(file, { atteso: fs.readFileSync(file, 'utf8'), repo: 'owner/prova', campi: { consigliere: 'applica' } }), 0)
+  const dopo = JSON.parse(fs.readFileSync(file, 'utf8'))
+  assert.deepStrictEqual(dopo, { ...prima, progetti: { ...prima.progetti, 'owner/prova': { ...prima.progetti['owner/prova'], consigliere: 'applica' } } })
+})
+
+test('F10 equivalenza: senza account le soglie efficaci dei config della 2.1.0 e dei build di sviluppo sono quelle di prima', () => {
+  const esiti = conLogica(`console.log(JSON.stringify(ingresso.map(p => [vecchia.risorseDa(p).soglie, nuova.risorseDa(p).soglie, vecchia.risorseDa(p).freellmapi, nuova.risorseDa(p).freellmapi])))`,
+    [...CONFIG_RILASCIATI, ...CONFIG_SVILUPPO])
+  for (const [prima, dopo, fPrima, fDopo] of esiti) {
+    assert.deepStrictEqual(dopo, prima)
+    assert.deepStrictEqual(fDopo, fPrima)
+  }
+})
+
+const S = (attenzione, critica) => ({ attenzione, critica })
+// La tabella delle soglie del piano (giro 2): [account, progetto, atteso]; undefined = assente.
+const TABELLA_SOGLIE = [
+  [undefined, undefined, S(70, 90)],
+  [undefined, S(60, 85), S(60, 85)],
+  [undefined, null, null],
+  [null, undefined, null],
+  [S(65, 88), undefined, S(65, 88)],
+  [S(65, 88), S(60, 95), S(60, 88)],
+  [null, S(60, 85), S(60, 85)],
+  [S(65, 88), null, S(65, 88)],
+  [null, null, null],
+]
+
+test('F10 soglie: la tabella account × progetto, uguale nella logica TS e nel gemello CJS, per le soglie di progetto e per le restrizioni', () => {
+  const R = require('./regole.cjs')
+  const casi = TABELLA_SOGLIE.flatMap(([a, p]) => [
+    { account: a === undefined ? {} : { soglie: { claude: a } }, progetto: p === undefined ? {} : { soglie: { claude: p } } },
+    { account: a === undefined ? {} : { soglie: { claude: a } }, progetto: p === undefined ? {} : { restrizioni: { soglie: { claude: p } } } },
+  ])
+  const ts = conLogica(`console.log(JSON.stringify(ingresso.map(c => nuova.risorseDa(c.progetto, c.account).soglie.claude)))`, casi)
+  casi.forEach((c, i) => {
+    const atteso = TABELLA_SOGLIE[Math.floor(i / 2)][2]
+    assert.deepStrictEqual(ts[i], atteso, JSON.stringify(c))
+    assert.deepStrictEqual(R.regoleEfficaci(c.account, c.progetto).soglie.claude, atteso, JSON.stringify(c))
+  })
+})
+
+test('F10 parità: regoleEfficaci TS e CJS danno le stesse soglie, gli stessi crediti API e lo stesso endpoint; rifiutano le stesse forme', () => {
+  const R = require('./regole.cjs')
+  const validi = [
+    { account: undefined, progetto: {} },
+    { account: { apiClaude: { budgetUsd: 20 } }, progetto: {} },
+    { account: { apiClaude: { budgetUsd: 20, tetto: 3 } }, progetto: { apiClaude: { budgetUsd: 8, tetto: 5 } } },
+    { account: { apiClaude: { budgetUsd: 20, tetto: 3 } }, progetto: { restrizioni: { apiLimiteMeseUsd: 6, apiTetto: 1 }, apiClaude: { budgetUsd: 4 } } },
+    { account: { apiClaude: { budgetUsd: 5, tetto: 2 } }, progetto: { restrizioni: { apiLimiteMeseUsd: 50 } } },
+    { account: {}, progetto: { apiClaude: { budgetUsd: 20, tetto: 3 } } },
+    { account: { soglie: { codex: null, claude: S(50, 60) }, freellmapi: { endpoint: 'http://localhost:4000/v1' } }, progetto: { soglie: { codex: S(80, 95) }, restrizioni: { soglie: { claude: S(55, 58) } } } },
+    { account: { freellmapi: { endpoint: 'http://localhost:4000/v1' } }, progetto: { freellmapi: { livello: 'R1', endpoint: 'http://[::1]:5000/v1' } } },
+    { account: { apiClaude: null, freellmapi: null }, progetto: { apiClaude: null } },
+  ]
+  const nonValidi = [
+    { account: [], progetto: {} },
+    { account: { soglie: { claude: S(90, 80) } }, progetto: {} },
+    { account: { apiClaude: { budgetUsd: 0 } }, progetto: {} },
+    { account: { apiClaude: { budgetUsd: 5, tetto: 2000 } }, progetto: {} },
+    { account: { freellmapi: { endpoint: 'http://altrove:1/v1' } }, progetto: {} },
+    { account: {}, progetto: { restrizioni: { apiTetto: -1 } } },
+    { account: {}, progetto: { restrizioni: { soglie: { ignoto: null } } } },
+    { account: {}, progetto: { restrizioni: [] } },
+  ]
+  const ts = conLogica(`console.log(JSON.stringify(ingresso.map(c => { const r = nuova.risorseDa(c.progetto, c.account); return r.k ? null : { soglie: r.soglie, apiClaude: r.apiClaude ?? null, endpoint: r.freellmapi.endpoint } })))`, [...validi, ...nonValidi])
+  validi.forEach((c, i) => {
+    assert.notStrictEqual(ts[i], null, JSON.stringify(c))
+    assert.deepStrictEqual(R.regoleEfficaci(c.account, c.progetto), ts[i], JSON.stringify(c))
+  })
+  nonValidi.forEach((c, i) => {
+    assert.strictEqual(ts[validi.length + i], null, JSON.stringify(c))
+    assert.throws(() => R.regoleEfficaci(c.account, c.progetto), R.NonValido, JSON.stringify(c))
+  })
+  // Senza account.apiClaude la corsia è spenta; un apiClaude di progetto (build di sviluppo) è solo una restrizione.
+  assert.strictEqual(ts[5].apiClaude, null)
+  assert.deepStrictEqual(ts[3].apiClaude, { budgetUsd: 20, tetto: 1, limiteProgettoUsd: 4 })
+})
+
+test('F10 registro unico: due progetti sommano la spesa contro un solo budget; il limite del progetto limita; budget e tetto dal config', async () => {
+  const dm = tmp()
+  const root = tmp()
+  const config = configApi({ apiClaude: { budgetUsd: 5, tetto: 2 } }, {}, { 'owner/b': { restrizioni: { apiLimiteMeseUsd: 2 } } })
+  const deps = { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }
+  const lancia = async (repo, n) => {
+    const dir = tmp()
+    recordApi(dir, `a-due0000${n}`, `az-due000${n}`)
+    const r = await API.lanciaApi(dir, `a-due0000${n}`, `az-due000${n}`, ingressoApi(root, config, repo), deps)
+    fs.rmSync(API.fileLock(dm), { force: true })
+    return [r[0], r[1] ? JSON.parse(r[1]) : '']
+  }
+  assert.deepStrictEqual(await lancia(PROGETTO_PROVA, 1), [0, ''])
+  assert.deepStrictEqual(await lancia('owner/b', 2), [0, ''])
+  // owner/b ha speso il suo limite (2 di 2), anche se l'account ha ancora 1 USD.
+  assert.deepStrictEqual(await lancia('owner/b', 3), [5, { speso: 4, budget: 5, tetto: 2, spesoProgetto: 2, limiteProgetto: 2 }])
+  // L'account: 4 prenotati + 2 > 5, per qualunque progetto.
+  assert.deepStrictEqual(await lancia(PROGETTO_PROVA, 4), [5, { speso: 4, budget: 5, tetto: 2 }])
+  const voci = API.leggiSpesa(dm).voci
+  assert.deepStrictEqual(Object.values(voci).map(v => v.progetto).sort(), ['owner/b', PROGETTO_PROVA])
+  // Senza account.apiClaude la corsia è spenta, anche con un apiClaude di progetto dei build di sviluppo.
+  const dir = tmp()
+  recordApi(dir, 'a-due00006', 'az-due0006')
+  const spenta = await API.lanciaApi(dir, 'a-due00006', 'az-due0006', ingressoApi(root, configApi({}, { apiClaude: { budgetUsd: 50, tetto: 2 } })), { ...deps, dirMacchina: tmp() })
+  assert.deepStrictEqual([spenta[0], JSON.parse(spenta[1])], [5, { spenta: true }])
+})
+
+test('F10 registro: un registro per cartella dei build di sviluppo blocca la corsia con il motivo, senza prenotare', async () => {
+  const dir = tmp()
+  const dm = tmp()
+  const root = tmp()
+  fs.writeFileSync(path.join(dir, 'spesa-api.json'), JSON.stringify({ v: 1, voci: {} }))
+  recordApi(dir, 'a-svi00001', 'az-svi0001')
+  const [codice, testo] = await API.lanciaApi(dir, 'a-svi00001', 'az-svi0001', ingressoApi(root), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) })
+  assert.deepStrictEqual([codice, JSON.parse(testo).registroSviluppo], [5, path.resolve(dir)])
+  assert.deepStrictEqual([fs.existsSync(API.fileLock(dm)), fs.existsSync(API.fileSpesa(dm))], [false, false])
+})
+
+test('F10 configura: progetto, account e lingua in un solo CAS; null toglie; le restrizioni non allargano mai l\'account', async () => {
+  const file = path.join(tmp(), 'config.json')
+  fs.writeFileSync(file, JSON.stringify({ futuro: 1, account: { ignoto: { a: 1 } }, progetti: { 'owner/prova': { fornitori: ['claude'], consigliere: 'applica', x: 1 } } }))
+  const scrivi = q => D.configura(file, { atteso: fs.readFileSync(file, 'utf8'), repo: 'owner/prova', campi: {}, ...q })
+  assert.strictEqual(await scrivi({ campi: { consigliere: null, milestoneGithub: true }, account: { soglie: { claude: S(60, 80) }, apiClaude: { budgetUsd: 10, tetto: 2 } }, lingua: 'de' }), 0)
+  let c = JSON.parse(fs.readFileSync(file, 'utf8'))
+  assert.deepStrictEqual(c, { futuro: 1, lingua: 'de', account: { ignoto: { a: 1 }, soglie: { claude: S(60, 80) }, apiClaude: { budgetUsd: 10, tetto: 2 } },
+    progetti: { 'owner/prova': { fornitori: ['claude'], x: 1, milestoneGithub: true } } })
+  // Il progetto può solo restringere: soglie più alte, «nessuna soglia», limite o tetto oltre l'account sono rifiutati.
+  for (const restrizioni of [{ soglie: { claude: S(65, 80) } }, { soglie: { claude: null } }, { soglie: { codex: S(75, 90) } }, { apiLimiteMeseUsd: 11 }, { apiTetto: 3 }]) {
+    assert.strictEqual(await scrivi({ campi: { restrizioni } }), 2, JSON.stringify(restrizioni))
+  }
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), c)
+  assert.strictEqual(await scrivi({ campi: { restrizioni: { soglie: { claude: S(50, 70), codex: S(60, 80) }, apiLimiteMeseUsd: 4, apiTetto: 1 } } }), 0)
+  // Un account più severo dopo non rende invalida la restrizione: vale la più severa.
+  assert.strictEqual(await scrivi({ account: { soglie: { claude: S(40, 50) } } }), 0)
+  // «Rimuovi restrizione» toglie il campo; un account non valido non si scrive.
+  assert.strictEqual(await scrivi({ campi: { restrizioni: null } }), 0)
+  c = JSON.parse(fs.readFileSync(file, 'utf8'))
+  assert.strictEqual('restrizioni' in c.progetti['owner/prova'], false)
+  assert.strictEqual(await scrivi({ account: { apiClaude: { budgetUsd: -1 } } }), 2)
+  assert.strictEqual(await scrivi({ account: { chiave: 'x' } }), 2)
+  assert.strictEqual(await scrivi({ lingua: 'xx' }), 2)
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), c)
+})
+
+test('F10 percorsi: config e dati rifiutati sotto una junction sopra la base, con un .git come file, o dentro un repository', () => {
+  // Junction sopra la base che porta fuori da git: il percorso dichiarato passa per un link.
+  const vero = fuori()
+  const ponte = path.join(fuori(), 'ponte')
+  fs.symlinkSync(vero, ponte, process.platform === 'win32' ? 'junction' : 'dir')
+  const sottoPonte = path.join(ponte, 'chipmanager', 'config.json')
+  assert.throws(() => D.percorsoSicuro(sottoPonte), /helper\.collegamento/)
+  let r = esegui(['configura', sottoPonte], JSON.stringify({ atteso: null, repo: 'owner/prova', campi: { soloLocale: true } }))
+  assert.strictEqual(r.status, 6, r.stdout)
+  assert.deepStrictEqual(fs.readdirSync(vero), [])
+  // Un `.git` file (worktree) in un antenato: dentro un albero di lavoro.
+  const conGit = fuori()
+  fs.writeFileSync(path.join(conGit, '.git'), 'gitdir: altrove')
+  const dati = path.join(conGit, 'dati', 'azioni')
+  assert.throws(() => D.percorsoSicuro(dati), /helper\.dentroWorkingTree/)
+  r = esegui(['prenota', dati], JSON.stringify({ scrivi: { 'a-uno.json': { versione: 1 } } }))
+  assert.strictEqual(r.status, 6, r.stdout)
+  assert.strictEqual(fs.existsSync(path.join(conGit, 'dati')), false)
+  // Installata per progetto, la mod non scrive mai nel repository: un config dentro un repo git è rifiutato, non creato.
+  const repo = fuori()
+  assert.strictEqual(spawnSync('git', ['init', '-q', repo]).status, 0)
+  const nelRepo = path.join(repo, '.claude', 'chipmanager', 'config.json')
+  r = esegui(['configura', nelRepo], JSON.stringify({ atteso: null, repo: 'owner/prova', campi: { soloLocale: true }, account: { apiClaude: { budgetUsd: 5 } } }))
+  assert.strictEqual(r.status, 6, r.stdout)
+  assert.strictEqual(fs.existsSync(path.join(repo, '.claude')), false)
+  // Fuori da tutto, lo stesso config si scrive.
+  const casa = path.join(fuori(), 'chipmanager', 'config.json')
+  assert.strictEqual(esegui(['configura', casa], JSON.stringify({ atteso: null, repo: 'owner/prova', campi: { soloLocale: true } })).status, 0)
+})

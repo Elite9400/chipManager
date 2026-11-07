@@ -15,7 +15,25 @@ export type Limite = {
   unita?: '%' | 'USD' | 'CNY' | 'EUR' | 'richieste' | 'token'
   reset?: string
   manuale?: boolean
+  /** F10: un budget manuale dello strato Progetto (gli altri sono dell'account, uguali in tutti i progetti). */
+  progetto?: true
   errore?: string
+}
+/** F10: soglie per fornitore di uno strato, senza valori predefiniti: assente = eredita, null = nessuna soglia da questo strato. */
+export type SogliePerStrato = Partial<Record<Fornitore, Soglia | null>>
+/** F10: le restrizioni di un progetto (`progetti[repo].restrizioni`): possono solo restringere l'account, mai allargarlo. */
+export type Restrizioni = { soglie?: SogliePerStrato; apiLimiteMeseUsd?: number; apiTetto?: number }
+/** F10: lo strato Account (`account` nella radice del config), uguale in tutti i progetti; letto e convalidato, senza predefiniti. */
+export type StratoAccount = { soglie: SogliePerStrato; limitiManuali: Limite[]; apiClaude?: { budgetUsd: number; tetto: number }; freellmapi?: { endpoint: string } }
+/**
+ * F10: i campi del progetto che si combinano con l'account, come stanno nel config (nessun valore efficace): le soglie e
+ * l'`apiClaude` dei build di sviluppo valgono come restrizioni, l'endpoint di progetto sostituisce quello dell'account.
+ */
+export type StratoProgetto = {
+  soglie: SogliePerStrato
+  apiClaude?: { budgetUsd: number; tetto?: number }
+  freellmapi: { livello: 'niente' | 'R1' | 'R2'; endpoint?: string }
+  restrizioni: Restrizioni
 }
 export type RisorseProgetto = {
   fornitori: Fornitore[]
@@ -25,12 +43,15 @@ export type RisorseProgetto = {
   pesi: Peso[]
   limitiManuali: Limite[]
   freellmapi: { livello: 'niente' | 'R1' | 'R2'; endpoint: string }
-  /** Soglie di attenzione e critica per fornitore, in percentuale di quota; null = nessuna. */
+  /** Soglie EFFICACI (F10: account e progetto combinati) di attenzione e critica per fornitore, in percentuale; null = nessuna. */
   soglie: Record<Fornitore, Soglia | null>
   /** Board di progetto in HTML: `generazione` cresce a ogni cambio di `modo` (lo incrementa l'helper sotto il lock del config). */
   board: BoardProgetto
-  /** F6.2: crediti API di Claude. Assente = non configurata. Budget del mese e tetto per tentativo, in USD. */
-  apiClaude?: { budgetUsd: number; tetto: number }
+  /**
+   * F6.2, F10: crediti API di Claude, efficaci. Assente = corsia spenta (serve `account.apiClaude`). `budgetUsd` è il budget
+   * del mese dell'account; `tetto` il tetto per tentativo più severo; `limiteProgettoUsd` il limite del mese del progetto.
+   */
+  apiClaude?: { budgetUsd: number; tetto: number; limiteProgettoUsd?: number }
   /** F6.5: il consigliere di destinazione. Assente = spento. */
   consigliere?: 'suggerisci' | 'applica'
   /** Profilo di bilanciamento scelto nelle Impostazioni: tocca solo i pesi di motori ed effort. Assente = nessuna scelta. */
@@ -39,6 +60,10 @@ export type RisorseProgetto = {
   pesiRevisione?: number
   /** Chi ha fatto l'ultima scrittura di profilo o pesi. Assente = manuale. */
   pesiOrigine?: { tipo: 'proposta' | 'annullamento' | 'manuale'; id?: string; voce?: string; versione?: number }
+  /** F10: lo strato Account letto dal config, per modificarlo e per i conflitti (valori grezzi, mai efficaci). */
+  account: StratoAccount
+  /** F10: i campi del progetto che si combinano con l'account, grezzi. */
+  strato: StratoProgetto
 }
 export type PesiProfilo = { profilo: NonNullable<RisorseProgetto['profilo']> | null; pesi: Peso[] }
 /** Una regolazione proposta: una delle cinque posizioni (0–4) su una voce ammessa dalle regole. */
@@ -341,11 +366,15 @@ export type StatoBoard = { percorso?: string; motivo?: string; riassunti?: strin
  */
 export type PropostaImpostazioni = {
   motivo: string
-  profilo?: NonNullable<RisorseProgetto['profilo']>
-  soglie?: Partial<Record<Fornitore, Soglia | null>>
-  board?: { modo: BoardProgetto['modo'] }
-  consigliere?: 'spento' | 'suggerisci' | 'applica'
-  apiClaude?: { budgetUsd?: number; tetto?: number }
+  /** F10: la patch dello strato Progetto. */
+  progetto?: {
+    profilo?: NonNullable<RisorseProgetto['profilo']>
+    board?: { modo: BoardProgetto['modo'] }
+    consigliere?: 'spento' | 'suggerisci' | 'applica'
+    restrizioni?: Restrizioni
+  }
+  /** F10: la patch dello strato Account: cambia le impostazioni di tutti i progetti. */
+  account?: { soglie?: SogliePerStrato; apiClaude?: { budgetUsd?: number; tetto?: number } }
   lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
 }
 export type VoceImpostazioni = { id: string; quando: string; proponente: { id: string; titolo: string }; proposta: PropostaImpostazioni }
@@ -398,7 +427,7 @@ declare module 'claude-code' {
       /** F6.7: lo stato della sezione Esecuzione (controllo ✓/✗, login in corso, procedura guidata). */
       esecuzione: Shaped<StatoEsecuzione>
       /** F6.4: la spesa a crediti API del mese (stimata), dal registro dell'helper; null = non configurata o illeggibile. */
-      spesaApi: Shaped<{ mese: string; speso: number | null } | null>
+      spesaApi: Shaped<{ mese: string; speso: number | null; progetto?: number | null } | null>
       vive: Shaped<Record<string, Vita>>
       /** L'ultimo errore di un pulsante: codice del dizionario (si traduce) o testo esterno. */
       avviso: Messaggio | null
