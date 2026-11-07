@@ -1,5 +1,5 @@
 // Il disegno del pannello. Regole (design-taste app-screens + ui-ux-pro-max):
-// - un solo primario nel pannello («Avvia tutte»); sulle schede azioni secondarie e testuali;
+// - Avvia è primario sulle schede grafiche pronte, come «Avvia tutte»; Accoda e Riprova restano secondari;
 // - schede neutre: il colore sta sui dati (stato, motore, modello, effort), il bordo si accende
 //   solo sulla scheda che aspetta una decisione (ferma o fallita);
 // - il colore MARCA (segni, velo, bordi), le parole restano nell'inchiostro del tema: contrasto pieno
@@ -289,7 +289,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   /** Una proposta aperta: il testo, poi Rivedi (popup), Applica e Rifiuta. `dove` tiene le chiavi uniche fra le viste. */
   const rigaProposta = (dove: string, p: PropostaPesi, conDettaglio = false) => (
     <Box key={`${dove}-${p.id}`} flexDirection="column">
-      <Box flexDirection="row" flexWrap="wrap" gap={1} alignItems="center">
+      <Box flexDirection="row" flexWrap="wrap" gap={conVelo ? 'sm' : 1} alignItems="center">
         {nota1(`${dove}-${p.id}-testo`, STATO.attesa, '◐', TESTI_PESI.riga(p, T.lingua))}
         <Button key={`${dove}-${p.id}-rivedi`} plain label={`${T('pesi.rivedi')}${suffisso(p)}`} onPress={() => void rivedi(p)()} />
         <Button key={`${dove}-${p.id}-applica`} plain label={`${T('pesi.applica')}${suffisso(p)}`} onPress={fai(() => c.decidiPesi(p, 'applica'))} />
@@ -306,7 +306,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   // una decisione successiva che non tocca il config (un rifiuto, una scadenza) non toglie la possibilità di annullarla.
   const daAnnullare = tutteProposte.find(p => pesiAnnullabili(p, regoleOra.risorse))
   const vocePesi = (dove: string, p: PropostaPesi) => (
-    <Box key={`${dove}-${p.id}`} flexDirection="row" flexWrap="wrap" gap={1} alignItems="center">
+    <Box key={`${dove}-${p.id}`} flexDirection="row" flexWrap="wrap" gap={conVelo ? 'sm' : 1} alignItems="center">
       <Text size="caption" wrap="wrap">{TESTI_PESI.registro(p, T.lingua, adesso)}</Text>
       {p === daAnnullare && (
         <Button key={`${dove}-annulla`} plain label={T('pesi.annullaApplicata')} onPress={fai(() => c.annullaPesi(p))} />
@@ -401,12 +401,14 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
    * l'ICONA), «chip» nell'inchiostro; accanto, attenuati, il progetto e la versione.
    */
   const marchio = (
-    <Text key="marchio" size="title" wrap="wrap">
-      <Text key="marchio-glifo" color={MARCHIO.colore}>{`${MARCHIO.glifo} `}</Text>
-      <Text key="marchio-chip" weight="semibold">{MARCHIO.nome[0]}</Text>
-      <Text key="marchio-manager" weight="bold" color={MARCHIO.colore}>{MARCHIO.nome[1]}</Text>
-      {io?.repo || versioneOra ? <Text key="marchio-progetto" dimColor>{[io?.repo ? ` · ${io.repo}` : '', versioneOra ? ` · ${versioneOra}` : ''].join('')}</Text> : ''}
-    </Text>
+    <Box key="marchio" flexDirection="row" flexWrap="wrap" alignItems="flex-end" gap={conVelo ? 'xs' : 1}>
+      <Text size="title" wrap="wrap">
+        <Text key="marchio-glifo" color={MARCHIO.colore}>{`${MARCHIO.glifo} `}</Text>
+        <Text key="marchio-chip" weight="semibold">{MARCHIO.nome[0]}</Text>
+        <Text key="marchio-manager" weight="bold" color={MARCHIO.colore}>{MARCHIO.nome[1]}</Text>
+      </Text>
+      {io?.repo || versioneOra ? <Text key="marchio-progetto" size="caption" dimColor wrap="wrap">{[io?.repo ? ` · ${io.repo}` : '', versioneOra ? ` · ${versioneOra}` : ''].join('')}</Text> : ''}
+    </Box>
   )
 
   const VISTE: { id: Vista; nome: string; tasto: string; chiave: string }[] = [
@@ -423,7 +425,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     if (id === 'impostazioni' && vistaOra !== 'impostazioni') await apriImpostazioni($, c)
   }
   const schede = (
-    <Box key="viste" flexDirection="row" flexWrap="wrap" gap={1}>
+    <Box key="viste" flexDirection="row" flexWrap="wrap" gap={conVelo ? 'sm' : 1}>
       {VISTE.map(v => {
         const attiva = v.id === vistaOra
         return (
@@ -448,8 +450,8 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
   )
 
   return (
-    <Box flexDirection="column" gap={2}>
-      <Box flexDirection="column" gap={1}>
+    <Box flexDirection="column" gap={conVelo ? 'lg' : 1}>
+      <Box flexDirection="column" gap={conVelo ? 'sm' : 1}>
         {ui.Riga({
           chiave: 'testata',
           classe,
@@ -472,7 +474,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
           )}
       </Box>
       {scartata && (
-        <Box flexDirection="row" gap={1} alignItems="center" flexWrap="wrap" backgroundColor={conVelo ? velo(GRIGIO, VELO.testata) : undefined} paddingX={1}>
+        <Box flexDirection="row" gap={conVelo ? 'sm' : 1} alignItems="center" flexWrap="wrap" backgroundColor={conVelo ? velo(GRIGIO, VELO.testata) : undefined} paddingX={1}>
           <Text>{T('testata.scartata', { titolo: scartata.titolo })}</Text>
           <Button key="annulla-scarto" plain hotkey="u" label={T('comune.annulla')} onPress={fai(() => c.annullaScarto(scartata.id))} />
         </Box>

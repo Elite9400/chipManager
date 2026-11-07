@@ -16,9 +16,10 @@ import {
   statoAuditor,
   violazioni,
   mandato,
+  sensibile,
 } from './logica'
 import type { Strumenti } from './logica'
-import { cssVariabiliBoard, MARCHIO } from './tema'
+import { cssVariabiliBoard, EFFORT, famigliaDi, MARCHIO } from './tema'
 import { giorno, LEGENDA, letto, ora, traduttore } from './lingua'
 import type { Lingua, T } from './lingua'
 
@@ -142,7 +143,12 @@ function scheda(T: T, a: Azione, d: DatiBoard, lista: readonly Azione[], segno: 
   const vita = d.vive[a.id]
   // Il segno e la parola dicono lo stato della chip, non il gruppo: una consegnata in «In corso» resta «consegnata».
   const [s, parola] = a.stato === 'fallita' ? SEGNI.fallita : a.stato === 'consegnata' ? SEGNI.consegnata : SEGNI[segno]
-  const classeSegno = a.stato === 'fallita' ? 'segno fallita' : 'segno'
+  const tintaStato = a.stato === 'fallita' ? 'errore' : a.stato === 'consegnata' ? 'consegnata' : segno === 'attesa' ? 'attesa' : segno === 'corso' || segno === 'fatto' ? 'inCorso' : 'coda'
+  const modello = modelloDi(a, r)
+  const famiglia = famigliaDi(modello)
+  const effort = effortDi(a, r)
+  const pillola = (tinta: string, segno: string, testo: string, mono = false) =>
+    `<span class="pillola${mono ? ' mono' : ''}" style="--segno:var(--${tinta});--pillola:var(--${tinta}-velo)"><span class="segno">${esc(segno)}</span> ${esc(testo)}</span>`
   const rev = revisoreConcreto(a, r)
   const revisore = a.revisore === 'nessuno' ? T('info.senzaRevisione') : `${motore(T, a.revisore)}${rev && rev !== 'motore:codex' ? ` (${nomeModello(rev)})` : ''}`
   const piano = a.piano ? d.piani[a.id] : undefined
@@ -163,10 +169,17 @@ function scheda(T: T, a: Azione, d: DatiBoard, lista: readonly Azione[], segno: 
   // R7: solo le regole di progetto, mai la sessione che genera: la board è la stessa per chiunque la scriva.
   const blocchi = ['proposta', 'accodata'].includes(a.stato) ? violazioni(a, r, d.azioni) : []
   const m = mandato(a, r, d.strumenti)
-  return `<details id="t-${esc(a.id)}"><summary><span class="${classeSegno}">${s}</span> ${esc(a.titolo)} <span class="tenue">· ${esc(T(parola))} · ${esc(motore(T, a.esecutore))} ${esc(nomeModello(modelloDi(a, r)))}</span></summary>
+  const allerta = a.stato === 'fallita' || blocchi.length || sensibile(a, r) ? ' errore-bordo' : segno === 'attesa' ? ' attesa-bordo' : ''
+  return `<details id="t-${esc(a.id)}" class="lavoro${allerta}"><summary><span class="titolo">${esc(a.titolo)}</span><span class="attributi">
+${pillola(`stato-${tintaStato}`, s, a.stato === 'accodata' ? T('stato.accodata') : T(parola))}
+${pillola(`motore-${a.esecutore}`, '◆', motore(T, a.esecutore))}
+${pillola(famiglia ? `famiglia-${famiglia}` : 'neutro', '●', nomeModello(modello), true)}
+${pillola(Object.keys(EFFORT).includes(effort) ? `effort-${effort}` : 'neutro', barreEffort(effort), effort, true)}
+${sensibile(a, r) ? pillola('stato-errore', '▲', T('info.sensibile', { corsia: corsiaDi(a, r) ?? 'R4' })) : ''}
+</span></summary>
 <div class="corpo">
 ${riassunto ? `<h4>${esc(T('board.riassunto'))}</h4><p>${esc(riassunto)}</p>` : ''}
-${a.stato === 'fallita' && a.errore ? `<h4>${esc(T('board.errore'))}</h4><p class="errore">✗ ${esc(T.m(letto(a.erroreCodice, a.erroreParametri, a.errore)))}</p>` : ''}
+${a.stato === 'fallita' && a.errore ? `<h4>${esc(T('board.errore'))}</h4><p class="errore"><span class="segno fallita">✗</span> ${esc(T.m(letto(a.erroreCodice, a.erroreParametri, a.errore)))}</p>` : ''}
 ${blocchi.length ? `<h4>${esc(T('board.blocchi'))}</h4><ul>${blocchi.map(b => `<li>▲ ${esc(T.m(b))}</li>`).join('')}</ul>` : ''}
 ${a.motivoCoda ? `<p>${esc(T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) }))}</p>` : ''}
 <h4>${esc(T('ed.piano'))}</h4>${pianoHtml}
@@ -185,14 +198,15 @@ ${a.background ? `<h4>${esc(T('board.background'))}</h4><pre>${esc(a.background)
 // F8.3: i colori arrivano solo dal blocco di variabili generato in tema.ts; qui nessun valore scritto a mano.
 const CSS = `${cssVariabiliBoard()}
 body{background:var(--fondo);color:var(--testo);font:14px/1.45 system-ui,sans-serif;max-width:960px;margin:0 auto;padding:16px}
-code,pre,dd,summary .tenue{font-family:var(--mono);font-size:13px}
-h1{margin:0 0 4px}.marchio b,.glifo{color:var(--accento)}h2{border-bottom:2px solid var(--accento);padding-bottom:4px;margin-top:32px}h4{margin:16px 0 4px}
-details{border:1px solid var(--bordo);border-radius:4px;margin:4px 0;padding:4px 10px}summary{cursor:pointer;font-weight:600}
-details:target{outline:2px solid var(--accento)}.segno{color:var(--accento)}.tenue{color:var(--tenue);font-weight:400}
-.errore,.segno.fallita{color:var(--errore)}pre{white-space:pre-wrap;word-break:break-word;background:var(--velo);padding:8px;border-radius:4px;max-height:480px;overflow:auto}
-dl{display:grid;grid-template-columns:minmax(0,11em) 1fr;gap:0 12px;margin:0}dt{color:var(--tenue)}dd{margin:0;min-width:0;overflow-wrap:anywhere}
-.barra{display:inline-block;width:160px;height:8px;border:1px solid var(--traccia);vertical-align:middle}.barra>span{display:block;height:100%;background:var(--accento)}
-footer{margin-top:40px;color:var(--tenue);font-size:13px;word-break:break-all}`
+code,pre,dd,.mono{font-family:var(--mono);font-size:13px}
+h1{margin:0 0 4px;display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}.marchio{white-space:nowrap;font-weight:600}.marchio b,.glifo{color:var(--accento)}h1>.tenue{font-size:14px;overflow-wrap:anywhere}h2{font-size:13px;text-transform:uppercase;border-bottom:1px solid var(--bordo);padding-bottom:4px;margin:24px 0 8px}h4{margin:16px 0 4px}
+details{border:1px solid var(--bordo);border-radius:12px;margin:8px 0;padding:16px;background:var(--velo)}summary{cursor:pointer;font-weight:600;overflow-wrap:anywhere;border-radius:6px}summary:hover{background:var(--hover)}summary:focus-visible,details:target{outline:2px solid var(--accento);outline-offset:4px}
+.titolo{font-size:14px}.attributi{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.pillola{display:inline-block;border:1px solid var(--bordo);border-radius:6px;padding:0 4px;color:var(--testo);background:var(--pillola);font-weight:400;max-width:100%;overflow-wrap:anywhere}.segno{color:var(--segno,var(--accento))}.tenue{color:var(--tenue);font-weight:400}
+.errore{color:var(--testo)}.segno.fallita{color:var(--stato-errore)}.errore-bordo{border-color:var(--stato-errore)}.attesa-bordo{border-color:var(--stato-attesa)}pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:8px 0;max-height:480px;overflow:auto}
+dl{display:grid;grid-template-columns:minmax(0,11em) minmax(0,1fr);gap:4px 8px;margin:0}dt{color:var(--tenue)}dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.barra{display:inline-block;width:160px;max-width:100%;height:12px;border:1px solid var(--traccia);border-radius:6px;overflow:hidden;vertical-align:middle;background:var(--barra-vuota)}.barra>span{display:block;height:100%;background:var(--accento)}
+footer{margin-top:24px;color:var(--tenue);font-size:13px;overflow-wrap:anywhere}
+@media (max-width:600px){dl{grid-template-columns:minmax(0,1fr)}dd{margin-bottom:8px}body{padding:8px}}`
 
 /** La board intera: HTML statico, nessuno script, nessun link costruito da dati, gettoni oscurati. */
 export function board(d: DatiBoard): string {

@@ -622,7 +622,9 @@ dati e offrono le stesse azioni, con le stesse chiavi ed etichette, nello stesso
   blocchi dell'effort in una scala dal blu all'indaco, `↺` revisore, `▲` sensibile. Le chip sensibili e bloccate hanno
   il bordo rosso; una chip in coda mostra una fascia ambra con `◔`. Le intestazioni delle sezioni sono in maiuscolo con
   il conteggio a destra; le barre d'uso sono spesse; le sezioni delle Impostazioni sono schede e la barra **Applica** è
-  in evidenza.
+  in evidenza. Le sessioni restano schede compatte a ogni larghezza grafica; **Avvia** è pieno quando la chip è pronta,
+  mentre Accoda resta secondario. Carico, setup e doctor usano una scheda per sezione, senza veli annidati negli
+  editor o nei passi del setup.
 - **Terminale.** Una riga compatta per gruppo di attributi — `◆ Claude · ● Opus 5.5 · ▰▰▱▱ medium · ↺ rivede Codex` —
   con glifi colorati, testo nell'inchiostro del terminale e barre a blocchi `▕████▌   ▏`.
 - **Il marchio.** «▣ chip**Manager**»: il glifo e «Manager» (in grassetto) nell'accento, «chip» nell'inchiostro, poi il
@@ -640,11 +642,12 @@ Comune alle due:
 - **Il colore ha un compito**: il testo usa l'inchiostro e il tenue dell'host; l'accento (`#0A86C9`) segna solo la
   grafica — bordi, barre, glifi e veli; ambra e rosso compaiono solo per attenzione e critica. Ogni colore e opacità
   viene da un solo file di token, e la grafica tiene almeno 3:1 sugli sfondi chiaro e scuro di riferimento.
-- **Hover**: sul desktop la riga sotto il puntatore prende un velo leggero dell'accento, e le azioni secondarie
+- **Hover**: sul desktop una riga con azioni sotto il puntatore prende un velo leggero dell'accento, e le azioni secondarie
   attenuate tornano piene sotto il puntatore o con il fuoco della tastiera. Niente si raggiunge solo con l'hover; il
-  terminale non ha hover e mostra ogni azione.
+  terminale non ha hover e mostra ogni azione. Barre d'uso e schede passive non hanno il velo di hover.
 - **La board** usa gli stessi token come variabili CSS, segue il tema chiaro o scuro del sistema, e le sue coppie di
-  testo sono controllate a 4,5:1.
+  testo sono controllate a 4,5:1. Pillole arrotondate e barre da 12px riprendono il pannello; su schermi stretti le
+  etichette stanno sopra i valori e i dettagli nativi restano accessibili da tastiera.
 
 ## Sicurezza e guardie
 

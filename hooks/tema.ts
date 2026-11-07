@@ -26,8 +26,8 @@ export const VELO = {
   /** F9.4: il segmento vuoto della barra spessa del desktop: con 14 ogni tinta piena regge 3:1 contro di esso (33 no). */
   barraVuota: '14',
   testata: '1F',
-  vuoto: '33',
-  traccia: '4D',
+  vuoto: '14',
+  traccia: '14',
   carico: ['', '26', '4D', '80'],
 } as const
 
@@ -91,9 +91,15 @@ export const BOARD = {
 
 /** Il blocco unico di variabili CSS della board, generato dai valori sopra: scuro di default, chiaro se il sistema lo chiede. */
 export function cssVariabiliBoard() {
+  // Una sola scheda sotto le pillole; barre e schede passive non ricevono il velo di hover.
+  const segni = { neutro: GRIGIO, ...Object.fromEntries(
+    Object.entries({ stato: STATO, motore: MOTORE, famiglia: FAMIGLIA, effort: EFFORT })
+      .flatMap(([gruppo, tinte]) => Object.entries(tinte).map(([k, v]) => [`${gruppo}-${k}`, v])),
+  ) }
+  const semantici = Object.entries(segni).map(([k, v]) => `--${k}:${v};--${k}-velo:${v}${VELO.pillola}`).join(';')
   const v = (t: (typeof BOARD)['scuro' | 'chiaro']) =>
     `--fondo:${t.fondo};--testo:${t.testo};--tenue:${t.tenue};--bordo:${t.bordo};--traccia:${t.traccia};--accento:${t.accento};--errore:${t.errore};--velo:${GRIGIO}${VELO.riquadro}`
-  return `:root{color-scheme:dark light;${v(BOARD.scuro)};--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}\n@media (prefers-color-scheme:light){:root{${v(BOARD.chiaro)}}}`
+  return `:root{color-scheme:dark light;${v(BOARD.scuro)};${semantici};--hover:${ACCENTO}${VELO.hover};--barra-vuota:${GRIGIO}${VELO.barraVuota};--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}\n@media (prefers-color-scheme:light){:root{${v(BOARD.chiaro)}}}`
 }
 
 /** Luminanza relativa WCAG di un colore `#RRGGBB`. */

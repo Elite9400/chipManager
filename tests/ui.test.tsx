@@ -180,7 +180,7 @@ test('Sezione e Riga: titolo e stato affiancati sul desktop, stato sotto sul ter
         ),
       }),
     )
-    expect(await ui.find({ type: 'Text', text: 'Connessioni' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: surface === 'terminal' ? 'Connessioni' : 'CONNESSIONI' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '2 collegati · 1 da collegare' })).toBeDefined()
     const testa = (albero as { children: { props: Record<string, unknown> }[] }).children[0]!
     expect(testa.props.flexDirection).toBe(surface === 'terminal' ? 'column' : 'row')
@@ -246,7 +246,7 @@ test('F8.3 la chip di scelta attiva tiene il testo nell\'inchiostro dell\'host: 
 test('F8.2 Riga: sul desktop un hover di solo sfondo sul Box con chiave; nel terminale nessun hover', async ($, on) => {
   const disegna = banco(on)
   for (const surface of SUPERFICI) {
-    const { albero, ui } = await disegna($, surface, u => u.Riga({ chiave: 'riga-1', principale: 'Voce', azioni: [], classe: 'larga' }))
+    const { albero, ui } = await disegna($, surface, u => u.Riga({ chiave: 'riga-1', principale: 'Voce', azioni: ['Azione'], classe: 'larga' }))
     // Il kit tiene `hover` sul nodo, accanto alle props.
     const box = albero as { props?: { key?: string }; hover?: Record<string, unknown> }
     expect([surface, box.props?.key, box.hover]).toEqual([surface, 'riga-1', surface === 'desktop' ? { backgroundColor: `${ACCENTO}${VELO.hover}` } : undefined])
@@ -262,13 +262,14 @@ test('F9.2 contrasto: ogni segno (motore, famiglia, effort, stati, livelli) regg
     ...Object.fromEntries(Object.entries(FAMIGLIA).map(([k, v]) => [`famiglia.${k}`, v])),
     ...Object.fromEntries(Object.entries(EFFORT).map(([k, v]) => [`effort.${k}`, v])),
     ...Object.fromEntries(Object.entries(STATO).map(([k, v]) => [`stato.${k}`, v])),
+    accento: ACCENTO, neutro: GRIGIO,
     'livello.attenzione': LIVELLO.attenzione, 'livello.critica': LIVELLO.critica,
   }
   expect(VELO.pillola).toBe('14')
   for (const [nome, tinta] of Object.entries(tinte))
     for (const sfondo of [...SFONDI.chiaro, ...SFONDI.scuro]) {
       const scheda = sopra(GRIGIO, VELO.riquadro, sfondo)
-      for (const [come, base] of [['fermo', scheda], ['hover', sopra(ACCENTO, VELO.hover, scheda)]] as const) {
+      for (const [come, base] of [['fermo', scheda], ['hover', sopra(ACCENTO, VELO.hover, scheda)], ['hover-override', sopra(ACCENTO, VELO.hover, sfondo)]] as const) {
         const pillola = sopra(tinta, VELO.pillola, base)
         expect([nome, sfondo, come, contrasto(tinta, pillola) >= 3]).toEqual([nome, sfondo, come, true])
       }
@@ -333,4 +334,39 @@ test('F9.4 barre del desktop: la parte piena (critico, attenzione, accento, mile
   const d = await monta($, 'desktop', u => u.Barra({ chiave: 'b', pct: 40, colore: LIVELLO.critica, celle: 10 }))
   expect((await d.ui.find({ key: 'b-vuoto' }))?.props.backgroundColor).toBe(`${GRIGIO}${VELO.barraVuota}`)
   await d.ui.unmount()
+})
+
+
+test('F12 Gamma: posizione piena a 3:1 contro entrambe le tracce sopra una sola scheda', () => {
+  expect([VELO.traccia, VELO.vuoto]).toEqual(['14', '14'])
+  for (const fondo of [...SFONDI.chiaro, ...SFONDI.scuro]) {
+    const scheda = sopra(GRIGIO, VELO.riquadro, fondo)
+    for (const [tinta, alfa] of [[ACCENTO, VELO.traccia], [GRIGIO, VELO.vuoto]])
+      expect([fondo, tinta, contrasto(ACCENTO, sopra(tinta!, alfa!, scheda)) >= 3]).toEqual([fondo, tinta, true])
+  }
+})
+
+test('F12: spazi nominati, pillole arrotondate, sezioni interne senza secondo velo; barre e righe passive senza hover', async ($, on) => {
+  const monta = banco(on)
+  for (const surface of SUPERFICI) {
+    const { ui, albero } = await monta($, surface, u => u.Sezione({ chiave: 'carico', titolo: 'Carico', figli: [
+      u.Chip({ chiave: 'stato', testo: 'Pronto', segno: '○', colore: STATO.coda }),
+      u.Sezione({ chiave: 'interna', titolo: 'Passo', interna: true, figli: [] }),
+      u.Riga({ chiave: 'passiva', classe: 'media', principale: 'Uso', azioni: [] }),
+      u.Barra({ chiave: 'uso', pct: 95, colore: LIVELLO.critica, celle: 10 }),
+      u.Gamma({ chiave: 'gamma', etichetta: 'Soglia', valore: 50, min: 0, max: 100, passo: 5, onCambia: () => {} }),
+    ] }))
+    expect((await ui.find({ key: 'carico' }))?.props).toMatchObject(surface === 'terminal' ? { padding: 0 } : { padding: 'md', gap: 'sm', borderStyle: 'round' })
+    expect((await ui.find({ key: 'interna' }))?.props.backgroundColor).toBeUndefined()
+    if (surface !== 'terminal') expect((await ui.find({ key: 'stato' }))?.props).toMatchObject({ borderStyle: 'round', paddingX: 'xs', backgroundColor: `${STATO.coda}${VELO.pillola}` })
+    const visita = (n: unknown): void => {
+      if (!n || typeof n !== 'object') return
+      if (Array.isArray(n)) return n.forEach(visita)
+      const x = n as { hover?: unknown; children?: unknown }
+      expect(x.hover).toBeUndefined()
+      visita(x.children)
+    }
+    visita(albero)
+    await ui.unmount()
+  }
 })

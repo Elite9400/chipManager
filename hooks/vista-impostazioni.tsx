@@ -412,6 +412,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const stato = T('con.stato', { n: collegati.length, mancanti: ammessi.length - collegati.length })
     return u.Sezione({
       chiave: 'pagina-connessioni',
+      interna: vista.sezione === 'setup',
       titolo: T('imp.sezione.connessioni'),
       descrizione: T('con.descrizione'),
       stato,
@@ -430,7 +431,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
                 chiave: `riga-${f}`,
                 classe,
                 principale: [
-                  <Box key={`nome-${f}`} flexDirection="row" flexWrap="wrap" gap={1} alignItems="center">
+                  <Box key={`nome-${f}`} flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'} alignItems="center">
                     <Text weight="medium">{NOME_FORNITORE[f]}</Text>
                     {statoFornitore(f)}
                   </Box>,
@@ -441,9 +442,9 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
               })}
               {errore(`collega-${f}`)}
               {g && (
-                <Box key={`guida-${f}`} flexDirection="column" gap={1} paddingLeft={2}>
+                <Box key={`guida-${f}`} flexDirection="column" gap={terminale ? 1 : 'sm'} paddingLeft={2}>
                   {didascalia(`guida-${f}-testo`, g.testo)}
-                  <Box flexDirection="row" flexWrap="wrap" gap={1}>
+                  <Box flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
                     {g.scelte.map((s, i) => (
                       <Button key={`guida-${f}-${i}`} variant="secondary" label={T('con.passoPer', { passo: s.etichetta, fornitore: NOME_FORNITORE[f] })} onPress={() => void esegui(`collega-${f}`, s.fai, s.conferma)} />
                     ))}
@@ -493,7 +494,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     })
     const e = sogliaDi(r, f)
     return (
-      <Box key={`restrizione-${f}`} flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center">
+      <Box key={`restrizione-${f}`} paddingLeft={terminale ? 0 : 'sm'} flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'} alignItems="center">
         <Text key={`restrizione-${f}-testo`} size="caption" wrap="wrap">
           {T('imp.restrizioneSoglia', { repo: io?.repo ?? '—', soglia: e ? T('car.soglie', { attenzione: e.attenzione, critica: e.critica }) : T('car.nessunaSoglia') })}
         </Text>
@@ -508,7 +509,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const nome = NOME_FORNITORE[f]
     const scrivi = (n: typeof s) => salva(`soglia-${f}`, () => ({ 'account.soglie': conSoglia(r.account.soglie as Record<Fornitore, typeof s>, f, n) }))()
     return (
-      <Box key={`soglie-${f}`} flexDirection="column" gap={1}>
+      <Box key={`soglie-${f}`} flexDirection="column" gap={terminale ? 1 : 'sm'}>
         <Text weight="medium">{nome}</Text>
         {u.GruppoChip({
           chiave: `soglia-${f}`, etichetta: T(presetDi(s) ? 'sog.preset' : 'sog.presetPersonale'), modo: 'scelta', valore: presetDi(s),
@@ -534,6 +535,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const stato = `${T('sog.stato', { n: d.fornitoriInUso.length })} · ${T('pro.budgetManuali', { n: r.limitiManuali.length })}`
     return u.Sezione({
       chiave: 'pagina-soglie',
+      interna: vista.sezione === 'setup',
       titolo: T('imp.sezione.soglie'),
       descrizione: T('sog.descrizione'),
       stato,
@@ -565,7 +567,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     esOra.copia ? (
       <Box key={`${pre}-copia`} flexDirection="column">
         {didascalia(`${pre}-copia-testo`, T('ese.copiaRiga'))}
-        <Text key={`${pre}-copia-riga`} wrap="wrap">{esOra.copia.riga}</Text>
+        <Text key={`${pre}-copia-riga`} mono wrap="wrap">{esOra.copia.riga}</Text>
         <Button key={`${pre}-copia-premi`} variant="secondary" label={T('ese.copia')}
           onPress={() => void $.ui.copy({ text: esOra.copia!.riga }).then(x => x.isCopied && $.ui.toast(T('ese.copiato')))} />
       </Box>
@@ -625,7 +627,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         </Text>,
         didascalia('setup-spiega', T(`set.d.${passo}` as Chiave)),
         ...corpo,
-        <Box key="setup-azioni" flexDirection="row" flexWrap="wrap" gap={1}>
+        <Box key="setup-azioni" flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
           {i > 0 ? <Button key="setup-indietro" plain label={T('set.indietro')} onPress={() => vai(i - 1)} /> : null}
           {i < PASSI_SETUP.length - 1 ? <Button key="setup-avanti" variant="primary" label={T('set.avanti')} onPress={() => vai(i + 1)} /> : null}
           {i < PASSI_SETUP.length - 2 ? <Button key="setup-riepilogo-vai" plain label={T('set.salta')} onPress={() => vai(PASSI_SETUP.length - 1)} /> : null}
@@ -642,17 +644,18 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const trovati = dv.trovati ?? []
     const righe = trovati.map(x => ({ r: x, ...testoRilievo(T, x) }))
     const rapporto = righe.map(x => `${x.avviso ? '!' : '✗'} ${x.titolo} — ${x.rimedio}`).join('\n') || T('doc.tuttoBene')
-    const stato = dv.inCorso ? T('doc.inCorso') : dv.fallita ? T('doc.fallita') : T('doc.stato', { n: trovati.length })
+    const stato = dv.inCorso ? T('doc.inCorso') : dv.fallita ? T('doc.fallita') : !dv.quando || !dv.trovati ? T('proxy.nonVerificato') : T('doc.stato', { n: trovati.length })
     return u.Sezione({
       chiave: 'pagina-doctor',
       titolo: T('doc.titolo'),
       descrizione: T('doc.descrizione'),
-      stato,
+      stato: `${stato}${dv.quando ? ` · ${T('tr.aggiornato', { ora: T.ora(dv.quando) })}` : ''}`,
       figli: [
+        (!dv.quando || !dv.trovati) && !dv.inCorso && !dv.fallita ? nota1('doctor-non-verificato', GRIGIO, '—', T('proxy.nonVerificato')) : null,
         dv.fallita ? nota1('doctor-fallita', STATO.errore, '✗', T('doc.fallita')) : null,
-        !dv.inCorso && !dv.fallita && dv.quando && !trovati.length ? nota1('doctor-ok', STATO.inCorso, '✓', T('doc.tuttoBene')) : null,
+        !dv.inCorso && !dv.fallita && dv.quando && dv.trovati && !trovati.length ? nota1('doctor-ok', STATO.inCorso, '✓', T('doc.tuttoBene')) : null,
         ...righe.map((x, i) => (
-          <Box key={`doctor-rilievo-${i}`} flexDirection="column">
+          <Box key={`doctor-rilievo-${i}`} flexDirection="column" gap={terminale ? 0 : 'xs'}>
             {nota1(`doctor-rilievo-${i}-titolo`, x.avviso ? STATO.attesa : STATO.errore, x.avviso ? '!' : '✗', `${T(x.avviso ? 'doc.avviso' : 'doc.problema')} · ${x.titolo}`)}
             {didascalia(`doctor-rilievo-${i}-rimedio`, x.rimedio)}
             {x.r.codice.startsWith('accesso.') ? attesaUi(x.r.codice === 'accesso.claude' ? 'claude' : x.r.codice === 'accesso.codex' ? 'codex' : 'gh', `doctor-${i}`) : null}
@@ -660,7 +663,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           </Box>
         )),
         copiaUi('doctor'),
-        <Box key="doctor-azioni" flexDirection="row" flexWrap="wrap" gap={1}>
+        <Box key="doctor-azioni" flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
           <Button key="doctor-ricontrolla" variant="primary" label={T('doc.ricontrolla')} onPress={() => void c.diagnosi()} />
           <Button key="doctor-copia" variant="secondary" label={T('doc.copia')}
             onPress={() => void $.ui.copy({ text: rapporto }).then(x => x.isCopied && $.ui.toast(T('doc.copiato')))} />
@@ -672,7 +675,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           <Box key="doctor-rapporto" flexDirection="column" borderStyle="single" paddingX={1}>
             {didascalia('doctor-rapporto-nota', T('rap.nota'))}
             <Text key="doctor-rapporto-testo" wrap="wrap">{dv.rapporto}</Text>
-            <Box key="doctor-rapporto-azioni" flexDirection="row" flexWrap="wrap" gap={1}>
+            <Box key="doctor-rapporto-azioni" flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
               {(await read($, esecuzione)).controllo?.github.loggedIn ? <Button key="doctor-rapporto-gh" variant="secondary" label={T('rap.gh')} onPress={() => void c.segnala('gh')} /> : null}
               {urlRapporto(dv.rapporto) ? <Button key="doctor-rapporto-apri" variant="secondary" label={T('rap.apri')} onPress={() => void c.segnala('url')} /> : null}
               <Button key="doctor-rapporto-copia" plain label={T('rap.copia')} onPress={() => void $.ui.copy({ text: dv.rapporto! }).then(x => x.isCopied && $.ui.toast(T('doc.copiato')))} />
@@ -705,6 +708,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       })
     return u.Sezione({
       chiave: 'pagina-modo',
+      interna: vista.sezione === 'setup',
       titolo: T('imp.sezione.modo'),
       descrizione: T('modo.descrizione'),
       stato,
@@ -799,7 +803,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       stato,
       figli: [
         ...(d.proposteAperte.length
-          ? [<Box key="bil-proposte" flexDirection="column" gap={1}>{d.proposteAperte.map(p => d.rigaProposta('bil-pesi', p, true))}</Box>]
+          ? [<Box key="bil-proposte" flexDirection="column" gap={terminale ? 1 : 'sm'}>{d.proposteAperte.map(p => d.rigaProposta('bil-pesi', p, true))}</Box>]
           : []),
         u.GruppoChip({
           chiave: 'profilo', etichetta: T('bil.profilo'), modo: 'scelta', valore: profilo, voci: PROFILI.map(p => ({ valore: p.id, testo: T(p.nome) })),
@@ -863,7 +867,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     await cambia(s => ({ ...s, bozza, errore: undefined }))
   }
   const bozzaUi = (b: NonNullable<StatoVista['bozza']>) => (
-    <Box key="bozza-budget" flexDirection="column" gap={1} paddingLeft={2}>
+    <Box key="bozza-budget" flexDirection="column" gap={terminale ? 1 : 'sm'} paddingLeft={2}>
       {u.GruppoChip({
         chiave: 'bozza-fornitore', etichetta: T('pro.fornitore'), modo: 'scelta', valore: b.fornitore ?? '',
         voci: ammessi.map(f => ({ valore: f, testo: NOME_FORNITORE[f] })), onCambia: v => void cambia(s => ({ ...s, bozza: { ...s.bozza, fornitore: v as Fornitore } })),
@@ -893,9 +897,9 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   )
   /** I budget manuali: dell'account, più quelli di progetto (pillola «progetto»); scrivono subito, non stanno nella bozza. */
   const budgetUi = () => (
-    <Box key="budget" flexDirection="column" gap={1}>
+    <Box key="budget" flexDirection="column" gap={terminale ? 1 : 'sm'}>
       {didascalia('budget-titolo', T('pro.budgetTitolo'))}
-      <Box flexDirection="row" flexWrap="wrap" gap={1}>
+      <Box flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
         {r.limitiManuali.map(l =>
           u.Chip({
             chiave: `budget-${l.id}`, testo: l.progetto ? `${budgetScritto(l)} · ${T('imp.pillProgetto')}` : budgetScritto(l), segno: '•',
@@ -940,7 +944,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         <Box key="sensibili" flexDirection="column">
           {didascalia('sensibili-titolo', T('pro.sensibili', { config }))}
           {regoleOra.sensibili.length ? (
-            <Box flexDirection="row" flexWrap="wrap" gap={1}>
+            <Box flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
               {regoleOra.sensibili.map((t, i) => u.Chip({ chiave: `sensibile-${i}`, testo: t, segno: '▲', colore: STATO.attesa }))}
             </Box>
           ) : (
@@ -1013,7 +1017,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     })
     const api = r.apiClaude
     return (
-      <Box key="ese-restrizione" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center">
+      <Box key="ese-restrizione" flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'} alignItems="center">
         <Text key="ese-restrizione-testo" size="caption" wrap="wrap">
           {T('imp.restrizioneApi', { repo: io?.repo ?? '—', limite: api?.limiteProgettoUsd !== undefined ? T.numero(api.limiteProgettoUsd) : '—', tetto: api ? T.numero(api.tetto) : '—' })}
         </Text>
@@ -1025,7 +1029,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const apiUi = () => {
     const conto = r.account.apiClaude
     return (
-      <Box key="ese-api" flexDirection="column" gap={1}>
+      <Box key="ese-api" flexDirection="column" gap={terminale ? 1 : 'sm'}>
         <Text key="ese-api-titolo" weight="semibold">{T('ese.apiTitolo')}</Text>
         {didascalia('ese-chiave-dove', T('ese.chiaveDove'))}
         {didascalia('ese-chiave-dedicata', T('ese.chiaveDedicata'))}
@@ -1112,8 +1116,8 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       stato,
       figli: [
         // F6.7: che cosa è pronto, calcolato dalla mod; per ogni ✗ l'azione a un clic.
-        <Box key="ese-stato" flexDirection="column" gap={1}>
-          <Box key="ese-stato-testa" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center">
+        <Box key="ese-stato" flexDirection="column" gap={terminale ? 1 : 'sm'}>
+          <Box key="ese-stato-testa" flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'} alignItems="center">
             <Text key="ese-stato-titolo" weight="semibold">{T('ese.statoTitolo')}</Text>
             <Button key="ese-ricontrolla" plain label={es.inCorso ? T('ese.controllando') : T('ese.ricontrolla')} onPress={() => void c.controllaEsecuzione()} />
             {mancanti.length && !passo ? (
@@ -1138,11 +1142,11 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         </Box>,
         // La procedura guidata: un passo mancante alla volta, ognuno si può saltare; si chiude da sola quando è tutto ✓.
         passo ? (
-          <Box key="ese-guida-passo" flexDirection="column" gap={1} borderStyle="single">
+          <Box key="ese-guida-passo" flexDirection="column" gap={terminale ? 1 : 'sm'} borderStyle="single">
             <Text key="ese-guida-titolo" weight="semibold">{`${T('ese.guida')} · ${T('ese.guidaPasso', { n: mancanti.indexOf(passo) + 1, tot: mancanti.length })}`}</Text>
             {azione(passo, 'guida')}
             {copia('guida')}
-            <Box key="ese-guida-pulsanti" flexDirection="row" flexWrap="wrap" columnGap={2}>
+            <Box key="ese-guida-pulsanti" flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
               <Button key="guida-salta" plain label={T('ese.salta')} onPress={() => void update($, esecuzione, s => ({ ...s, guida: s.guida && guidaPassi.length > 1 ? { saltati: [...s.guida.saltati, passo] } : undefined }))} />
               <Button key="guida-chiudi" plain dimColor label={T('ese.guidaChiudi')} onPress={() => void update($, esecuzione, s => ({ ...s, guida: undefined }))} />
             </Box>
@@ -1151,7 +1155,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         // API Claude: chiave (solo presenza), modello di minaccia, budget del mese e tetto per tentativo.
         apiUi(),
         // Cloud di Claude: niente da configurare qui; si verifica il remote GitHub e si dice che cosa serve.
-        <Box key="ese-cloud" flexDirection="column" gap={1}>
+        <Box key="ese-cloud" flexDirection="column" gap={terminale ? 1 : 'sm'}>
           <Text key="ese-cloud-titolo" weight="semibold">{T('ese.cloudTitolo')}</Text>
           {nota1('ese-github', github ? STATO.inCorso : STATO.attesa, github ? '✓' : '○', T(github ? 'ese.github' : 'ese.noGithub'))}
           {didascalia('ese-cloud-come', T('ese.cloudCome'))}
@@ -1189,7 +1193,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           />
         ) : null,
         r.strato.freellmapi.endpoint ? (
-          <Box key="free-endpoint-progetto" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center">
+          <Box key="free-endpoint-progetto" flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'} alignItems="center">
             <Text key="free-endpoint-progetto-testo" size="caption" wrap="wrap">{T('imp.endpointProgetto', { repo: io?.repo ?? '—' })}</Text>
             <Button key="free-endpoint-progetto-togli" plain label={T('imp.rimuoviEccezione')}
               onPress={salva('free-endpoint', () => ({ freellmapi: { livello: r.strato.freellmapi.livello } }))} />
@@ -1214,6 +1218,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const stato = NOMI_LINGUE[T.lingua]
     return u.Sezione({
       chiave: 'pagina-lingua',
+      interna: vista.sezione === 'setup',
       titolo: T('imp.sezione.lingua'),
       descrizione: T('imp.lingua.descrizione'),
       stato,
@@ -1282,13 +1287,13 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
               : connessioni()
 
   return (
-    <Box key="configurazione" flexDirection="column" gap={terminale ? 1 : 2}>
+    <Box key="configurazione" flexDirection="column" gap={terminale ? 1 : 'lg'}>
       {/* F10: le sezioni in due gruppi, Account (tutti i progetti) e Progetto (owner/repo). */}
-      <Box key="sezioni" flexDirection="column" gap={1}>
+      <Box key="sezioni" flexDirection="column" gap={terminale ? 1 : 'sm'}>
         {[true, false].map(account => (
-          <Box key={account ? 'sezioni-account' : 'sezioni-progetto'} flexDirection="column">
-            <Text size="caption" dimColor>{account ? T('imp.gruppoAccount') : T('imp.gruppoProgetto', { repo: io?.repo ?? '—' })}</Text>
-            <Box flexDirection="row" flexWrap="wrap" gap={1}>
+          <Box key={account ? 'sezioni-account' : 'sezioni-progetto'} flexDirection="column" gap={terminale ? 0 : 'xs'}>
+            <Text size="caption" weight="semibold" dimColor>{account ? T('imp.gruppoAccount') : T('imp.gruppoProgetto', { repo: io?.repo ?? '—' })}</Text>
+            <Box flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
               {SEZIONI.filter(s => SEZIONI_ACCOUNT.includes(s.valore) === account).map(s =>
                 u.Chip({
                   chiave: `sezione-${s.valore}`, testo: T(s.testo), attiva: vista.sezione === s.valore,
@@ -1315,8 +1320,8 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       {corpo}
       {pendenti > 0 && (
         // F9.4: la barra «Applica» in evidenza sul desktop: bordo e velo d'accento (il testo resta nell'inchiostro).
-        <Box key="pendenti" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center" borderStyle={terminale ? 'single' : 'round'}
-          borderColor={terminale ? undefined : ACCENTO} borderDimColor={terminale} backgroundColor={terminale ? undefined : velo(ACCENTO, ALFA_VELO)} paddingX={1}>
+        <Box key="pendenti" flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'} alignItems="center" borderStyle={terminale ? 'single' : 'round'}
+          borderColor={terminale ? undefined : ACCENTO} borderDimColor={terminale} backgroundColor={terminale ? undefined : velo(ACCENTO, ALFA_VELO)} padding={terminale ? 1 : 'md'}>
           <Text key="pendenti-n">{vista.applicando && inVolo ? T('imp.salvando') : T('imp.nonSalvate', { n: pendenti })}</Text>
           <Button key="applica" variant="primary" hotkey="s" label={T('imp.applica')} onPress={() => void applicaBozza($, c, T)} />
           <Button key="annulla-modifiche" plain dimColor label={T('imp.annullaModifiche')} onPress={() => void inBozza(s => ({ ...s, pendenti: undefined, errore: undefined }))} />

@@ -3,6 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { board, chiaveRiassunto, esc, hash, improntaBoard, oscura, testoRiassunto } from '../hooks/board'
 import type { DatiBoard, IngressiBoard } from '../hooks/board'
 import { normalizza, pianoValido, regoleDa, risorseDa, transizione } from '../hooks/logica'
+import { cssVariabiliBoard, BOARD, STATO, MOTORE, FAMIGLIA, EFFORT, GRIGIO, VELO, ACCENTO, sopra, contrasto } from '../hooks/tema'
 import { LEGENDA, t } from '../hooks/lingua'
 import type { Azione, Chiamante } from '../types'
 
@@ -84,7 +85,7 @@ test('board F5.2: scura di default (chiara solo con prefers-color-scheme: light)
   expect(css).not.toContain('prefers-color-scheme:dark')
   expect(css).toMatch(/font-family:var\(--mono\)/)
   expect(css).toContain('--mono:ui-monospace,')
-  expect(html).toContain('<p class="errore">✗ ')
+  expect(html).toContain('<p class="errore"><span class="segno fallita">✗</span> ')
   expect(html).not.toContain('✕')
 })
 
@@ -243,9 +244,9 @@ test('R7: la board non dipende da chi la genera: niente chi negli ingressi, bloc
 
 test('F8 board: consegnata con ✓ e la sua parola; ✗ della fallita nel colore d\'errore; auditor in «Chi»; colonna delle etichette unica; colori solo dalle variabili', () => {
   const html = board(dati([...insieme(), az('a-aud00001', 10, { auditor: 'fable', modello: 'claude-opus-5-5' })], { lingua: 'en' }))
-  expect(html).toMatch(/<span class="segno">✓<\/span> Lavoro a-cons0001 <span class="tenue">· delivered ·/)
-  expect(html).toMatch(/<span class="segno fallita">✗<\/span> Lavoro a-fall0001/)
-  expect(html).toContain('.segno.fallita{color:var(--errore)}')
+  expect(html).toMatch(/--segno:var\(--stato-consegnata\)[^>]+><span class="segno">✓<\/span> delivered/)
+  expect(html).toMatch(/--segno:var\(--stato-errore\)[^>]+><span class="segno">✗<\/span>/)
+  expect(html).toContain('.segno.fallita{color:var(--stato-errore)}')
   expect(html).toMatch(/<dt>Auditor<\/dt><dd>Fable 5\.1 · auditor: turn it on yourself with \/advisor fable in that session<\/dd>/)
   // Come nel pannello: «senza auditor» per l'avvio API e l'advisor ereditato registrato dall'esecuzione.
   const api = board(dati([
@@ -254,11 +255,43 @@ test('F8 board: consegnata con ✓ e la sua parola; ✗ della fallita nel colore
   ], { lingua: 'en' }))
   expect(api).toMatch(/<dt>Auditor<\/dt><dd>Fable 5\.1 · auditor: turned off for this start<\/dd>/)
   expect(api).toMatch(/<dt>Auditor<\/dt><dd>no auditor · last API run: advisor inherited from the settings \(Opus 5\.5\)<\/dd>/)
-  expect(html).toContain('.barra{display:inline-block;width:160px;height:8px;border:1px solid var(--traccia)')
-  expect(html).toContain('grid-template-columns:minmax(0,11em) 1fr')
+  expect(html).toContain('.barra{display:inline-block;width:160px;max-width:100%;height:12px;border:1px solid var(--traccia);border-radius:6px')
+  expect(html).toContain('grid-template-columns:minmax(0,11em) minmax(0,1fr)')
   // Fuori dal blocco generato in tema.ts nessun colore scritto a mano, e mai l'azzurro dell'icona.
   const css = html.slice(html.indexOf('<style>') + 7, html.indexOf('</style>'))
   const resto = css.slice(css.indexOf('}}') + 2)
   expect(resto).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
   expect(html).not.toContain('#00BFFF')
+})
+
+
+test('F12 board: variabili semantiche, parole in inchiostro, disclosure native e impaginazione stretta', () => {
+  const html = board(dati(insieme()))
+  expect(html).toContain(cssVariabiliBoard())
+  for (const [gruppo, tinte] of Object.entries({ stato: STATO, motore: MOTORE, famiglia: FAMIGLIA, effort: EFFORT }))
+    for (const [nome, tinta] of Object.entries(tinte)) expect(html).toContain(`--${gruppo}-${nome}:${tinta};--${gruppo}-${nome}-velo:${tinta}${VELO.pillola}`)
+  for (const css of ['summary:hover{background:var(--hover)}', 'summary:focus-visible', 'border-radius:12px;margin:8px 0;padding:16px', '.errore{color:var(--testo)}', '@media (max-width:600px){dl{grid-template-columns:minmax(0,1fr)}', 'white-space:pre-wrap;overflow-wrap:anywhere']) expect(html).toContain(css)
+  expect(html).not.toMatch(/summary::|list-style:none|details:hover|display:none|<button|<script/i)
+  expect(html).toContain('<span class="attributi">')
+  expect(html).toContain('--segno:var(--motore-claude)')
+  expect(html).toContain('--segno:var(--famiglia-opus)')
+  expect(html).toContain('--segno:var(--effort-')
+  expect(html).toContain('class="lavoro errore-bordo"')
+  const sensibile = board(dati([az('a-sens0001', 1, { corsia: 'R4', stato: 'avviata', modello: 'unknown<&' })], {
+    vive: { 'a-sens0001': { stato: 'ferma' } }, lingua: 'en',
+    regole: { ...R, modelli: { ...R.modelli, claude: ['unknown<&'] } },
+  }))
+  expect(sensibile).toContain('class="lavoro errore-bordo"')
+  expect(sensibile).toContain('--segno:var(--stato-attesa)')
+  expect(sensibile).toContain('--segno:var(--stato-errore)')
+  expect(sensibile).toContain('R4 sensitive')
+  expect(sensibile).toContain('--segno:var(--neutro)')
+  expect(sensibile).toContain('unknown&lt;&amp;')
+  for (const tema of Object.values(BOARD)) {
+    const scheda = sopra(GRIGIO, VELO.riquadro, tema.fondo)
+    for (const tinta of [GRIGIO, ACCENTO, ...Object.values(STATO), ...Object.values(MOTORE), ...Object.values(FAMIGLIA), ...Object.values(EFFORT)])
+      for (const base of [scheda, sopra(ACCENTO, VELO.hover, scheda)])
+        expect(contrasto(tinta, sopra(tinta, VELO.pillola, base)) >= 3).toBe(true)
+    for (const tinta of [tema.testo, tema.tenue]) expect(contrasto(tinta, scheda) >= 4.5).toBe(true)
+  }
 })

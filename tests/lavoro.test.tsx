@@ -155,7 +155,7 @@ const PANE = (surface: 'desktop' | 'terminal', colonne: number) =>
   }) as const
 
 const SUPERFICI = ['desktop', 'terminal'] as const
-const LARGHEZZE = [60, 90, 130] as const
+const LARGHEZZE = [60, 100, 120] as const
 
 // Una chip per ogni riga della matrice C1.6. Il fork di un'altra conversazione non parte come sessione nuova, ma
 // «Fallo qui» (la sua guardia) lo ammette: la riga bloccata lo tiene (§10).
@@ -290,23 +290,33 @@ test('C1: una chip bloccata dice il primo motivo; «Perché» li elenca tutti, s
   }
 })
 
-test('C1: ridimensionando il pannello cambiano intestazione e «Al lavoro adesso», sul desktop come nel terminale', async ($, on) => {
+test('F12: sessioni in schede grafiche e tabella terminale, controlli stabili a 60/100/120 colonne', async ($, on) => {
   ambiente(on, [az('a-avviab01', 1, { titolo: LUNGO, stato: 'avviata', sessione: SID, lanciataDa: 'sessione-master', avviataIl: '2026-11-05T10:00:00Z' })])
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  for (const surface of SUPERFICI) {
-    const ui = await $.ui.mount(PANE(surface, 130))
-    // Larga: la tabella con le sue colonne.
-    expect(await ui.find({ type: 'Text', text: /^Contesto$/ })).toBeDefined()
-    for (const colonne of [90, 60]) {
-      await ui.redraw({ ...PANE(surface, colonne).props })
+  for (const surface of ['desktop', 'vscode', 'mobile', 'terminal'] as const) {
+    const ui = await $.ui.mount(PANE_F9(surface, 120))
+    // F12: tabella larga solo nel terminale, schede compatte su ogni larghezza grafica.
+    expect(!!(await ui.find({ type: 'Text', text: /^Contesto$/ }))).toBe(surface === 'terminal')
+    const controlli = controlliF9(await ui.drawn())
+    for (const colonne of [100, 60]) {
+      await ui.redraw({ ...PANE_F9(surface, colonne).props })
       // Media e stretta: niente tabella, il titolo intero e le informazioni in frammenti.
       expect(await ui.find({ type: 'Text', text: /^Contesto$/ })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: LUNGO })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /^◆ Claude$/ })).toBeDefined()
+      expect(controlliF9(await ui.drawn())).toEqual(controlli)
+      if (surface !== 'terminal') {
+        const schede: NodoF8[] = []
+        visitaF8(await ui.drawn(), x => {
+          if (x.props?.key?.startsWith('ses-') && x.props.backgroundColor === `${GRIGIO}${VELO.riquadro}`) schede.push(x)
+        })
+        expect(schede.length > 0).toBe(true)
+        for (const scheda of schede) expect(scheda.props).toMatchObject({ padding: 'sm', borderStyle: 'round', gap: 'sm' })
+      }
     }
-    await ui.redraw({ ...PANE(surface, 130).props })
-    expect(await ui.find({ type: 'Text', text: /^Contesto$/ })).toBeDefined()
+    await ui.redraw({ ...PANE_F9(surface, 120).props })
+    expect(!!(await ui.find({ type: 'Text', text: /^Contesto$/ }))).toBe(surface === 'terminal')
     await ui.unmount()
   }
 })
@@ -960,5 +970,50 @@ test('F9 (revisione): la scheda espansa (Dettagli) tiene il fondo della scheda e
   expect(await scheda()).toMatchObject({ borderColor: STATO.errore, backgroundColor: `${GRIGIO}${VELO.riquadro}` })
   await ui.press({ key: 'mod-a-sens0001' })
   expect(await scheda()).toMatchObject({ borderColor: STATO.errore, backgroundColor: `${GRIGIO}${VELO.riquadro}` })
+  await ui.unmount()
+})
+
+
+test('F12: Start primario solo grafico, Queue e Retry secondari; schede e riepilogo con una sola base', async ($, on) => {
+  const ready = az('a-f12ready', 1)
+  ambiente(on, [ready, az('a-f12queue', 2, { dipende: [ready.id] }), az('a-f12retry', 3, { stato: 'fallita' })])
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const surface of ['desktop', 'vscode', 'mobile', 'terminal'] as const) {
+    const ui = await $.ui.mount(PANE_F9(surface, 60))
+    for (const expanded of [false, true]) {
+      if (expanded) await ui.press({ key: 'mod-a-f12ready' })
+      expect((await ui.find({ key: 'avvia-a-f12ready' }))?.props.variant).toBe(surface === 'terminal' ? 'secondary' : 'primary')
+      expect((await ui.find({ key: 'avvia-a-f12queue' }))?.props.variant).toBe('secondary')
+      expect((await ui.find({ key: 'riprova-a-f12retry' }))?.props.variant).toBe('secondary')
+      if (surface !== 'terminal') {
+        expect((await ui.find({ key: 'riga-a-f12ready' }))?.props).toMatchObject({ padding: 'md', gap: 'sm' })
+        if (expanded) {
+          for (const ruolo of ['motore', 'modello', 'effort', 'auditor', 'rev', 'corsia'])
+            expect((await ui.find({ key: `chi-riepilogo-a-f12ready-${ruolo}` }))?.props.borderStyle).toBe('round')
+          let basi = 0
+          visitaF8(await ui.drawn(), x => { if (x.props?.backgroundColor === `${GRIGIO}${VELO.riquadro}`) basi++ })
+          // Tre azioni: l'editor non aggiunge una quarta base.
+          expect(basi).toBe(3)
+        }
+      }
+      const keys = controlliF9(await ui.drawn()).map(x => x.chiave)
+      expect(keys.indexOf('avvia-a-f12ready') < keys.indexOf('qui-a-f12ready')).toBe(true)
+      if (expanded) await ui.press({ key: 'mod-a-f12ready' })
+    }
+    await ui.unmount()
+  }
+})
+
+test('F12 Carico: quattro sezioni passive senza hover, anche sugli antenati delle barre', async ($, on) => {
+  ambiente(on, MATRICE)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 120))
+  await ui.press({ key: 'vista-carico' })
+  for (const key of ['matrice', 'limiti', 'token', 'pesi-uso'])
+    expect((await ui.find({ key }))?.props).toMatchObject({ padding: 'md', backgroundColor: `${GRIGIO}${VELO.riquadro}`, borderStyle: 'round' })
+  const corpo = await ui.find({ key: 'vista-carico-corpo' })
+  visitaF8(corpo, x => expect(x.hover).toBeUndefined())
   await ui.unmount()
 })

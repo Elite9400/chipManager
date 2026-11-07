@@ -50,6 +50,8 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
   }) {
     const scelta = p.attiva !== undefined
     const segno = p.segno ?? '●'
+    if (!terminale && !scelta && !p.onPress && !p.onRimuovi)
+      return Pillola({ chiave: p.chiave, testo: p.testo, segno, colore: p.colore })
     // Il desktop disegna la label, non i figli: una chip di stato tiene il segno anche lì.
     const nome = `${p.contesto ? `${p.contesto}, ` : ''}${p.testo}`
     const chiusa = terminale && !p.onRimuovi ? ']' : ''
@@ -112,11 +114,11 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
       } else p.onCambia(p.valore.includes(v) ? p.valore.filter(x => x !== v) : [...p.valore, v])
     }
     return (
-      <Box key={p.chiave} flexDirection="column">
+      <Box key={p.chiave} flexDirection="column" gap={terminale ? 0 : 'xs'}>
         <Text size="caption" dimColor>
           {p.etichetta}
         </Text>
-        <Box flexDirection="row" flexWrap="wrap" gap={1}>
+        <Box flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
           {p.voci.map(v =>
             Chip({
               chiave: `${p.chiave}-${v.valore}`,
@@ -155,10 +157,10 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     const celle = Math.floor((p.max - p.min) / p.passo) + 1
     const qui = p.valore === null ? -1 : Math.min(celle - 1, Math.max(0, Math.round((p.valore - p.min) / p.passo)))
     const traccia = terminale ? (
-      <Text key={`${p.chiave}-traccia`} dimColor>
-        {'─'.repeat(qui < 0 ? celle : qui)}
+      <Text key={`${p.chiave}-traccia`}>
+        <Text dimColor>{'─'.repeat(qui < 0 ? celle : qui)}</Text>
         {qui >= 0 && <Text color={ACCENTO}>●</Text>}
-        {'─'.repeat(qui < 0 ? 0 : celle - qui - 1)}
+        <Text dimColor>{'─'.repeat(qui < 0 ? 0 : celle - qui - 1)}</Text>
       </Text>
     ) : (
       <Box key={`${p.chiave}-traccia`} flexDirection="row" flexGrow={1}>
@@ -170,11 +172,11 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
       </Box>
     )
     return (
-      <Box key={p.chiave} flexDirection="column">
+      <Box key={p.chiave} flexDirection="column" gap={terminale ? 0 : 'xs'}>
         <Text size="caption" dimColor>
           {p.etichetta}
         </Text>
-        <Box flexDirection="row" alignItems="center" gap={1}>
+        <Box flexDirection="row" alignItems="center" gap={terminale ? 1 : 'xs'}>
           <Button
             key={`${p.chiave}-meno`}
             plain
@@ -207,7 +209,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
   }
 
   /** Una sezione: titolo, che cosa configura e lo stato sintetico (a destra sul desktop, sotto sul terminale). */
-  function Sezione(p: { chiave: string; titolo: string; descrizione: string; stato?: string; figli: Nodo[] }) {
+  function Sezione(p: { chiave: string; titolo: string; descrizione?: string; stato?: string; figli: Nodo[]; interna?: boolean }) {
     const stato = p.stato ? (
       <Text key={`${p.chiave}-stato`} size="caption" dimColor>
         {p.stato}
@@ -218,21 +220,21 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
       <Box
         key={p.chiave}
         flexDirection="column"
-        gap={1}
-        borderStyle={terminale ? undefined : 'round'}
-        borderDimColor={!terminale}
-        backgroundColor={terminale ? undefined : velo(GRIGIO, VELO.riquadro)}
-        paddingX={terminale ? 0 : 1}
+        gap={terminale ? 1 : 'sm'}
+        borderStyle={terminale || p.interna ? undefined : 'round'}
+        borderDimColor={!terminale && !p.interna}
+        backgroundColor={terminale || p.interna ? undefined : velo(GRIGIO, VELO.riquadro)}
+        padding={terminale || p.interna ? 0 : 'md'}
       >
-        <Box flexDirection={terminale ? 'column' : 'row'} justifyContent="space-between" flexWrap="wrap" gap={terminale ? 0 : 1}>
-          <Text weight="semibold" wrap="wrap">
-            {p.titolo}
+        <Box flexDirection={terminale ? 'column' : 'row'} justifyContent="space-between" flexWrap="wrap" gap={terminale ? 0 : 'xs'}>
+          <Text size="caption" weight="semibold" wrap="wrap">
+            {terminale ? p.titolo : p.titolo.toLocaleUpperCase(lingua)}
           </Text>
           {stato}
         </Box>
-        <Text size="caption" dimColor wrap="wrap">
+        {p.descrizione && <Text size="caption" dimColor wrap="wrap">
           {p.descrizione}
-        </Text>
+        </Text>}
         {p.figli as never}
       </Box>
     )
@@ -244,17 +246,17 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     return (
       <Box
         key={p.chiave}
-        hover={terminale ? undefined : { backgroundColor: velo(ACCENTO, VELO.hover) }}
+        hover={terminale || !p.azioni.some(Boolean) ? undefined : { backgroundColor: velo(ACCENTO, VELO.hover) }}
         flexDirection={sotto ? 'column' : 'row'}
         flexWrap={sotto ? undefined : 'wrap'}
         justifyContent="space-between"
         alignItems={sotto ? 'flex-start' : 'center'}
-        gap={sotto ? 0 : 1}
+        gap={terminale ? (sotto ? 0 : 1) : 'sm'}
       >
         <Box flexDirection="column" flexShrink={1}>
           {p.principale as never}
         </Box>
-        <Box flexDirection="row" flexWrap="wrap" gap={1}>
+        <Box flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
           {p.azioni as never}
         </Box>
       </Box>
@@ -301,7 +303,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     ]
     if (terminale) return <Text key={p.chiave}>{corpo}</Text>
     return (
-      <Box key={p.chiave} flexDirection="row" paddingX={1} backgroundColor={p.colore ? velo(p.colore, VELO.pillola) : velo(GRIGIO, VELO.pillola)}>
+      <Box key={p.chiave} flexDirection="row" paddingX="xs" borderStyle="round" borderDimColor backgroundColor={velo(p.colore ?? GRIGIO, VELO.pillola)}>
         <Text>{corpo}</Text>
       </Box>
     )
@@ -312,7 +314,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     const voci = p.voci.filter(Boolean)
     if (!terminale)
       return (
-        <Box key={p.chiave} flexDirection="row" flexWrap="wrap" gap={1}>
+        <Box key={p.chiave} flexDirection="row" flexWrap="wrap" gap="sm">
           {voci as never}
         </Box>
       )
@@ -333,7 +335,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
    * dell'allerta se c'è, altrimenti attenuato), padding e velo d'accento sotto il puntatore. Terminale: un blocco
    * semplice, senza bordo né hover.
    */
-  function Scheda(p: { chiave: string; allerta?: string; figli: unknown[]; gap?: number }) {
+  function Scheda(p: { chiave: string; allerta?: string; figli: unknown[]; gap?: number; compatta?: boolean; interattiva?: boolean }) {
     if (terminale)
       return (
         <Box key={p.chiave} flexDirection="column" gap={p.gap}>
@@ -344,13 +346,13 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
       <Box
         key={p.chiave}
         flexDirection="column"
-        gap={p.gap}
+        gap="sm"
         borderStyle="round"
         borderColor={p.allerta}
         borderDimColor={!p.allerta}
         backgroundColor={velo(GRIGIO, VELO.riquadro)}
-        hover={{ backgroundColor: velo(ACCENTO, VELO.hover) }}
-        paddingX={1}
+        hover={p.interattiva === false ? undefined : { backgroundColor: velo(ACCENTO, VELO.hover) }}
+        padding={p.compatta ? 'sm' : 'md'}
       >
         {p.figli as never}
       </Box>
@@ -369,7 +371,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
         </Text>
       )
     return (
-      <Box key={p.chiave} flexDirection="row" justifyContent="space-between" columnGap={1}>
+      <Box key={p.chiave} flexDirection="row" justifyContent="space-between" columnGap="xs">
         <Text key={`${p.chiave}-titolo`} size="caption" weight="semibold" dimColor>
           {p.titolo.toLocaleUpperCase(lingua)}
         </Text>

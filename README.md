@@ -605,7 +605,9 @@ the same actions, with the same keys and labels, in the same order.
   with the veil of its own tint: `◆` engine, `●` model family (Opus, Sonnet, Haiku, Fable, GPT), effort blocks in a
   blue-to-indigo scale, `↺` reviewer, `▲` sensitive. Sensitive and blocked chips have a red border; a queued chip shows
   an amber band with `◔`. Section headers are uppercase with the count on the right; usage bars are thick; Settings
-  sections are cards and the **Apply** bar is highlighted.
+  sections are cards and the **Apply** bar is highlighted. Sessions stay compact cards at every graphical width;
+  ready **Start** actions are filled, while Queue stays secondary. Load, setup and doctor use one card per section,
+  with no nested card tint in editors or setup steps.
 - **Terminal.** One compact line per attribute group — `◆ Claude · ● Opus 5.5 · ▰▰▱▱ medium · ↺ reviewed by Codex` —
   with coloured glyphs, text in the terminal's ink and block bars `▕████▌   ▏`.
 - **The brand.** «▣ chip**Manager**»: the glyph and «Manager» (bold) in the accent, «chip» in ink, then the project and
@@ -623,11 +625,12 @@ Common to both:
 - **Colour has a job**: text uses the host's own ink and dim colour; the accent (`#0A86C9`) only marks graphics —
   borders, bars, glyphs and veils; amber and red appear only for warning and critical. Every colour and opacity comes
   from one token file, and the graphics hold at least 3:1 on the reference light and dark backgrounds.
-- **Hover**: on desktop, the row under the pointer gets a faint accent veil and dimmed secondary actions come to full
+- **Hover**: on desktop, an actionable row under the pointer gets a faint accent veil and dimmed secondary actions come to full
   strength under the pointer or with the keyboard focus. Nothing is reachable only by hovering; the terminal has no
-  hover and shows every action.
+  hover and shows every action. Usage bars and passive cards have no hover tint.
 - **The board** uses the same tokens as CSS variables, follows the system's light or dark theme, and its text pairs
-  are checked at 4.5:1.
+  are checked at 4.5:1. Rounded attribute pills and 12px progress bars match the panel; narrow layouts stack labels
+  above values and keep native keyboard-accessible disclosures.
 
 ## Security & guards
 

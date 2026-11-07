@@ -24,6 +24,7 @@ import {
 } from '../hooks/bilanciamento'
 import { bilancia, regoleDa, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
 import { LEGENDA, LINGUE, t } from '../hooks/lingua'
+import { ACCENTO, ALFA_VELO, GRIGIO, VELO } from '../hooks/tema'
 import { MAX_URL, rapportoRedatto, urlRapporto } from '../hooks/rapporto'
 import { usoDesktop } from '../hooks/risorse'
 import type { Azione, Chiamante, Peso } from '../types'
@@ -574,7 +575,7 @@ test('lingua: config assente = inglese; la scelta va nella bozza, Applica la scr
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-lingua-premi' })
-  expect(await ui.find({ type: 'Text', text: 'Language' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'LANGUAGE' })).toBeDefined()
   expect((await ui.find({ key: 'lingua-en-premi' }))?.props).toMatchObject({ label: 'English', variant: 'primary' })
   await ui.press({ key: 'lingua-de-premi' })
   expect(amb.disco.get(CONFIG)).toBeUndefined()
@@ -583,7 +584,7 @@ test('lingua: config assente = inglese; la scelta va nella bozza, Applica la scr
   // F10: in un repository la lingua va nello stesso configura del progetto (un solo CAS), mai con configura-utente.
   expect(JSON.parse(amb.disco.get(CONFIG)!)).toEqual({ lingua: 'de', progetti: { 'esempio/demo': {} } })
   expect([amb.configure(), amb.processi.filter(x => x[2] === 'configura-utente').length]).toEqual([1, 0])
-  expect(await ui.find({ type: 'Text', text: 'Sprache' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'SPRACHE' })).toBeDefined()
   expect((await ui.find({ key: 'lingua-de-premi' }))?.props).toMatchObject({ label: 'Deutsch', variant: 'primary' })
   await ui.unmount()
 })
@@ -595,13 +596,13 @@ test('lingua: scelta in un altro pannello (config cambiato su disco) arriva al b
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-lingua-premi' })
-  expect(await ui.find({ type: 'Text', text: 'Lingua' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'LINGUA' })).toBeDefined()
   amb.disco.set(CONFIG, JSON.stringify({ lingua: 'fr', progetti: { 'esempio/demo': {} } }))
   await clock.advance(20_000)
-  expect(await ui.find({ type: 'Text', text: 'Langue' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'LANGUE' })).toBeDefined()
   amb.disco.set(CONFIG, JSON.stringify({ lingua: 'klingon', progetti: { 'esempio/demo': {} } }))
   await clock.advance(20_000)
-  expect(await ui.find({ type: 'Text', text: 'Language' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'LANGUAGE' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -897,6 +898,8 @@ test('impostazioni: popup rifiutato, «Collega…» e «Aggiungi budget…» si 
   expect(manuali[0]).toMatchObject({ fornitore: 'claude', nome: 'settimanale', percentuale: 40, unita: '%' })
   expect(manuali[0]!.id).toMatch(/^claude-settimanale-[a-z0-9]+$/)
   expect(await ui.find({ key: 'bozza-fornitore' })).toBeUndefined()
+  expect(await ui.find({ key: 'pendenti' })).toBeUndefined()
+  expect((await ui.find({ key: 'pagina-soglie' }))?.props).toMatchObject({ padding: 'md', backgroundColor: `${GRIGIO}${VELO.riquadro}` })
 
   // Popup accettato: fornitore e tipo dal popup, il valore in linea; × toglie la voce (qui quella del progetto).
   amb.popup.risposta = q => (q.startsWith('Per quale') ? 'DeepSeek' : 'Mensile')
@@ -1858,6 +1861,7 @@ test('F10 Impostazioni: gruppi Account e Progetto; le restrizioni del progetto s
   await ui.press({ key: 'impostazioni' })
   expect(await ui.find({ type: 'Text', text: 'Account · tutti i progetti' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Progetto · esempio/demo' })).toBeDefined()
+  expect((await ui.find({ key: 'sezioni' }))?.props.gap).toBe('sm')
   await ui.press({ key: 'sezione-soglie-premi' })
   expect(await ui.find({ type: 'Text', text: "Impostazione dell'account: vale per tutti i progetti." })).toBeDefined()
   // La soglia efficace è la più severa: quella del progetto (50/60), detta accanto ai controlli dell'account (70/90).
@@ -1867,6 +1871,7 @@ test('F10 Impostazioni: gruppi Account e Progetto; le restrizioni del progetto s
   const prima = amb.disco.get(CONFIG)
   await ui.press({ key: 'restrizione-claude-togli' })
   expect(amb.disco.get(CONFIG)).toBe(prima)
+  expect((await ui.find({ key: 'pendenti' }))?.props).toMatchObject({ padding: 'md', backgroundColor: `${ACCENTO}${ALFA_VELO}`, flexWrap: 'wrap' })
   await ui.press({ key: 'applica' })
   // «Rimuovi restrizione» toglie il campo dal progetto; l'account non cambia, i campi sconosciuti restano.
   expect(amb.progettoOra()).not.toHaveProperty('soglie')
@@ -2227,4 +2232,40 @@ test('F11 giro 2, rilievo 2: a login GitHub riuscito il rilievo del doctor cade 
   expect(testo).not.toContain('GitHub not signed in')
   expect(testo).toContain('API Claude lane held for 2 min')
   expect(amb.processi.filter(p => p[2] === 'diagnosi').length).toBe(diagnosi)
+})
+
+
+test('F12 setup e doctor: una sola scheda, azioni in ordine, bozza e scope invariati', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': {} } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const basi = (n: unknown): number => {
+    if (!n || typeof n !== 'object') return 0
+    if (Array.isArray(n)) return n.reduce((somma, x) => somma + basi(x), 0)
+    const x = n as { props?: Record<string, unknown>; children?: unknown }
+    return Number(x.props?.backgroundColor === `${GRIGIO}${VELO.riquadro}`) + basi(x.children)
+  }
+  for (const surface of ['desktop', 'terminal'] as const) {
+    await $.command.run({ command: 'chipmanager', args: '--setup' } as never)
+    const ui = await $.ui.mount(PANE(surface, 60))
+    for (let i = 0; i < 7; i++) {
+      expect(basi(await ui.drawn())).toBe(surface === 'terminal' ? 0 : 1)
+      expect((await ui.find({ key: 'pagina-setup' }))?.props.padding).toBe(surface === 'terminal' ? 0 : 'md')
+      expect((await ui.find({ key: 'setup-azioni' }))?.props.flexWrap).toBe('wrap')
+      if (i < 6) await ui.press({ key: 'setup-avanti' })
+    }
+    expect(amb.configure()).toBe(0)
+    await ui.press({ key: 'setup-chiudi' })
+    expect(await ui.find({ key: 'sezioni-account' })).toBeDefined()
+    expect(await ui.find({ key: 'sezioni-progetto' })).toBeDefined()
+    await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+    expect(basi(await ui.drawn())).toBe(surface === 'terminal' ? 0 : 1)
+    expect(await ui.find({ key: 'doctor-ok' })).toBeDefined()
+    expect((await ui.find({ key: 'pagina-doctor-stato' }))?.text).toContain('·')
+    expect((await ui.find({ key: 'doctor-azioni' }))?.props.flexWrap).toBe('wrap')
+    await ui.press({ key: 'doctor-indietro' })
+    await ui.unmount()
+  }
 })

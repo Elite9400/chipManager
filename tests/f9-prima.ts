@@ -762,7 +762,7 @@ export const PRIMA: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "avvia-a-avviab01",
    "label": "▶ Start 1 · Search filter for long …",
-   "variant": "secondary",
+   "variant": "primary",
    "gestori": [
     "press"
    ]
@@ -1072,7 +1072,7 @@ export const PRIMA: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "avvia-a-avviab01",
    "label": "▶ Start 1 · Search filter for long …",
-   "variant": "secondary",
+   "variant": "primary",
    "gestori": [
     "press"
    ]
@@ -5124,7 +5124,7 @@ export const PRIMA: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "avvia-a-avviab01",
    "label": "▶ Start 1 · Search filter for long …",
-   "variant": "secondary",
+   "variant": "primary",
    "gestori": [
     "press"
    ]
@@ -5434,7 +5434,7 @@ export const PRIMA: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "avvia-a-avviab01",
    "label": "▶ Start 1 · Search filter for long …",
-   "variant": "secondary",
+   "variant": "primary",
    "gestori": [
     "press"
    ]
@@ -7305,7 +7305,7 @@ export const PRIMA: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "avvia-a-avviab01",
    "label": "▶ Start 1 · Search filter for long …",
-   "variant": "secondary",
+   "variant": "primary",
    "gestori": [
     "press"
    ]
@@ -7615,7 +7615,7 @@ export const PRIMA: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "avvia-a-avviab01",
    "label": "▶ Start 1 · Search filter for long …",
-   "variant": "secondary",
+   "variant": "primary",
    "gestori": [
     "press"
    ]
