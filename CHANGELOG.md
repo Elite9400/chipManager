@@ -104,6 +104,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   every ready chip; a blocked chip shows its first reason and a **Why** list.
 - `risorse_agenti` lists the configured destinations with their margins, the sessions at work with their context,
   the pending proposals and the current settings a session may propose.
+- **Guide for agents**: `docs/GUIDE-FOR-AGENTS.md` (lifecycle, self-contained briefs, lanes, model and effort,
+  reporting, platforms), a short `docs/AGENTS-SNIPPET.md` to paste into `CLAUDE.md` or `AGENTS.md`, and `llms.txt`.
+  `suggerisci_azione` links the guide.
+- **`suggerisci_azione` says what the panel filled**: lane, executor, model and effort, reviewer and where it runs
+  (`local`, `cloud`, `api-claude` or `esterno`), and, for a sensitive action, why: `sensibile: true`, the lane set,
+  the matching term, the project's term, or a project term list that does not compile.
 
 ### Changed
 
@@ -131,6 +137,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Start all** names the providers above their critical threshold and asks to start anyway; closing the
   confirmation cancels.
 - Tool descriptions are shorter, in English, and `risorse_agenti` is loaded on demand.
+- **Tool texts for agents**: the `corsia` schema explains R0–R5; the `esecutore` schema names the Codex lanes from
+  `routing.json`; `aggiorna_azione` is shorter (479 → 306 characters, loaded in every session); `proponi_pesi`, like
+  `proponi_impostazioni`, is only for when the user asks. `suggerisci_azione` grows from 1,264 to about 1,404
+  characters with the example routing; the two always-loaded tools together are 33 characters shorter.
+- **`suggerisci_azione` reports every validation error at once**, joined with `;`, instead of the first one.
 - In the terminal, below 80 columns, the sessions table drops context and activity and merges model and effort.
 
 ### Fixed

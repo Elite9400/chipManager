@@ -230,6 +230,11 @@ characters; when trimmed, `nota` says what was cut.
   runs in parallel.
 - Ids must exist and not be discarded (up to 20). Never invent an id.
 - `ordine` (1–999) moves an action in the queue; default is last.
+- Read the result. It gives what the panel filled:
+  `Action a-… in the panel (position 3, lane R2, claude claude-sonnet-5-5 · high → review codex; runs: local).`
+  A sensitive action adds `Sensitive (lane R4): <cause>`; if the cause is a false match such as `"author"`, withdraw
+  and reword.
+- A refusal lists every problem at once, separated by `;`. Fix them all, then call again.
 - If the result says `Warning, as it is it cannot start: …`, fix the cause: withdraw it with
   `aggiorna_azione { id, stato: "scartata" }` and propose it again corrected, or tell the owner what to change.
 

@@ -4,6 +4,26 @@ Scope: what an agent sees and receives — tool descriptions, input schemas, ref
 started session gets. Read on `main` at `f196d1b` (plugin 2.6.0). No code was changed. Proposals are ordered by
 gain over cost. Sizes are characters measured in the source; tokens are estimated as characters ÷ 4.
 
+## Status after review (2.2.0)
+
+| Proposal | Status |
+|---|---|
+| 1, 3, 6, 7, 8, 9, 11 | implemented, each with a test that failed before |
+| 2 (Codex write sandbox), 5 (default effort) | waiting for the owner's decision |
+| 4 (sensitive regex) | discarded: record only, see below |
+| 10 (proposer edits) | deferred |
+
+Sizes in characters, from the source, with the test routing (Codex lanes R1, R2, R3):
+
+| Text | Before | After |
+|---|---|---|
+| `suggerisci_azione` description + properties | 300 + 964 = 1,264 | 375 + 1,029 = 1,404 |
+| `aggiorna_azione` description | 479 | 306 |
+| Both always-loaded tools | 1,743 | 1,710 (−33) |
+| `proponi_pesi` description (deferred) | 196 | 228 |
+
+The sections below describe the state before the change.
+
 ## Current footprint
 
 | Text | Loaded | Size |
