@@ -2498,8 +2498,8 @@ test('F11.3 diagnosi: ogni rilievo su un caso finto, in sola lettura (lock, chia
   fs.mkdirSync(dati)
   const config = path.join(casa, 'config.json')
   fs.writeFileSync(config, JSON.stringify({
-    futuro: 1, account: { apiClaude: { budgetUsd: 5, tetto: 1 }, modoLavoro: { parallelo: 12 }, segreto: 'x' },
-    progetti: { 'owner/prova': { fornitori: ['claude', 'codex'], milestoneGithub: true, restrizioni: { apiTetto: 3 }, ignoto: 1 }, 'altro/progetto': { modoLavoro: { effortPredefinito: { R5: 'low' } } } },
+    futuro: 1, cartella: '~/dati', account: { apiClaude: { budgetUsd: 5, tetto: 1 }, modoLavoro: { parallelo: 12 }, segreto: 'x' },
+    progetti: { 'owner/prova': { fornitori: ['claude', 'codex'], milestoneGithub: true, restrizioni: { apiTetto: 3 }, ignoto: 1, cartella: '~/altri' }, 'altro/progetto': { modoLavoro: { effortPredefinito: { R5: 'low' } } } },
   }))
   fs.writeFileSync(path.join(dati, 'spesa-api.json'), '{}')
   fs.writeFileSync(path.join(dati, 'a-orfana01.json'), JSON.stringify({ id: 'a-orfana01' }))
