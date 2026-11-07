@@ -58,8 +58,9 @@ In ordine di quanto le userai.
 - **Limiti degli agenti a colpo d'occhio** — piano Claude, piano Codex, spesa API, saldi e budget manuali, ciascuno con
   **fonte ed età**; le percentuali dicono sempre quanto è **usato** («76% usato»), mai quanto resta. Ignoto vuol dire
   ignoto.
-- **Impostazioni con Applica** — ogni modifica aspetta in una bozza finché **Applica** la scrive in un colpo solo; una
-  modifica di un'altra sessione sullo stesso campo chiede prima di sovrascrivere. Le sessioni possono **proporre**
+- **Impostazioni con Applica** — le modifiche aspettano in una bozza finché **Applica** le scrive in un colpo solo
+  (budget manuali, collegamenti e proposte di pesi applicate si scrivono subito); una modifica di un'altra sessione
+  sullo stesso campo chiede prima di sovrascrivere. Le sessioni possono **proporre**
   impostazioni o pesi; decidi tu.
 - **Account e progetto** — soglie, budget e crediti API appartengono ai tuoi account e valgono in ogni progetto;
   ogni progetto può solo essere più severo. La mod si installa per tutti i progetti o per un repository. Vedi
@@ -76,7 +77,8 @@ In ordine di quanto le userai.
   brevi e a basso impatto.
 - **Avanzamento delle milestone** — milestone GitHub aperte con percentuale e una stima dal ritmo di chiusura recente.
 - **Guardie fail-closed** — il lavoro sensibile è sempre rivisto da Claude, una prenotazione atomica perché niente
-  parta due volte, regole rilette prima di ogni decisione, segreti mai salvati in chiaro.
+  parta due volte, regole rilette prima di ogni decisione, chiavi nelle opzioni sicure di Claude Code (la chiave API
+  sta in un file temporaneo, leggibile solo dal tuo utente, solo durante un'esecuzione).
 
 ## Immagini
 
@@ -219,7 +221,9 @@ vede con il suo motivo, mai nascosta in silenzio.
 **API Claude (crediti).**
 
 - **La chiave** va solo nelle opzioni del plugin (**/config → chip-manager → Anthropic API (credits)**), custodita
-  nell'archivio sicuro dell'host, mai in un file, in un mandato o nel pannello. Il pannello controlla solo che ci sia.
+  nell'archivio sicuro dell'host, mai nella configurazione, in un mandato o nel pannello. Il pannello controlla solo
+  che ci sia. Durante un'esecuzione la chiave è scritta in un file-chiave temporaneo, leggibile solo dal tuo utente,
+  creato subito prima dell'avvio e cancellato alla fine.
 - **Usa una chiave dedicata.** Crea una chiave solo per la mod, in un workspace della Console con un limite di spesa
   mensile basso: è l'unico tetto che nessun processo locale può superare, e la mod non può verificarlo.
 - **Che cosa una chiave può e non può proteggere.** Durante un'esecuzione la chiave è raggiungibile dall'agente e dai
@@ -227,7 +231,8 @@ vede con il suo motivo, mai nascosta in silenzio.
   di Claude scade entro 5 minuti; questo non revoca la chiave. Se pensi che sia stata copiata, revocala dalla Console
   e creane una nuova: con una chiave dedicata alla mod puoi farlo senza toccare le altre.
 - **Budget e tetto.** Ogni esecuzione prenota il suo tetto sul budget del mese prima di partire e si ferma lì
-  (`--max-budget-usd`); il tetto può comunque essere superato di poco, e la spesa è una stima. Un'esecuzione con esito
+  (`--max-budget-usd`); il tetto può comunque essere superato di poco, e la spesa è una stima: l'unico tetto vero è
+  il limite di spesa del workspace della chiave nella Console. Un'esecuzione con esito
   incerto conta il tetto intero. La vista **Carico** mostra la spesa del mese rispetto al budget.
 - **Un'esecuzione per macchina.** Un lock della macchina tiene le esecuzioni API una alla volta; se un'esecuzione
   lascia qualcosa, il pannello dice che cosa e offre **Libera** o **Termina i processi**.
@@ -328,7 +333,9 @@ Soglie con i budget manuali, Esecuzione, Lingua) e **Progetto · owner/repo** (B
 Avanzate, Legenda).
 
 - **Applica.** Ogni modifica va in una bozza e si valida subito (l'errore resta sotto il controllo). **Applica** scrive
-  l'intera bozza — progetto, account e lingua — con un solo compare-and-swap; **Annulla modifiche** la scarta. Se un'altra sessione ha cambiato uno
+  l'intera bozza — progetto, account e lingua — con un solo compare-and-swap; **Annulla modifiche** la scarta. Tre
+  cose non stanno nella bozza e si scrivono subito: budget manuali, collegamenti e proposte di pesi che applichi;
+  **Annulla modifiche** non le annulla. Se un'altra sessione ha cambiato uno
   degli stessi campi non si scrive niente, e un popup offre **Ricarica e riapplica la mia bozza** o
   **Scarta la mia bozza**. Uscire dalle Impostazioni con una bozza chiede Applica, Annulla o Resta.
 - **Proposte dalle sessioni.** Una sessione può proporre impostazioni con `proponi_impostazioni`, ma solo quando glielo
@@ -719,8 +726,9 @@ Ognuno tiene i propri account, chiavi e budget API; il repository registra solo 
 
 <details><summary><b>Eseguire a crediti API costa?</b></summary>
 
-Sì: le esecuzioni API Claude si pagano con i crediti della chiave API, entro il budget mensile e il tetto per
-esecuzione che imposti. Usa una chiave dedicata con un limite di spesa basso nella Console; le esecuzioni locali e nel
+Sì: le esecuzioni API Claude si pagano con i crediti della chiave API. La mod le tiene entro il budget mensile e il
+tetto per esecuzione che imposti, ma un'esecuzione può superare di poco il suo tetto e la spesa è una stima: l'unico
+tetto vero è il limite di spesa del workspace della chiave nella Console. Usa una chiave dedicata con un limite di spesa basso nella Console; le esecuzioni locali e nel
 cloud usano invece i limiti del tuo piano.
 </details>
 

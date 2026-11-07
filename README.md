@@ -55,8 +55,9 @@ Ordered by how often you will use them.
   the documented pairs. See [Auditor](#auditor-advisor).
 - **Agent limits at a glance** — Claude plan, Codex plan, API spend, balances and manual budgets, each with **source
   and age**; percentages always say what is **used** ("76% used"), never what is left. Unknown means unknown.
-- **Settings with Apply** — every change waits in a draft until **Apply** writes it in one go; another session's
-  change on the same field asks before overwriting. Sessions can **propose** settings or weights; you decide.
+- **Settings with Apply** — changes wait in a draft until **Apply** writes them in one go (manual budgets,
+  connections and applied weight proposals are written at once); another session's change on the same field asks
+  before overwriting. Sessions can **propose** settings or weights; you decide.
 - **Account and project** — thresholds, budgets and API credits belong to your accounts and apply to every project;
   each project can only be stricter. Install the mod for all projects or for one repository. See
   [Account and project](#account-and-project).
@@ -70,7 +71,8 @@ Ordered by how often you will use them.
 - **FreeLLMAPI, opt-in** — guided Docker install of a pinned version, to offload short, low-impact text tasks.
 - **Milestone progress** — open GitHub milestones with percentage and an ETA from the recent closing pace.
 - **Fail-closed guards** — sensitive work always reviewed by Claude, an atomic reservation so nothing starts twice,
-  rules re-read before every decision, secrets never stored in plain text.
+  rules re-read before every decision, keys kept in Claude Code's secure options (the API key sits in a temporary,
+  user-only file only while a run is going).
 
 ## Screenshots
 
@@ -212,7 +214,9 @@ with its reason, never silently hidden.
 **API Claude (credits).**
 
 - **The key** goes only in the plugin options (**/config → chip-manager → Anthropic API (credits)**), kept in the
-  host's secure storage, never in a file, a brief or the panel. The panel only checks that it is there.
+  host's secure storage, never in the configuration, a brief or the panel. The panel only checks that it is there.
+  During a run the key is written to a temporary key file, readable only by your user, created just before the run
+  starts and deleted when it ends.
 - **Use a dedicated key.** Create a key made only for the mod, in a Console workspace with a low monthly spend
   limit: it is the only cap no local process can exceed, and the mod cannot check it.
 - **What a key can and cannot protect.** During a run the key is reachable by the agent and its tools, like any key
@@ -220,7 +224,8 @@ with its reason, never silently hidden.
   does not revoke the key. If you think it was copied, revoke it from the Console and create a new one: with a key
   dedicated to the mod you can do it without touching the others.
 - **Budget and cap.** Each run reserves its cap on the month's budget before it starts and stops at it
-  (`--max-budget-usd`); the cap can still be exceeded a little, and spend is an estimate. A run whose outcome is
+  (`--max-budget-usd`); the cap can still be exceeded a little, and spend is an estimate: the only hard cap is the
+  spend limit of the key's Console workspace. A run whose outcome is
   uncertain counts its whole cap. The **Load** view shows the month's spend against the budget.
 - **One run per machine.** A machine lock keeps API runs one at a time; if a run leaves something behind, the panel
   says what and offers **Release** or **End processes**.
@@ -316,7 +321,9 @@ Thresholds with the manual budgets, Execution, Language) and **Project · owner/
 Advanced, Legend).
 
 - **Apply.** Every change goes into a draft and is validated at once (the error stays under the control). **Apply**
-  writes the whole draft — project, account and language — in one compare-and-swap; **Discard changes** drops it. If another session changed one of
+  writes the whole draft — project, account and language — in one compare-and-swap; **Discard changes** drops it.
+  Three things are not part of the draft and are written at once: manual budgets, connections, and weight proposals
+  you apply; **Discard changes** does not undo them. If another session changed one of
   the same fields, nothing is written and a popup offers **Reload and reapply my draft** or **Discard my draft**.
   Leaving Settings with a draft asks Apply, Discard or Stay.
 - **Proposals from sessions.** A session can propose settings with `proponi_impostazioni`, but only when you ask it
@@ -700,8 +707,9 @@ person keeps their own accounts, keys and API budget; the repository only record
 
 <details><summary><b>Does running on API credits cost money?</b></summary>
 
-Yes: API Claude runs are billed to the API key's credits, within the monthly budget and the cap per run you set.
-Use a dedicated key with a low spend limit in the Console; local and cloud runs use your plan's limits instead.
+Yes: API Claude runs are billed to the API key's credits. The mod keeps them within the monthly budget and the cap
+per run you set, but a run can exceed its cap a little and spend is an estimate: the only hard cap is the spend limit
+of the key's Console workspace. Use a dedicated key with a low spend limit in the Console; local and cloud runs use your plan's limits instead.
 </details>
 
 <details><summary><b>Do I need the orchestrator registry?</b></summary>

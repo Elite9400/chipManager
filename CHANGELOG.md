@@ -43,7 +43,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   **Here on API credits (Claude)**, chosen in **Details**, on the row, or for several chips at once.
   - **API Claude lane**: `claude -p` on this computer, in its own worktree, on a dedicated key kept in the plugin
     options (**Anthropic API (credits)**). A monthly budget and a cap per run in USD; each run reserves its cap
-    before it starts and stops at it (`--max-budget-usd`). The Load view shows the month's estimated spend against
+    before it starts and is told to stop at it (`--max-budget-usd`); the cap can be exceeded a little and spend is an
+    estimate, so the only hard cap is the spend limit of the key's Console workspace. The Load view shows the month's estimated spend against
     the budget. One run per machine, with **Release** and **End processes** when a run leaves something behind.
   - **Claude cloud**: for eligible plans with the repository connected on claude.ai/code; each cloud chip asks for
     confirmation of its full text.
@@ -79,11 +80,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
     nothing changes until you press **Apply**.
 - **Settings with Apply.** Settings are organised in sections (Connections, Thresholds, Balancing, Project, Board,
   Advanced, Execution, Language, Legend). Every change goes into a draft, validated at once, and **Apply** writes it
-  — project, account and language — in one compare-and-swap, so nothing is ever saved halfway; **Discard changes** drops it. A change made meanwhile by another session on the same
+  — project, account and language — in one compare-and-swap, so nothing is ever saved halfway; **Discard changes** drops it.
+  Manual budgets, connections and weight proposals you apply are not part of the draft: they are written at once,
+  and **Discard changes** does not undo them. A change made meanwhile by another session on the same
   field asks before overwriting; leaving Settings with a draft asks Apply, Discard or Stay. Connections are set up
   with guided pop-ups, manual budgets are removable chips with a guided **Add…**.
 - **Six languages**: English by default, plus Italian, Spanish, French, German and Brazilian Portuguese, chosen in
-  **Settings → Language**. Pop-ups, toasts, notifications, the board and the tools' answers follow the language.
+  **Settings → Language**. Pop-ups, toasts, notifications and the board follow the language; the texts written for
+  agents (tool descriptions and answers, refusals, briefs) stay in English.
 - **Legend** for lanes (R0–R5) and terms, in Settings, on the board and in the READMEs.
 - **Project board**: a local, self-contained HTML page, off by default, with the line of work (waiting for you, in
   progress, next, done) and, for each task, plan, brief, process, owner, model, effort, expected reviewer and the
@@ -140,8 +144,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Security
 
-- **API key.** The Anthropic API key lives only in the sensitive plugin option, never in a file, a brief or the
-  panel. During a run it is handed over through a short-lived `apiKeyHelper` file deleted at the end. During a run
+- **API key.** The Anthropic API key lives in the sensitive plugin option, never in the configuration, a brief or
+  the panel. During a run it is written to a temporary key file, readable only by your user, created just before the
+  run starts and deleted when it ends, and handed to Claude through `apiKeyHelper`. During a run
   the key is reachable by the agent and its tools; afterwards Claude's in-memory copy expires within 5 minutes,
   which does not revoke the key. Use a key dedicated to the mod, in a Console workspace with a low monthly spend
   limit: it is the only cap no local process can exceed.
