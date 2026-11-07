@@ -28,6 +28,18 @@ function soglieDa(v, campo) {
   return fuori
 }
 
+/** I budget manuali di uno strato, convalidati come in `manualiDa` (hooks/logica.ts); lancia se uno non vale. */
+function manualiValidi(v, campo) {
+  const m = v ?? []
+  if (!Array.isArray(m) || m.length > 30) no(campo)
+  for (const x of m)
+    if (!oggetto(x) || !FORNITORI.includes(x.fornitore) || typeof x.id !== 'string' || !/^[a-z0-9-]{1,60}$/.test(x.id) ||
+        typeof x.nome !== 'string' || !/^[\p{L}\p{N} .()%-]{1,60}$/u.test(x.nome) ||
+        typeof x.letto !== 'string' || !Number.isFinite(Date.parse(x.letto)) || Date.parse(x.letto) > Date.now() + 60_000 ||
+        (x.percentuale !== undefined && !numero(x.percentuale, 0, 100)) || (x.valore !== undefined && !numero(x.valore, 0, 1e12)) ||
+        !['%', 'USD', 'CNY', 'EUR', 'richieste', 'token'].includes(String(x.unita)) || (x.percentuale === undefined && x.valore === undefined)) no(campo)
+}
+
 /** `{ budgetUsd, tetto? }` o assente (null = tolto). */
 function apiDa(v, campo) {
   if (v === undefined || v === null) return undefined
@@ -39,6 +51,7 @@ function accountDa(v) {
   if (v === undefined || v === null) return { soglie: {} }
   if (!oggetto(v)) no('account')
   const api = apiDa(v.apiClaude, 'account.apiClaude')
+  manualiValidi(v.limitiManuali, 'account.limitiManuali')
   const f = v.freellmapi ?? undefined
   if (f !== undefined && (!oggetto(f) || (f.endpoint !== undefined && !endpointLocale(f.endpoint)))) no('account.freellmapi')
   return { soglie: soglieDa(v.soglie, 'account.soglie'), ...(api && { apiClaude: { budgetUsd: api.budgetUsd, tetto: api.tetto ?? TETTO_PREDEFINITO } }), ...(f && typeof f.endpoint === 'string' && { endpoint: f.endpoint }) }
@@ -72,8 +85,10 @@ function regoleEfficaci(accountGrezzo, progettoGrezzo) {
   const soglieProgetto = soglieDa(p.soglie, 'soglie')
   const r = restrizioniDa(p.restrizioni)
   const legacy = apiDa(p.apiClaude, 'apiClaude')
-  const fp = p.freellmapi
-  if (fp !== undefined && (!oggetto(fp) || (fp.endpoint !== undefined && !endpointLocale(fp.endpoint)))) no('freellmapi')
+  manualiValidi(p.limitiManuali, 'limitiManuali')
+  // null = assente, come nel pannello; un oggetto vuole il livello e, se c'è, un endpoint loopback.
+  const fp = p.freellmapi ?? undefined
+  if (fp !== undefined && (!oggetto(fp) || !['niente', 'R1', 'R2'].includes(String(fp.livello)) || (fp.endpoint !== undefined && !endpointLocale(fp.endpoint)))) no('freellmapi')
   const soglie = {}
   for (const f of FORNITORI) {
     const s = piuSevera(account.soglie[f], piuSevera(soglieProgetto[f], r.soglie?.[f]))
@@ -103,4 +118,48 @@ function restrizioneLarga(accountGrezzo, restrizioniGrezze) {
   return null
 }
 
-module.exports = { regoleEfficaci, restrizioneLarga, accountDa, restrizioniDa, NonValido, FORNITORI }
+const piano = v => !!v && typeof v === 'object' && !Array.isArray(v)
+const SEGMENTO = /^[A-Za-z0-9_-]{1,60}$/
+const VIETATE = new Set(['__proto__', 'constructor', 'prototype'])
+
+/**
+ * Applica una patch di campi a un oggetto del config (un progetto o l'account), senza perdere niente che la patch non
+ * nomina: un campo a null si cancella; un oggetto si fonde in profondità con quello di prima (un null ANNIDATO è un
+ * valore, come «nessuna soglia»); ogni altro valore sostituisce. I percorsi di `togli` (`campo.chiave…`) cancellano chiavi
+ * annidate, solo dentro campi che la patch nomina. Null preesistenti e campi sconosciuti, anche annidati, restano.
+ * Gemello: `applicaPatch` in hooks/bilanciamento.ts (test di parità).
+ */
+function applicaPatch(prima, patch, togli = []) {
+  if (!piano(prima) || !piano(patch) || !Array.isArray(togli)) throw new NonValido('patch')
+  const fondi = (a, b) => {
+    const o = { ...a }
+    for (const [k, v] of Object.entries(b)) {
+      if (VIETATE.has(k)) throw new NonValido('patch')
+      o[k] = piano(v) && piano(a[k]) ? fondi(a[k], v) : v
+    }
+    return o
+  }
+  const out = { ...prima }
+  for (const [k, v] of Object.entries(patch)) {
+    if (VIETATE.has(k)) throw new NonValido('patch')
+    if (v === null) delete out[k]
+    else out[k] = piano(v) && piano(out[k]) ? fondi(out[k], v) : v
+  }
+  for (const p of togli) {
+    const s = typeof p === 'string' ? p.split('.') : []
+    if (s.length < 2 || s.length > 5 || !s.every(x => SEGMENTO.test(x) && !VIETATE.has(x)) || !Object.hasOwn(patch, s[0])) throw new NonValido('togli')
+    let o = out
+    for (const x of s.slice(0, -1)) {
+      if (!piano(o[x])) {
+        o = null
+        break
+      }
+      o[x] = { ...o[x] }
+      o = o[x]
+    }
+    if (o) delete o[s[s.length - 1]]
+  }
+  return out
+}
+
+module.exports = { regoleEfficaci, restrizioneLarga, accountDa, restrizioniDa, applicaPatch, NonValido, FORNITORI }

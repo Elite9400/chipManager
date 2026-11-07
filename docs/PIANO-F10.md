@@ -189,3 +189,16 @@ Soglie, `apiClaude`, consigliere, profilo, board, registro della spesa e lock de
 ## Correzione del giro 3
 
 - **Formulazione sulle versioni — accolto.** Al posto di «non sono mai state pushate» si legge: «le versioni interne 2.2.0–2.6.0 del CHANGELOG **non sono state rilasciate su `main` né taggate**; il loro codice è nel ramo pubblico di pre-release `dev/2.2.0`».
+
+## Decisione della master (revisione del diff, 7 novembre 2026)
+
+Modifica esplicita della specifica sul requisito «un fornitore non connesso a livello di account non è ammissibile».
+
+- **Connessione solo dove è verificabile.** DeepSeek, FreeLLMAPI e API Claude richiedono la chiave presente (opzioni
+  della mod o variabile d'ambiente). I piani Claude e Codex si considerano connessi: il loro login non è leggibile in
+  modo affidabile a runtime.
+- **Effetto.** Un fornitore ammesso nel progetto ma non connesso compare in Connessioni con la pillola «non connesso»,
+  è escluso dalle scelte automatiche di `bilancia` e del consigliere, e un avvio con una scelta esplicita su di lui si
+  blocca con il motivo.
+- **Equivalenza.** Le regole efficaci dei progetti esistenti restano equivalenti per Claude e Codex. Per gli altri
+  fornitori senza chiave il cambiamento è dichiarato nel CHANGELOG: prima fallivano all'avvio, ora sono esclusi prima.

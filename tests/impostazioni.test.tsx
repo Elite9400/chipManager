@@ -2,8 +2,10 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 import {
+  applicaPatch,
   budgetDa,
   campiDaProposta,
+  valoreConfig,
   conPendente,
   propostaImpostazioniDa,
   conPosizione,
@@ -182,6 +184,8 @@ type On = Parameters<TestBody>[1]
 /** Engine finto ridotto: config e helper `configura` (CAS) in memoria, sonda dei limiti, toast e popup scriptabili. */
 function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Record<string, unknown>) {
   const disco = new DiscoIt()
+  /** F10: le cartelle che `fs.stat` dice link (una junction). */
+  const collegati = new Set<string>()
   const toast: string[] = []
   const processi: string[][] = []
   let proposteFatte = 0
@@ -244,6 +248,14 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
   on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session__start_session' }] as never }))
   on('session.repo', () => ({ value: { root: 'X:/repo', remote: 'https://github.com/esempio/demo.git', internal: false, repo: null } as never }))
   on('fs.exists', (_, e) => ({ value: [...disco.keys()].some(k => k === p(e.path) || k.startsWith(`${p(e.path)}/`)) }))
+  // F10: come l'host, anche le cartelle (prefisso di un file) e la radice del disco; `realPath` è il percorso stesso.
+  on('fs.stat', (_, e) => {
+    const q = p(e.path).replace(/\/+$/, '')
+    const t = disco.get(q)
+    const cartella = t === undefined && (/^[A-Za-z]:$/.test(q) || [...disco.keys()].some(k => k.startsWith(`${q}/`)))
+    if (t === undefined && !cartella) throw new Error('ENOENT')
+    return { value: { kind: cartella ? 'dir' as const : 'file' as const, size: t?.length ?? 0, mtimeMs: 0, isLink: collegati.has(q), ...(e.resolve && { realPath: q }) } }
+  })
   on('fs.list', () => ({ value: [] }))
   on('fs.read', (_, e) => {
     const t = disco.get(p(e.path))
@@ -282,9 +294,9 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
         const prima = disco.get(p(file)) ?? null
         if (prima !== input.atteso) return fine(4)
         const c = prima === null ? {} : JSON.parse(prima)
-        const senzaNull = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null))
-        disco.set(p(file), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: senzaNull({ ...c.progetti?.[input.repo], ...input.campi }) },
-          ...(input.account && { account: senzaNull({ ...c.account, ...input.account }) }), ...(input.lingua !== undefined && { lingua: input.lingua }) }))
+        // Come l'helper vero: la stessa fusione (gemello TS di applicaPatch), che non perde campi né null non nominati.
+        disco.set(p(file), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: applicaPatch(c.progetti?.[input.repo] ?? {}, input.campi, input.togli?.progetto) },
+          ...(input.account && { account: applicaPatch(c.account ?? {}, input.account, input.togli?.account) }), ...(input.lingua !== undefined && { lingua: input.lingua }) }))
         return fine(0)
       }) as never
     if (cmd === 'configura-utente')
@@ -394,7 +406,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
     letturaFerma = { key, attesa: new Promise<void>(ok => (apri = ok)), segnala }
     return { arrivato, apri }
   }
-  return { disco, toast, domande, popup, progettoOra, accountOra, configure, hook, trattieni, trattieniPopup, trattieniLettura, trattieniLimiti, esec, processi }
+  return { disco, collegati, toast, domande, popup, progettoOra, accountOra, configure, hook, trattieni, trattieniPopup, trattieniLettura, trattieniLimiti, esec, processi }
 }
 
 const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
@@ -1721,5 +1733,86 @@ test('F10 Impostazioni: gruppi Account e Progetto; le restrizioni del progetto s
   await ui.press({ key: 'applica' })
   expect(amb.progettoOra().restrizioni).toEqual({ soglie: { codex: { attenzione: 40, critica: 50 } } })
   expect(amb.accountOra()).toMatchObject({ apiClaude: { budgetUsd: 20, tetto: 2 } })
+  await ui.unmount()
+})
+
+test('F10 rilievo 2: il pannello controlla il percorso del config prima di leggerlo: un link o un .git sopra fermano tutto, con il motivo', async ($, on) => {
+  const amb = ambiente(on, {}, { apiClaude: { budgetUsd: 20, tetto: 2 } })
+  amb.collegati.add('X:/casa/.claude')
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  expect(await ui.find({ type: 'Text', text: /outside any repository and any link: link: X:\/casa\/\.claude/ })).toBeDefined()
+  // Niente si scrive: le Impostazioni non hanno regole lette su cui applicare.
+  expect(amb.configure()).toBe(0)
+  // Un `.git` (anche un file) sopra il config: dentro un albero di lavoro.
+  amb.collegati.delete('X:/casa/.claude')
+  amb.disco.set('X:/casa/.git', 'gitdir: altrove')
+  await clock.advance(60_000)
+  expect(await ui.find({ type: 'Text', text: /outside any repository and any link: git: X:\/casa/ })).toBeDefined()
+  // Tolto, il pannello torna a leggere.
+  amb.disco.delete('X:/casa/.git')
+  await clock.advance(60_000)
+  expect(await ui.find({ type: 'Text', text: /outside any repository and any link/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('F10 rilievo 4: lingua scelta it→de, un\'altra sessione salva fr prima della lettura del CAS: conflitto, niente scritto; Riapplica sceglie de', async ($, on) => {
+  const amb = ambiente(on, {}, { soglie: {} })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-lingua-premi' })
+  await ui.press({ key: 'lingua-de-premi' })
+  // Un'altra sessione salva fr DOPO la scelta (la base è it) e prima che Applica legga il testo del CAS.
+  const conFr = JSON.stringify({ ...JSON.parse(amb.disco.get(CONFIG)!), lingua: 'fr' })
+  amb.disco.set(CONFIG, conFr)
+  amb.popup.risposta = () => null
+  await ui.press({ key: 'applica' })
+  // Niente scritto: la lingua dell'altra sessione resta, e il popup di conflitto nomina la Lingua.
+  expect(amb.disco.get(CONFIG)).toBe(conFr)
+  expect(amb.domande.some(q => /Langue|Lingua/.test(q))).toBe(true)
+  // «Ricarica e riapplica» (la bozza vince, con la base nuova): una sola scrittura, la lingua scelta.
+  amb.popup.risposta = q => (/Langue/.test(q) ? 'Recharger et réappliquer mon brouillon' : /Lingua/.test(q) ? 'Ricarica e riapplica la mia bozza' : null)
+  await ui.press({ key: 'applica' })
+  expect(JSON.parse(amb.disco.get(CONFIG)!).lingua).toBe('de')
+  await ui.unmount()
+})
+
+test('F10 rilievo 5: l\'account resta grezzo (il tetto predefinito solo nei valori efficaci); proporre solo il budget non scrive il tetto', () => {
+  const senza = risorseDa({}, { apiClaude: { budgetUsd: 20 } })
+  const con = risorseDa({}, { apiClaude: { budgetUsd: 20, tetto: 2 } })
+  if ('k' in senza || 'k' in con) throw new Error('non valide')
+  // Grezzi distinguibili (basi e conflitti), efficaci uguali (decisioni).
+  expect([senza.account.apiClaude, con.account.apiClaude]).toEqual([{ budgetUsd: 20 }, { budgetUsd: 20, tetto: 2 }])
+  expect(senza.apiClaude).toEqual(con.apiClaude)
+  expect(valoreConfig(senza, 'account.apiClaude')).not.toEqual(valoreConfig(con, 'account.apiClaude'))
+  // Solo il budget proposto: il tetto non si compila da sé.
+  expect(campiDaProposta({ motivo: 'm', account: { apiClaude: { budgetUsd: 30 } } }, senza)).toEqual({ 'account.apiClaude': { budgetUsd: 30 } })
+  expect(campiDaProposta({ motivo: 'm', account: { apiClaude: { budgetUsd: 30 } } }, con)).toEqual({ 'account.apiClaude': { budgetUsd: 30, tetto: 2 } })
+})
+
+test('F10 rilievo 7: in Connessioni un fornitore ammesso senza la sua chiave ha la pillola «Non connesso»; con la chiave no', async ($, on) => {
+  const amb = ambiente(on, { fornitori: ['claude', 'codex', 'deepseek', 'freellmapi'], freellmapi: { livello: 'R1' } })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-connessioni-premi' })
+  for (const f of ['deepseek', 'freellmapi']) expect(JSON.stringify(await ui.find({ key: `stato-chip-${f}` }))).toMatch(/Non connesso/)
+  for (const f of ['claude', 'codex']) expect(JSON.stringify(await ui.find({ key: `stato-chip-${f}` }))).not.toMatch(/Non connesso/)
+  expect(amb.configure()).toBe(0)
+  await ui.unmount()
+})
+
+test('F10 rilievo 7: con le chiavi nelle opzioni DeepSeek e FreeLLMAPI contano come connessi', { options: { deepseekKey: 'ds-prova-123456', freellmapiKey: 'fl-prova-123456' } }, async ($, on) => {
+  ambiente(on, { fornitori: ['claude', 'codex', 'deepseek', 'freellmapi'], freellmapi: { livello: 'R1' } })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-connessioni-premi' })
+  for (const f of ['deepseek', 'freellmapi']) expect(JSON.stringify(await ui.find({ key: `stato-chip-${f}` }))).not.toMatch(/Non connesso/)
   await ui.unmount()
 })

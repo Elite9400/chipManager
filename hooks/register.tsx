@@ -2,8 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { ControlloEsecuzione, LockApi, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni, Vista } from '../types'
-import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Limite, Motore, Pendenti, Permessi, Peso, PropostaPesi, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
-import { alLavoroDa, cambiatiAltrove, campoNonValido, conBozza, contestoPerModello, impostazioniCorrenti, perStrato, propostaDa, propostaImpostazioniDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
+import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Fornitore, Limite, Motore, Pendenti, Permessi, Peso, PropostaPesi, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
+import { alLavoroDa, cambiatiAltrove, campoNonValido, conBozza, contestoPerModello, impostazioniCorrenti, percorsiTolti, perStrato, propostaDa, propostaImpostazioniDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
 import {
   attive,
   bilancia,
@@ -126,11 +126,55 @@ const casa = async ($: Eng) => ((await $.env.get('USERPROFILE')) ?? (await $.env
 /** Configurazione locale della mod, fuori da ogni repo. Assente = `null`; JSON rotto = eccezione. */
 const fileConfig = async ($: Eng) => (await $.env.get('CHIPMANAGER_CONFIG')) ?? `${await casa($)}/.claude/chipmanager/config.json`
 
+/**
+ * F10 rilievo 2: il gemello nel pannello di `percorsoSicuro` dell'helper, con le letture dell'host. La parte esistente
+ * del percorso non passa per link (`isLink`), il suo percorso reale è quello dichiarato (una junction lo cambia) e
+ * nessun antenato del percorso reale ha `.git`, cartella o file. Il motivo se non vale; undefined se vale.
+ */
+async function percorsoNonSicuro($: Eng, p: string): Promise<string | undefined> {
+  const norm = p.replace(/\\/g, '/').replace(/\/+$/, '')
+  const parti = norm.split('/')
+  let esistente: string | undefined
+  let reale: string | undefined
+  for (let i = 1; i <= parti.length; i++) {
+    const x = parti.slice(0, i).join('/')
+    const q = x === '' ? '/' : /^[A-Za-z]:$/.test(x) ? `${x}/` : x
+    let st
+    try {
+      st = await $.fs.stat(q, { resolve: true })
+    } catch {
+      // Una stat che rifiuta: si ferma la catena solo se il percorso manca davvero; ogni altro esito blocca.
+      if ((await $.fs.exists(q).catch(() => true)) === false) break
+      return `unreadable: ${q}`
+    }
+    if (st.isLink) return `link: ${q}`
+    esistente = q
+    reale = st.realPath
+  }
+  if (!esistente || !reale) return `unreadable: ${norm}`
+  const windows = (await $.env.get('OS')) === 'Windows_NT' || /^[A-Za-z]:/.test(norm)
+  const uguale = (a: string) => a.replace(/\\/g, '/').replace(/\/+$/, '')
+  const pari = (a: string, b: string) => (windows ? uguale(a).toLowerCase() === uguale(b).toLowerCase() : uguale(a) === uguale(b))
+  if (!pari(reale, esistente)) return `realpath: ${esistente}`
+  for (let d = uguale(reale); ; d = d.replace(/\/[^/]*$/, '')) {
+    if (await $.fs.exists(`${d || ''}/.git`).catch(() => true)) return `git: ${d || '/'}`
+    if (!d.includes('/') || /^[A-Za-z]:$/.test(d)) break
+  }
+  return undefined
+}
+
+/** Il testo di un file dei dati della mod (config, registro della spesa), solo dopo averne controllato il percorso; null se non c'è. */
+async function leggiDati($: Eng, f: string): Promise<string | null> {
+  const motivo = await percorsoNonSicuro($, f)
+  if (motivo) throw errore('err.percorsoDati', { motivo: motivo.slice(0, 300) })
+  return (await $.fs.exists(f)) ? ((await $.fs.read(f)) as string) : null
+}
+
 async function leggiConfig($: Eng): Promise<unknown> {
-  const f = await fileConfig($)
-  if (!(await $.fs.exists(f))) return null
+  const testo = await leggiDati($, await fileConfig($))
+  if (testo === null) return null
   try {
-    return JSON.parse((await $.fs.read(f)) as string)
+    return JSON.parse(testo)
   } catch {
     throw errore('cfg.illeggibile')
   }
@@ -155,7 +199,7 @@ async function leggiLingua($: Eng) {
 async function scegliLingua($: Eng, l: Lingua, base?: Lingua): Promise<'scritta' | 'cambiata'> {
   const f = await fileConfig($)
   for (let tentativo = 1; ; tentativo++) {
-    const atteso = (await $.fs.exists(f)) ? ((await $.fs.read(f)) as string) : null
+    const atteso = await leggiDati($, f)
     let letta: unknown
     if (atteso !== null) {
       try {
@@ -421,7 +465,11 @@ async function leggiRegole($: Eng) {
     r = { ...REGOLE_DEFAULT, motivo: typeof m === 'string' ? m.slice(0, 60) : m, ...(progetto && !eMsg(progetto) ? { risorse: progetto.risorse } : {}) }
   }
   // F6.2: della chiave API di Claude si sa solo se c'è; il valore resta nelle opzioni sensibili.
-  r = { ...r, chiaveApi: chiaveApiPresente }
+  // F10: i fornitori connessi dove si può verificare: le chiavi di DeepSeek e FreeLLMAPI (opzioni o ambiente).
+  const deepseek = chiaviFornitori.deepseek || !!(await $.env.get('DEEPSEEK_API_KEY').catch(() => undefined))
+  const freellmapi = chiaviFornitori.freellmapi || !!(await $.env.get('FREELLMAPI_KEY').catch(() => undefined))
+  const connessi: Fornitore[] = ['claude', 'codex', ...(deepseek ? ['deepseek' as const] : []), ...(freellmapi ? ['freellmapi' as const] : [])]
+  r = { ...r, chiaveApi: chiaveApiPresente, connessi }
   if (!uguale(await read($, regole), r)) await update($, regole, () => r)
   return r
 }
@@ -1299,7 +1347,8 @@ async function aggiornaSpesaApi($: Eng) {
     const mese = ora().slice(0, 7)
     // F10: un solo registro, dell'account, accanto al lock della macchina; ogni voce porta il progetto.
     const f = `${await casa($)}/.claude/chipmanager/spesa-api.json`
-    const testo = (await $.fs.exists(f).catch(() => false)) ? await $.fs.read(f).catch(() => null) : '{"v":1,"voci":{}}'
+    // Un percorso non sicuro o un file illeggibile: spesa ignota (null), mai un registro vuoto inventato.
+    const testo = await leggiDati($, f).then(t => t ?? '{"v":1,"voci":{}}').catch(() => null)
     const repo = (await chiSonoIo($)).repo
     const leggi = (progetto?: string) => {
       try {
@@ -1696,19 +1745,30 @@ async function aggiornaRisorse($: Eng, opz: Record<string, unknown>) {
  * Una scrittura CAS del config: i campi del progetto, quelli dell'account (prefisso `account.`) e la lingua, insieme (F10:
  * niente scritture in sequenza, niente allentamenti intermedi). Si convalida prima con la stessa regola della bozza.
  */
-async function configura($: Eng, opz: Record<string, unknown>, campi: Record<string, unknown>, attese: RisorseProgetto, lingua?: Lingua) {
+async function configura($: Eng, opz: Record<string, unknown>, campi: Record<string, unknown>, attese: RisorseProgetto, lingua?: Lingua, linguaBase?: Lingua) {
     const chi = await chiSonoIo($)
     if (!chi.repo) throw errore('err.progettoIgnoto')
     const f = await fileConfig($)
-    const atteso = await $.fs.exists(f) ? await $.fs.read(f) as string : null
-    const config = atteso === null ? {} : JSON.parse(atteso) as { progetti?: Record<string, unknown> }
+    const atteso = await leggiDati($, f)
+    const config = atteso === null ? {} : JSON.parse(atteso) as { progetti?: Record<string, unknown>; lingua?: unknown }
+    // F10 rilievo 4: la base della lingua si confronta sullo STESSO testo che va come `atteso` nel CAS: una lingua salvata
+    // altrove dopo la scelta è un conflitto, mai sovrascritta.
+    if (lingua && linguaBase && linguaDa(config.lingua) !== linguaBase) throw errore('imp.linguaCambiataAltrove')
     const precedente = progettoDa(config, chi.repo)
     if (eMsg(precedente)) throw new Errore(precedente)
     if (JSON.stringify(precedente.risorse) !== JSON.stringify(attese)) throw errore('err.impostazioniCambiate')
     const p = conBozza(precedente.risorse, campi)
     if (eMsg(p)) throw new Errore(p)
     const { progetto, account } = perStrato(campi)
-    const esito = await helper($, ['configura', f], JSON.stringify({ atteso, repo: chi.repo, campi: progetto, ...(Object.keys(account).length && { account }), ...(lingua && { lingua }) }))
+    // Le chiavi annidate che la bozza ha tolto (una restrizione, un'eccezione) si cancellano per nome; tutto il resto si
+    // fonde nel file: niente di ciò che non si nomina va perso (F10, rilievo 1).
+    const tolti = (k: string, v: unknown) => percorsiTolti(k.replace(/^account\./, ''), valoreConfig(attese, k), v)
+    const togli = {
+      progetto: Object.entries(campi).filter(([k]) => !k.startsWith('account.')).flatMap(([k, v]) => tolti(k, v)),
+      account: Object.entries(campi).filter(([k]) => k.startsWith('account.')).flatMap(([k, v]) => tolti(k, v)),
+    }
+    const esito = await helper($, ['configura', f], JSON.stringify({ atteso, repo: chi.repo, campi: progetto, ...(Object.keys(account).length && { account }), ...(lingua && { lingua }),
+      ...((togli.progetto.length || togli.account.length) && { togli }) }))
     // 4 = CAS: il config è cambiato dopo la lettura. Ogni altro codice è un rifiuto dell'helper.
     if (esito.codice === 4) throw errore('errore.configCambiata')
     if (esito.codice !== 0) throw errore('errore.configNonScritta', { codice: esito.codice })
@@ -1890,8 +1950,8 @@ async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pend
   })
   // F10: progetto, account e lingua in UNA scrittura CAS: niente salvataggio parziale. La lingua di una proposta porta la
   // sua base: se intanto è cambiata altrove è un conflitto come gli altri campi, e non si scrive niente.
-  const linguaCambiata = async () => !!p.linguaBase && (await leggiLingua($)) !== p.linguaBase
-  const tutti = async (ora: RisorseProgetto) => [...cambiatiAltrove(p, ora), ...((await linguaCambiata()) ? ['lingua'] : [])]
+  // La lingua si controlla dentro `configura`, sul testo del CAS (rilievo 4); qui solo i campi della bozza.
+  const tutti = async (ora: RisorseProgetto) => cambiatiAltrove(p, ora)
   const conLingua = async (ora: RisorseProgetto, cambiati: string[]): Promise<EsitoApplica> => {
     const e = conflitto(ora, cambiati.filter(k => k !== 'lingua'))
     return cambiati.includes('lingua') ? { ...e, cambiati, base: { ...e.base, lingua: await leggiLingua($) } } : e
@@ -1904,14 +1964,18 @@ async function applicaImpostazioni($: Eng, opz: Record<string, unknown>, p: Pend
   const chi = await chiSonoIo($)
   // Solo la lingua, fuori da un repository: il campo dell'utente, con il suo CAS.
   if (!chi.repo && !Object.keys(p.campi).length) {
-    await scegliLingua($, lingua!)
+    if ((await scegliLingua($, lingua!, p.linguaBase)) === 'cambiata') return { cambiati: ['lingua'], base: { lingua: await leggiLingua($) } }
     return { cambiati: [], base: {} }
   }
   for (let tentativo = 1; ; tentativo++) {
     try {
-      await configura($, opz, p.campi, ora, lingua)
+      await configura($, opz, p.campi, ora, lingua, p.linguaBase)
       break
     } catch (err) {
+      if (err instanceof Errore && err.msg.k === 'imp.linguaCambiataAltrove') {
+        ora = (await leggiRegole($)).risorse
+        return conLingua(ora, [...cambiatiAltrove(p, ora), 'lingua'])
+      }
       // Il CAS (o le risorse attese) è cambiato fra la rilettura e la scrittura: niente scritto, si rilegge. Se è cambiato
       // un campo della bozza si chiede; se è cambiato altro (un budget scritto subito) si riprova sulla versione nuova.
       if (!(err instanceof Errore) || !['errore.configCambiata', 'err.impostazioniCambiate'].includes(err.msg.k)) throw err
@@ -1958,10 +2022,14 @@ async function apriBoard($: Eng) {
 
 /** F6.2: la chiave API di Claude è nelle opzioni sensibili della mod? (Solo la presenza, letta alla registrazione.) */
 let chiaveApiPresente = false
+/** F10: le chiavi dei fornitori nelle opzioni sensibili (solo la presenza). */
+let chiaviFornitori = { deepseek: false, freellmapi: false }
 
 export const register: Register = (on, options) => {
   const opz = (options ?? {}) as Record<string, unknown>
   chiaveApiPresente = typeof opz.anthropicApiKey === 'string' && opz.anthropicApiKey.trim().length > 0
+  const presente = (k: string) => typeof opz[k] === 'string' && (opz[k] as string).trim().length > 0
+  chiaviFornitori = { deepseek: presente('deepseekKey'), freellmapi: presente('freellmapiKey') }
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)

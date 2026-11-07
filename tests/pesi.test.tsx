@@ -4,6 +4,7 @@ import type { TestBody } from 'claude-code/testing'
 import {
   alLavoroDa,
   annullabile,
+  applicaPatch,
   conProfilo,
   contestoPerModello,
   daDecidere,
@@ -244,6 +245,14 @@ function ambiente(on: On, progetto: Record<string, unknown> = { fornitori: ['cla
   on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session__start_session' }] as never }))
   on('session.repo', () => ({ value: { root: 'X:/repo', remote: 'https://github.com/esempio/demo.git', internal: false, repo: null } as never }))
   on('fs.exists', (_, e) => ({ value: [...disco.keys()].some(k => k === p(e.path) || k.startsWith(`${p(e.path)}/`)) }))
+  // F10: come l'host, anche le cartelle (prefisso di un file) e la radice del disco; `realPath` è il percorso stesso.
+  on('fs.stat', (_, e) => {
+    const q = p(e.path).replace(/\/+$/, '')
+    const t = disco.get(q)
+    const cartella = t === undefined && (/^[A-Za-z]:$/.test(q) || [...disco.keys()].some(k => k.startsWith(`${q}/`)))
+    if (t === undefined && !cartella) throw new Error('ENOENT')
+    return { value: { kind: cartella ? 'dir' as const : 'file' as const, size: t?.length ?? 0, mtimeMs: 0, isLink: false, ...(e.resolve && { realPath: q }) } }
+  })
   on('fs.list', () => ({ value: [] }))
   on('fs.read', (_, e) => {
     const t = disco.get(p(e.path))
@@ -272,9 +281,11 @@ function ambiente(on: On, progetto: Record<string, unknown> = { fornitori: ['cla
       stdin.push(q)
       if (disco.get(CONFIG) !== q.atteso) return fine(4)
       // F10: progetto, account e lingua in un solo CAS; null toglie il campo.
-      const senzaNull = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null))
-      config.progetti[q.repo] = senzaNull({ ...config.progetti[q.repo], ...q.campi, ...('pesi' in q.campi || 'profilo' in q.campi ? { pesiRevisione: ((progettoDi().pesiRevisione as number) ?? 0) + 1, pesiOrigine: { tipo: 'manuale' } } : {}) })
-      if (q.account) config.account = senzaNull({ ...config.account, ...q.account })
+      // Come l'helper vero: la stessa fusione (gemello TS di applicaPatch).
+      config.progetti[q.repo] = applicaPatch(config.progetti[q.repo] ?? {}, { ...q.campi, ...('pesi' in q.campi || 'profilo' in q.campi ? { pesiRevisione: ((progettoDi().pesiRevisione as number) ?? 0) + 1 } : {}) }, q.togli?.progetto)
+      // L'origine dei pesi, come nell'helper, si sostituisce intera.
+      if ('pesi' in q.campi || 'profilo' in q.campi) config.progetti[q.repo].pesiOrigine = { tipo: 'manuale' }
+      if (q.account) config.account = applicaPatch(config.account ?? {}, q.account, q.togli?.account)
       if (q.lingua !== undefined) config.lingua = q.lingua
       scrivi()
       return fine(0)

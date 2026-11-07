@@ -1952,8 +1952,8 @@ function logicaTs(rev) {
   const dir = fuori()
   const nomi = rev
     ? spawnSync('git', ['-C', RADICE_REPO, 'ls-tree', '-r', '--name-only', rev, 'hooks/'], { encoding: 'utf8' }).stdout.trim().split('\n')
-    : ['hooks/logica.ts', 'hooks/lingua.ts', 'hooks/tema.ts', ...fs.readdirSync(path.join(RADICE_REPO, 'hooks', 'lingue')).map(n => `hooks/lingue/${n}`)]
-  for (const n of nomi.filter(n => /^hooks\/(logica|lingua|tema)\.ts$|^hooks\/lingue\/\w+\.ts$/.test(n))) {
+    : ['hooks/logica.ts', 'hooks/lingua.ts', 'hooks/tema.ts', 'hooks/bilanciamento.ts', ...fs.readdirSync(path.join(RADICE_REPO, 'hooks', 'lingue')).map(n => `hooks/lingue/${n}`)]
+  for (const n of nomi.filter(n => /^hooks\/(logica|lingua|tema|bilanciamento)\.ts$|^hooks\/lingue\/\w+\.ts$/.test(n))) {
     const testo = rev ? spawnSync('git', ['-C', RADICE_REPO, 'show', `${rev}:${n}`], { encoding: 'utf8' }).stdout : fs.readFileSync(path.join(RADICE_REPO, n), 'utf8')
     assert.ok(testo, `${rev ?? 'worktree'}:${n}`)
     fs.mkdirSync(path.dirname(path.join(dir, n)), { recursive: true })
@@ -1964,8 +1964,10 @@ function logicaTs(rev) {
 /** Esegue `corpo` (ESM, con `vecchia`, `nuova` e `ingresso`) in un node che toglie i tipi; restituisce il JSON stampato. */
 function conLogica(corpo, ingresso) {
   const url = f => require('node:url').pathToFileURL(f).href
+  const corrente = logicaTs()
   const codice = `const vecchia = await import(${JSON.stringify(url(logicaTs(REV_RILASCIATA)))})
-const nuova = await import(${JSON.stringify(url(logicaTs()))})
+const nuova = await import(${JSON.stringify(url(corrente))})
+const bil = await import(${JSON.stringify(url(path.join(path.dirname(corrente), 'bilanciamento.ts')))})
 const ingresso = ${JSON.stringify(ingresso)}
 ${corpo}`
   const r = spawnSync(process.execPath, ['--experimental-transform-types', '--no-warnings', '--input-type=module', '-e', codice], { encoding: 'utf8' })
@@ -2055,6 +2057,7 @@ test('F10 soglie: la tabella account × progetto, uguale nella logica TS e nel g
   })
 })
 
+const MANUALE = { id: 'piano', fornitore: 'claude', nome: 'Max (piano)', letto: '2026-11-01T10:00:00.000Z', percentuale: 40, unita: '%' }
 test('F10 parità: regoleEfficaci TS e CJS danno le stesse soglie, gli stessi crediti API e lo stesso endpoint; rifiutano le stesse forme', () => {
   const R = require('./regole.cjs')
   const validi = [
@@ -2067,6 +2070,11 @@ test('F10 parità: regoleEfficaci TS e CJS danno le stesse soglie, gli stessi cr
     { account: { soglie: { codex: null, claude: S(50, 60) }, freellmapi: { endpoint: 'http://localhost:4000/v1' } }, progetto: { soglie: { codex: S(80, 95) }, restrizioni: { soglie: { claude: S(55, 58) } } } },
     { account: { freellmapi: { endpoint: 'http://localhost:4000/v1' } }, progetto: { freellmapi: { livello: 'R1', endpoint: 'http://[::1]:5000/v1' } } },
     { account: { apiClaude: null, freellmapi: null }, progetto: { apiClaude: null } },
+    // Rilievo 6, tabella di ingressi avversari: null come assente ovunque, budget manuali validi nei due strati.
+    { account: { freellmapi: { endpoint: 'http://localhost:4000/v1' } }, progetto: { freellmapi: null } },
+    { account: { soglie: null, limitiManuali: null }, progetto: { soglie: null, restrizioni: null, limitiManuali: null, freellmapi: null } },
+    { account: { limitiManuali: [MANUALE] }, progetto: { limitiManuali: [{ ...MANUALE, id: 'altro', valore: 3, unita: 'USD', percentuale: undefined }] } },
+    { account: { apiClaude: { budgetUsd: 9, extra: 'x' } }, progetto: { restrizioni: { soglie: null } } },
   ]
   const nonValidi = [
     { account: [], progetto: {} },
@@ -2077,6 +2085,19 @@ test('F10 parità: regoleEfficaci TS e CJS danno le stesse soglie, gli stessi cr
     { account: {}, progetto: { restrizioni: { apiTetto: -1 } } },
     { account: {}, progetto: { restrizioni: { soglie: { ignoto: null } } } },
     { account: {}, progetto: { restrizioni: [] } },
+    { account: { limitiManuali: [{}] }, progetto: {} },
+    { account: { limitiManuali: 'x' }, progetto: {} },
+    { account: { limitiManuali: [{ ...MANUALE, nome: '<script>' }] }, progetto: {} },
+    { account: {}, progetto: { limitiManuali: [{ ...MANUALE, unita: 'GBP' }] } },
+    { account: {}, progetto: { limitiManuali: [{ ...MANUALE, letto: '2999-01-01T00:00:00Z' }] } },
+    { account: {}, progetto: { freellmapi: { livello: 'R9' } } },
+    { account: {}, progetto: { freellmapi: { livello: 'R1', endpoint: 'http://altrove:1/v1' } } },
+    { account: {}, progetto: { freellmapi: 'R1' } },
+    { account: { soglie: { claude: { attenzione: '10', critica: 20 } } }, progetto: {} },
+    { account: 'x', progetto: {} },
+    { account: { apiClaude: { tetto: 2 } }, progetto: {} },
+    { account: {}, progetto: { restrizioni: { apiLimiteMeseUsd: '5' } } },
+    { account: {}, progetto: { soglie: { claude: { attenzione: 90, critica: 90 } } } },
   ]
   const ts = conLogica(`console.log(JSON.stringify(ingresso.map(c => { const r = nuova.risorseDa(c.progetto, c.account); return r.k ? null : { soglie: r.soglie, apiClaude: r.apiClaude ?? null, endpoint: r.freellmapi.endpoint } })))`, [...validi, ...nonValidi])
   validi.forEach((c, i) => {
@@ -2184,4 +2205,98 @@ test('F10 percorsi: config e dati rifiutati sotto una junction sopra la base, co
   // Fuori da tutto, lo stesso config si scrive.
   const casa = path.join(fuori(), 'chipmanager', 'config.json')
   assert.strictEqual(esegui(['configura', casa], JSON.stringify({ atteso: null, repo: 'owner/prova', campi: { soloLocale: true } })).status, 0)
+})
+
+// --- F10, revisione Codex -----------------------------------------------------------------------------------------------
+
+test('F10 rilievo 1: configura cancella solo ciò che la patch chiede; null preesistenti e campi sconosciuti annidati restano (helper e gemello TS)', async () => {
+  const file = path.join(tmp(), 'config.json')
+  const P = 'owner/prova'
+  fs.writeFileSync(file, JSON.stringify({ account: { apiClaude: { budgetUsd: 20, futuro: { x: 1 } }, ignoto: null },
+    progetti: { [P]: { apiClaude: { budgetUsd: 5, futuro: 1 }, consigliere: null, milestoneGithub: false,
+      soglie: { claude: null, codex: { attenzione: 60, critica: 80, nota: 'resta' } }, restrizioni: { apiTetto: 1, soglie: { claude: { attenzione: 50, critica: 60 } } } } } }))
+  const scrivi = q => D.configura(file, { atteso: fs.readFileSync(file, 'utf8'), repo: P, campi: {}, ...q })
+  const budget = { id: 'nuovo', fornitore: 'claude', nome: 'Max', letto: '2026-11-01T10:00:00.000Z', percentuale: 30, unita: '%' }
+  // La microprova della revisione: aggiornare budget, milestone e budget API non perde `futuro` né i null preesistenti.
+  assert.strictEqual(await scrivi({ campi: { milestoneGithub: true, limitiManuali: [budget], apiClaude: { budgetUsd: 6 } }, account: { apiClaude: { budgetUsd: 30 } } }), 0)
+  let c = JSON.parse(fs.readFileSync(file, 'utf8'))
+  assert.deepStrictEqual(c.progetti[P].apiClaude, { budgetUsd: 6, futuro: 1 })
+  assert.deepStrictEqual([Object.hasOwn(c.progetti[P], 'consigliere'), c.progetti[P].consigliere, c.progetti[P].soglie.claude], [true, null, null])
+  assert.deepStrictEqual(c.account, { apiClaude: { budgetUsd: 30, futuro: { x: 1 } }, ignoto: null })
+  // Le chiavi annidate si tolgono solo per nome (`togli`), dentro i campi della patch; le altre, anche sconosciute, restano.
+  assert.strictEqual(await scrivi({ campi: { restrizioni: { apiTetto: 1 }, soglie: { codex: { attenzione: 60, critica: 80 } } }, togli: { progetto: ['restrizioni.soglie', 'soglie.claude'] } }), 0)
+  c = JSON.parse(fs.readFileSync(file, 'utf8'))
+  assert.deepStrictEqual([c.progetti[P].restrizioni, c.progetti[P].soglie], [{ apiTetto: 1 }, { codex: { attenzione: 60, critica: 80, nota: 'resta' } }])
+  // Un percorso fuori dai campi della patch, o verso il prototipo, rifiuta tutto.
+  const scritto = fs.readFileSync(file, 'utf8')
+  assert.strictEqual(await scrivi({ campi: { milestoneGithub: false }, togli: { progetto: ['soglie.codex'] } }), 2)
+  assert.strictEqual(await scrivi({ campi: { soglie: {} }, togli: { progetto: ['soglie.__proto__'] } }), 2)
+  assert.strictEqual(await scrivi({ campi: { soglie: {} }, togli: { altro: [] } }), 2)
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), scritto)
+  // Il gemello TS (le finte delle prove del pannello lo usano) dà lo stesso risultato sugli stessi ingressi.
+  const R = require('./regole.cjs')
+  const casi = [
+    [{ a: { x: 1, y: null }, b: null, c: 1 }, { a: { x: 2 } }, []],
+    [{ a: { x: 1, y: null }, b: null }, { b: null, a: null }, []],
+    [{ a: { x: { p: 1, q: 2 } } }, { a: { x: { p: null } } }, ['a.x.q']],
+    [{ a: [1, 2], b: { c: 1 } }, { a: [3], b: 7 }, []],
+    [{ a: { x: 1 } }, { a: { y: 2 } }, ['a.z.w']],
+  ]
+  const ts = conLogica(`console.log(JSON.stringify(ingresso.map(([a, p, t]) => bil.applicaPatch(a, p, t))))`, casi)
+  casi.forEach(([a, p, t], i) => assert.deepStrictEqual(R.applicaPatch(a, p, t), ts[i], JSON.stringify(casi[i])))
+})
+
+/** Una junction (un link simbolico fuori da Windows) da `nome` sotto una cartella nuova verso una cartella vera; restituisce entrambe. */
+const ponte = nome => {
+  const vero = fuori()
+  const sotto = path.join(fuori(), nome)
+  fs.symlinkSync(vero, sotto, process.platform === 'win32' ? 'junction' : 'dir')
+  return { vero, sotto }
+}
+
+test('F10 rilievo 2: ogni comando della corsia API controlla la catena dell\'account PRIMA di leggere il lock o cancellare chiavi', async () => {
+  const { vero, sotto: dm } = ponte('chipmanager')
+  // Una chiave e un lock lasciati nella cartella vera: nessun comando li tocca né li legge attraverso la junction.
+  fs.mkdirSync(path.join(vero, 'chiavi-api'))
+  fs.writeFileSync(path.join(vero, 'chiavi-api', 'az-pont0001.key'), CHIAVE_PROVA)
+  fs.writeFileSync(path.join(vero, 'api-claude.json'), JSON.stringify({ tentativo: 'az-pont0001', istante: new Date(0).toISOString() }))
+  for (const r of [await API.statoApi(dm), await API.liberaApi(dm)]) assert.deepStrictEqual([r.libero, r.motivo, /helper\.collegamento/.test(r.percorso)], [false, 'percorso', true])
+  assert.deepStrictEqual([(await API.terminaApi(dm)).motivo, (await API.terminaApi(dm)).chiusi], ['percorso', 0])
+  const dir = tmp()
+  const root = tmp()
+  recordApi(dir, 'a-pont0002', 'az-pont0002')
+  const [codice, testo] = await API.lanciaApi(dir, 'a-pont0002', 'az-pont0002', ingressoApi(root), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) })
+  assert.deepStrictEqual([codice, /helper\.collegamento/.test(JSON.parse(testo).percorso)], [6, true])
+  assert.ok(fs.existsSync(path.join(vero, 'chiavi-api', 'az-pont0001.key')), 'la chiave rimasta non si cancella attraverso un link')
+  assert.ok(!fs.existsSync(path.join(dir, 'esecuzioni')), 'niente scritto nella cartella delle azioni')
+  // Anche un `.git` (file) sopra la cartella dell'account, e il config dentro un repository.
+  const conGit = fuori()
+  fs.writeFileSync(path.join(conGit, '.git'), 'gitdir: altrove')
+  assert.strictEqual((await API.statoApi(path.join(conGit, 'chipmanager'))).motivo, 'percorso')
+  const repo = fuori()
+  fs.mkdirSync(path.join(repo, '.git'))
+  const [c2, t2] = await API.lanciaApi(dir, 'a-pont0002', 'az-pont0002', ingressoApi(root, path.join(repo, 'config.json')), { dirMacchina: tmp(), fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) })
+  assert.deepStrictEqual([c2, /helper\.dentroWorkingTree/.test(JSON.parse(t2).percorso)], [6, true])
+  // Il supervisore ricontrolla prima di leggere segno o lock.
+  await assert.rejects(API.eseguiApi(dir, 'a-pont0002', 'az-pont0002', ingressoApi(root), { dirMacchina: dm }), /helper\.collegamento/)
+})
+
+test('F10 rilievo 3: una junction su «esecuzioni» sotto la cartella dati non porta la scrittura altrove (CLI e API)', async () => {
+  const dir = tmp()
+  const { vero } = { vero: fuori() }
+  fs.symlinkSync(vero, path.join(dir, 'esecuzioni'), process.platform === 'win32' ? 'junction' : 'dir')
+  fs.writeFileSync(path.join(dir, 'a-cli00001.json'), JSON.stringify({ stato: 'in-avvio', lanciatore: 'cli', tentativo: 'az-cli0001' }))
+  const r = esegui(['lancia-cli', dir, 'a-cli00001', 'az-cli0001'], '{}')
+  assert.strictEqual(r.status, 6, r.stdout)
+  assert.match(r.stdout, /helper\.collegamento/)
+  assert.deepStrictEqual(fs.readdirSync(vero), [])
+  // Lo stesso per la corsia API: la destinazione finale si controlla prima di scrivere il segno dell'esecuzione.
+  const root = tmp()
+  recordApi(dir, 'a-apiju001', 'az-apiju01')
+  const [codice] = await API.lanciaApi(dir, 'a-apiju001', 'az-apiju01', ingressoApi(root), { dirMacchina: tmp(), fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) })
+  assert.strictEqual(codice, 6)
+  assert.deepStrictEqual(fs.readdirSync(vero), [])
+  // `scriviDati` rifiuta la cartella finale anche quando la chiama un comando che non controlla l'ingresso.
+  assert.throws(() => D.scriviDati(path.join(dir, 'esecuzioni', 'x.json'), '{}'), /helper\.collegamento/)
+  assert.deepStrictEqual(fs.readdirSync(vero), [])
 })

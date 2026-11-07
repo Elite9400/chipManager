@@ -32,7 +32,7 @@ import {
   valoreConfig,
 } from './bilanciamento'
 import type { Profilo } from './bilanciamento'
-import { cartellaDati, conMisura, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, passiMancanti, piuPieno, SOGLIA_PREDEFINITA, sogliaDi } from './logica'
+import { cartellaDati, conMisura, connesso, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, passiMancanti, piuPieno, SOGLIA_PREDEFINITA, sogliaDi, TETTO_API_PREDEFINITO } from './logica'
 import type { Ctx, Dati } from './pannello'
 import { eMsg, Errore, LEGENDA, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
 import type { Chiave, Lingua, T } from './lingua'
@@ -360,6 +360,8 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
 
   const statoFornitore = (f: Fornitore) => {
     if (!r.fornitori.includes(f)) return u.Chip({ chiave: `stato-chip-${f}`, testo: T('con.vietato'), segno: '✕', colore: GRIGIO })
+    // F10: ammesso nel progetto ma senza la chiave: escluso dalle scelte automatiche, una scelta esplicita non parte.
+    if (!connesso(regoleOra, f)) return u.Chip({ chiave: `stato-chip-${f}`, testo: T('con.nonConnesso'), segno: '○', colore: STATO.attesa })
     const l = ultima(f)
     if (!l) return u.Chip({ chiave: `stato-chip-${f}`, testo: T('con.daCollegare'), segno: '○', colore: STATO.coda })
     return u.Chip({ chiave: `stato-chip-${f}`, testo: T('con.collegato', { fonte: l.fonte, durata: durata(Math.max(0, adesso - Date.parse(l.letto!)), T.lingua) }), segno: '●', colore: STATO.inCorso })
@@ -902,7 +904,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
               onSubmit={v => salva('api', () => ({ 'account.apiClaude': { ...conto, budgetUsd: numeroUsd(v, 0.01, 100_000) } }))()} />
           ) : null}
           {Input && conto ? (
-            <Input key="ese-tetto" label={T('ese.tetto')} value={String(conto.tetto)}
+            <Input key="ese-tetto" label={T('ese.tetto')} value={String(conto.tetto ?? TETTO_API_PREDEFINITO)}
               onSubmit={v => salva('api', () => ({ 'account.apiClaude': { ...conto, tetto: numeroUsd(v, 0.01, Math.min(1_000, conto.budgetUsd)) } }))()} />
           ) : null}
           {didascalia('ese-tetto-nota', T('ese.tettoNota'))}
@@ -998,7 +1000,10 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
                 const p = s.pendenti ?? { campi: {}, base: {}, dove: [] }
                 const lingua = v === salvata ? undefined : (v as Lingua)
                 const dove = [...p.dove.filter(x => x !== 'lingua'), ...(lingua ? ['lingua'] : [])]
-                return { ...s, pendenti: piena({ ...p, lingua, dove }), errore: undefined }
+                // F10 rilievo 4: la lingua salvata al primo tocco è la base, come per ogni altro campo; Applica la
+                // confronta sullo stesso testo del CAS.
+                const { linguaBase: _b, ...senza } = p
+                return { ...s, pendenti: piena({ ...senza, lingua, dove, ...(lingua && { linguaBase: p.linguaBase ?? salvata }) }), errore: undefined }
               }, epoca)
             })(),
         }),

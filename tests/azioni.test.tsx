@@ -72,7 +72,7 @@ import {
   violazioniAvvio,
 } from '../hooks/logica'
 import type { Azione, Chiamante, Consumo, Limite, Regole } from '../types'
-import { diversoDa, presetChi, TETTO_RISORSE } from '../hooks/bilanciamento'
+import { applicaPatch, diversoDa, presetChi, TETTO_RISORSE } from '../hooks/bilanciamento'
 import type { Consiglio } from '../hooks/logica'
 import { DiscoIt } from './disco-it'
 import { chiaveOTesto } from '../hooks/lingua'
@@ -381,10 +381,13 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
       .filter(k => k.startsWith(`${p(e.path)}/`) && !k.slice(p(e.path).length + 1).includes('/'))
       .map(k => ({ name: k.slice(p(e.path).length + 1), kind: 'file' as const, size: disco.get(k)!.length, mtimeMs: disco.mtime.get(k) ?? 0, isLink: false })),
   }))
+  // F10: come l'host, anche le cartelle (prefisso di un file) e la radice del disco; `realPath` è il percorso stesso.
   on('fs.stat', (_, e) => {
-    const t = disco.get(p(e.path))
-    if (t === undefined) throw new Error('ENOENT')
-    return { value: { kind: 'file' as const, size: t.length, mtimeMs: disco.mtime.get(p(e.path)) ?? 0, isLink: false } }
+    const q = p(e.path).replace(/\/+$/, '')
+    const t = disco.get(q)
+    const cartella = t === undefined && (/^[A-Za-z]:$/.test(q) || [...disco.keys()].some(k => k.startsWith(`${q}/`)))
+    if (t === undefined && !cartella) throw new Error('ENOENT')
+    return { value: { kind: cartella ? 'dir' as const : 'file' as const, size: t?.length ?? 0, mtimeMs: disco.mtime.get(q) ?? 0, isLink: false, ...(e.resolve && { realPath: q }) } }
   })
   on('ui.panes', () => ({ value: opz.nascosto ? [] : [{ id: 'chipManager', title: 'chipManager', isShown: true, isFocused: false, isPlaced: true }] }))
   const letti: string[] = []
@@ -445,9 +448,9 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
       const b = c.progetti?.[input.repo]?.board
       if (campi.board) campi.board = { modo: campi.board.modo, generazione: (b?.generazione ?? 0) + (b?.modo === campi.board.modo ? 0 : 1) }
       // F10: progetto, account e lingua in un solo CAS; null toglie il campo.
-      const senzaNull = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null))
-      disco.set(p(a[0]), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: senzaNull({ ...c.progetti?.[input.repo], ...campi }) },
-        ...(input.account && { account: senzaNull({ ...c.account, ...input.account }) }), ...(input.lingua !== undefined && { lingua: input.lingua }) }))
+      // Come l'helper vero: la stessa fusione (gemello TS di applicaPatch), che non perde campi né null non nominati.
+      disco.set(p(a[0]), JSON.stringify({ ...c, progetti: { ...c.progetti, [input.repo]: applicaPatch(c.progetti?.[input.repo] ?? {}, campi, input.togli?.progetto) },
+        ...(input.account && { account: applicaPatch(c.account ?? {}, input.account, input.togli?.account) }), ...(input.lingua !== undefined && { lingua: input.lingua }) }))
       return fine(0)
     }
     if (cmd === 'git-log') return fine(0, JSON.stringify([{ sha: 'abc1234', data: '2026-11-04T10:00:00Z', oggetto: 'commit d\'esempio' }]))
@@ -1438,6 +1441,24 @@ test('2.0: terzi vietati su R4/R5, dati locali e oltre il livello; vale anche su
   expect(violazioni(base('a-norev01', 1), { ...R, risorse: { ...RISORSE_DEFAULT, fornitori: ['claude'] } }).map(m => m.k).join()).toContain('v.revisoreNonAbilitato')
 })
 
+test('F10 rilievo 7 (decisione della master): un fornitore ammesso ma non connesso non entra nelle scelte automatiche e una scelta esplicita non parte; Claude e Codex sempre connessi', () => {
+  const a = base('a-free0002', 1, { repo: AUTORE.repo!, esecutore: 'freellmapi', revisore: 'claude', modello: 'testo-compatto', effort: 'low', corsia: 'R1' })
+  // Scelta esplicita su FreeLLMAPI senza la sua chiave: si blocca con il motivo; con la chiave parte come prima.
+  expect(violazioni(a, { ...RF, connessi: ['claude', 'codex'] }).map(m => m.k)).toContain('v.nonConnesso')
+  expect(violazioni(a, { ...RF, connessi: ['claude', 'codex', 'freellmapi'] })).toEqual([])
+  // Claude e Codex: nessun cambiamento, nemmeno con un elenco vuoto (il loro login non si verifica).
+  for (const esecutore of ['claude', 'codex'] as const) {
+    const c = base(`a-con${esecutore}`, 1, { repo: AUTORE.repo!, esecutore, corsia: 'R2' })
+    expect(violazioni(c, { ...RF, connessi: [] })).toEqual(violazioni(c, RF))
+  }
+  // Le scelte automatiche: con un peso che preferisce FreeLLMAPI, senza chiave non lo sceglie mai.
+  const aperta = base('a-free0003', 1, { repo: AUTORE.repo!, corsia: 'R1', revisore: 'claude' })
+  const pesata = { ...RF, risorse: { ...RF.risorse, pesi: [{ tipo: 'fornitore' as const, nome: 'freellmapi', percentuale: 1000, assoluto: 1000 }] } }
+  const senza = bilancia(aperta, {}, { ...pesata, connessi: ['claude', 'codex'] }, [], [aperta], AUTORE)
+  expect(senza.esecutore).not.toBe('freellmapi')
+  expect(violazioni(senza, { ...pesata, connessi: ['claude', 'codex'] }).map(m => m.k)).not.toContain('v.nonConnesso')
+})
+
 test('2.0: pesi e margini scelgono soltanto combinazioni ammesse; scelte esplicite intatte', () => {
   const a = base('a-peso0001', 1, { repo: AUTORE.repo!, corsia: 'R2' })
   const r = { ...R, risorse: { ...RISORSE_DEFAULT, pesi: [{ tipo: 'modello' as const, nome: 'gpt-6-astra', percentuale: 300, assoluto: 50 }, { tipo: 'effort' as const, nome: 'low', percentuale: 100, assoluto: 50 }] } }
@@ -1621,7 +1642,7 @@ test('2.0: CLI rifiuta fork, cloud, bypass e cartella condivisa; record di altro
   expect(normalizza({ ...a, stato: 'avviata', lanciatore: 'cli', tentativo: 'az-123456' })).toMatchObject({ stato: 'avviata' })
 })
 
-test('2.0: FreeLLMAPI conferma il testo, nessun background inviato, risultato solo consegnato', async ($, on) => {
+test('2.0: FreeLLMAPI conferma il testo, nessun background inviato, risultato solo consegnato', { options: { freellmapiKey: 'fl-prova-0123456789' } }, async ($, on) => {
   const amb = ambiente(on)
   configuraFree(amb)
   mock.clock(on)
@@ -1639,7 +1660,7 @@ test('2.0: FreeLLMAPI conferma il testo, nessun background inviato, risultato so
   await ui.unmount()
 })
 
-test('2.0: modifica durante la conferma e revoca progetto bloccano FreeLLMAPI', async ($, on) => {
+test('2.0: modifica durante la conferma e revoca progetto bloccano FreeLLMAPI', { options: { freellmapiKey: 'fl-prova-0123456789' } }, async ($, on) => {
   const amb = ambiente(on)
   configuraFree(amb)
   mock.clock(on)
@@ -1721,7 +1742,7 @@ test('2.0: risorse_agenti dà al modello politica e limiti, delle chiavi solo la
   expect(typeof j.chiavi.deepseek).toBe('boolean')
 })
 
-test('2.0: revoca del fornitore durante la conferma ferma il testo prima della prenotazione', async ($, on) => {
+test('2.0: revoca del fornitore durante la conferma ferma il testo prima della prenotazione', { options: { freellmapiKey: 'fl-prova-0123456789' } }, async ($, on) => {
   const amb = ambiente(on)
   configuraFree(amb)
   mock.clock(on)

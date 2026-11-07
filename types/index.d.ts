@@ -24,7 +24,7 @@ export type SogliePerStrato = Partial<Record<Fornitore, Soglia | null>>
 /** F10: le restrizioni di un progetto (`progetti[repo].restrizioni`): possono solo restringere l'account, mai allargarlo. */
 export type Restrizioni = { soglie?: SogliePerStrato; apiLimiteMeseUsd?: number; apiTetto?: number }
 /** F10: lo strato Account (`account` nella radice del config), uguale in tutti i progetti; letto e convalidato, senza predefiniti. */
-export type StratoAccount = { soglie: SogliePerStrato; limitiManuali: Limite[]; apiClaude?: { budgetUsd: number; tetto: number }; freellmapi?: { endpoint: string } }
+export type StratoAccount = { soglie: SogliePerStrato; limitiManuali: Limite[]; apiClaude?: { budgetUsd: number; tetto?: number }; freellmapi?: { endpoint: string } }
 /**
  * F10: i campi del progetto che si combinano con l'account, come stanno nel config (nessun valore efficace): le soglie e
  * l'`apiClaude` dei build di sviluppo valgono come restrizioni, l'endpoint di progetto sostituisce quello dell'account.
@@ -283,6 +283,11 @@ export type Regole = {
   risorse: RisorseProgetto
   /** F6.2: la chiave API di Claude è nelle opzioni sensibili della mod (solo la presenza, mai il valore). */
   chiaveApi?: boolean
+  /**
+   * F10 (decisione della master): i fornitori connessi, dove si può verificare. Claude e Codex contano sempre come
+   * connessi (il loro login non si legge in modo affidabile); DeepSeek e FreeLLMAPI solo con la chiave. Assente = tutti.
+   */
+  connessi?: Fornitore[]
 }
 
 /** F6.2: perché il lock della corsia API resta tenuto: uscita non registrata, discendenti, file-chiave, cache della chiave. */

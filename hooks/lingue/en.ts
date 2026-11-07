@@ -972,6 +972,8 @@ const en = {
   "imp.rimuoviEccezione": "Use the account endpoint",
   "imp.pillProgetto": "project",
   "imp.propostaAccount": "It changes the settings of all projects.",
+  "v.nonConnesso": "provider {fornitore} is not connected: its key is missing from the mod options",
+  "con.nonConnesso": "Not connected",
   // ‹fine›
 } satisfies Record<string, Voce>
 

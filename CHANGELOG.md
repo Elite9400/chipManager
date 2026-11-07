@@ -23,6 +23,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   (`restrizioni`: lower thresholds, a lower API month limit or cap per run). Settings shows the sections in two
   groups, **Account · all projects** and **Project · owner/repo**; a stricter project value reads «Stricter in
   owner/repo», with **Remove restriction**.
+- **Connected providers only, where it can be checked.** A provider allowed in a project is used only when it is
+  connected: DeepSeek and FreeLLMAPI need their key in the mod options (or the environment), and API Claude needs its
+  key; Claude and Codex plans always count as connected, since their sign-in cannot be read reliably. A provider
+  without its key shows «Not connected» in Connections, is left out of automatic choices and of the destination
+  advisor, and a chip that names it explicitly is blocked with the reason — before, it failed at start.
 - **One API spend log for the account**, next to the machine lock: every run is recorded with its project, and a run
   starts only if its cap fits both in the account's monthly budget and in the project's month limit. The Load view
   shows both: "3.20 USD this project · 7.80 USD of 20 USD account".

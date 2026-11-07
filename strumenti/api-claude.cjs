@@ -44,6 +44,15 @@ const fileLock = dm => path.join(dm, 'api-claude.json')
 const dirChiavi = dm => path.join(dm, 'chiavi-api')
 const fileChiave = (dm, t) => path.join(dirChiavi(dm), `${t}.key`)
 const fileConsegna = (dm, t) => path.join(dirChiavi(dm), `${t}.consegna`)
+/**
+ * F10 rilievo 2: la catena dei dati dell'account (cartella, lock, registro della spesa, chiavi) e quelle che il comando
+ * nomina, controllate PRIMA di ogni lettura o scrittura: nessun link o junction, percorso reale uguale, nessun `.git`
+ * sopra. Lancia il Rifiuto dell'helper con il motivo.
+ */
+function percorsiAccount(dm, altri = []) {
+  for (const p of [dm, fileLock(dm), fileSpesa(dm), dirChiavi(dm), ...altri]) d.percorsoSicuro(p)
+}
+const motivoPercorso = e => String(e?.message ?? e).slice(0, 300)
 /** F10: il registro della spesa dell'account, uno solo, accanto al lock della macchina. */
 const fileSpesa = dm => path.join(dm, 'spesa-api.json')
 
@@ -142,7 +151,7 @@ function prenotaSpesa(dm, tentativo, mese, tetto, budget, progetto, limiteProget
   if (limiteProgetto !== undefined && spesoNelMese(s.voci, mese, progetto) + tetto > limiteProgetto + 1e-9) return false
   s.voci[tentativo] = { progetto, mese, tetto, stato: 'prenotato' }
   fs.mkdirSync(dm, { recursive: true })
-  d.scriviAtomico(fileSpesa(dm), JSON.stringify(s))
+  d.scriviDati(fileSpesa(dm), JSON.stringify(s))
   return true
 }
 
@@ -152,7 +161,7 @@ function contaSpesaQui(dm, tentativo, costo) {
   const v = s.voci[tentativo]
   if (!v || v.stato === 'contato') return
   s.voci[tentativo] = { ...v, stato: 'contato', costo: typeof costo === 'number' && Number.isFinite(costo) && costo >= 0 ? costo : null }
-  d.scriviAtomico(fileSpesa(dm), JSON.stringify(s))
+  d.scriviDati(fileSpesa(dm), JSON.stringify(s))
 }
 
 /** Come `contaSpesaQui`, sotto lo stesso mutex del lock che prenota. Una seconda contabilizzazione non cambia nulla. */
@@ -206,7 +215,7 @@ function leggiLock(dm) {
     return 'illeggibile'
   }
 }
-const scriviLock = (dm, rec) => d.scriviAtomico(fileLock(dm), JSON.stringify(rec))
+const scriviLock = (dm, rec) => d.scriviDati(fileLock(dm), JSON.stringify(rec))
 
 /** I processi vivi nati da `claude -p` (lui compreso, se vivo con la stessa identità). Elenco illeggibile = uno ignoto. */
 function discendenti(rec, deps = {}) {
@@ -281,6 +290,11 @@ function verificaLock(dm, adesso, deps = {}) {
 }
 
 async function statoApi(dm, deps = {}) {
+  try {
+    percorsiAccount(dm)
+  } catch (e) {
+    return { libero: false, motivo: 'percorso', percorso: motivoPercorso(e) }
+  }
   const r = await d.conMutex(mutexApi(deps), 8000, () => verificaLock(dm, (deps.adesso ?? Date.now)(), deps))
   return r.occupato ? { libero: false, motivo: 'mutex' } : r.valore
 }
@@ -290,6 +304,11 @@ async function statoApi(dm, deps = {}) {
  * File-chiave cancellato, nessun discendente e 5 minuti dall'ultima consegna restano obbligatori; il costo è il tetto.
  */
 async function liberaApi(dm, deps = {}) {
+  try {
+    percorsiAccount(dm)
+  } catch (e) {
+    return { libero: false, motivo: 'percorso', percorso: motivoPercorso(e) }
+  }
   const r = await d.conMutex(mutexApi(deps), 8000, async () => {
     const rec = leggiLock(dm)
     if (!rec) return { libero: true }
@@ -306,6 +325,11 @@ async function liberaApi(dm, deps = {}) {
 
 /** «Termina», su conferma: chiude i discendenti vivi censiti; poi si ricontrolla con stato-api. */
 async function terminaApi(dm, deps = {}) {
+  try {
+    percorsiAccount(dm)
+  } catch (e) {
+    return { chiusi: 0, motivo: 'percorso', percorso: motivoPercorso(e) }
+  }
   const rec = leggiLock(dm)
   if (!rec || rec === 'illeggibile') return { chiusi: 0 }
   let chiusi = 0
@@ -411,6 +435,12 @@ const advisorNonDisponibile = stderr =>
 async function lanciaApi(dir, id, tentativo, input, deps = {}) {
   if (!d.idValido(id) || !d.tentativoValido(tentativo) || !ingressoValido(input)) return [2, '']
   const dm = deps.dirMacchina ?? dirPredefinita()
+  // Prima di leggere il lock, cancellare chiavi o toccare la cartella delle azioni: tutte le catene, config compreso.
+  try {
+    percorsiAccount(dm, [dir, d.fileEsecuzione(dir, tentativo), input.config])
+  } catch (e) {
+    return [6, JSON.stringify({ percorso: motivoPercorso(e) })]
+  }
   const r = await d.conMutex(d.MUTEX_AZIONI(dir), 8000, async () => {
     const a = JSON.parse(fs.readFileSync(path.join(dir, `${id}.json`), 'utf8'))
     if (a.stato !== 'in-avvio' || a.lanciatore !== 'api-claude' || a.tentativo !== tentativo) return [4, '']
@@ -441,7 +471,7 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
       fs.mkdirSync(dm, { recursive: true })
       scriviLock(dm, { tentativo, id, dir, istante: new Date((deps.adesso ?? Date.now)()).toISOString(), stato: 'in-avvio' })
       fs.mkdirSync(path.dirname(file), { recursive: true })
-      d.scriviAtomico(file, JSON.stringify({ id, tentativo, stato: 'in-avvio', lanciatore: 'api-claude' }))
+      d.scriviDati(file, JSON.stringify({ id, tentativo, stato: 'in-avvio', lanciatore: 'api-claude' }))
       try {
         const p = (deps.supervisore ?? (() => spawn(process.execPath, [path.join(__dirname, 'disco.cjs'), 'esegui-api', dir, id, tentativo], { stdio: ['pipe', 'ignore', 'ignore'], detached: true, windowsHide: true })))()
         await new Promise((ok, ko) => { p.once('spawn', ok); p.once('error', ko) })
@@ -450,7 +480,7 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
         p.unref?.()
         return [0, '']
       } catch {
-        d.scriviAtomico(file, JSON.stringify({ id, tentativo, stato: 'fallita', lanciatore: 'api-claude', errore: 'processo non avviato' }))
+        d.scriviDati(file, JSON.stringify({ id, tentativo, stato: 'fallita', lanciatore: 'api-claude', errore: 'processo non avviato' }))
         fs.rmSync(fileLock(dm), { force: true })
         try {
           contaSpesaQui(dm, tentativo, 0)
@@ -493,12 +523,14 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
   if (!d.idValido(id) || !d.tentativoValido(tentativo)) throw new Error('identità non valida')
   const dm = deps.dirMacchina ?? dirPredefinita()
   const file = d.fileEsecuzione(dir, tentativo)
+  // Il supervisore ricontrolla le catene prima di leggere il segno o il lock (un percorso cambiato dopo il lancio).
+  percorsiAccount(dm, [dir, file])
   const segno = JSON.parse(fs.readFileSync(file, 'utf8'))
   if (segno.id !== id || segno.tentativo !== tentativo || segno.stato !== 'in-avvio') throw new Error('tentativo non valido')
   const lock = leggiLock(dm)
   if (!lock || lock === 'illeggibile' || lock.tentativo !== tentativo || lock.uscita) throw new Error('lock non di questo tentativo')
   const r = await d.conMutex(`api:${path.resolve(file).toLowerCase()}`, 0, async () => {
-    const scrivi = campi => d.scriviAtomico(file, JSON.stringify({ id, tentativo, lanciatore: 'api-claude', ...campi }))
+    const scrivi = campi => d.scriviDati(file, JSON.stringify({ id, tentativo, lanciatore: 'api-claude', ...campi }))
     let partito = false
     const fuori = {}
     let rec = lock
@@ -514,6 +546,7 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
       const adv = statoAdvisor(input, advisorNelWorktree(fontiCwd), envFiglio)
       if (input.senzaAdvisor && adv.senzaAuditor.bloccato) throw Object.assign(new Error('advisor non spegnibile'), { advisor: adv.senzaAuditor.bloccato })
       fs.mkdirSync(dirChiavi(dm), { recursive: true })
+      d.percorsoSicuro(dirChiavi(dm))
       // Il file-chiave nasce subito prima dello spawn, leggibile solo dall'utente, e muore all'uscita.
       fs.writeFileSync(fileChiave(dm, tentativo), input.chiave, { mode: 0o600, flag: 'wx' })
       const helper = [process.execPath, CHIAVE, fileChiave(dm, tentativo), fileConsegna(dm, tentativo)].map(x => `"${x}"`).join(' ')
@@ -696,5 +729,5 @@ async function comando(cmd, a, stdin, opz = {}) {
 
 module.exports = {
   comando, lanciaApi, eseguiApi, booleano, worktreeInvariato, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
-  leggiSpesa, spesoNelMese, fileSpesa, regoleApi, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
+  leggiSpesa, spesoNelMese, fileSpesa, regoleApi, percorsiAccount, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
 }

@@ -63,10 +63,13 @@ function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexO
       .filter(k => k.startsWith(`${p(e.path)}/`) && !k.slice(p(e.path).length + 1).includes('/'))
       .map(k => ({ name: k.slice(p(e.path).length + 1), kind: 'file' as const, size: disco.get(k)!.length, mtimeMs: 1, isLink: false })),
   }))
+  // F10: come l'host, anche le cartelle (prefisso di un file) e la radice del disco; `realPath` è il percorso stesso.
   on('fs.stat', (_, e) => {
-    const t = disco.get(p(e.path))
-    if (t === undefined) throw new Error('ENOENT')
-    return { value: { kind: 'file' as const, size: t.length, mtimeMs: t.length, isLink: false } }
+    const q = p(e.path).replace(/\/+$/, '')
+    const t = disco.get(q)
+    const cartella = t === undefined && (/^[A-Za-z]:$/.test(q) || [...disco.keys()].some(k => k.startsWith(`${q}/`)))
+    if (t === undefined && !cartella) throw new Error('ENOENT')
+    return { value: { kind: cartella ? 'dir' as const : 'file' as const, size: t?.length ?? 0, mtimeMs: t?.length ?? 0, isLink: false, ...(e.resolve && { realPath: q }) } }
   })
   on('fs.read', (_, e) => {
     const t = disco.get(p(e.path))

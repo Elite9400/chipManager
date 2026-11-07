@@ -188,6 +188,55 @@ export function grezzi(r: RisorseProgetto) {
   return { progetto, account }
 }
 const senzaNull = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null))
+const piano = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+const VIETATE = new Set(['__proto__', 'constructor', 'prototype'])
+
+/**
+ * Gemello di `applicaPatch` in strumenti/regole.cjs (test di parità): un campo a null si cancella, un oggetto si fonde in
+ * profondità (un null annidato è un valore), i percorsi di `togli` cancellano chiavi annidate dei campi nominati; tutto il
+ * resto resta, null preesistenti e campi sconosciuti compresi. Lancia se la patch o un percorso non valgono.
+ */
+export function applicaPatch(prima: Record<string, unknown>, patch: Record<string, unknown>, togli: readonly string[] = []): Record<string, unknown> {
+  if (!piano(prima) || !piano(patch) || !Array.isArray(togli)) throw new Error('patch')
+  const fondi = (a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> => {
+    const o = { ...a }
+    for (const [k, v] of Object.entries(b)) {
+      if (VIETATE.has(k)) throw new Error('patch')
+      o[k] = piano(v) && piano(a[k]) ? fondi(a[k] as Record<string, unknown>, v) : v
+    }
+    return o
+  }
+  const out: Record<string, unknown> = { ...prima }
+  for (const [k, v] of Object.entries(patch)) {
+    if (VIETATE.has(k)) throw new Error('patch')
+    if (v === null) delete out[k]
+    else out[k] = piano(v) && piano(out[k]) ? fondi(out[k] as Record<string, unknown>, v) : v
+  }
+  for (const p of togli) {
+    const s = typeof p === 'string' ? p.split('.') : []
+    if (s.length < 2 || s.length > 5 || !s.every(x => /^[A-Za-z0-9_-]{1,60}$/.test(x) && !VIETATE.has(x)) || !Object.hasOwn(patch, s[0]!)) throw new Error('togli')
+    let o: Record<string, unknown> | null = out
+    for (const x of s.slice(0, -1)) {
+      if (!piano(o[x])) {
+        o = null
+        break
+      }
+      o[x] = { ...(o[x] as Record<string, unknown>) }
+      o = o[x] as Record<string, unknown>
+    }
+    if (o) delete o[s[s.length - 1]!]
+  }
+  return out
+}
+
+/**
+ * Le chiavi annidate che un valore nuovo non ha più rispetto a quello di prima (`campo.chiave…`), per `togli`: solo fra
+ * chiavi note (il valore di prima è quello normalizzato letto), così una chiave sconosciuta nel file non si cancella mai.
+ */
+export function percorsiTolti(campo: string, prima: unknown, dopo: unknown): string[] {
+  if (!piano(prima) || !piano(dopo)) return []
+  return Object.keys(prima).flatMap(k => (!(k in dopo) ? [`${campo}.${k}`] : percorsiTolti(`${campo}.${k}`, prima[k], dopo[k])))
+}
 
 /** Aggiunge alla bozza i `campi` toccati da un controllo (`dove`); la base di un campo è quella del primo tocco. */
 export function conPendente(p: Pendenti | undefined, r: RisorseProgetto, dove: string, campi: Record<string, unknown>): Pendenti {

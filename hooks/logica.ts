@@ -223,7 +223,8 @@ export function accountDa(v: unknown): StratoAccount | Msg {
   if (api !== undefined && (!oggettoRisorse(api) || !numero(api.budgetUsd, 0.01, 100_000) || (api.tetto !== undefined && !numero(api.tetto, 0.01, 1_000)))) return errore
   const f = v.freellmapi === null ? undefined : v.freellmapi
   if (f !== undefined && (!oggettoRisorse(f) || (f.endpoint !== undefined && !endpointLocale(f.endpoint)))) return errore
-  return { soglie, limitiManuali, ...(api && { apiClaude: { budgetUsd: api.budgetUsd as number, tetto: (api.tetto as number | undefined) ?? TETTO_API_PREDEFINITO } }),
+  // Grezzo, come sta nel file: il tetto predefinito vale solo per i valori efficaci (rilievo 5), mai per basi e proposte.
+  return { soglie, limitiManuali, ...(api && { apiClaude: { budgetUsd: api.budgetUsd as number, ...(api.tetto !== undefined && { tetto: api.tetto as number }) } }),
     ...(f && typeof f.endpoint === 'string' && { freellmapi: { endpoint: f.endpoint } }) }
 }
 
@@ -261,7 +262,7 @@ export function regoleEfficaci(account: StratoAccount, progetto: StratoProgetto 
   })) as Record<Fornitore, Soglia | null>
   let apiClaude: RisorseProgetto['apiClaude']
   if (account.apiClaude) {
-    const tetto = Math.min(account.apiClaude.tetto, r.apiTetto ?? Infinity, progetto.apiClaude?.tetto ?? Infinity)
+    const tetto = Math.min(account.apiClaude.tetto ?? TETTO_API_PREDEFINITO, r.apiTetto ?? Infinity, progetto.apiClaude?.tetto ?? Infinity)
     const limite = Math.min(r.apiLimiteMeseUsd ?? Infinity, progetto.apiClaude?.budgetUsd ?? Infinity)
     apiClaude = { budgetUsd: account.apiClaude.budgetUsd, tetto, ...(limite < account.apiClaude.budgetUsd && { limiteProgettoUsd: limite }) }
   }
@@ -287,7 +288,7 @@ export function restrizioneLarga(account: StratoAccount, r: Restrizioni): Msg | 
     if (a !== null && (p === null || p.attenzione > a.attenzione || p.critica > a.critica)) return msg('cfg.restrizioneSoglia', { fornitore: f })
   }
   if (r.apiLimiteMeseUsd !== undefined && (!account.apiClaude || r.apiLimiteMeseUsd > account.apiClaude.budgetUsd)) return msg('cfg.restrizioneApi')
-  if (r.apiTetto !== undefined && (!account.apiClaude || r.apiTetto > account.apiClaude.tetto)) return msg('cfg.restrizioneApi')
+  if (r.apiTetto !== undefined && (!account.apiClaude || r.apiTetto > (account.apiClaude.tetto ?? TETTO_API_PREDEFINITO))) return msg('cfg.restrizioneApi')
   return undefined
 }
 
@@ -341,7 +342,7 @@ export function risorseDa(p: Record<string, unknown>, accountGrezzo?: unknown): 
     soglie: soglieProgetto,
     ...(api && { apiClaude: { budgetUsd: api.budgetUsd as number, ...(api.tetto !== undefined && { tetto: api.tetto as number }) } }),
     // Solo un endpoint scritto nel progetto lo sostituisce: il predefinito non vale come eccezione.
-    freellmapi: { livello, ...(p.freellmapi !== undefined && typeof f.endpoint === 'string' && { endpoint: f.endpoint }) },
+    freellmapi: { livello, ...(p.freellmapi !== undefined && p.freellmapi !== null && typeof f.endpoint === 'string' && { endpoint: f.endpoint }) },
     restrizioni,
   }
   const e = regoleEfficaci(account, { ...strato, limitiManuali: manualiProgetto })
@@ -708,6 +709,13 @@ export function consigliaDove(a: Azione, regole: Regole, limiti: readonly Limite
   return scegli(restanti[0]!, motivoPiano)
 }
 
+/**
+ * F10 (decisione della master): un fornitore è connesso dove si può verificare. Claude e Codex sempre (piani: il login
+ * non si legge in modo affidabile); DeepSeek e FreeLLMAPI solo con la chiave presente. Uno non connesso non entra nelle
+ * scelte automatiche e una scelta esplicita su di lui non parte.
+ */
+export const connesso = (r: Pick<Regole, 'connessi'>, f: Fornitore) => f === 'claude' || f === 'codex' || (r.connessi ?? FORNITORI).includes(f)
+
 /** Perché un'azione non può partire così com'è: vuoto = può partire. */
 export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] = []): Msg[] {
   const v: Msg[] = []
@@ -719,6 +727,7 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
   const modo = modalitaDi(a)
   if (politica.soloLocale) v.push(msg('v.soloLocale'))
   if (!politica.fornitori.includes(a.esecutore)) v.push(msg('v.fornitoreNonAbilitato', { fornitore: a.esecutore }))
+  else if (!connesso(regole, a.esecutore)) v.push(msg('v.nonConnesso', { fornitore: a.esecutore }))
   if (a.revisore !== 'nessuno' && !politica.fornitori.includes(a.revisore)) v.push(msg('v.revisoreNonAbilitato', { revisore: a.revisore }))
   if (!regole.modelli[a.esecutore].length) v.push(msg('v.nessunModello', { esecutore: a.esecutore }))
   if (a.esecutore === 'freellmapi') {

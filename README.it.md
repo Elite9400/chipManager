@@ -316,6 +316,9 @@ Le impostazioni stanno in due strati.
   endpoint FreeLLMAPI. Percentuali dei piani, budget e spesa API sono dell'account, uguali in ogni progetto.
 - **Progetto — il repository della sessione.** Fornitori ammessi, solo rete locale, milestone, bilanciamento (profilo
   e pesi), board, consigliere di destinazione, livello FreeLLMAPI, cartella dati e termini sensibili.
+- **Solo fornitori connessi.** DeepSeek e FreeLLMAPI contano come connessi solo con la loro chiave nelle opzioni della
+  mod (i piani Claude e Codex sempre): senza, un fornitore ammesso mostra «Non connesso», resta fuori dalle scelte
+  automatiche, e una chip che lo nomina non parte.
 - **Un progetto può solo essere più severo.** Può avere soglie più basse, un limite del mese o un tetto per
   esecuzione API più bassi; non può mai allargare l'account, e un valore più largo è rifiutato con il motivo. Le
   Impostazioni mostrano un valore del progetto come «Più severa in owner/repo», con **Rimuovi restrizione**.

@@ -70,6 +70,16 @@ function leggiVersione(file) {
   }
 }
 
+/**
+ * F10 rilievo 3: una scrittura sotto i dati della mod (cartella dati, esecuzioni, config, proposte, board, registro della
+ * spesa, lock): la catena della cartella finale si controlla subito prima (nessun link o junction, percorso reale uguale,
+ * nessun `.git` sopra), così una junction su una sottocartella (`esecuzioni`) non porta la scrittura altrove.
+ */
+function scriviDati(file, testo) {
+  percorsoSicuro(path.dirname(path.resolve(file)))
+  scriviAtomico(file, testo)
+}
+
 function scriviAtomico(file, testo) {
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`
   fs.writeFileSync(tmp, testo, { mode: 0o600 })
@@ -96,7 +106,7 @@ async function prenota(dir, richiesta) {
     }
     for (const [nome, record] of Object.entries(richiesta.scrivi ?? {})) {
       if (path.basename(nome) !== nome) return { conflitto: `${nome}=nome non valido` }
-      scriviAtomico(path.join(dir, nome), JSON.stringify(record, null, 2))
+      scriviDati(path.join(dir, nome), JSON.stringify(record, null, 2))
     }
     return {}
   })
@@ -312,22 +322,29 @@ async function configura(file, richiesta) {
       const gen = Number.isInteger(b?.generazione) && b.generazione >= 0 ? b.generazione : 0
       campi.board = { modo: campi.board.modo, generazione: b?.modo === campi.board.modo ? gen : gen + 1 }
     }
-    // null toglie il campo: «Rimuovi restrizione», un consigliere spento, un budget dell'account tolto.
-    const progetto = senzaNull({ ...precedente, ...campi })
     const acc = c.account === undefined ? {} : c.account
     if (!acc || typeof acc !== 'object' || Array.isArray(acc)) return 2
-    const nuovoAccount = senzaNull({ ...acc, ...account })
+    const togli = richiesta.togli ?? {}
+    let progetto
+    let nuovoAccount
     try {
+      if (!oggetto(togli) || Object.keys(togli).some(k => !['progetto', 'account'].includes(k))) return 2
+      // Si cancella solo ciò che la patch chiede (un campo a null, un percorso in `togli`); il resto si fonde e resta,
+      // null preesistenti e campi sconosciuti annidati compresi.
+      progetto = regole.applicaPatch(precedente, campi, togli.progetto ?? [])
+      // L'origine dei pesi la decide l'helper: si sostituisce intera, mai fusa con quella di prima.
+      if (campi.pesiOrigine) progetto.pesiOrigine = campi.pesiOrigine
+      nuovoAccount = regole.applicaPatch(acc, account, togli.account ?? [])
       // Lo strato Account e le restrizioni devono valere; le restrizioni scritte adesso possono solo restringere.
       regole.regoleEfficaci(nuovoAccount, progetto)
-      if ('restrizioni' in campi && campi.restrizioni !== null && regole.restrizioneLarga(nuovoAccount, campi.restrizioni)) return 2
+      if ('restrizioni' in campi && progetto.restrizioni !== undefined && regole.restrizioneLarga(nuovoAccount, progetto.restrizioni)) return 2
     } catch (e) {
       if (e instanceof regole.NonValido) return 2
       throw e
     }
     const progetti = { ...c.progetti, [richiesta.repo]: progetto }
     const radice = { ...c, progetti, ...(Object.keys(account).length && { account: nuovoAccount }), ...(richiesta.lingua !== undefined && { lingua: richiesta.lingua }) }
-    scriviAtomico(file, JSON.stringify(radice, null, 2))
+    scriviDati(file, JSON.stringify(radice, null, 2))
     return 0
   })
   return r.occupato ? 3 : r.valore
@@ -336,7 +353,6 @@ async function configura(file, richiesta) {
 /** I campi di `progetti[repo]` che `configura` scrive (F10: `restrizioni`); quelli dell'account (`account` nella radice). */
 const CAMPI_PROGETTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere', 'restrizioni']
 const CAMPI_ACCOUNT = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi']
-const senzaNull = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null))
 
 /** I campi di primo livello che appartengono all'utente, non a un progetto, e come devono essere. */
 const CAMPI_UTENTE = { lingua: v => ['en', 'it', 'es', 'fr', 'de', 'pt'].includes(v) }
@@ -355,7 +371,7 @@ async function configuraUtente(file, richiesta) {
     if (prima !== richiesta.atteso) return 4
     const c = prima === null ? {} : JSON.parse(prima)
     if (!c || typeof c !== 'object' || Array.isArray(c)) return 2
-    scriviAtomico(file, JSON.stringify({ ...c, ...campi }, null, 2))
+    scriviDati(file, JSON.stringify({ ...c, ...campi }, null, 2))
     return 0
   })
   return r.occupato ? 3 : r.valore
@@ -539,7 +555,7 @@ const boardScrivi = (file, cartella, repo, gen, impronta, html) =>
     const indice = path.join(dest, 'index.html')
     // Stessa impronta già scritta (da un altro pannello): niente da fare.
     if (fs.existsSync(indice) && fs.readFileSync(indice, 'utf8').includes(`name="chipmanager-impronta" content="${impronta}"`)) return [0, indice]
-    scriviAtomico(indice, html)
+    scriviDati(indice, html)
     return [0, indice]
   })
 
@@ -576,8 +592,8 @@ const boardPrenota = (file, cartella, repo, gen, impronta) =>
     if (r.voci?.[impronta]) return [4, 'helper.giaPrenotata']
     const usati = b.giorno === oggi() && Number.isInteger(b.usati) ? b.usati : 0
     if (usati >= TETTO_GIORNO) return [5, 'helper.tetto']
-    scriviAtomico(fb, JSON.stringify({ giorno: oggi(), usati: usati + 1 }))
-    scriviAtomico(fr, JSON.stringify({ voci: { ...r.voci, [impronta]: { stato: 'prenotata', quando: new Date().toISOString() } } }))
+    scriviDati(fb, JSON.stringify({ giorno: oggi(), usati: usati + 1 }))
+    scriviDati(fr, JSON.stringify({ voci: { ...r.voci, [impronta]: { stato: 'prenotata', quando: new Date().toISOString() } } }))
     return [0, '']
   })
 
@@ -589,7 +605,7 @@ const boardFinalizza = (file, cartella, repo, gen, impronta, esito) =>
     if (r.voci?.[impronta]?.stato !== 'prenotata') return [4, 'helper.nessunaPrenotazione']
     const testo = typeof esito?.testo === 'string' && esito.testo.trim() ? esito.testo.trim().slice(0, 1000) : undefined
     const voce = testo ? { stato: 'fatto', testo, quando: new Date().toISOString() } : { stato: 'fallita', quando: new Date().toISOString() }
-    scriviAtomico(fr, JSON.stringify({ voci: { ...r.voci, [impronta]: voce } }))
+    scriviDati(fr, JSON.stringify({ voci: { ...r.voci, [impronta]: voce } }))
     return [0, '']
   })
 
@@ -654,7 +670,7 @@ async function lanciaCli(dir, id, tentativo, input) {
     const file = fileEsecuzione(dir, tentativo)
     if (fs.existsSync(file)) return 4
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    scriviAtomico(file, JSON.stringify({ id, tentativo, stato: 'in-avvio' }))
+    scriviDati(file, JSON.stringify({ id, tentativo, stato: 'in-avvio' }))
     try {
       const p = spawn(process.execPath, [__filename, 'esegui-cli', dir, id, tentativo], { stdio: ['pipe', 'ignore', 'ignore'], detached: true, windowsHide: true })
       await new Promise((ok, ko) => { p.once('spawn', ok); p.once('error', ko) })
@@ -663,7 +679,7 @@ async function lanciaCli(dir, id, tentativo, input) {
       p.unref()
       return 0
     } catch {
-      scriviAtomico(file, JSON.stringify({ id, tentativo, stato: 'fallita', errore: 'processo non avviato' }))
+      scriviDati(file, JSON.stringify({ id, tentativo, stato: 'fallita', errore: 'processo non avviato' }))
       return 1
     }
   })
@@ -709,7 +725,7 @@ async function eseguiCli(dir, id, tentativo, input, deps = {}) {
   const segno = JSON.parse(fs.readFileSync(file, 'utf8'))
   if (segno.id !== id || segno.tentativo !== tentativo || segno.stato !== 'in-avvio') throw new Error('tentativo non valido')
   const r = await conMutex(`cli:${path.resolve(file).toLowerCase()}`, 0, async () => {
-    const scrivi = campi => scriviAtomico(file, JSON.stringify({ id, tentativo, ...campi }))
+    const scrivi = campi => scriviDati(file, JSON.stringify({ id, tentativo, ...campi }))
     let partito = false
     const fuori = {}
     let ramo
@@ -932,7 +948,7 @@ function leggiProposte(file) {
 }
 function scriviProposte(file, p) {
   p.versione += 1
-  scriviAtomico(file, JSON.stringify(p, null, 2))
+  scriviDati(file, JSON.stringify(p, null, 2))
 }
 function leggiConfigPesi(file) {
   if (!fs.existsSync(file)) return {}
@@ -1104,7 +1120,7 @@ async function impostazioniProponi(file, q) {
     const id = `i-${adesso.toString(36)}${crypto.randomBytes(3).toString('hex')}`
     P.voci[q.repo] = { id, quando: new Date(adesso).toISOString(), proponente: { id: q.proponente.id, titolo: q.proponente.titolo ?? '' }, proposta: { ...q.proposta, motivo: q.proposta.motivo.trim() } }
     P.versione += 1
-    scriviAtomico(fp, JSON.stringify(P, null, 2))
+    scriviDati(fp, JSON.stringify(P, null, 2))
     return [0, JSON.stringify({ id })]
   })
   return r.occupato ? [3, 'mutex occupato'] : r.valore
@@ -1120,7 +1136,7 @@ async function impostazioniPrendi(file, repo, id) {
     if (!v || v.id !== id) return [4, 'proposal no longer there']
     delete P.voci[repo]
     P.versione += 1
-    scriviAtomico(fp, JSON.stringify(P, null, 2))
+    scriviDati(fp, JSON.stringify(P, null, 2))
     // Ricontrollata anche all'uscita: una voce scaduta o di forma non valida non arriva al pannello.
     if (!(Date.now() - Date.parse(v.quando) <= SCADENZA_PROPOSTA) || propostaImpostazioniNonValida(v.proposta)) return [4, 'proposal expired or not valid']
     return [0, JSON.stringify(v)]
@@ -1195,7 +1211,7 @@ async function pesiDecidi(file, repo, idVoce, versione, esito, idDecisione, opz 
       const R = revisioneDi(prog)
       if (R !== v.partenza.revisione || !ugualiPesi(pesiProfiloDi(prog), partenza)) return [4, TESTI_PESI.primaDellaProposta]
       const origine = { tipo: 'proposta', id: idDecisione, voce: v.id, versione: v.versione }
-      scriviAtomico(file, JSON.stringify(conProgetto(c, repo, conPesiProfilo(prog, v.risultato, R + 1, origine)), null, 2))
+      scriviDati(file, JSON.stringify(conProgetto(c, repo, conPesiProfilo(prog, v.risultato, R + 1, origine)), null, 2))
       opz.dopoConfig?.()
       Object.assign(v, { stato: 'applicata', decisione: { id: idDecisione, esito, quando, revisione: R + 1 } })
     } else Object.assign(v, { stato: 'rifiutata', decisione: { id: idDecisione, esito, quando } })
@@ -1219,7 +1235,7 @@ async function pesiAnnulla(file, repo, idVoce, idAnnullamento, opz = {}) {
     const partenza = oggetto(v.partenza) ? { profilo: v.partenza.profilo, pesi: v.partenza.pesi } : null
     if (!pesiProfiloOk(partenza)) return [4, TESTI_PESI.campi]
     const origine = { tipo: 'annullamento', id: idAnnullamento, voce: v.id, versione: v.versione }
-    scriviAtomico(file, JSON.stringify(conProgetto(c, repo, conPesiProfilo(prog, partenza, R + 1, origine)), null, 2))
+    scriviDati(file, JSON.stringify(conProgetto(c, repo, conPesiProfilo(prog, partenza, R + 1, origine)), null, 2))
     opz.dopoConfig?.()
     Object.assign(v, { stato: 'annullata', annullamento: { id: idAnnullamento, quando: new Date().toISOString(), revisione: R + 1 } })
     v.versione += 1
@@ -1228,13 +1244,23 @@ async function pesiAnnulla(file, repo, idVoce, idAnnullamento, opz = {}) {
   })
 }
 
-async function main(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {}) {
+/** Il punto d'ingresso: un percorso dei dati rifiutato in qualunque comando (anche a metà, in una scrittura) esce con 6 e il motivo. */
+async function main(argv, opz = {}) {
+  try {
+    return await comandoHelper(argv, opz)
+  } catch (e) {
+    if (e instanceof Rifiuto) return esci(e.codice ?? 6, e.message)
+    throw e
+  }
+}
+
+async function comandoHelper(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {}) {
   const [cmd, ...a] = argv
   const stdin = () => JSON.parse(fs.readFileSync(0, 'utf8'))
   // F6.2: la corsia a crediti API di Claude vive in un modulo suo (letto qui, a modulo caricato).
   if (/^((lancia|esegui|stato|libera|termina)-api|stato-esecuzione|accedi)$/.test(cmd ?? '')) return require('./api-claude.cjs').comando(cmd, a, stdin, { dirMacchina })
   // F10: config e cartelle dei dati fuori da ogni albero git e da ogni link, prima di qualunque lettura o scrittura.
-  const sicuro = cmd === 'cas' ? path.dirname(a[0] ?? '') : /^(configura|configura-utente|board-[a-z]+|pesi-[a-z]+|impostazioni-[a-z]+|prenota|lancia-cli)$/.test(cmd ?? '') ? a[0] : undefined
+  const sicuro = cmd === 'cas' ? path.dirname(a[0] ?? '') : /^(configura|configura-utente|board-[a-z]+|pesi-[a-z]+|impostazioni-[a-z]+|prenota|lancia-cli|esegui-cli|stato-cli)$/.test(cmd ?? '') ? a[0] : undefined
   if (sicuro !== undefined) {
     try {
       percorsoSicuro(sicuro)
@@ -1281,7 +1307,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, scriviAtomico, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, scriviAtomico, scriviDati, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

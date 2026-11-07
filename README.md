@@ -304,6 +304,9 @@ Settings come in two layers.
   FreeLLMAPI endpoint. Plan percentages, budgets and API spend are the account's, the same in every project.
 - **Project — the session's repository.** Allowed providers, local network only, milestones, balancing (profile and
   weights), board, destination advisor, FreeLLMAPI level, data folder and sensitive terms.
+- **Connected providers only.** DeepSeek and FreeLLMAPI count as connected only with their key in the mod options
+  (Claude and Codex plans always do): without it, an allowed provider shows «Not connected», is left out of automatic
+  choices, and a chip that names it does not start.
 - **A project can only be stricter.** It may have lower thresholds, a lower API month limit or a lower cap per run;
   it can never loosen the account, and a looser value is refused with the reason. Settings shows a project value as
   «Stricter in owner/repo», with **Remove restriction**.

@@ -970,6 +970,8 @@ const de: Dizionario = {
   "imp.rimuoviEccezione": "Endpunkt des Kontos verwenden",
   "imp.pillProgetto": "Projekt",
   "imp.propostaAccount": "Sie ändert die Einstellungen aller Projekte.",
+  "v.nonConnesso": "Anbieter {fornitore} nicht verbunden: sein Schlüssel fehlt in den Optionen der Mod",
+  "con.nonConnesso": "Nicht verbunden",
   // ‹fine›
 }
 

@@ -970,6 +970,8 @@ const es: Dizionario = {
   "imp.rimuoviEccezione": "Usar el endpoint de la cuenta",
   "imp.pillProgetto": "proyecto",
   "imp.propostaAccount": "Cambia los ajustes de todos los proyectos.",
+  "v.nonConnesso": "proveedor {fornitore} no conectado: falta su clave en las opciones del mod",
+  "con.nonConnesso": "No conectado",
   // ‹fine›
 }
 
