@@ -10718,5 +10718,219 @@ export const PRIMA: Record<string, unknown> = {
     }
    ]
   ]
+ },
+ "controlli:mobile:sessione-al-lavoro": [
+  {
+   "tipo": "Button",
+   "chiave": "ricarica",
+   "label": "Aggiorna · HH:MM",
+   "hotkey": "r",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vista-lavoro",
+   "label": "Lavoro",
+   "hotkey": "1",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vista-carico",
+   "label": "Carico",
+   "hotkey": "2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "impostazioni",
+   "label": "Impostazioni",
+   "hotkey": "3",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Select",
+   "chiave": "cambia-mod-a-cmbf9001",
+   "label": "Cambia modello",
+   "value": "claude-opus-5-5",
+   "options": [
+    {
+     "value": "claude-opus-5-5",
+     "label": "Opus 5.5"
+    },
+    {
+     "value": "claude-sonnet-5-5",
+     "label": "Sonnet 5.5"
+    },
+    {
+     "value": "claude-haiku-5-5",
+     "label": "Haiku 5.5"
+    },
+    {
+     "value": "claude-fable-5-1",
+     "label": "Fable 5.1"
+    }
+   ],
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Select",
+   "chiave": "cambia-eff-a-cmbf9001",
+   "label": "Cambia effort",
+   "value": "high",
+   "options": [
+    {
+     "value": "low",
+     "label": "▰▱▱▱  low"
+    },
+    {
+     "value": "medium",
+     "label": "▰▰▱▱  medium"
+    },
+    {
+     "value": "high",
+     "label": "▰▰▰▱  high"
+    },
+    {
+     "value": "xhigh",
+     "label": "▰▰▰▰  xhigh"
+    }
+   ],
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vedi-a-cmbf9001",
+   "label": "Apri 1 · T a-cmbf9001",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "fatta-a-cmbf9001",
+   "label": "Segna completata 1 · T a-cmbf9001",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "mod-a-cmbf9001",
+   "label": "Dettagli 1 · T a-cmbf9001",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vedi-a-cmbf9001",
+   "label": "Apri la sessione di T a-cmbf9001",
+   "gestori": [
+    "press"
+   ]
+  }
+ ],
+ "effetti:mobile:cambia": {
+  "app": [
+   {
+    "server": "ccd_session_mgmt",
+    "tool": "get_session",
+    "args": {
+     "session_id": "self"
+    }
+   },
+   {
+    "server": "ccd_session_mgmt",
+    "tool": "get_session",
+    "args": {
+     "session_id": "self"
+    }
+   },
+   {
+    "server": "ccd_session_mgmt",
+    "tool": "set_session_model",
+    "args": {
+     "session_id": "local_12345678-1234-1234-1234-123456789abc",
+     "model": "claude-sonnet-5-5"
+    }
+   },
+   {
+    "server": "ccd_session_mgmt",
+    "tool": "get_session",
+    "args": {
+     "session_id": "local_12345678-1234-1234-1234-123456789abc"
+    }
+   },
+   {
+    "server": "ccd_session_mgmt",
+    "tool": "get_session",
+    "args": {
+     "session_id": "self"
+    }
+   },
+   {
+    "server": "ccd_session_mgmt",
+    "tool": "get_session",
+    "args": {
+     "session_id": "self"
+    }
+   },
+   {
+    "server": "ccd_session_mgmt",
+    "tool": "set_session_effort",
+    "args": {
+     "session_id": "local_12345678-1234-1234-1234-123456789abc",
+     "effort": "xhigh"
+    }
+   },
+   {
+    "server": "ccd_session_mgmt",
+    "tool": "get_session",
+    "args": {
+     "session_id": "local_12345678-1234-1234-1234-123456789abc"
+    }
+   }
+  ],
+  "record": {
+   "id": "a-cmbf9001",
+   "versione": 0,
+   "titolo": "T a-cmbf9001",
+   "brief": "Fai X.",
+   "ordine": 1,
+   "dipende": [],
+   "esecutore": "claude",
+   "revisore": "nessuno",
+   "stato": "avviata",
+   "creata": "ISTANTE",
+   "aggiornata": "ISTANTE",
+   "repo": "acme/progetto",
+   "sessione": "local_12345678-1234-1234-1234-123456789abc",
+   "tentativo": "X",
+   "lanciataDa": "sessione-master",
+   "avviataIl": "ISTANTE",
+   "modello": "claude-sonnet-5-5",
+   "effort": "xhigh",
+   "cambio": {
+    "campo": "effort",
+    "valore": "xhigh",
+    "esito": "fatto",
+    "quando": "ISTANTE"
+   }
+  }
  }
 }

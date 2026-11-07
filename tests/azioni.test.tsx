@@ -3493,9 +3493,9 @@ test('UX agenti (7): suggerisci_azione rifiuta con tutti gli errori in una volta
 
 // --- F9: garanzia di non regressione per «Cambia» (le altre azioni in lavoro.test.tsx) --------------------------------
 
-// F9 (revisione): i controlli della sessione al lavoro e gli effetti di «Cambia» per ciascuna superficie che ha i Select
-// (desktop, terminale, vscode; mobile non ha Select), con gli argomenti delle chiamate all'app.
-for (const superficie of ['desktop', 'terminal', 'vscode'] as const)
+// F9 (revisione): i controlli della sessione al lavoro e gli effetti di «Cambia» per ogni superficie, mobile compreso (l'app
+// può dichiarare i Select anche lì), con gli argomenti delle chiamate all'app.
+for (const superficie of ['desktop', 'terminal', 'vscode', 'mobile'] as const)
   test(`F9 non regressione (${superficie}): «Cambia» modello ed effort, i controlli della sessione al lavoro e le chiamate prodotte uguali a prima`, async ($, on) => {
     const amb = ambiente(on, {
       strumenti: STRUMENTI_CAMBIO,
@@ -3520,6 +3520,8 @@ for (const superficie of ['desktop', 'terminal', 'vscode'] as const)
     await finche(() => record().cambio?.esito === 'fatto')
     await ui.select({ key: `cambia-eff-${a.id}`, value: 'xhigh' })
     await finche(() => record().cambio?.campo === 'effort')
+    // Mutazione: un gestore reso inerte su una superficie non chiama l'app; qui le due chiamate ci sono davvero.
+    expect(amb.chiamate.slice(c0).filter(c => c.tool === 'set_session_model' || c.tool === 'set_session_effort').map(c => c.tool)).toEqual(['set_session_model', 'set_session_effort'])
     confrontaF9(`effetti:${superficie}:cambia`, { app: amb.chiamate.slice(c0).filter(c => c.tool !== 'list_sessions'), record: { ...record(), versione: 0 } })
     await ui.unmount()
     fineF9()
