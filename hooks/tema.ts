@@ -23,6 +23,8 @@ export const VELO = {
   riquadro: '0A',
   /** F9.2: il velo di una pillola, nella tinta del suo segno. */
   pillola: '14',
+  /** F9.4: il segmento vuoto della barra spessa del desktop: con 14 ogni tinta piena regge 3:1 contro di esso (33 no). */
+  barraVuota: '14',
   testata: '1F',
   vuoto: '33',
   traccia: '4D',

@@ -3,11 +3,13 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { ACCENTO, contrasto, EFFORT, FAMIGLIA, GRIGIO, ICONA, MOTORE, SFONDI, sopra, STATO } from '../hooks/tema'
+import { ACCENTO, contrasto, EFFORT, FAMIGLIA, GRIGIO, ICONA, MOTORE, SFONDI, sopra, STATO, VELO } from '../hooks/tema'
 import type { Azione, Limite } from '../types'
 import { t } from '../hooks/lingua'
 import { DiscoIt } from './disco-it'
-import { ANTEPRIMA, confrontaF9, controlliF9, fineF9 } from './f9'
+import { applicaPatch } from '../hooks/bilanciamento'
+import { ANTEPRIMA, confrontaF9, controlliF9, fineF9, normaF9 } from './f9'
+import { PRIMA } from './f9-prima'
 
 type On = Parameters<TestBody>[1]
 const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
@@ -79,10 +81,17 @@ function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexO
   })
   on('fs.write', (_, e) => (disco.set(p(e.path), e.text), { value: undefined }))
   on('ui.panes', () => ({ value: [{ id: 'chipManager', title: 'chipManager', isShown: true, isFocused: false, isPlaced: true }] }))
-  // F9: gli argomenti di ogni processo (helper compreso), per confrontare gli effetti prima e dopo.
-  const processi: string[][] = []
+  // F9: gli argomenti di ogni processo (helper compreso) e il suo stdin, per confrontare gli effetti prima e dopo.
+  const processi: unknown[][] = []
   on('process.run', (_, e) => {
-    processi.push([...e.argv].slice(2))
+    const ingresso = (() => {
+      try {
+        return e.init?.stdin === undefined ? undefined : JSON.parse(String(e.init.stdin))
+      } catch {
+        return String(e.init?.stdin)
+      }
+    })()
+    processi.push([...e.argv].slice(2).concat(ingresso === undefined ? [] : [ingresso]))
     const [, , cmd, ...a] = e.argv
     const fine = (exitCode: number, stdout = '') => ({ value: { exitCode, stdout, stderr: '' } as never })
     if (e.argv[1]?.endsWith('/fornitori.cjs'))
@@ -107,6 +116,16 @@ function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexO
       return fine(0)
     }
     if (cmd === 'stato-esecuzione' && opz.esecuzione) return fine(0, opz.esecuzione)
+    // Come l'helper vero: CAS sul testo intero, poi la stessa fusione per strato (gemello TS di applicaPatch).
+    if (cmd === 'configura') {
+      const q = JSON.parse(String(e.init?.stdin)) as { atteso: string | null; repo: string; campi: Record<string, unknown>; account?: Record<string, unknown>; lingua?: string; togli?: { progetto?: string[]; account?: string[] } }
+      const f = p(a[0])
+      if ((disco.get(f) ?? null) !== q.atteso) return fine(4)
+      const c = q.atteso === null ? {} : JSON.parse(q.atteso)
+      disco.set(f, JSON.stringify({ ...c, progetti: { ...c.progetti, [q.repo]: applicaPatch(c.progetti?.[q.repo] ?? {}, q.campi, q.togli?.progetto) },
+        ...(q.account && { account: applicaPatch(c.account ?? {}, q.account, q.togli?.account) }), ...(q.lingua !== undefined && { lingua: q.lingua }) }))
+      return fine(0)
+    }
     return fine(2)
   })
   on('mcp.call', (_, e) => {
@@ -778,15 +797,15 @@ test('F8.1 guardia: le schede delle viste hanno come etichetta il solo nome, in 
 // --- F9: garanzia di non regressione (elenco ordinato dei controlli ed effetti dei callback, prima e dopo) ----------
 
 const SEZIONI_F9 = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda']
-const PANE_F9 = (surface: 'desktop' | 'terminal' | 'mobile', colonne: number) =>
-  ({ ...PANE(surface === 'mobile' ? 'desktop' : surface, colonne), surface }) as unknown as ReturnType<typeof PANE>
+const PANE_F9 = (surface: 'desktop' | 'terminal' | 'vscode' | 'mobile', colonne: number) =>
+  ({ ...PANE(surface === 'terminal' ? 'terminal' : 'desktop', colonne), surface }) as unknown as ReturnType<typeof PANE>
 
 test('F9 non regressione: elenco ordinato dei controlli per vista e per superficie uguale a prima di F9 (chiavi e scorciatoie uniche)', async ($, on) => {
   const amb = ambiente(on, MATRICE_EN)
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', account: { apiClaude: { budgetUsd: 20, tetto: 2 } }, progetti: { 'acme/progetto': {} } }))
   mock.clock(on)
-  for (const surface of ['desktop', 'terminal', 'mobile'] as const) {
-    await $.session.start({ cwd: '/', surface: surface === 'mobile' ? 'desktop' : surface, isInteractive: true })
+  for (const surface of ['desktop', 'terminal', 'vscode', 'mobile'] as const) {
+    await $.session.start({ cwd: '/', surface: surface === 'terminal' ? 'terminal' : 'desktop', isInteractive: true })
     const ui = await $.ui.mount(PANE_F9(surface, surface === 'terminal' ? 100 : 130))
     const foto = async (vista: string) => {
       const c = controlliF9(await ui.drawn())
@@ -814,33 +833,52 @@ test('F9 non regressione: elenco ordinato dei controlli per vista e per superfic
   fineF9()
 })
 
-test('F9 non regressione: gli effetti di Avvia, Dove, Scarta e Applica (chiamate all\'helper e all\'app, scritture) uguali a prima', { options: { anthropicApiKey: 'sk-ant-prova-0123456789' } }, async ($, on) => {
-  const amb = ambiente(on, MATRICE_EN)
-  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', account: { apiClaude: { budgetUsd: 20, tetto: 2 } }, progetti: { 'acme/progetto': {} } }))
-  const processi = amb.processi
-  mock.clock(on)
-  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const ui = await $.ui.mount(PANE('desktop', 130))
-  const fotografa = async (nome: string, fai: () => Promise<unknown>) => {
-    const p0 = processi.length
-    const c0 = amb.chiamate.length
-    const prima = new Map(amb.disco)
-    await fai()
-    const scritti = [...amb.disco.entries()].filter(([k, v]) => prima.get(k) !== v).map(([k, v]) => [k, k.endsWith('.json') ? JSON.parse(v) : v]).sort()
-    confrontaF9(`effetti:${nome}`, { helper: processi.slice(p0).filter(a => !['occupata', 'limiti'].includes(a[0] ?? '')), app: amb.chiamate.slice(c0), scritti })
-  }
-  await fotografa('dove', () => ui.press({ key: 'dove-a-avviab01' }))
-  await fotografa('avvia', () => ui.press({ key: 'avvia-a-avviab01' }))
-  await fotografa('scarta', () => ui.press({ key: 'scarta-a-blocca01' }))
-  await ui.press({ key: 'impostazioni' })
-  await ui.press({ key: 'sezione-bilanciamento-premi' })
-  await fotografa('applica', async () => {
-    await ui.press({ key: 'profilo-risparmio-premi' })
-    await ui.press({ key: 'applica' })
+// F9 (revisione): gli effetti di Avvia, Dove, Scarta e Applica su casi RIUSCITI (avvio vero, salvataggio vero), con il
+// payload di ogni chiamata (argomenti e stdin dell'helper, argomenti dell'app), per ciascuna superficie. Dove agisce su una
+// chip sua, così Avvia resta in locale e parte davvero. La prova di mutazione: gli effetti di Scarta al posto di Avvia (e
+// viceversa) NON coincidono con la fotografia, quindi uno scambio dei gestori fa fallire il confronto.
+const MATRICE_EFFETTI = [...MATRICE_EN, az('a-dove0001', 6, { titolo: 'Sample move between destinations', brief: 'Sample brief.' })]
+for (const superficie of ['desktop', 'terminal', 'vscode', 'mobile'] as const)
+  test(`F9 non regressione (${superficie}): effetti di Avvia, Dove, Scarta e Applica riusciti, con il payload, uguali a prima; uno scambio dei gestori si vede`, { options: { anthropicApiKey: 'sk-ant-prova-0123456789' } }, async ($, on) => {
+    const amb = ambiente(on, MATRICE_EFFETTI)
+    amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', account: { apiClaude: { budgetUsd: 20, tetto: 2 } }, progetti: { 'acme/progetto': {} } }))
+    const processi = amb.processi
+    mock.clock(on)
+    await $.session.start({ cwd: '/', surface: superficie === 'terminal' ? 'terminal' : 'desktop', isInteractive: true })
+    const ui = await $.ui.mount(PANE_F9(superficie, superficie === 'terminal' ? 100 : 130))
+    const effetti = async (fai: () => Promise<unknown>) => {
+      const p0 = processi.length
+      const c0 = amb.chiamate.length
+      const prima = new Map(amb.disco)
+      await fai()
+      const scritti = [...amb.disco.entries()].filter(([k, v]) => prima.get(k) !== v).map(([k, v]) => [k, k.endsWith('.json') ? JSON.parse(v) : v]).sort()
+      return { helper: processi.slice(p0).filter(a => !['occupata', 'limiti'].includes(String(a[0] ?? ''))), app: amb.chiamate.slice(c0), scritti }
+    }
+    const dove = await effetti(() => ui.press({ key: 'dove-a-dove0001' }))
+    confrontaF9(`effetti:${superficie}:dove`, dove)
+    const avvia = await effetti(() => ui.press({ key: 'avvia-a-avviab01' }))
+    // Un avvio riuscito: la chip lascia la proposta e l'app riceve start_session.
+    expect(avvia.app.some(c => c.tool === 'start_session')).toBe(true)
+    confrontaF9(`effetti:${superficie}:avvia`, avvia)
+    const scarta = await effetti(() => ui.press({ key: 'scarta-a-blocca01' }))
+    confrontaF9(`effetti:${superficie}:scarta`, scarta)
+    // Mutazione: Scarta al posto di Avvia, e Avvia al posto di Scarta, non passerebbero il confronto.
+    if (`effetti:${superficie}:avvia` in PRIMA) {
+      expect(normaF9(scarta)).not.toEqual(PRIMA[`effetti:${superficie}:avvia`])
+      expect(normaF9(avvia)).not.toEqual(PRIMA[`effetti:${superficie}:scarta`])
+    }
+    await ui.press({ key: 'impostazioni' })
+    await ui.press({ key: 'sezione-bilanciamento-premi' })
+    const applica = await effetti(async () => {
+      await ui.press({ key: 'profilo-risparmio-premi' })
+      await ui.press({ key: 'applica' })
+    })
+    // Un salvataggio riuscito: il config cambia con il profilo scelto.
+    expect(applica.scritti.some(([k]) => String(k).endsWith('config.json'))).toBe(true)
+    confrontaF9(`effetti:${superficie}:applica`, applica)
+    await ui.unmount()
+    fineF9()
   })
-  await ui.unmount()
-  fineF9()
-})
 
 // F9.5: l'anteprima per il committente. Solo con ANTEPRIMA a true (tests/f9.ts): il test restituisce gli alberi
 // disegnati (desktop e terminale, viste Lavoro, Carico e Impostazioni con le fixture d'esempio) in un errore marcato, da
@@ -871,4 +909,17 @@ test('F9.5 anteprima (solo con ANTEPRIMA in tests/f9.ts): gli alberi disegnati d
     await ui.unmount()
   }
   throw new Error(`F9ANTEPRIMA<<${JSON.stringify(alberi)}>>F9ANTEPRIMA`)
+})
+
+test('F9 (revisione): la scheda espansa (Dettagli) tiene il fondo della scheda e il bordo rosso di una sensibile R4, come la compatta', async ($, on) => {
+  const sens = az('a-sens0001', 1, { titolo: 'Fix the login page', corsia: 'R4', esecutore: 'claude', modello: 'claude-opus-5-5', effort: 'high', revisore: 'claude' })
+  ambiente(on, [sens])
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 130))
+  const scheda = async () => (await ui.find({ key: 'riga-a-sens0001' }))?.props
+  expect(await scheda()).toMatchObject({ borderColor: STATO.errore, backgroundColor: `${GRIGIO}${VELO.riquadro}` })
+  await ui.press({ key: 'mod-a-sens0001' })
+  expect(await scheda()).toMatchObject({ borderColor: STATO.errore, backgroundColor: `${GRIGIO}${VELO.riquadro}` })
+  await ui.unmount()
 })

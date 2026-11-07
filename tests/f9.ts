@@ -24,6 +24,8 @@ export const normaF9 = (v: unknown) =>
   JSON.parse(JSON.stringify(v ?? null)
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, 'ISTANTE')
     .replace(/az-[a-z0-9]{6,20}/g, 'az-TENTATIVO')
+    // La cartella della mod (nel mandato, il percorso dell'helper): cambia da un checkout all'altro.
+    .replace(/[A-Za-z]:\/[^"\\]*?\/strumenti\//g, 'PLUGIN/strumenti/')
     // L'ora del giorno (per esempio nell'etichetta di «Aggiorna»): dipende dall'orologio della prova.
     .replace(/\b\d{1,2}:\d{2}( ?[ap]m)?\b/gi, 'HH:MM')
     .replace(/"(gettone|tentativo|epoca|handle)":\s*"?[^",}]*"?/g, '"$1":"X"')) as unknown

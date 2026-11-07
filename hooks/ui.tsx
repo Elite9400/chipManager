@@ -272,7 +272,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
         <Box key={p.chiave} flexDirection="row" alignItems="center" gap={1}>
           <Box key={`${p.chiave}-traccia`} flexDirection="row" flexGrow={1} minWidth={p.celle * 2} borderStyle="round" borderDimColor>
             {pieno > 0 ? <Box key={`${p.chiave}-pieno`} flexGrow={pieno} backgroundColor={p.colore}><Text size="caption"> </Text></Box> : null}
-            {pieno < 100 ? <Box key={`${p.chiave}-vuoto`} flexGrow={100 - pieno} backgroundColor={velo(GRIGIO, VELO.vuoto)}><Text size="caption"> </Text></Box> : null}
+            {pieno < 100 ? <Box key={`${p.chiave}-vuoto`} flexGrow={100 - pieno} backgroundColor={velo(GRIGIO, VELO.barraVuota)}><Text size="caption"> </Text></Box> : null}
           </Box>
           {p.dopo ? <Text key={`${p.chiave}-dopo`} mono>{p.dopo}</Text> : null}
         </Box>

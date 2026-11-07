@@ -320,3 +320,17 @@ test('F9.1 primitive a due rese: pillola velata sul desktop e in fila nel termin
   expect(await t.ui.find({ type: 'Text', text: 'Claude' })).toBeDefined()
   await t.ui.unmount()
 })
+
+test('F9.4 barre del desktop: la parte piena (critico, attenzione, accento, milestone) regge 3:1 sul segmento vuoto, su ogni sfondo e dentro una scheda', async ($, on) => {
+  const piene = { critica: LIVELLO.critica, attenzione: LIVELLO.attenzione, accento: ACCENTO, fatta: STATO.inCorso, milestone: STATO.coda }
+  for (const sfondo of [...SFONDI.chiaro, ...SFONDI.scuro])
+    for (const [dove, base] of [['nudo', sfondo], ['scheda', sopra(GRIGIO, VELO.riquadro, sfondo)]] as const) {
+      const vuoto = sopra(GRIGIO, VELO.barraVuota, base)
+      for (const [nome, piena] of Object.entries(piene)) expect([nome, sfondo, dove, contrasto(piena, vuoto) >= 3]).toEqual([nome, sfondo, dove, true])
+    }
+  // La barra disegnata usa proprio quel velo per il segmento vuoto.
+  const monta = banco(on)
+  const d = await monta($, 'desktop', u => u.Barra({ chiave: 'b', pct: 40, colore: LIVELLO.critica, celle: 10 }))
+  expect((await d.ui.find({ key: 'b-vuoto' }))?.props.backgroundColor).toBe(`${GRIGIO}${VELO.barraVuota}`)
+  await d.ui.unmount()
+})

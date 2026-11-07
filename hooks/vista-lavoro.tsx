@@ -520,9 +520,10 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const modificabile = ['proposta', 'accodata', 'fallita'].includes(a.stato)
     const aperto = espansa === a.id && modificabile
     const dip = dipendenze(a, tutte)
-    const allerta = ferma(a) ? STATO.attesa : a.stato === 'fallita' ? STATO.errore : undefined
     const vita = stati[a.id]
     const blocchi = modificabile ? violazioniAvvio(a, regoleOra, tutte, io) : []
+    // F9 (revisione): la stessa allerta della scheda compatta (bloccata, fallita o sensibile in rosso; ferma in ambra).
+    const allerta = (a.stato === 'proposta' && blocchi.length) || a.stato === 'fallita' || sensibile(a, regoleOra) ? STATO.errore : ferma(a) ? STATO.attesa : undefined
     const bloccatoQui = a.stato === 'proposta' ? violazioniAvvio(a, regoleOra, tutte, io, true) : []
     const sblocca = blocca(a, tutte)
     const mia = !!io && a.lanciataDa === io.io
@@ -535,6 +536,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         borderStyle="round"
         borderColor={allerta}
         borderDimColor={!allerta}
+        backgroundColor={conVelo ? velo(GRIGIO, VELO.riquadro) : undefined}
         paddingX={1}
         paddingY={conVelo ? 1 : 0}
       >

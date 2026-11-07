@@ -147,6 +147,8 @@ Il **terminale** resta nello stile developer di F5.2/F8, ripulito come `terminal
 - **Famiglie:** Opus `#BE682F`, Sonnet `#1B8B9E`, Haiku `#5D8C23`, Fable `#A662CA`, GPT `#3282D1`.
 - **Effort** (blu → indaco → viola): low `#4982C2`, medium `#487CE2`, high `#6775E4`, xhigh `#806FDF`, max `#9469D3`.
 - **Marchio:** `MARCHIO = { glifo: '▣', colore: ACCENTO }`, deroga scritta in `tema.ts`.
+- **Barre del desktop:** il segmento vuoto usa `VELO.barraVuota` = `14` (con `33` la parte piena scendeva a 2,73:1 sullo scuro);
+  ogni tinta piena (critico, attenzione, accento, milestone) regge almeno 3,17:1 su di esso, anche dentro una scheda.
 - **Non fatto in F9** (resta come oggi): «Chi lavora» in pillole e le sessioni al lavoro in schede compatte; la
   primitiva `Pulsante` (i pulsanti restano quelli dell'host, con le stesse varianti, per non toccare l'elenco dei
   controlli).
