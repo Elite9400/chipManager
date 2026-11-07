@@ -545,6 +545,32 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     })
   }
 
+  // --- F6.7, condivisi da Esecuzione, setup e doctor: l'accesso (codice di GitHub compreso) e il ripiego da copiare ---
+  const esOra = await read($, esecuzione)
+  const attesaUi = (tipo: TipoAccesso, pre: string) => {
+    const a = esOra.accessi?.[tipo]
+    return a ? (
+      <Box key={`${pre}-attesa-${tipo}`} flexDirection="column">
+        {didascalia(`${pre}-attesa-${tipo}-testo`, T('ese.attesaAccesso'))}
+        {a.codice ? <Text key={`${pre}-codice-${tipo}`} weight="semibold">{T('ese.codiceGh', { codice: a.codice })}</Text> : null}
+      </Box>
+    ) : null
+  }
+  const accessoUi = (tipo: TipoAccesso, pre: string) =>
+    attesaUi(tipo, pre) ?? (
+      <Button key={`${pre}-accedi-${tipo}`} variant="secondary" label={tipo === 'claude' ? T('ese.accedi') : tipo === 'gh' ? T('ese.collegaGh') : `${T('ese.accedi')} · Codex`}
+        onPress={() => void esegui('esecuzione', () => c.accedi(tipo), '')} />
+    )
+  const copiaUi = (pre: string) =>
+    esOra.copia ? (
+      <Box key={`${pre}-copia`} flexDirection="column">
+        {didascalia(`${pre}-copia-testo`, T('ese.copiaRiga'))}
+        <Text key={`${pre}-copia-riga`} wrap="wrap">{esOra.copia.riga}</Text>
+        <Button key={`${pre}-copia-premi`} variant="secondary" label={T('ese.copia')}
+          onPress={() => void $.ui.copy({ text: esOra.copia!.riga }).then(x => x.isCopied && $.ui.toast(T('ese.copiato')))} />
+      </Box>
+    ) : null
+
   // --- Setup (F11.2) ----------------------------------------------------------------------------------
   // Una vista della bozza F5.9: ogni passo riusa i controlli della sua sezione; «Applica» (in basso) scrive tutto in un CAS.
   const setup = async () => {
@@ -555,18 +581,18 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       if (PASSI_SETUP[n] === 'accessi') void c.controllaEsecuzione()
       void cambia(s => ({ ...s, passoSetup: n, errore: undefined }))
     }
-    const es = await read($, esecuzione)
-    const k = es.controllo
-    const riga = (chiave: string, ok: boolean | undefined, si: string, no: string, tipo?: TipoAccesso) => (
-      <Box key={chiave} flexDirection="column">
-        {nota1(`${chiave}-stato`, ok === undefined ? GRIGIO : ok ? STATO.inCorso : STATO.attesa, ok === undefined ? '…' : ok ? '✓' : '✗', ok === undefined ? T('ese.controllando') : ok ? si : no)}
-        {ok === false && tipo ? <Button key={`${chiave}-accedi`} variant="secondary" label={`${T('ese.accedi')} · ${tipo === 'gh' ? 'GitHub' : tipo === 'codex' ? 'Codex' : 'Claude'}`} onPress={() => void c.accedi(tipo)} /> : null}
-      </Box>
-    )
+    const k = esOra.controllo
+    const riga = (chiave: string, ok: boolean | undefined, si: string, no: string) =>
+      nota1(`${chiave}-stato`, ok === undefined ? GRIGIO : ok ? STATO.inCorso : STATO.attesa, ok === undefined ? '…' : ok ? '✓' : '✗', ok === undefined ? T('ese.controllando') : ok ? si : no)
+    // Gli accessi come in Esecuzione: «Accedi» a un clic, il codice di GitHub, e la riga da copiare se il login non parte.
     const accessi = () => [
-      riga('setup-claude', k ? k.claude.loggedIn === true : undefined, T('ese.claudeOk'), T(k?.claude.trovato === false ? 'ese.claudeAssente' : 'ese.claudeNo'), 'claude'),
-      riga('setup-codex', k ? k.codex?.loggedIn === true : undefined, T('set.codexOk'), T(k?.codex?.trovato === false ? 'set.codexAssente' : 'set.codexNo'), 'codex'),
-      riga('setup-gh', k ? k.github.loggedIn : undefined, T('ese.ghOk'), T(k?.github.trovato === false ? 'ese.ghAssente' : 'ese.ghNo'), 'gh'),
+      riga('setup-claude', k ? k.claude.loggedIn === true : undefined, T('ese.claudeOk'), T(k?.claude.trovato === false ? 'ese.claudeAssente' : 'ese.claudeNo')),
+      k?.claude.trovato && !k.claude.loggedIn ? accessoUi('claude', 'setup') : null,
+      riga('setup-codex', k ? k.codex?.loggedIn === true : undefined, T('set.codexOk'), T(k?.codex?.trovato === false ? 'set.codexAssente' : 'set.codexNo')),
+      k?.codex?.trovato && !k.codex.loggedIn ? accessoUi('codex', 'setup') : null,
+      riga('setup-gh', k ? k.github.loggedIn : undefined, T('ese.ghOk'), T(k?.github.trovato === false ? 'ese.ghAssente' : 'ese.ghNo')),
+      k?.github.trovato && !k.github.loggedIn ? accessoUi('gh', 'setup') : null,
+      copiaUi('setup'),
       <Button key="setup-ricontrolla" plain label={T('ese.ricontrolla')} onPress={() => void c.controllaEsecuzione()} />,
     ]
     const chiavi = () => [
@@ -587,7 +613,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       ]
     }
     const corpo = passo === 'lingua' ? [lingua()] : passo === 'fornitori' ? [connessioni()] : passo === 'accessi' ? accessi() : passo === 'chiavi' ? chiavi()
-      : passo === 'limiti' ? [soglie()] : passo === 'modo' ? [modoLavoro()] : riepilogo()
+      : passo === 'limiti' ? [soglie(), apiUi()] : passo === 'modo' ? [modoLavoro(), ...consigliereUi()] : riepilogo()
     return u.Sezione({
       chiave: 'pagina-setup',
       titolo: T('set.titolo'),
@@ -629,9 +655,11 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           <Box key={`doctor-rilievo-${i}`} flexDirection="column">
             {nota1(`doctor-rilievo-${i}-titolo`, x.avviso ? STATO.attesa : STATO.errore, x.avviso ? '!' : '✗', `${T(x.avviso ? 'doc.avviso' : 'doc.problema')} · ${x.titolo}`)}
             {didascalia(`doctor-rilievo-${i}-rimedio`, x.rimedio)}
+            {x.r.codice.startsWith('accesso.') ? attesaUi(x.r.codice === 'accesso.claude' ? 'claude' : x.r.codice === 'accesso.codex' ? 'codex' : 'gh', `doctor-${i}`) : null}
             {RIMEDIO(x.r) ? <Button key={`doctor-rimedio-${i}`} variant="secondary" label={x.r.codice.startsWith('accesso.') ? `${T(RIMEDIO(x.r)!)} · ${({ 'accesso.claude': 'Claude', 'accesso.codex': 'Codex', 'accesso.github': 'GitHub' } as Record<string, string>)[x.r.codice]}` : T(RIMEDIO(x.r)!)} onPress={() => void c.rimedio(x.r)} /> : null}
           </Box>
         )),
+        copiaUi('doctor'),
         <Box key="doctor-azioni" flexDirection="row" flexWrap="wrap" gap={1}>
           <Button key="doctor-ricontrolla" variant="primary" label={T('doc.ricontrolla')} onPress={() => void c.diagnosi()} />
           <Button key="doctor-copia" variant="secondary" label={T('doc.copia')}
@@ -993,6 +1021,41 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       </Box>
     )
   }
+  /** F6.6, condiviso con il setup: budget del mese e tetto per tentativo di API Claude (account), nella bozza. */
+  const apiUi = () => {
+    const conto = r.account.apiClaude
+    return (
+      <Box key="ese-api" flexDirection="column" gap={1}>
+        <Text key="ese-api-titolo" weight="semibold">{T('ese.apiTitolo')}</Text>
+        {didascalia('ese-chiave-dove', T('ese.chiaveDove'))}
+        {didascalia('ese-chiave-dedicata', T('ese.chiaveDedicata'))}
+        {didascalia('ese-chiave-rischio', T('ese.chiaveRischio'))}
+        {didascalia('ese-api-account', T('imp.valeTuttiProgetti'))}
+        {Input ? (
+          <Input key="ese-budget" label={T('ese.budget')} value={conto ? String(conto.budgetUsd) : ''}
+            onSubmit={v => salva('api', () => ({ 'account.apiClaude': { ...conto, budgetUsd: numeroUsd(v, 0.01, 100_000) } }))()} />
+        ) : null}
+        {Input && conto ? (
+          <Input key="ese-tetto" label={T('ese.tetto')} value={String(conto.tetto ?? TETTO_API_PREDEFINITO)}
+            onSubmit={v => salva('api', () => ({ 'account.apiClaude': { ...conto, tetto: numeroUsd(v, 0.01, Math.min(1_000, conto.budgetUsd)) } }))()} />
+        ) : null}
+        {didascalia('ese-tetto-nota', T('ese.tettoNota'))}
+        {conto && <Button key="ese-api-togli" plain dimColor label={T('ese.apiTogli')} onPress={salva('api', () => ({ 'account.apiClaude': null }))} />}
+        {restrizioneApi()}
+        {errore('api')}
+      </Box>
+    )
+  }
+  /** F6.5, condiviso con il setup: il consigliere resta nel suo campo di progetto (`consigliere`), nella bozza. */
+  const consigliereUi = () => [
+    u.GruppoChip({
+      chiave: 'consigliere', etichetta: T('ese.consigliere'), modo: 'scelta', valore: r.consigliere ?? 'spento', voci: CONSIGLI,
+      onCambia: v => salva('consigliere', () => ({ consigliere: v === 'spento' ? null : v }))(),
+    }),
+    didascalia('ese-consigliere-nota', T('ese.consigliereNota')),
+    errore('consigliere'),
+  ]
+
   const sezioneEsecuzione = async () => {
     const api = r.apiClaude
     // F10: il budget del mese e il tetto si scrivono nell'account (tutti i progetti); senza, la corsia API è spenta.
@@ -1000,33 +1063,15 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const chiave = !!regoleOra.chiaveApi
     const github = /^[^/\s]+\/[^/\s]+$/.test(io?.repo ?? '')
     const stato = T(api ? 'ese.statoApi' : 'ese.statoLocale')
-    const es = await read($, esecuzione)
+    const es = esOra
     const k = es.controllo
     const mancanti = passiMancanti(k, chiave, !!api)
     // Senza passi da fare la procedura non si disegna; il controllo che la trova finita la chiude (register.tsx).
     const guidaPassi = es.guida ? mancanti.filter(p => !es.guida!.saltati.includes(p)) : []
     const segno = (ok: boolean | undefined) => (ok === undefined ? ['…', GRIGIO] : ok ? ['✓', STATO.inCorso] : ['✗', STATO.attesa]) as [string, string]
     const riga = (key: string, ok: boolean | undefined, testo: string) => nota1(key, segno(ok)[1], segno(ok)[0], testo)
-    const accesso = (tipo: TipoAccesso, pre: string) => {
-      const a = es.accessi?.[tipo]
-      return a ? (
-        <Box key={`${pre}-attesa-${tipo}`} flexDirection="column">
-          {didascalia(`${pre}-attesa-${tipo}-testo`, T('ese.attesaAccesso'))}
-          {a.codice ? <Text key={`${pre}-codice-${tipo}`} weight="semibold">{T('ese.codiceGh', { codice: a.codice })}</Text> : null}
-        </Box>
-      ) : (
-        <Button key={`${pre}-accedi-${tipo}`} variant="secondary" label={T(tipo === 'claude' ? 'ese.accedi' : 'ese.collegaGh')} onPress={() => void esegui('esecuzione', () => c.accedi(tipo), '')} />
-      )
-    }
-    const copia = (pre: string) =>
-      es.copia ? (
-        <Box key={`${pre}-copia`} flexDirection="column">
-          {didascalia(`${pre}-copia-testo`, T('ese.copiaRiga'))}
-          <Text key={`${pre}-copia-riga`} wrap="wrap">{es.copia.riga}</Text>
-          <Button key={`${pre}-copia-premi`} variant="secondary" label={T('ese.copia')}
-            onPress={() => void $.ui.copy({ text: es.copia!.riga }).then(x => x.isCopied && $.ui.toast(T('ese.copiato')))} />
-        </Box>
-      ) : null
+    const accesso = accessoUi
+    const copia = copiaUi
     /** L'azione di un passo mancante: la stessa nella riga e nella procedura guidata (`pre` distingue le chiavi). */
     const azione = (p: PassoEsecuzione, pre: string): JSX.Element[] => {
       if (p === 'claude') return k?.claude.trovato ? [accesso('claude', pre)] : [didascalia(`${pre}-claude-assente`, T('ese.claudeAssente'))]
@@ -1104,25 +1149,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           </Box>
         ) : null,
         // API Claude: chiave (solo presenza), modello di minaccia, budget del mese e tetto per tentativo.
-        <Box key="ese-api" flexDirection="column" gap={1}>
-          <Text key="ese-api-titolo" weight="semibold">{T('ese.apiTitolo')}</Text>
-          {didascalia('ese-chiave-dove', T('ese.chiaveDove'))}
-          {didascalia('ese-chiave-dedicata', T('ese.chiaveDedicata'))}
-          {didascalia('ese-chiave-rischio', T('ese.chiaveRischio'))}
-          {didascalia('ese-api-account', T('imp.valeTuttiProgetti'))}
-          {Input ? (
-            <Input key="ese-budget" label={T('ese.budget')} value={conto ? String(conto.budgetUsd) : ''}
-              onSubmit={v => salva('api', () => ({ 'account.apiClaude': { ...conto, budgetUsd: numeroUsd(v, 0.01, 100_000) } }))()} />
-          ) : null}
-          {Input && conto ? (
-            <Input key="ese-tetto" label={T('ese.tetto')} value={String(conto.tetto ?? TETTO_API_PREDEFINITO)}
-              onSubmit={v => salva('api', () => ({ 'account.apiClaude': { ...conto, tetto: numeroUsd(v, 0.01, Math.min(1_000, conto.budgetUsd)) } }))()} />
-          ) : null}
-          {didascalia('ese-tetto-nota', T('ese.tettoNota'))}
-          {conto && <Button key="ese-api-togli" plain dimColor label={T('ese.apiTogli')} onPress={salva('api', () => ({ 'account.apiClaude': null }))} />}
-          {restrizioneApi()}
-          {errore('api')}
-        </Box>,
+        apiUi(),
         // Cloud di Claude: niente da configurare qui; si verifica il remote GitHub e si dice che cosa serve.
         <Box key="ese-cloud" flexDirection="column" gap={1}>
           <Text key="ese-cloud-titolo" weight="semibold">{T('ese.cloudTitolo')}</Text>
@@ -1130,12 +1157,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           {didascalia('ese-cloud-come', T('ese.cloudCome'))}
           {didascalia('ese-cloud-extra', T('ese.cloudExtra'))}
         </Box>,
-        u.GruppoChip({
-          chiave: 'consigliere', etichetta: T('ese.consigliere'), modo: 'scelta', valore: r.consigliere ?? 'spento', voci: CONSIGLI,
-          onCambia: v => salva('consigliere', () => ({ consigliere: v === 'spento' ? null : v }))(),
-        }),
-        didascalia('ese-consigliere-nota', T('ese.consigliereNota')),
-        errore('consigliere'),
+        ...consigliereUi(),
       ],
     })
   }

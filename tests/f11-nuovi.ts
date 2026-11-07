@@ -2181,6 +2181,213 @@ export const NUOVI_F11: Record<string, unknown> = {
    ]
   }
  ],
+ "controlli:desktop:impostazioni-doctor": [
+  {
+   "tipo": "Button",
+   "chiave": "ricarica",
+   "label": "Refresh · HH:MM",
+   "hotkey": "r",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vista-lavoro",
+   "label": "Work",
+   "hotkey": "1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vista-carico",
+   "label": "Load",
+   "hotkey": "2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "impostazioni",
+   "label": "Settings",
+   "hotkey": "3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-connessioni-premi",
+   "label": "Connections",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-soglie-premi",
+   "label": "Thresholds",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-modo-premi",
+   "label": "Work mode",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-lingua-premi",
+   "label": "Language",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-esecuzione-premi",
+   "label": "Execution",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-bilanciamento-premi",
+   "label": "Balancing",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-progetto-premi",
+   "label": "Project",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-board-premi",
+   "label": "Board",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-avanzate-premi",
+   "label": "Advanced",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-legenda-premi",
+   "label": "Legend",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-0",
+   "label": "Restore…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-10",
+   "label": "Archive…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-11",
+   "label": "Release…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-16",
+   "label": "Sign in · Claude",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-17",
+   "label": "Sign in · Codex",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-18",
+   "label": "Sign in · GitHub",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-ricontrolla",
+   "label": "Check again",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-copia",
+   "label": "Copy report",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-segnala",
+   "label": "Report to chipManager",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-indietro",
+   "label": "Back to settings",
+   "gestori": [
+    "press"
+   ]
+  }
+ ],
  "controlli:desktop:impostazioni-setup-1": [
   {
    "tipo": "Button",
@@ -3027,6 +3234,32 @@ export const NUOVI_F11: Record<string, unknown> = {
    ]
   },
   {
+   "tipo": "Input",
+   "chiave": "ese-budget",
+   "label": "Monthly budget (USD)",
+   "value": "20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Input",
+   "chiave": "ese-tetto",
+   "label": "Cap per run (USD)",
+   "value": "2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "ese-api-togli",
+   "label": "Remove API Claude",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
    "tipo": "Button",
    "chiave": "setup-indietro",
    "label": "Back",
@@ -3512,6 +3745,31 @@ export const NUOVI_F11: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
+   "chiave": "consigliere-spento-premi",
+   "label": "Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "consigliere-suggerisci-premi",
+   "label": "Suggest",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "consigliere-applica-premi",
+   "label": "Apply to chips with no destination",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
    "chiave": "setup-indietro",
    "label": "Back",
    "gestori": [
@@ -3666,6 +3924,213 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "setup-chiudi",
    "label": "Close setup",
+   "gestori": [
+    "press"
+   ]
+  }
+ ],
+ "controlli:terminal:impostazioni-doctor": [
+  {
+   "tipo": "Button",
+   "chiave": "ricarica",
+   "label": "Refresh · HH:MM",
+   "hotkey": "r",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vista-lavoro",
+   "label": "Work",
+   "hotkey": "1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vista-carico",
+   "label": "Load",
+   "hotkey": "2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "impostazioni",
+   "label": "Settings",
+   "hotkey": "3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-connessioni-premi",
+   "label": "Connections",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-soglie-premi",
+   "label": "Thresholds",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-modo-premi",
+   "label": "Work mode",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-lingua-premi",
+   "label": "Language",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-esecuzione-premi",
+   "label": "Execution",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-bilanciamento-premi",
+   "label": "Balancing",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-progetto-premi",
+   "label": "Project",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-board-premi",
+   "label": "Board",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-avanzate-premi",
+   "label": "Advanced",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-legenda-premi",
+   "label": "Legend",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-0",
+   "label": "Restore…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-10",
+   "label": "Archive…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-11",
+   "label": "Release…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-16",
+   "label": "Sign in · Claude",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-17",
+   "label": "Sign in · Codex",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-18",
+   "label": "Sign in · GitHub",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-ricontrolla",
+   "label": "Check again",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-copia",
+   "label": "Copy report",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-segnala",
+   "label": "Report to chipManager",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-indietro",
+   "label": "Back to settings",
    "gestori": [
     "press"
    ]
@@ -4517,6 +4982,32 @@ export const NUOVI_F11: Record<string, unknown> = {
    ]
   },
   {
+   "tipo": "Input",
+   "chiave": "ese-budget",
+   "label": "Monthly budget (USD)",
+   "value": "20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Input",
+   "chiave": "ese-tetto",
+   "label": "Cap per run (USD)",
+   "value": "2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "ese-api-togli",
+   "label": "Remove API Claude",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
    "tipo": "Button",
    "chiave": "setup-indietro",
    "label": "Back",
@@ -5002,6 +5493,31 @@ export const NUOVI_F11: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
+   "chiave": "consigliere-spento-premi",
+   "label": "Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "consigliere-suggerisci-premi",
+   "label": "Suggest",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "consigliere-applica-premi",
+   "label": "Apply to chips with no destination",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
    "chiave": "setup-indietro",
    "label": "Back",
    "gestori": [
@@ -5156,6 +5672,213 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "setup-chiudi",
    "label": "Close setup",
+   "gestori": [
+    "press"
+   ]
+  }
+ ],
+ "controlli:vscode:impostazioni-doctor": [
+  {
+   "tipo": "Button",
+   "chiave": "ricarica",
+   "label": "Refresh · HH:MM",
+   "hotkey": "r",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vista-lavoro",
+   "label": "Work",
+   "hotkey": "1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vista-carico",
+   "label": "Load",
+   "hotkey": "2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "impostazioni",
+   "label": "Settings",
+   "hotkey": "3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-connessioni-premi",
+   "label": "Connections",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-soglie-premi",
+   "label": "Thresholds",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-modo-premi",
+   "label": "Work mode",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-lingua-premi",
+   "label": "Language",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-esecuzione-premi",
+   "label": "Execution",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-bilanciamento-premi",
+   "label": "Balancing",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-progetto-premi",
+   "label": "Project",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-board-premi",
+   "label": "Board",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-avanzate-premi",
+   "label": "Advanced",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-legenda-premi",
+   "label": "Legend",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-0",
+   "label": "Restore…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-10",
+   "label": "Archive…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-11",
+   "label": "Release…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-16",
+   "label": "Sign in · Claude",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-17",
+   "label": "Sign in · Codex",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-18",
+   "label": "Sign in · GitHub",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-ricontrolla",
+   "label": "Check again",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-copia",
+   "label": "Copy report",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-segnala",
+   "label": "Report to chipManager",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-indietro",
+   "label": "Back to settings",
    "gestori": [
     "press"
    ]
@@ -6007,6 +6730,32 @@ export const NUOVI_F11: Record<string, unknown> = {
    ]
   },
   {
+   "tipo": "Input",
+   "chiave": "ese-budget",
+   "label": "Monthly budget (USD)",
+   "value": "20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Input",
+   "chiave": "ese-tetto",
+   "label": "Cap per run (USD)",
+   "value": "2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "ese-api-togli",
+   "label": "Remove API Claude",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
    "tipo": "Button",
    "chiave": "setup-indietro",
    "label": "Back",
@@ -6492,6 +7241,31 @@ export const NUOVI_F11: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
+   "chiave": "consigliere-spento-premi",
+   "label": "Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "consigliere-suggerisci-premi",
+   "label": "Suggest",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "consigliere-applica-premi",
+   "label": "Apply to chips with no destination",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
    "chiave": "setup-indietro",
    "label": "Back",
    "gestori": [
@@ -6646,6 +7420,213 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "setup-chiudi",
    "label": "Close setup",
+   "gestori": [
+    "press"
+   ]
+  }
+ ],
+ "controlli:mobile:impostazioni-doctor": [
+  {
+   "tipo": "Button",
+   "chiave": "ricarica",
+   "label": "Refresh · HH:MM",
+   "hotkey": "r",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vista-lavoro",
+   "label": "Work",
+   "hotkey": "1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "vista-carico",
+   "label": "Load",
+   "hotkey": "2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "impostazioni",
+   "label": "Settings",
+   "hotkey": "3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-connessioni-premi",
+   "label": "Connections",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-soglie-premi",
+   "label": "Thresholds",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-modo-premi",
+   "label": "Work mode",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-lingua-premi",
+   "label": "Language",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-esecuzione-premi",
+   "label": "Execution",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-bilanciamento-premi",
+   "label": "Balancing",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-progetto-premi",
+   "label": "Project",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-board-premi",
+   "label": "Board",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-avanzate-premi",
+   "label": "Advanced",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "sezione-legenda-premi",
+   "label": "Legend",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-0",
+   "label": "Restore…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-10",
+   "label": "Archive…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-11",
+   "label": "Release…",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-16",
+   "label": "Sign in · Claude",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-17",
+   "label": "Sign in · Codex",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-rimedio-18",
+   "label": "Sign in · GitHub",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-ricontrolla",
+   "label": "Check again",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-copia",
+   "label": "Copy report",
+   "variant": "secondary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-segnala",
+   "label": "Report to chipManager",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "doctor-indietro",
+   "label": "Back to settings",
    "gestori": [
     "press"
    ]
@@ -7497,6 +8478,32 @@ export const NUOVI_F11: Record<string, unknown> = {
    ]
   },
   {
+   "tipo": "Input",
+   "chiave": "ese-budget",
+   "label": "Monthly budget (USD)",
+   "value": "20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Input",
+   "chiave": "ese-tetto",
+   "label": "Cap per run (USD)",
+   "value": "2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "ese-api-togli",
+   "label": "Remove API Claude",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
    "tipo": "Button",
    "chiave": "setup-indietro",
    "label": "Back",
@@ -7982,6 +8989,31 @@ export const NUOVI_F11: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
+   "chiave": "consigliere-spento-premi",
+   "label": "Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "consigliere-suggerisci-premi",
+   "label": "Suggest",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "consigliere-applica-premi",
+   "label": "Apply to chips with no destination",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
    "chiave": "setup-indietro",
    "label": "Back",
    "gestori": [
@@ -8136,834 +9168,6 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "setup-chiudi",
    "label": "Close setup",
-   "gestori": [
-    "press"
-   ]
-  }
- ],
- "controlli:desktop:impostazioni-doctor": [
-  {
-   "tipo": "Button",
-   "chiave": "ricarica",
-   "label": "Refresh · HH:MM",
-   "hotkey": "r",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "vista-lavoro",
-   "label": "Work",
-   "hotkey": "1",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "vista-carico",
-   "label": "Load",
-   "hotkey": "2",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "impostazioni",
-   "label": "Settings",
-   "hotkey": "3",
-   "variant": "primary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-connessioni-premi",
-   "label": "Connections",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-soglie-premi",
-   "label": "Thresholds",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-modo-premi",
-   "label": "Work mode",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-lingua-premi",
-   "label": "Language",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-esecuzione-premi",
-   "label": "Execution",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-bilanciamento-premi",
-   "label": "Balancing",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-progetto-premi",
-   "label": "Project",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-board-premi",
-   "label": "Board",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-avanzate-premi",
-   "label": "Advanced",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-legenda-premi",
-   "label": "Legend",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-0",
-   "label": "Restore…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-10",
-   "label": "Archive…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-11",
-   "label": "Release…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-16",
-   "label": "Sign in · Claude",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-17",
-   "label": "Sign in · Codex",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-18",
-   "label": "Sign in · GitHub",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-ricontrolla",
-   "label": "Check again",
-   "variant": "primary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-copia",
-   "label": "Copy report",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-segnala",
-   "label": "Report to chipManager",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-indietro",
-   "label": "Back to settings",
-   "gestori": [
-    "press"
-   ]
-  }
- ],
- "controlli:terminal:impostazioni-doctor": [
-  {
-   "tipo": "Button",
-   "chiave": "ricarica",
-   "label": "Refresh · HH:MM",
-   "hotkey": "r",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "vista-lavoro",
-   "label": "Work",
-   "hotkey": "1",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "vista-carico",
-   "label": "Load",
-   "hotkey": "2",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "impostazioni",
-   "label": "Settings",
-   "hotkey": "3",
-   "variant": "primary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-connessioni-premi",
-   "label": "Connections",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-soglie-premi",
-   "label": "Thresholds",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-modo-premi",
-   "label": "Work mode",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-lingua-premi",
-   "label": "Language",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-esecuzione-premi",
-   "label": "Execution",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-bilanciamento-premi",
-   "label": "Balancing",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-progetto-premi",
-   "label": "Project",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-board-premi",
-   "label": "Board",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-avanzate-premi",
-   "label": "Advanced",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-legenda-premi",
-   "label": "Legend",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-0",
-   "label": "Restore…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-10",
-   "label": "Archive…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-11",
-   "label": "Release…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-16",
-   "label": "Sign in · Claude",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-17",
-   "label": "Sign in · Codex",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-18",
-   "label": "Sign in · GitHub",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-ricontrolla",
-   "label": "Check again",
-   "variant": "primary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-copia",
-   "label": "Copy report",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-segnala",
-   "label": "Report to chipManager",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-indietro",
-   "label": "Back to settings",
-   "gestori": [
-    "press"
-   ]
-  }
- ],
- "controlli:vscode:impostazioni-doctor": [
-  {
-   "tipo": "Button",
-   "chiave": "ricarica",
-   "label": "Refresh · HH:MM",
-   "hotkey": "r",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "vista-lavoro",
-   "label": "Work",
-   "hotkey": "1",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "vista-carico",
-   "label": "Load",
-   "hotkey": "2",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "impostazioni",
-   "label": "Settings",
-   "hotkey": "3",
-   "variant": "primary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-connessioni-premi",
-   "label": "Connections",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-soglie-premi",
-   "label": "Thresholds",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-modo-premi",
-   "label": "Work mode",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-lingua-premi",
-   "label": "Language",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-esecuzione-premi",
-   "label": "Execution",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-bilanciamento-premi",
-   "label": "Balancing",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-progetto-premi",
-   "label": "Project",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-board-premi",
-   "label": "Board",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-avanzate-premi",
-   "label": "Advanced",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-legenda-premi",
-   "label": "Legend",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-0",
-   "label": "Restore…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-10",
-   "label": "Archive…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-11",
-   "label": "Release…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-16",
-   "label": "Sign in · Claude",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-17",
-   "label": "Sign in · Codex",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-18",
-   "label": "Sign in · GitHub",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-ricontrolla",
-   "label": "Check again",
-   "variant": "primary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-copia",
-   "label": "Copy report",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-segnala",
-   "label": "Report to chipManager",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-indietro",
-   "label": "Back to settings",
-   "gestori": [
-    "press"
-   ]
-  }
- ],
- "controlli:mobile:impostazioni-doctor": [
-  {
-   "tipo": "Button",
-   "chiave": "ricarica",
-   "label": "Refresh · HH:MM",
-   "hotkey": "r",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "vista-lavoro",
-   "label": "Work",
-   "hotkey": "1",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "vista-carico",
-   "label": "Load",
-   "hotkey": "2",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "impostazioni",
-   "label": "Settings",
-   "hotkey": "3",
-   "variant": "primary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-connessioni-premi",
-   "label": "Connections",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-soglie-premi",
-   "label": "Thresholds",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-modo-premi",
-   "label": "Work mode",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-lingua-premi",
-   "label": "Language",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-esecuzione-premi",
-   "label": "Execution",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-bilanciamento-premi",
-   "label": "Balancing",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-progetto-premi",
-   "label": "Project",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-board-premi",
-   "label": "Board",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-avanzate-premi",
-   "label": "Advanced",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "sezione-legenda-premi",
-   "label": "Legend",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-0",
-   "label": "Restore…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-10",
-   "label": "Archive…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-11",
-   "label": "Release…",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-16",
-   "label": "Sign in · Claude",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-17",
-   "label": "Sign in · Codex",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-rimedio-18",
-   "label": "Sign in · GitHub",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-ricontrolla",
-   "label": "Check again",
-   "variant": "primary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-copia",
-   "label": "Copy report",
-   "variant": "secondary",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-segnala",
-   "label": "Report to chipManager",
-   "gestori": [
-    "press"
-   ]
-  },
-  {
-   "tipo": "Button",
-   "chiave": "doctor-indietro",
-   "label": "Back to settings",
    "gestori": [
     "press"
    ]

@@ -1198,16 +1198,20 @@ async function decidiLockApi($: Eng, azione: 'libera' | 'termina') {
 async function diagnosiDoctor($: Eng) {
   await update($, statoDoctor, s => ({ ...s, inCorso: true, fallita: false }))
   try {
-    const [sessione, chi, r] = await Promise.all([$.session.repo().catch(() => null), chiSonoIo($), leggiRegole($)])
-    const e = await helper($, ['diagnosi', await fileConfig($), await cartella($), sessione?.root ?? '', chi.repo ?? ''])
+    // Niente qui richiede un config valido: senza, la cartella dei dati è vuota (l'helper salta quei controlli) e le
+    // regole mancano (si saltano i fornitori non connessi).
+    const [sessione, chi, r] = await Promise.all([$.session.repo().catch(() => null), chiSonoIo($).catch(() => undefined), leggiRegole($).catch(() => undefined)])
+    const dati = await cartella($).catch(() => '')
+    const e = await helper($, ['diagnosi', await fileConfig($), dati, sessione?.root ?? '', chi?.repo ?? ''])
     if (e.codice !== 0) throw new Error('diagnosi')
-    const v = JSON.parse(e.testo) as { trovati?: unknown; versione?: unknown }
+    const v = JSON.parse(e.testo) as { trovati?: unknown; versione?: unknown; impronta?: unknown }
     // Solo i codici noti, con i soli dettagli attesi: niente testo libero dall'helper.
     const trovati: Rilievo[] = (Array.isArray(v.trovati) ? v.trovati : []).filter((x): x is Rilievo => !!x && typeof x === 'object' && RILIEVI.includes((x as Rilievo).codice))
-    for (const f of r.risorse.fornitori) if (!connesso(r, f)) trovati.push({ codice: 'connessione', fornitore: f })
+    for (const f of r?.risorse.fornitori ?? []) if (!connesso(r!, f)) trovati.push({ codice: 'connessione', fornitore: f })
     if (typeof v.versione === 'string' && v.versione !== VERSIONE_MOD) trovati.push({ codice: 'host.versione' })
     const quando = new Date(await $.clock.now()).toISOString()
-    await update($, statoDoctor, (): StatoDoctor => ({ trovati, quando }))
+    const impronta = typeof v.impronta === 'string' && /^[0-9a-f]{64}$/.test(v.impronta) ? v.impronta : null
+    await update($, statoDoctor, (): StatoDoctor => ({ trovati, quando, impronta }))
   } catch {
     await update($, statoDoctor, (): StatoDoctor => ({ fallita: true }))
   }
@@ -1250,9 +1254,8 @@ async function rimedioDoctor($: Eng, opz: Record<string, unknown>, r: Rilievo) {
       const e = await helper($, ['archivia-registro', await cartella($)])
       $.ui.toast(T(e.codice === 0 ? 'doc.archiviato' : 'doc.nonRiuscito'))
     } else {
-      const f = await fileConfig($)
-      const atteso = await $.fs.read(f).then(x => String(x)).catch(() => null)
-      const e = await helper($, ['ripristina-config', f], JSON.stringify({ atteso }))
+      // Il CAS è sull'impronta dei byte letti dalla diagnosi: un testo decodificato non distingue due file non UTF-8.
+      const e = await helper($, ['ripristina-config', await fileConfig($)], JSON.stringify({ impronta: (await read($, statoDoctor)).impronta ?? null }))
       $.ui.toast(T(e.codice === 0 ? 'doc.ripristinato' : e.codice === 5 ? 'doc.nessunaCopia' : e.codice === 4 ? 'errore.configCambiata' : 'doc.nonRiuscito'))
       if (e.codice === 0) await aggiornaRisorse($, opz)
     }
@@ -1344,7 +1347,7 @@ async function accedi($: Eng, tipo: TipoAccesso) {
 async function ricontrolla($: Eng, tipo: TipoAccesso, fino: number, id: number) {
   // Ogni ricontrollo ha la sua identità: un battito vecchio, tornato dopo un nuovo «Accedi», non tocca quello nuovo.
   if (ricontrolli.get(tipo)?.id !== id) return
-  const aSchermo = (await read($, vistaOra)) === 'impostazioni' && (await read($, impostazioni)).sezione === 'esecuzione' &&
+  const aSchermo = (await read($, vistaOra)) === 'impostazioni' && ['esecuzione', 'setup', 'doctor'].includes((await read($, impostazioni)).sezione) &&
     (await $.ui.panes().then(l => l.some(p => p.id === PANE && p.isShown)).catch(() => false))
   if (aSchermo && (await $.clock.now()) < fino) {
     const c = await controllaEsecuzione($)
@@ -2270,10 +2273,13 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'chipmanager' }, async ($, e) => {
-    await carica($)
     // F11: `--setup` e `--doctor` aprono il pannello sulla loro pagina delle Impostazioni; altro testo non cambia niente.
     const parole = (e.args ?? '').trim().split(/\s+/).filter(Boolean)
     const pagina = parole.includes('--doctor') ? ('doctor' as const) : parole.includes('--setup') ? ('setup' as const) : undefined
+    // Il doctor deve partire anche con un config che non si legge (diagnosticarlo è il suo primo compito).
+    await carica($).catch(err => {
+      if (pagina !== 'doctor') throw err
+    })
     if (pagina) {
       // Il setup con una proposta dell'IA già nella bozza si apre sul riepilogo: l'utente controlla e conferma.
       await update($, impostazioni, (s): StatoImpostazioni => ({ ...s, sezione: pagina, errore: undefined,

@@ -157,7 +157,8 @@ Two steps fill an omitted field. Keep them apart when you predict the result.
 
 **Starting preference** (`effortDi`, `modelloDi`):
 
-- Effort: `high` for Claude when allowed; for Codex the lane's `corsia_codex` effort (also a minimum).
+- Effort: the work mode's default for the lane (configurable; `medium` on R0–R2, `high` on R3–R5), raised to the
+  lane's `corsia_codex` effort for Codex and to `high` on R4/R5 or sensitive work; FreeLLMAPI `low`.
 - Model: the first allowed model of the executor in `routing.json`.
 
 **Balancing result** (`bilancia`): every allowed combination of the omitted fields is scored (weights × lane factor

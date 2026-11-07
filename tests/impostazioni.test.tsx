@@ -507,6 +507,7 @@ test('F11.3 doctor: un rimedio solo su conferma; annullato non tocca niente; con
   const amb = ambiente(on)
   amb.esec.diagnosi = () => JSON.stringify(DIAGNOSI)
   amb.disco.set(CONFIG, '{ rotto')
+  amb.esec.diagnosi = () => JSON.stringify({ ...DIAGNOSI, impronta: 'a'.repeat(64) })
   const stdin: string[] = []
   amb.esec.ripristina = s => (stdin.push(s), [0, '{"copia":1}'])
   mock.clock(on)
@@ -520,7 +521,8 @@ test('F11.3 doctor: un rimedio solo su conferma; annullato non tocca niente; con
   expect(amb.domande.length).toBe(2)
   amb.popup.risposta = () => 'Apply fix'
   await ui.press({ key: 'doctor-rimedio-0' })
-  expect(stdin).toEqual([JSON.stringify({ atteso: '{ rotto' })])
+  // F11 rilievo 3: il CAS è sull'impronta dei byte letta dalla diagnosi, non sul testo decodificato.
+  expect(stdin).toEqual([JSON.stringify({ impronta: 'a'.repeat(64) })])
   expect(amb.toast).toContain('Config restored')
   expect(amb.processi.filter(p => p[2] === 'diagnosi').length).toBe(2)
   // «Accedi» parte dal clic, senza popup: il login staccato di Codex.
@@ -2131,4 +2133,75 @@ test('F11.4 doctor: «Segnala» mostra il rapporto per intero; apertura e gh sol
   await ui.press({ key: 'doctor-rapporto-gh' })
   expect(amb.processi.filter(p => p[2] === 'segnala-gh').length).toBe(1)
   expect(amb.toast).toContain('Issue created')
+})
+
+// --- F11, revisione Codex ----------------------------------------------------------------------------------------------
+
+test('F11 rilievo 1: --doctor con config rotto e senza CHIPMANAGER_DIR chiama comunque la diagnosi e mostra i rilievi', async ($, on) => {
+  const amb = ambiente(on)
+  amb.variabili.CHIPMANAGER_DIR = ''
+  amb.disco.set(CONFIG, '{ rotto')
+  amb.esec.diagnosi = () => JSON.stringify({ trovati: [{ codice: 'config.illeggibile', copie: 1 }], versione: '2.2.0', impronta: 'b'.repeat(64) })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  const d = amb.processi.find(p => p[2] === 'diagnosi')
+  expect(d).toBeDefined()
+  // La cartella dei dati non si sa (dipende dal config): la diagnosi la riceve vuota e salta quei controlli.
+  expect(d![4]).toBe('')
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  expect(await ui.find({ key: 'doctor-rimedio-0' })).toBeDefined()
+})
+
+test('F11 rilievo 6: nel setup e nel doctor l\'accesso mostra il codice di GitHub, il ripiego da copiare, e il ricontrollo continua', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { milestoneGithub: true } } }))
+  amb.esec.stato = () => JSON.stringify({ claude: { trovato: true, loggedIn: true }, github: { trovato: true, loggedIn: false, remote: true, host: 'github.com' }, codex: { trovato: true, loggedIn: true }, fonti: [] })
+  amb.esec.accedi = () => [0, '{"codice":"AB12-CD34"}']
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--setup' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  for (let i = 0; i < 2; i++) await ui.press({ key: 'setup-avanti' })
+  await ui.press({ key: 'setup-accedi-gh' })
+  expect(testi(await ui.drawn()).join('\n')).toContain('Code to enter on GitHub: AB12-CD34')
+  const prima = amb.esec.controlli
+  for (let t = 0; t < 15_000; t += 5000) await clock.advance(5000)
+  expect(amb.esec.controlli).toBeGreaterThan(prima)
+  // Il ripiego: se il login non parte, la riga da copiare.
+  amb.esec.accedi = () => [1, '{"copia":"codex login"}']
+  amb.esec.stato = () => JSON.stringify({ claude: { trovato: true, loggedIn: true }, github: { trovato: true, loggedIn: true, remote: true, host: 'github.com' }, codex: { trovato: true, loggedIn: false }, fonti: [] })
+  // Il ricontrollo di GitHub vede il login fatto e si ferma.
+  await clock.advance(5000)
+  await ui.press({ key: 'setup-ricontrolla' })
+  await ui.press({ key: 'setup-accedi-codex' })
+  expect(testi(await ui.drawn()).join('\n')).toContain('codex login')
+  expect(await ui.find({ key: 'setup-copia-premi' })).toBeDefined()
+  // Nel doctor lo stesso: «Accedi» poi codice.
+  amb.esec.accedi = () => [0, '{"codice":"ZX98-YW76"}']
+  amb.esec.diagnosi = () => JSON.stringify({ trovati: [{ codice: 'accesso.github', trovato: true }], versione: '2.2.0' })
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  await ui.press({ key: 'doctor-rimedio-0' })
+  expect(testi(await ui.drawn()).join('\n')).toContain('Code to enter on GitHub: ZX98-YW76')
+})
+
+test('F11 rilievo 7: nel setup i limiti hanno budget e tetto API e il modo di lavoro il consigliere; tutto con un solo Applica', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': {} } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--setup' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  for (let i = 0; i < 4; i++) await ui.press({ key: 'setup-avanti' })
+  await ui.input({ key: 'ese-budget', text: '15' })
+  await ui.press({ key: 'setup-avanti' })
+  await ui.press({ key: 'consigliere-applica-premi' })
+  expect(amb.configure()).toBe(0)
+  await ui.press({ key: 'applica' })
+  expect(amb.configure()).toBe(1)
+  const c = JSON.parse(amb.disco.get(CONFIG)!)
+  expect(c.account.apiClaude.budgetUsd).toBe(15)
+  expect(c.progetti['esempio/demo'].consigliere).toBe('applica')
 })

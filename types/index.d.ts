@@ -332,7 +332,16 @@ export type TipoAccesso = 'claude' | 'gh' | 'codex'
 /** F11.3: un rilievo del doctor: un codice di un elenco chiuso e pochi dettagli (numeri, nomi di campo della mod). */
 export type Rilievo = { codice: string; [dettaglio: string]: unknown }
 /** F11.3: l'ultima diagnosi del doctor (solo in memoria). */
-export type StatoDoctor = { trovati?: Rilievo[]; quando?: string; inCorso?: boolean; fallita?: boolean; /** F11.4: il rapporto da mostrare per intero prima dell'invio. */ rapporto?: string }
+export type StatoDoctor = {
+  trovati?: Rilievo[]
+  quando?: string
+  inCorso?: boolean
+  fallita?: boolean
+  /** L'impronta dei byte del config letti dalla diagnosi: il CAS del ripristino (null = assente). */
+  impronta?: string | null
+  /** F11.4: il rapporto da mostrare per intero prima dell'invio. */
+  rapporto?: string
+}
 export type PassoEsecuzione = 'claude' | 'github' | 'chiave' | 'fonti' | 'budget'
 /** F6.7: l'ultimo controllo, i login avviati da qui (fino a quando si ricontrolla), la riga da copiare, la procedura guidata. */
 export type StatoEsecuzione = {
