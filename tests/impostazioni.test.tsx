@@ -2205,3 +2205,26 @@ test('F11 rilievo 7: nel setup i limiti hanno budget e tetto API e il modo di la
   expect(c.account.apiClaude.budgetUsd).toBe(15)
   expect(c.progetti['esempio/demo'].consigliere).toBe('applica')
 })
+
+test('F11 giro 2, rilievo 2: a login GitHub riuscito il rilievo del doctor cade da solo, senza rifare la diagnosi', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { milestoneGithub: true } } }))
+  const stato = (gh: boolean) => JSON.stringify({ claude: { trovato: true, loggedIn: true }, github: { trovato: true, loggedIn: gh, remote: true, host: 'github.com' }, codex: { trovato: true, loggedIn: true }, fonti: [] })
+  amb.esec.stato = () => stato(false)
+  amb.esec.accedi = () => [0, '{"codice":"AB12-CD34"}']
+  amb.esec.diagnosi = () => JSON.stringify({ trovati: [{ codice: 'accesso.github', trovato: true }, { codice: 'lock.api', minuti: 2 }], versione: '2.2.0' })
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'doctor-rimedio-0' })
+  expect(testi(await ui.drawn()).join('\n')).toContain('Code to enter on GitHub: AB12-CD34')
+  const diagnosi = amb.processi.filter(p => p[2] === 'diagnosi').length
+  amb.esec.stato = () => stato(true)
+  await clock.advance(5000)
+  const testo = testi(await ui.drawn()).join('\n')
+  expect(testo).not.toContain('GitHub not signed in')
+  expect(testo).toContain('API Claude lane held for 2 min')
+  expect(amb.processi.filter(p => p[2] === 'diagnosi').length).toBe(diagnosi)
+})

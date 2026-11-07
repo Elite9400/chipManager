@@ -1352,6 +1352,9 @@ async function ricontrolla($: Eng, tipo: TipoAccesso, fino: number, id: number) 
   if (aSchermo && (await $.clock.now()) < fino) {
     const c = await controllaEsecuzione($)
     if (ricontrolli.get(tipo)?.id !== id || !(tipo === 'claude' ? c?.claude.loggedIn : tipo === 'codex' ? c?.codex?.loggedIn : c?.github.loggedIn)) return
+    // F11: login riuscito: il rilievo del doctor su quell'accesso cade, da questo solo controllo (nessuna nuova diagnosi).
+    const codice = tipo === 'claude' ? 'accesso.claude' : tipo === 'codex' ? 'accesso.codex' : 'accesso.github'
+    await update($, statoDoctor, (s): StatoDoctor => (s.trovati ? { ...s, trovati: s.trovati.filter(x => x.codice !== codice) } : s))
   }
   if (ricontrolli.get(tipo)?.id !== id) return
   ricontrolli.get(tipo)!.cancel()

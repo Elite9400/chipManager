@@ -272,11 +272,14 @@ async function ripristinaConfig(file, richiesta) {
     const k = maxContatori(maxContatori(attuali, leggiContatori(file)), contatoriDi(copia))
     const progetti = {}
     for (const repo of new Set([...Object.keys(copia.progetti ?? {}), ...Object.keys(k.progetti)])) {
-      const p = copia.progetti?.[repo]
-      if (p !== undefined && !oggetto(p)) {
-        progetti[repo] = p
+      // Un progetto null o assente nella copia vale come vuoto: riceve comunque i contatori portati avanti, così una
+      // riattivazione non riparte da una generazione già usata.
+      const grezzo = copia.progetti?.[repo]
+      if (grezzo !== undefined && grezzo !== null && !oggetto(grezzo)) {
+        progetti[repo] = grezzo
         continue
       }
+      const p = grezzo ?? {}
       const x = k.progetti[repo] ?? { generazione: 0, pesiRevisione: 0 }
       const b = oggetto(p?.board) ? p.board : {}
       progetti[repo] = { ...p, pesiRevisione: x.pesiRevisione + 1, pesiOrigine: { tipo: 'manuale' },

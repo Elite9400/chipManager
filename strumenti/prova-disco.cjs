@@ -2653,3 +2653,22 @@ test('F11 rilievo 5: segnala-gh e apri-url controllano gli stessi elenchi chiusi
   ])
   for (const t of ts) assert.strictEqual(D.rapportoValido(t), true, t)
 })
+
+test('F11 giro 2, rilievo 1: una copia con il progetto null riparte dai contatori: generazione 5, revisione 4, il vecchio lavoro è rifiutato', async () => {
+  const b = preparaBoard('owner/prova')
+  fs.writeFileSync(b.config, JSON.stringify({ progetti: { [b.repo]: { board: { modo: 'riassunti', generazione: 2 }, pesiRevisione: 3 } } }))
+  assert.strictEqual(await imposta(b, 'accesa'), 3)
+  assert.strictEqual(bc(b, 'board-scrivi', 1, ['v1'], HTML).status, 4)
+  assert.strictEqual(await imposta(b, 'riassunti'), 4)
+  fs.writeFileSync(`${b.config}.bak1`, JSON.stringify({ progetti: { [b.repo]: null } }))
+  for (const i of [2, 3]) fs.rmSync(`${b.config}.bak${i}`, { force: true })
+  const rotto = Buffer.from('{ rotto')
+  fs.writeFileSync(b.config, rotto)
+  assert.strictEqual((await D.ripristinaConfig(b.config, { impronta: impronta(rotto) }))[0], 0)
+  const p = JSON.parse(fs.readFileSync(b.config, 'utf8')).progetti[b.repo]
+  assert.deepStrictEqual([p.board, p.pesiRevisione, p.pesiOrigine], [{ modo: 'spenta', generazione: 5 }, 4, { tipo: 'manuale' }])
+  // Riattivata, la board va oltre: nessuna generazione vecchia pubblica.
+  assert.strictEqual(await imposta(b, 'accesa'), 6)
+  for (const g of [1, 3, 4, 5]) assert.strictEqual(bc(b, 'board-scrivi', g, [`v${g}`], HTML).status, 4)
+  assert.strictEqual(bc(b, 'board-scrivi', 6, ['v6'], HTML).status, 0)
+})
