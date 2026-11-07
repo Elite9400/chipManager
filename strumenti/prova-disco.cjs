@@ -2075,6 +2075,8 @@ test('F10 parità: regoleEfficaci TS e CJS danno le stesse soglie, gli stessi cr
     { account: { soglie: null, limitiManuali: null }, progetto: { soglie: null, restrizioni: null, limitiManuali: null, freellmapi: null } },
     { account: { limitiManuali: [MANUALE] }, progetto: { limitiManuali: [{ ...MANUALE, id: 'altro', valore: 3, unita: 'USD', percentuale: undefined }] } },
     { account: { apiClaude: { budgetUsd: 9, extra: 'x' } }, progetto: { restrizioni: { soglie: null } } },
+    // Giro 2, rilievo 3: un endpoint null nel progetto vale come assente ed eredita quello dell'account.
+    { account: { freellmapi: { endpoint: 'http://localhost:4000/v1' } }, progetto: { freellmapi: { livello: 'R1', endpoint: null } } },
   ]
   const nonValidi = [
     { account: [], progetto: {} },
@@ -2299,4 +2301,38 @@ test('F10 rilievo 3: una junction su «esecuzioni» sotto la cartella dati non p
   // `scriviDati` rifiuta la cartella finale anche quando la chiama un comando che non controlla l'ingresso.
   assert.throws(() => D.scriviDati(path.join(dir, 'esecuzioni', 'x.json'), '{}'), /helper\.collegamento/)
   assert.deepStrictEqual(fs.readdirSync(vero), [])
+})
+
+test('F10 giro 2, rilievo 1: un link al posto della consegna del tentativo non libera il lock (né in stato né in «Libera»)', async () => {
+  const dm = tmp()
+  const t = 'az-cons0001'
+  // Esecuzione finita da tempo: senza la consegna, i 5 minuti dall'uscita sono passati e il lock si libererebbe.
+  fs.writeFileSync(API.fileLock(dm), JSON.stringify({ tentativo: t, istante: new Date(0).toISOString(), pid: 4242, creato: 1000, avvio: 1000, uscita: { codice: 0, fine: new Date(0).toISOString() } }))
+  fs.mkdirSync(path.dirname(API.fileConsegna(dm, t)), { recursive: true })
+  fs.symlinkSync(fuori(), API.fileConsegna(dm, t), process.platform === 'win32' ? 'junction' : 'dir')
+  for (const r of [await API.statoApi(dm, { elenco: () => [] }), await API.liberaApi(dm, { elenco: () => [] })])
+    assert.deepStrictEqual([r.libero, r.motivo, /helper\.collegamento/.test(r.percorso)], [false, 'percorso', true])
+  assert.ok(fs.existsSync(API.fileLock(dm)), 'il lock resta')
+})
+
+test('F10 giro 2, rilievo 2: «esecuzioni» diventata junction dopo il lancio: il supervisore si ferma prima del worktree e dello spawn', async () => {
+  const { eseguiCli } = require(DISCO)
+  const dir = tmp()
+  const vero = fuori()
+  const t = 'az-svin0001'
+  fs.writeFileSync(path.join(vero, `${t}.json`), JSON.stringify({ id: 'a-svin00001', tentativo: t, stato: 'in-avvio' }))
+  fs.symlinkSync(vero, path.join(dir, 'esecuzioni'), process.platform === 'win32' ? 'junction' : 'dir')
+  let avvii = 0
+  let worktree = 0
+  await assert.rejects(eseguiCli(dir, 'a-svin00001', t, { root: tmp(), prompt: 'x', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', base: 'main' },
+    { avvia: () => { avvii++ }, git: () => { worktree++; return '' } }), /helper\.collegamento/)
+  assert.deepStrictEqual([avvii, worktree], [0, 0])
+  // Anche la corsia API: il supervisore si ferma prima del worktree e dello spawn.
+  const dm = tmp()
+  const root = tmp()
+  recordApi(dir, 'a-svin00002', 'az-svin0002')
+  fs.writeFileSync(path.join(vero, 'az-svin0002.json'), JSON.stringify({ id: 'a-svin00002', tentativo: 'az-svin0002', stato: 'in-avvio', lanciatore: 'api-claude' }))
+  fs.writeFileSync(API.fileLock(dm), JSON.stringify({ tentativo: 'az-svin0002', istante: new Date().toISOString() }))
+  await assert.rejects(API.eseguiApi(dir, 'a-svin00002', 'az-svin0002', ingressoApi(root), { dirMacchina: dm, avvia: () => { avvii++ }, git: () => { worktree++; return '' } }), /helper\.collegamento/)
+  assert.deepStrictEqual([avvii, worktree], [0, 0])
 })

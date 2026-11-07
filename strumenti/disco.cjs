@@ -722,6 +722,8 @@ const parametriValidi = input =>
 async function eseguiCli(dir, id, tentativo, input, deps = {}) {
   if (!idValido(id) || !tentativoValido(tentativo)) throw new Error('identità non valida')
   const file = fileEsecuzione(dir, tentativo)
+  // Giro 2, rilievo 2: la catena delle esecuzioni prima di leggere il segno, creare il worktree o avviare il processo.
+  percorsoSicuro(file)
   const segno = JSON.parse(fs.readFileSync(file, 'utf8'))
   if (segno.id !== id || segno.tentativo !== tentativo || segno.stato !== 'in-avvio') throw new Error('tentativo non valido')
   const r = await conMutex(`cli:${path.resolve(file).toLowerCase()}`, 0, async () => {
@@ -731,10 +733,13 @@ async function eseguiCli(dir, id, tentativo, input, deps = {}) {
     let ramo
     try {
       if (!parametriValidi(input)) throw new Error('parametri non validi')
+      percorsoSicuro(file)
       const { cwd } = preparaWorktree(input, tentativo, deps, fuori)
       ramo = fuori.ramo
       const env = { ...process.env }
       delete env.CLAUDECODE
+      // Ancora subito prima dello spawn: una junction comparsa durante il worktree ferma tutto prima del processo.
+      percorsoSicuro(file)
       const p = (deps.avvia ?? avviaComando)(['claude', '-p', '--model', input.modello, '--effort', input.effort, '--permission-mode', input.permessi, '--output-format', 'json'],
         { cwd, env, stdio: ['pipe', 'ignore', 'ignore'], detached: false })
       await new Promise((ok, ko) => { p.once('spawn', ok); p.once('error', ko) })

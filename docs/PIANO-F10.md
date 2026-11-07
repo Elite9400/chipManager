@@ -194,9 +194,11 @@ Soglie, `apiClaude`, consigliere, profilo, board, registro della spesa e lock de
 
 Modifica esplicita della specifica sul requisito «un fornitore non connesso a livello di account non è ammissibile».
 
-- **Connessione solo dove è verificabile.** DeepSeek, FreeLLMAPI e API Claude richiedono la chiave presente (opzioni
-  della mod o variabile d'ambiente). I piani Claude e Codex si considerano connessi: il loro login non è leggibile in
-  modo affidabile a runtime.
+- **Connessione solo dove è verificabile.** DeepSeek e FreeLLMAPI richiedono la chiave presente, dove il codice già la
+  cerca: le opzioni sensibili della mod o la loro variabile d'ambiente (`DEEPSEEK_API_KEY`, `FREELLMAPI_KEY`). API Claude
+  conta come connessa **solo con l'opzione sensibile nativa** (`anthropicApiKey`): una `ANTHROPIC_API_KEY`
+  nell'ambiente non la connette, anzi blocca la corsia (F6 §7: fatturerebbe su un altro account). I piani Claude e Codex
+  si considerano connessi: il loro login non è leggibile in modo affidabile a runtime.
 - **Effetto.** Un fornitore ammesso nel progetto ma non connesso compare in Connessioni con la pillola «non connesso»,
   è escluso dalle scelte automatiche di `bilancia` e del consigliere, e un avvio con una scelta esplicita su di lui si
   blocca con il motivo.

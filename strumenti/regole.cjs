@@ -88,7 +88,8 @@ function regoleEfficaci(accountGrezzo, progettoGrezzo) {
   manualiValidi(p.limitiManuali, 'limitiManuali')
   // null = assente, come nel pannello; un oggetto vuole il livello e, se c'è, un endpoint loopback.
   const fp = p.freellmapi ?? undefined
-  if (fp !== undefined && (!oggetto(fp) || !['niente', 'R1', 'R2'].includes(String(fp.livello)) || (fp.endpoint !== undefined && !endpointLocale(fp.endpoint)))) no('freellmapi')
+  // Un endpoint null nel progetto vale come assente (eredita quello dell'account), come nel pannello.
+  if (fp !== undefined && (!oggetto(fp) || !['niente', 'R1', 'R2'].includes(String(fp.livello)) || (fp.endpoint !== undefined && fp.endpoint !== null && !endpointLocale(fp.endpoint)))) no('freellmapi')
   const soglie = {}
   for (const f of FORNITORI) {
     const s = piuSevera(account.soglie[f], piuSevera(soglieProgetto[f], r.soglie?.[f]))

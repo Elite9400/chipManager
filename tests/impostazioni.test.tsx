@@ -186,6 +186,8 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
   const disco = new DiscoIt()
   /** F10: le cartelle che `fs.stat` dice link (una junction). */
   const collegati = new Set<string>()
+  /** F10: variabili d'ambiente in più, lette da `env.get`. */
+  const variabili: Record<string, string> = {}
   const toast: string[] = []
   const processi: string[][] = []
   let proposteFatte = 0
@@ -242,7 +244,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
   const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
   disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING))
   disco.set(CONFIG, JSON.stringify({ ...(account && { account }), progetti: { 'esempio/demo': progetto } }))
-  on('env.get', (_, e) => ({ value: e.name === 'CHIPMANAGER_DIR' ? 'X:/dati' : e.name === 'USERPROFILE' ? 'X:/casa' : undefined }))
+  on('env.get', (_, e) => ({ value: variabili[e.name] ?? (e.name === 'CHIPMANAGER_DIR' ? 'X:/dati' : e.name === 'USERPROFILE' ? 'X:/casa' : undefined) }))
   on('session.id', () => ({ value: 'sessione-esempio' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session__start_session' }] as never }))
@@ -406,7 +408,7 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
     letturaFerma = { key, attesa: new Promise<void>(ok => (apri = ok)), segnala }
     return { arrivato, apri }
   }
-  return { disco, collegati, toast, domande, popup, progettoOra, accountOra, configure, hook, trattieni, trattieniPopup, trattieniLettura, trattieniLimiti, esec, processi }
+  return { disco, collegati, variabili, toast, domande, popup, progettoOra, accountOra, configure, hook, trattieni, trattieniPopup, trattieniLettura, trattieniLimiti, esec, processi }
 }
 
 const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
@@ -1812,6 +1814,27 @@ test('F10 rilievo 7: con le chiavi nelle opzioni DeepSeek e FreeLLMAPI contano c
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
   await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-connessioni-premi' })
+  for (const f of ['deepseek', 'freellmapi']) expect(JSON.stringify(await ui.find({ key: `stato-chip-${f}` }))).not.toMatch(/Non connesso/)
+  await ui.unmount()
+})
+
+test('F10 giro 2, rilievo 4: per API Claude conta solo l\'opzione sensibile della mod, mai una chiave d\'ambiente; DeepSeek e FreeLLMAPI anche dall\'ambiente', async ($, on) => {
+  const amb = ambiente(on, { fornitori: ['claude', 'codex', 'deepseek', 'freellmapi'], freellmapi: { livello: 'R1' } }, { apiClaude: { budgetUsd: 20, tetto: 2 } })
+  amb.variabili.ANTHROPIC_API_KEY = 'sk-ant-ambiente-0123456789'
+  amb.variabili.DEEPSEEK_API_KEY = 'ds-ambiente-0123456789'
+  amb.variabili.FREELLMAPI_KEY = 'fl-ambiente-0123456789'
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-esecuzione-premi' })
+  // La chiave nell'ambiente non conta come «connessa» per API Claude (F6 §7: blocca la corsia, fatturerebbe altrove).
+  expect(await ui.find({ type: 'Text', text: /Nessuna chiave impostata/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Chiave impostata nelle opzioni sensibili/ })).toBeUndefined()
+  const r = await $.tool.call({ tool: 'mcp__chip-manager__risorse_agenti' } as never) as { result?: string }
+  expect(JSON.stringify(r.result)).toMatch(/no key in the mod options/)
+  // DeepSeek e FreeLLMAPI: la chiave d'ambiente è quella che l'helper già usa, quindi contano come connessi.
   await ui.press({ key: 'sezione-connessioni-premi' })
   for (const f of ['deepseek', 'freellmapi']) expect(JSON.stringify(await ui.find({ key: `stato-chip-${f}` }))).not.toMatch(/Non connesso/)
   await ui.unmount()

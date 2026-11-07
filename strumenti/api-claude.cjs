@@ -53,6 +53,19 @@ function percorsiAccount(dm, altri = []) {
   for (const p of [dm, fileLock(dm), fileSpesa(dm), dirChiavi(dm), ...altri]) d.percorsoSicuro(p)
 }
 const motivoPercorso = e => String(e?.message ?? e).slice(0, 300)
+/**
+ * Giro 2, rilievo 1: la catena di OGNI file del tentativo (file-chiave e consegna) prima di accedervi: un link al posto
+ * della consegna non deve dare un istante finto e liberare il lock. Il motivo, o null se vale.
+ */
+function catenaTentativo(dm, tentativo) {
+  try {
+    d.percorsoSicuro(fileChiave(dm, tentativo))
+    d.percorsoSicuro(fileConsegna(dm, tentativo))
+    return null
+  } catch (e) {
+    return motivoPercorso(e)
+  }
+}
 /** F10: il registro della spesa dell'account, uno solo, accanto al lock della macchina. */
 const fileSpesa = dm => path.join(dm, 'spesa-api.json')
 
@@ -276,6 +289,8 @@ function verificaLock(dm, adesso, deps = {}) {
   const rec = leggiLock(dm)
   if (!rec) return { libero: true }
   if (rec === 'illeggibile') return { libero: false, motivo: 'illeggibile' }
+  const catena = catenaTentativo(dm, rec.tentativo)
+  if (catena) return { libero: false, motivo: 'percorso', percorso: catena, tentativo: rec.tentativo }
   if (!rec.uscita) {
     // Supervisore caduto con il processo verificato morto (identità nota, nessun discendente): la chiave si toglie già;
     // il lock resta finché l'utente non sceglie «Libera».
@@ -313,6 +328,8 @@ async function liberaApi(dm, deps = {}) {
     const rec = leggiLock(dm)
     if (!rec) return { libero: true }
     if (rec === 'illeggibile') return { libero: false, motivo: 'illeggibile' }
+    const catena = catenaTentativo(dm, rec.tentativo)
+    if (catena) return { libero: false, motivo: 'percorso', percorso: catena, tentativo: rec.tentativo }
     const c = condizioni(dm, rec, (deps.adesso ?? Date.now)(), deps)
     if (c.motivo) return { libero: false, tentativo: rec.tentativo, ...c }
     fs.rmSync(fileLock(dm), { force: true })
@@ -536,6 +553,8 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
     let rec = lock
     try {
       if (!ingressoValido(input)) throw new Error('parametri non validi')
+      // Giro 2, rilievo 2: la destinazione si ricontrolla prima del worktree e di nuovo prima dello spawn.
+      percorsiAccount(dm, [dir, file, fileChiave(dm, tentativo), fileConsegna(dm, tentativo)])
       const { cwd, ramo, base } = d.preparaWorktree(input, tentativo, deps, fuori)
       // Il processo parte nel worktree, che può avere impostazioni sue: si ricontrolla lì, prima della chiave e dello spawn.
       const fontiCwd = deps.fontiCwd?.(cwd) ?? fontiImpostazioni(cwd, deps.env ?? process.env)
@@ -552,6 +571,7 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
       const helper = [process.execPath, CHIAVE, fileChiave(dm, tentativo), fileConsegna(dm, tentativo)].map(x => `"${x}"`).join(' ')
       const argv = ['claude', '-p', '--output-format', 'json', '--model', input.modello, '--effort', input.effort, '--permission-mode', input.permessi,
         '--max-budget-usd', String(input.tetto), '--settings', JSON.stringify({ apiKeyHelper: helper }), ...(input.advisor && !input.senzaAdvisor ? ['--advisor', input.advisor] : [])]
+      percorsiAccount(dm, [dir, file, fileChiave(dm, tentativo), fileConsegna(dm, tentativo)])
       const p = (deps.avvia ?? d.avviaComando)(argv, { cwd, env: envFiglio, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
       await new Promise((ok, ko) => { p.once('spawn', ok); p.once('error', ko) })
       partito = true
