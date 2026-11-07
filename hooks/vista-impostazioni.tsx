@@ -644,14 +644,14 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const trovati = dv.trovati ?? []
     const righe = trovati.map(x => ({ r: x, ...testoRilievo(T, x) }))
     const rapporto = righe.map(x => `${x.avviso ? '!' : '✗'} ${x.titolo} — ${x.rimedio}`).join('\n') || T('doc.tuttoBene')
-    const stato = dv.inCorso ? T('doc.inCorso') : dv.fallita ? T('doc.fallita') : !dv.quando || !dv.trovati ? T('proxy.nonVerificato') : T('doc.stato', { n: trovati.length })
+    const esito = dv.inCorso ? T('doc.inCorso') : dv.fallita ? T('doc.fallita') : !dv.quando || !dv.trovati ? T('proxy.nonVerificato') : T('doc.stato', { n: trovati.length })
+    const stato = `${esito}${dv.quando ? ` · ${T('tr.aggiornato', { ora: T.ora(dv.quando) })}` : ''}`
     return u.Sezione({
       chiave: 'pagina-doctor',
       titolo: T('doc.titolo'),
       descrizione: T('doc.descrizione'),
-      stato: `${stato}${dv.quando ? ` · ${T('tr.aggiornato', { ora: T.ora(dv.quando) })}` : ''}`,
+      stato,
       figli: [
-        (!dv.quando || !dv.trovati) && !dv.inCorso && !dv.fallita ? nota1('doctor-non-verificato', GRIGIO, '—', T('proxy.nonVerificato')) : null,
         dv.fallita ? nota1('doctor-fallita', STATO.errore, '✗', T('doc.fallita')) : null,
         !dv.inCorso && !dv.fallita && dv.quando && dv.trovati && !trovati.length ? nota1('doctor-ok', STATO.inCorso, '✓', T('doc.tuttoBene')) : null,
         ...righe.map((x, i) => (
@@ -1321,7 +1321,8 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       {pendenti > 0 && (
         // F9.4: la barra «Applica» in evidenza sul desktop: bordo e velo d'accento (il testo resta nell'inchiostro).
         <Box key="pendenti" flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'} alignItems="center" borderStyle={terminale ? 'single' : 'round'}
-          borderColor={terminale ? undefined : ACCENTO} borderDimColor={terminale} backgroundColor={terminale ? undefined : velo(ACCENTO, ALFA_VELO)} padding={terminale ? 1 : 'md'}>
+          borderColor={terminale ? undefined : ACCENTO} borderDimColor={terminale} backgroundColor={terminale ? undefined : velo(ACCENTO, ALFA_VELO)}
+          padding={terminale ? undefined : 'md'} paddingX={terminale ? 1 : undefined}>
           <Text key="pendenti-n">{vista.applicando && inVolo ? T('imp.salvando') : T('imp.nonSalvate', { n: pendenti })}</Text>
           <Button key="applica" variant="primary" hotkey="s" label={T('imp.applica')} onPress={() => void applicaBozza($, c, T)} />
           <Button key="annulla-modifiche" plain dimColor label={T('imp.annullaModifiche')} onPress={() => void inBozza(s => ({ ...s, pendenti: undefined, errore: undefined }))} />

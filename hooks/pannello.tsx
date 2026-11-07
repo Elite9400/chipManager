@@ -401,7 +401,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
    * l'ICONA), «chip» nell'inchiostro; accanto, attenuati, il progetto e la versione.
    */
   const marchio = (
-    <Box key="marchio" flexDirection="row" flexWrap="wrap" alignItems="flex-end" gap={conVelo ? 'xs' : 1}>
+    <Box key="marchio" flexDirection="row" flexWrap="wrap" alignItems="flex-end" gap={conVelo ? 'xs' : 0}>
       <Text size="title" wrap="wrap">
         <Text key="marchio-glifo" color={MARCHIO.colore}>{`${MARCHIO.glifo} `}</Text>
         <Text key="marchio-chip" weight="semibold">{MARCHIO.nome[0]}</Text>

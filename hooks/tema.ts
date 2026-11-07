@@ -93,7 +93,9 @@ export const BOARD = {
 export function cssVariabiliBoard() {
   // Una sola scheda sotto le pillole; barre e schede passive non ricevono il velo di hover.
   const segni = { neutro: GRIGIO, ...Object.fromEntries(
-    Object.entries({ stato: STATO, motore: MOTORE, famiglia: FAMIGLIA, effort: EFFORT })
+    // Coppie [gruppo, tinte]: le stesse variabili (`--stato-…`, `--motore-…`), senza chiavi `stato:` che il controllo
+    // delle transizioni (prova-disco) prende per una scrittura dello stato di un'azione.
+    ([['stato', STATO], ['motore', MOTORE], ['famiglia', FAMIGLIA], ['effort', EFFORT]] as const)
       .flatMap(([gruppo, tinte]) => Object.entries(tinte).map(([k, v]) => [`${gruppo}-${k}`, v])),
   ) }
   const semantici = Object.entries(segni).map(([k, v]) => `--${k}:${v};--${k}-velo:${v}${VELO.pillola}`).join(';')

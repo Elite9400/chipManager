@@ -124,7 +124,8 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       return <Box key={k} flexDirection="column" gap="xs">
         {ui.Pillole({ chiave: `${k}-attributi`, voci: [
           ui.Pillola({ chiave: `${k}-motore`, segno: '◆', colore: MOTORE[a.esecutore], testo: motore(a.esecutore) }),
-          ui.Pillola({ chiave: `${k}-modello`, segno: '●', colore: famiglia ? FAMIGLIA[famiglia] : GRIGIO, testo: nomeModello(modello), mono: true }),
+          // Come la riga del terminale: senza modello noto (un motore non Claude senza scelta) lo si dice, mai una pillola vuota.
+          ui.Pillola({ chiave: `${k}-modello`, segno: '●', colore: famiglia ? FAMIGLIA[famiglia] : GRIGIO, testo: modello ? nomeModello(modello) : T('ses.modelloIgnoto'), mono: !!modello }),
           ui.Pillola({ chiave: `${k}-effort`, segno: barreEffort(eff), colore: EFFORT[eff as keyof typeof EFFORT] ?? GRIGIO, testo: eff, mono: true }),
           ui.Pillola({ chiave: `${k}-auditor`, segno: '◇', colore: GRIGIO, testo: aud ? T('chi.auditor', { auditor: nomeModello(idAuditor(aud) ?? aud) }) : T('chi.senzaAuditor') }),
           ui.Pillola({ chiave: `${k}-rev`, segno: '↺', colore: a.revisore === 'nessuno' ? GRIGIO : MOTORE[a.revisore], testo: a.revisore === 'nessuno' ? T('chi.senzaRev') : T('chi.rev', { revisore: rev === 'motore:codex' ? 'Codex' : rev ? nomeModello(rev) : motore(a.revisore) }) }),
@@ -542,7 +543,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const bloccatoQui = a.stato === 'proposta' ? violazioniAvvio(a, regoleOra, tutte, io, true) : []
     const sblocca = blocca(a, tutte)
     const mia = !!io && a.lanciataDa === io.io
-    return ui.Scheda({ chiave: `riga-${a.id}`, allerta, gap: 1, figli: [
+    return ui.Scheda({ chiave: `riga-${a.id}`, allerta, gap: 1, bordoTerminale: true, figli: [
       testa(
         `testa-${a.id}`,
         (

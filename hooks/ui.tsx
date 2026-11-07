@@ -335,9 +335,14 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
    * dell'allerta se c'è, altrimenti attenuato), padding e velo d'accento sotto il puntatore. Terminale: un blocco
    * semplice, senza bordo né hover.
    */
-  function Scheda(p: { chiave: string; allerta?: string; figli: unknown[]; gap?: number; compatta?: boolean; interattiva?: boolean }) {
+  function Scheda(p: { chiave: string; allerta?: string; figli: unknown[]; gap?: number; compatta?: boolean; interattiva?: boolean; bordoTerminale?: boolean }) {
+    // F12 (spec §2): nel terminale la scheda intera tiene gli angoli arrotondati, come prima; i record compatti no.
     if (terminale)
-      return (
+      return p.bordoTerminale ? (
+        <Box key={p.chiave} flexDirection="column" gap={p.gap} borderStyle="round" borderColor={p.allerta} borderDimColor={!p.allerta} paddingX={1}>
+          {p.figli as never}
+        </Box>
+      ) : (
         <Box key={p.chiave} flexDirection="column" gap={p.gap}>
           {p.figli as never}
         </Box>
