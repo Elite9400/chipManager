@@ -320,8 +320,13 @@ Settings come in two layers.
 ## Settings
 
 The **Settings** view has one section at a time, in two groups: **Account · all projects** (Connections,
-Thresholds with the manual budgets, Execution, Language) and **Project · owner/repo** (Balancing, Project, Board,
-Advanced, Legend).
+Thresholds with the manual budgets, Work mode, Execution, Language) and **Project · owner/repo** (Balancing, Project,
+Board, Advanced, Legend).
+
+- **Work mode.** Default effort per lane (R0–R2 `medium`, R3–R5 `high`; R4/R5 never lower), the Codex sandbox when
+  Codex executes (`workspace-write` edits files and the Claude session commits; `read-only`), sessions started together
+  (over the host option), a suggested auditor and cross review on R0–R2. Set it for all projects or override it for
+  this project; presets Recommended, Economy and Quality.
 
 - **Apply.** Every change goes into a draft and is validated at once (the error stays under the control). **Apply**
   writes the whole draft — project, account and language — in one compare-and-swap; **Discard changes** drops it.
@@ -336,6 +341,24 @@ Advanced, Legend).
   changes the settings of all projects; nothing changes until you press **Apply**. With a draft already open
   it waits, one at a time. Weight proposals (`proponi_pesi`) appear as a line in the Work view with **Review**,
   **Apply**, **Reject** and, after applying, **Undo**.
+
+## Set up
+
+`/chipmanager --setup` opens a guided setup in the panel: language, providers, sign-ins (Claude, Codex, GitHub), API
+keys, limits, work mode and a summary. Each step can be skipped; changes go into the Settings draft and **Apply**
+writes them all in one save. Providers, sign-ins and keys are yours («you»); keys are entered only in the mod's
+sensitive options (`/config`), and the step shows only whether a key is set. A session can prepare a configuration
+with `proponi_impostazioni`: the setup then opens on the summary for you to review.
+
+## Doctor
+
+`/chipmanager --doctor` checks without changing anything: config (unreadable, unknown fields, invalid values,
+restrictions looser than the account), data folders and spend register (git trees, links, a development build's
+register), the API lock and leftover key files, actions without a known project, sign-ins and host settings that
+block API Claude. Every finding says the cause and the fix. **Restore**, **Archive** and **Release** run only after
+you confirm, then the check runs again. Restore puts back the newest of the three kept copies and moves counters
+forward, so old board work and old weight undos are refused. **Copy report** gives the text; **Report to
+chipManager** shows a codes-only report and sends it, after a yes, with `gh` or the prefilled GitHub page.
 
 ## Configuration
 

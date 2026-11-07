@@ -148,7 +148,8 @@ Effort is a behavioural signal, not a token budget; lower effort means fewer and
 | Long agentic run over ~30 minutes | `xhigh` |
 
 - `max` is never offered. Each model has a cap (`tetto_per_modello`).
-- On well-specified R1–R2 work set `medium` yourself: an omitted effort can end at `high` (next section).
+- An omitted effort follows the owner's work mode: by default `medium` on R0–R2 and `high` on R3–R5; lane, Codex
+  and sensitive minimums still raise it.
 
 ### Defaults and balancing
 
@@ -266,10 +267,27 @@ The mandate ends with the action id and the attempt token. Use them exactly.
     may only be stricter than the account;
   - `account`: `soglie`, `apiClaude` (`budgetUsd`, `tetto`). An account patch changes **all projects**: say so to
     the user;
+  - `modoLavoro` in either layer: `effortPredefinito` per lane (R4/R5 never below `high`), `codexSandbox`,
+    `parallelo` (1–8), `auditorSuggerito`, `revisioneIncrociata` (R0–R2 only); a project value replaces the account one;
   - `lingua`.
+- `/chipmanager --setup` opens a guided setup; with a proposal in the draft it opens on the summary, so ask the user to
+  run it to review. `/chipmanager --doctor` checks and repairs, only on the user's confirmation.
 - Profile and weights are a pair: proposing `progetto.profilo` also sets that profile's weights (model weights
   stay). The API values are never derived: a cap proposed alone creates no budget, and a budget creates no cap.
   Any other field (keys, guards, permissions, providers, destinations) rejects the whole proposal.
+
+## Help improve chipManager
+
+Only when the user agrees, draft an issue for `Elite9400/chipManager`: a bug, a confusing text, a missing feature, a
+cost or quality problem.
+
+- It may contain: mod version, surface, host version, the shape of the mod's settings (field names and types, no
+  values), the mod's error and doctor finding codes, and the steps in general terms.
+- It must never contain: project names, paths, file contents, briefs, branch names, session titles, code, keys or
+  account data.
+- Show the full text first. File it with `gh issue create --repo Elite9400/chipManager` only after an explicit yes;
+  without `gh`, give the text and the new-issue URL. The doctor's «Report to chipManager» builds the same text from
+  codes only.
 
 ## Hard rules
 

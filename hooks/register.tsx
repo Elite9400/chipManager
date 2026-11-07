@@ -1148,6 +1148,18 @@ async function destinazioniPerAgenti($: Eng, r: Regole, chi: Chiamante) {
 }
 
 /** Lo schema delle soglie per fornitore in `proponi_impostazioni` (account o restrizioni del progetto). */
+/** F11.1: il modo di lavoro proponibile (le stesse guardie della scrittura: R4/R5 mai sotto high). */
+const SCHEMA_MODO = {
+  type: 'object', additionalProperties: false, description: 'Work mode; R4/R5 effort never below high.',
+  properties: {
+    effortPredefinito: { type: 'object', additionalProperties: false,
+      properties: Object.fromEntries(['R0', 'R1', 'R2', 'R3', 'R4', 'R5'].map(c => [c, { type: 'string', enum: c === 'R4' || c === 'R5' ? ['high', 'xhigh'] : ['low', 'medium', 'high', 'xhigh'] }])) },
+    codexSandbox: { type: 'string', enum: ['workspace-write', 'read-only'] },
+    parallelo: { type: 'integer', minimum: 1, maximum: 8 },
+    auditorSuggerito: { type: 'boolean' },
+    revisioneIncrociata: { type: 'boolean' },
+  },
+} as const
 const SCHEMA_SOGLIE = {
   type: 'object',
   additionalProperties: false,
@@ -2180,7 +2192,7 @@ export const register: Register = (on, options) => {
         'Only when the user explicitly asks for it: proposes settings, as a `progetto` patch (this project) and/or an `account` patch (all projects); ' +
         'current values in `risorse_agenti`. It changes nothing: ' +
         'a valid proposal fills the Settings draft in the panel, and the owner applies or discards it. Any unknown or forbidden field ' +
-        '(keys, guards, permissions, providers, destinations) rejects the whole proposal.',
+        '(keys, guards, permissions, providers, destinations) rejects the whole proposal. `modoLavoro` goes in either layer.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -2196,6 +2208,7 @@ export const register: Register = (on, options) => {
                 type: 'object', additionalProperties: false, description: 'Only stricter than the account: lower thresholds, a lower API month limit or cap per run.',
                 properties: { soglie: SCHEMA_SOGLIE, apiLimiteMeseUsd: { type: 'number', minimum: 0.01, maximum: 100000 }, apiTetto: { type: 'number', minimum: 0.01, maximum: 1000 } },
               },
+              modoLavoro: SCHEMA_MODO,
             },
           },
           account: {
@@ -2206,6 +2219,7 @@ export const register: Register = (on, options) => {
                 type: 'object', additionalProperties: false,
                 properties: { budgetUsd: { type: 'number', minimum: 0.01, maximum: 100000 }, tetto: { type: 'number', minimum: 0.01, maximum: 1000 } },
               },
+              modoLavoro: SCHEMA_MODO,
             },
           },
           lingua: { type: 'string', enum: ['en', 'it', 'es', 'fr', 'de', 'pt'] },

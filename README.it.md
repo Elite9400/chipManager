@@ -332,8 +332,13 @@ Le impostazioni stanno in due strati.
 ## Impostazioni
 
 La vista **Impostazioni** mostra una sezione alla volta, in due gruppi: **Account · tutti i progetti** (Connessioni,
-Soglie con i budget manuali, Esecuzione, Lingua) e **Progetto · owner/repo** (Bilanciamento, Progetto, Board,
-Avanzate, Legenda).
+Soglie con i budget manuali, Modo di lavoro, Esecuzione, Lingua) e **Progetto · owner/repo** (Bilanciamento,
+Progetto, Board, Avanzate, Legenda).
+
+- **Modo di lavoro.** Effort predefinito per corsia (R0–R2 `medium`, R3–R5 `high`; R4/R5 mai sotto), la sandbox di
+  Codex quando esegue (`workspace-write` modifica i file e la sessione Claude fa i commit; `read-only`), le sessioni
+  avviate insieme (sopra l'opzione dell'host), l'auditor suggerito e la revisione incrociata su R0–R2. Vale per tutti
+  i progetti o si sostituisce per questo progetto; preset Consigliato, Economico e Qualità.
 
 - **Applica.** Ogni modifica va in una bozza e si valida subito (l'errore resta sotto il controllo). **Applica** scrive
   l'intera bozza — progetto, account e lingua — con un solo compare-and-swap; **Annulla modifiche** la scarta. Tre
@@ -348,6 +353,25 @@ Avanzate, Legenda).
   sessione», che dice quando cambia le impostazioni di tutti i progetti; non cambia niente finché non premi **Applica**. Con una
   bozza già aperta aspetta, una alla volta. Le proposte di pesi (`proponi_pesi`) compaiono come una riga nella vista
   Lavoro con **Rivedi**, **Applica**, **Rifiuta** e, dopo l'applicazione, **Annulla**.
+
+## Configurazione guidata
+
+`/chipmanager --setup` apre nel pannello una configurazione guidata: lingua, fornitori, accessi (Claude, Codex,
+GitHub), chiavi API, limiti, modo di lavoro e riepilogo. Ogni passo si può saltare; le modifiche vanno nella bozza
+delle Impostazioni e **Applica** le scrive tutte insieme. Fornitori, accessi e chiavi sono tuoi («tu»); le chiavi si
+inseriscono solo nelle opzioni sensibili della mod (`/config`) e il passo dice solo se una chiave c'è. Una sessione può
+preparare una configurazione con `proponi_impostazioni`: la configurazione guidata si apre allora sul riepilogo.
+
+## Doctor
+
+`/chipmanager --doctor` controlla senza cambiare niente: config (illeggibile, campi sconosciuti, valori non validi,
+restrizioni più larghe dell'account), cartelle dei dati e registro della spesa (alberi git, link, registro di un build
+di sviluppo), il lock API e i file-chiave rimasti, azioni senza un progetto noto, accessi e impostazioni dell'host che
+bloccano API Claude. Ogni rilievo dice la causa e il rimedio. **Ripristina**, **Archivia** e **Libera** partono solo
+dopo la tua conferma, poi il controllo riparte. Il ripristino rimette la più recente delle tre copie tenute e fa
+avanzare i contatori, così il lavoro vecchio della board e gli annullamenti vecchi dei pesi vengono rifiutati.
+**Copia il rapporto** dà il testo; **Segnala a chipManager** mostra un rapporto di soli codici e lo invia, dopo un sì,
+con `gh` o la pagina precompilata di GitHub.
 
 ## Configurazione
 

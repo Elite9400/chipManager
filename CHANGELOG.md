@@ -10,6 +10,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Added
 
+- **Work mode** (Settings, Account group): default effort per lane, the Codex sandbox when Codex executes, sessions
+  started together (1–8, over the host option), a suggested auditor in the Recommended preset, and cross review on
+  R0–R2. Set for all projects, with a per-project override field by field; presets Recommended, Economy and Quality.
+  Sessions can propose it with `proponi_impostazioni` in either layer. Guards always win: R4/R5 never below `high`.
+- **`/chipmanager --setup`**: a guided setup in the panel, seven skippable steps (language, providers, sign-ins,
+  API keys, limits, work mode, summary) over the same Settings draft, written with one **Apply**. Providers, sign-ins
+  and keys are marked «you»: an AI proposal cannot fill them. Keys never pass through the panel: the step shows only
+  whether a key is set and where to enter it. With a session's proposal in the draft, the setup opens on the summary.
+- **`/chipmanager --doctor`**: a read-only check of the config, data folders, spend register, API lock, leftover key
+  files, actions, sign-ins (Codex by `codex login status` exit code only) and host settings. Each finding has a cause
+  and a fix; restore, archive and release run only after a confirmation, then the check runs again. The report copies
+  as text.
+- **Config backups.** Every config write keeps the last three valid versions (`config.json.bak1..3`) and the highest
+  counters seen. **Restore** copies the broken file aside, puts back the newest valid copy and moves the board
+  generation and the weights revision forward, so old work and an old **Undo** are refused.
+- **Report to chipManager**: from the doctor, a report made of codes only (versions, surface, the shape of the
+  settings without values, finding codes), shown in full and sent only after a yes, with `gh` or the prefilled
+  new-issue page; an issue template in `.github/ISSUE_TEMPLATE/report.md`.
+
 - **Install for one project or globally.** `claude plugin install chip-manager@chipmanager --scope user` for all
   your projects, `--scope project` for one repository shared with the team (`.claude/settings.json`), `--scope local`
   for one project only for you (`.claude/settings.local.json`). The mod behaves the same at every scope: accounts,
@@ -113,6 +132,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Changed
 
+- **Default effort on R0–R2 is now `medium`** (it was `high`) for chips that do not set one; R3–R5 stay `high`, and
+  the lane, Codex and sensitive minimums still raise it. To go back, set R0–R2 to `high` in Work mode.
+- **Codex as executor runs with `-s workspace-write`** (it was `-s read-only`): it edits files, and the coordinating
+  Claude session commits and pushes. The Codex reviewer stays read-only. To go back, set the Codex sandbox to read-only
+  in Work mode.
 - **Two looks, one behaviour.** The desktop is rich: chips are cards on a lightly tinted background, attributes are
   pills with the veil of their own tint (engine, model family, effort, reviewer, sensitive), sensitive and blocked chips
   have a red border, a queued chip shows an amber band, section headers are uppercase with the count, usage bars are
