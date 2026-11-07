@@ -1955,8 +1955,8 @@ function logicaTs(rev) {
   const dir = fuori()
   const nomi = rev
     ? spawnSync('git', ['-C', RADICE_REPO, 'ls-tree', '-r', '--name-only', rev, 'hooks/'], { encoding: 'utf8' }).stdout.trim().split('\n')
-    : ['hooks/logica.ts', 'hooks/lingua.ts', 'hooks/tema.ts', 'hooks/bilanciamento.ts', ...fs.readdirSync(path.join(RADICE_REPO, 'hooks', 'lingue')).map(n => `hooks/lingue/${n}`)]
-  for (const n of nomi.filter(n => /^hooks\/(logica|lingua|tema|bilanciamento)\.ts$|^hooks\/lingue\/\w+\.ts$/.test(n))) {
+    : ['hooks/logica.ts', 'hooks/lingua.ts', 'hooks/tema.ts', 'hooks/bilanciamento.ts', 'hooks/rapporto.ts', ...fs.readdirSync(path.join(RADICE_REPO, 'hooks', 'lingue')).map(n => `hooks/lingue/${n}`)]
+  for (const n of nomi.filter(n => /^hooks\/(logica|lingua|tema|bilanciamento|rapporto)\.ts$|^hooks\/lingue\/\w+\.ts$/.test(n))) {
     const testo = rev ? spawnSync('git', ['-C', RADICE_REPO, 'show', `${rev}:${n}`], { encoding: 'utf8' }).stdout : fs.readFileSync(path.join(RADICE_REPO, n), 'utf8')
     assert.ok(testo, `${rev ?? 'worktree'}:${n}`)
     fs.mkdirSync(path.dirname(path.join(dir, n)), { recursive: true })
@@ -1971,6 +1971,7 @@ function conLogica(corpo, ingresso) {
   const codice = `const vecchia = await import(${JSON.stringify(url(logicaTs(REV_RILASCIATA)))})
 const nuova = await import(${JSON.stringify(url(corrente))})
 const bil = await import(${JSON.stringify(url(path.join(path.dirname(corrente), 'bilanciamento.ts')))})
+const rap = ${fs.existsSync(path.join(path.dirname(corrente), 'rapporto.ts')) ? `await import(${JSON.stringify(url(path.join(path.dirname(corrente), 'rapporto.ts')))})` : 'null'}
 const ingresso = ${JSON.stringify(ingresso)}
 ${corpo}`
   const r = spawnSync(process.execPath, ['--experimental-transform-types', '--no-warnings', '--input-type=module', '-e', codice], { encoding: 'utf8' })
@@ -2444,14 +2445,14 @@ test('F11.3 ripristino: CAS sui byte (anche JSON rotto), copia del rotto, nessun
   fs.writeFileSync(spesa, '{"mesi":{}}')
   // Nessuna copia: 5 e niente cambia.
   fs.writeFileSync(file, '{ rotto')
-  assert.deepStrictEqual(await D.ripristinaConfig(file, { atteso: '{ rotto' }), [5, ''])
+  assert.deepStrictEqual(await D.ripristinaConfig(file, { impronta: impronta(Buffer.from('{ rotto')) }), [5, ''])
   assert.strictEqual(fs.readFileSync(file, 'utf8'), '{ rotto')
   fs.rmSync(file)
   assert.strictEqual(await D.configura(file, { atteso: null, repo: 'owner/prova', campi: { soloLocale: true } }), 0)
   fs.writeFileSync(file, '{ rotto di nuovo')
   // Il CAS è sui byte visti: un altro testo è un conflitto.
-  assert.deepStrictEqual(await D.ripristinaConfig(file, { atteso: '{ altro' }), [4, ''])
-  assert.deepStrictEqual(await D.ripristinaConfig(file, { atteso: '{ rotto di nuovo' }), [0, JSON.stringify({ copia: 1 })])
+  assert.deepStrictEqual(await D.ripristinaConfig(file, { impronta: impronta(Buffer.from('{ altro')) }), [4, ''])
+  assert.deepStrictEqual(await D.ripristinaConfig(file, { impronta: impronta(Buffer.from('{ rotto di nuovo')) }), [0, JSON.stringify({ copia: 1 })])
   assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).progetti['owner/prova'].soloLocale, true)
   const rotti = fs.readdirSync(dir).filter(n => n.startsWith('config.json.corrotto-'))
   assert.strictEqual(rotti.length, 1)
@@ -2460,7 +2461,7 @@ test('F11.3 ripristino: CAS sui byte (anche JSON rotto), copia del rotto, nessun
   // Dal comando: un percorso del config sotto un repository si rifiuta come per configura.
   const repo = fuori()
   assert.strictEqual(spawnSync('git', ['init', '-q', repo]).status, 0)
-  assert.strictEqual(esegui(['ripristina-config', path.join(repo, 'config.json')], JSON.stringify({ atteso: null })).status, 6)
+  assert.strictEqual(esegui(['ripristina-config', path.join(repo, 'config.json')], JSON.stringify({ impronta: null })).status, 6)
 })
 
 test('F11.3 N2: generazione 3 → 4 → config rotto → ripristino della copia con 3: la generazione è 5 e il lavoro vecchio è rifiutato', async () => {
@@ -2472,7 +2473,7 @@ test('F11.3 N2: generazione 3 → 4 → config rotto → ripristino della copia 
   // La copia più recente è rotta anch'essa: si ripristina quella con la generazione 3, ma il contatore ha visto 4.
   fs.writeFileSync(`${b.config}.bak1`, '{ rotta')
   fs.writeFileSync(b.config, '{ rotto')
-  assert.deepStrictEqual(await D.ripristinaConfig(b.config, { atteso: '{ rotto' }), [0, JSON.stringify({ copia: 2 })])
+  assert.deepStrictEqual(await D.ripristinaConfig(b.config, { impronta: impronta(Buffer.from('{ rotto')) }), [0, JSON.stringify({ copia: 2 })])
   const p = JSON.parse(fs.readFileSync(b.config, 'utf8')).progetti[b.repo]
   assert.deepStrictEqual([p.board.modo, p.board.generazione, p.pesiOrigine], ['accesa', 5, { tipo: 'manuale' }])
   for (const g of [3, 4]) assert.strictEqual(bc(b, 'board-scrivi', g, [`v${g}`], HTML).status, 4)
@@ -2485,7 +2486,7 @@ test('F11.3 N2: dopo il ripristino «Annulla» di una proposta di pesi applicata
   assert.strictEqual((await decidi(a, id, 0, 'applica', 'd-ripristino1')).codice, 0)
   assert.strictEqual(a.leggi().pesiRevisione, 1)
   fs.writeFileSync(a.config, 'non json')
-  assert.strictEqual((await D.ripristinaConfig(a.config, { atteso: 'non json' }))[0], 0)
+  assert.strictEqual((await D.ripristinaConfig(a.config, { impronta: impronta(Buffer.from('non json')) }))[0], 0)
   assert.deepStrictEqual([a.leggi().pesiRevisione, a.leggi().pesiOrigine], [2, { tipo: 'manuale' }])
   assert.deepStrictEqual(await pesiAnnulla(a.config, REPO_PESI, id, 'u-ripristino1'), [4, 'helper.dopoApplicazione'])
 })
@@ -2572,4 +2573,83 @@ fs.writeFileSync(${JSON.stringify(traccia)}, JSON.stringify({ a, corpo: fs.readF
   assert.deepStrictEqual(t.a.slice(0, 6), ['issue', 'create', '--repo', 'Elite9400/chipManager', '--title', 'chipManager report: doctor findings'])
   assert.strictEqual(t.corpo, corpo)
   assert.strictEqual(fs.existsSync(t.file), false)
+})
+
+// --- F11, revisione Codex -------------------------------------------------------------------------------------------
+
+const impronta = b => require('node:crypto').createHash('sha256').update(b).digest('hex')
+
+test('F11 rilievo 2: i contatori si salvano PRIMA del config; una rotazione che fallisce non li lascia indietro', async () => {
+  const file = path.join(tmp(), 'config.json')
+  const scrivi = campi => D.configura(file, { atteso: fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null, repo: 'owner/prova', campi })
+  assert.strictEqual(await scrivi({ board: { modo: 'accesa' } }), 0)
+  // .bak2 e .bak3 cartelle piene: la rotazione fallisce.
+  for (const i of [2, 3]) {
+    fs.mkdirSync(`${file}.bak${i}`)
+    fs.writeFileSync(`${file}.bak${i}/x`, 'x')
+  }
+  assert.strictEqual(await scrivi({ board: { modo: 'riassunti' } }), 0)
+  assert.strictEqual(JSON.parse(fs.readFileSync(`${file}.contatori`, 'utf8')).progetti['owner/prova'].generazione, 2)
+})
+
+test('F11 rilievo 2: il ripristino porta avanti generazione e revisione anche se la copia non ha board o non ha il progetto', async () => {
+  const b = preparaBoard()
+  fs.writeFileSync(b.config, JSON.stringify({ progetti: { [b.repo]: { board: { modo: 'riassunti', generazione: 2 } }, 'altro/progetto': { pesiRevisione: 3 } } }))
+  assert.strictEqual(await imposta(b, 'accesa'), 3)
+  assert.strictEqual(await imposta(b, 'riassunti'), 4)
+  // L'unica copia valida non ha la board di questo progetto né l'altro progetto.
+  fs.writeFileSync(`${b.config}.bak1`, JSON.stringify({ progetti: { [b.repo]: {} } }))
+  for (const i of [2, 3]) fs.rmSync(`${b.config}.bak${i}`, { force: true })
+  const rotto = Buffer.from('{ rotto')
+  fs.writeFileSync(b.config, rotto)
+  assert.strictEqual((await D.ripristinaConfig(b.config, { impronta: impronta(rotto) }))[0], 0)
+  const c = JSON.parse(fs.readFileSync(b.config, 'utf8'))
+  assert.deepStrictEqual(c.progetti[b.repo].board, { modo: 'spenta', generazione: 5 })
+  assert.strictEqual(c.progetti['altro/progetto'].pesiRevisione, 4)
+  for (const g of [1, 3, 4]) assert.strictEqual(bc(b, 'board-scrivi', g, [`v${g}`], HTML).status, 4)
+  assert.strictEqual(await imposta(b, 'accesa'), 6)
+  assert.strictEqual(bc(b, 'board-scrivi', 1, ['v1b'], HTML).status, 4)
+})
+
+test('F11 rilievo 3: il CAS del ripristino è sui byte (impronta), la copia del rotto è binaria', async () => {
+  const dir = tmp()
+  const file = path.join(dir, 'config.json')
+  assert.strictEqual(await D.configura(file, { atteso: null, repo: 'owner/prova', campi: { soloLocale: true } }), 0)
+  const visto = Buffer.from([0x7b, 0x20, 0x80])
+  fs.writeFileSync(file, visto)
+  assert.deepStrictEqual(await D.ripristinaConfig(file, { impronta: impronta(Buffer.from([0x7b, 0x20, 0x81])) }), [4, ''])
+  assert.deepStrictEqual(await D.ripristinaConfig(file, { atteso: 'vecchia forma' }), [2, ''])
+  assert.strictEqual((await D.ripristinaConfig(file, { impronta: impronta(visto) }))[0], 0)
+  const rotto = fs.readdirSync(dir).find(n => n.startsWith('config.json.corrotto-'))
+  assert.deepStrictEqual(fs.readFileSync(path.join(dir, rotto)), visto)
+})
+
+const URL_NUOVO = 'https://github.com/Elite9400/chipManager/issues/new'
+const CORPO = ['### chipManager report', '- mod: 2.2.0', '- surface: desktop', '- host: 2.1.280', '- account shape: soglie:object, apiClaude:object', '- project shape: none', '- doctor findings: config.illeggibile, lock.api'].join('\n')
+const urlCon = (corpo = CORPO, extra = '') => `${URL_NUOVO}?title=${encodeURIComponent('chipManager report: doctor findings')}&body=${encodeURIComponent(corpo)}${extra}`
+
+test('F11 rilievo 4: apri-url accetta l\'URL del rapporto (con &), solo host, percorso e parametri attesi; apre con argv fisso', () => {
+  const aperti = []
+  assert.deepStrictEqual(D.apriUrl(urlCon(), { avvia: argv => aperti.push(argv) }), [0, ''])
+  assert.strictEqual(aperti.length, 1)
+  assert.strictEqual(aperti[0].at(-1), urlCon())
+  for (const url of [urlCon().replace('https://github.com/', 'https://github.com.example.org/'), urlCon().replace('https:', 'http:'),
+    urlCon().replace('/issues/new?', '/issues/new/x?'), urlCon(CORPO, '&labels=x'), urlCon(CORPO.replace('lock.api', 'Mario Rossi')),
+    `${URL_NUOVO}?title=altro&body=${encodeURIComponent(CORPO)}`, urlCon().replace('github.com', 'utente@github.com')])
+    assert.deepStrictEqual(D.apriUrl(url, { avvia: argv => aperti.push(argv) }), [2, ''], url)
+  assert.strictEqual(aperti.length, 1)
+})
+
+test('F11 rilievo 5: segnala-gh e apri-url controllano gli stessi elenchi chiusi del redattore TS (parità)', () => {
+  for (const male of [CORPO.replace('config.illeggibile, lock.api', 'Mario Rossi'), CORPO.replace('soglie:object, apiClaude:object', 'SecretProject:string'),
+    CORPO.replace('- surface: desktop', '- surface: segreto'), CORPO.replace('soglie:object', 'soglie:segreto'), CORPO.replace('lock.api', 'lock.api, lock.api')])
+    assert.strictEqual(D.rapportoValido(male), false, male)
+  assert.strictEqual(D.rapportoValido(CORPO), true)
+  const ts = conLogica(`console.log(JSON.stringify(ingresso.map(d => rap.rapportoRedatto(d))))`, [
+    { versione: '2.2.0', superficie: 'terminal', host: '2.1.280-dev', account: { soglie: {}, limitiManuali: [], apiClaude: { budgetUsd: 1 }, freellmapi: {}, modoLavoro: {} },
+      progetto: { fornitori: [], soloLocale: true, milestoneGithub: false, pesi: [], limitiManuali: [], freellmapi: null, board: {}, soglie: {}, profilo: 'x', apiClaude: null, consigliere: 'x', restrizioni: {}, modoLavoro: {} },
+      codici: ['connessione', 'config.illeggibile', 'host.versione', 'percorso.dati', 'accesso.github', 'azioni.orfane'] },
+    { versione: 'x', superficie: 'x', codici: [] },
+  ])
+  for (const t of ts) assert.strictEqual(D.rapportoValido(t), true, t)
 })

@@ -48,10 +48,14 @@ function diagnosi(config, cartella, root, repo, deps = {}) {
 
   // --- config ---------------------------------------------------------------------------------------------------
   let c = {}
+  // L'impronta dei byte letti: il ripristino la usa come CAS (null = file assente o non letto).
+  let impronta = null
   if (sicuro(path.dirname(path.resolve(config)), 'percorso.config')) {
     let testo = null
     try {
-      testo = fs.readFileSync(config, 'utf8')
+      const byte = fs.readFileSync(config)
+      impronta = require('node:crypto').createHash('sha256').update(byte).digest('hex')
+      testo = byte.toString('utf8')
     } catch (e) {
       if (e.code !== 'ENOENT') trova('config.illeggibile', { copie: copieValide(config).length })
     }
@@ -89,7 +93,8 @@ function diagnosi(config, cartella, root, repo, deps = {}) {
   }
 
   // --- cartelle e registri --------------------------------------------------------------------------------------
-  const datiOk = sicuro(cartella, 'percorso.dati')
+  // Senza cartella (dipende da un config che non si legge) i controlli dei dati si saltano.
+  const datiOk = !!cartella && sicuro(cartella, 'percorso.dati')
   if (sicuro(dm, 'percorso.macchina')) sicuro(api.fileSpesa(dm), 'percorso.registro')
   // Un registro della spesa per cartella (build di sviluppo) blocca la corsia API: si offre di archiviarlo.
   if (datiOk && fs.existsSync(path.join(cartella, 'spesa-api.json'))) trova('registro.sviluppo')
@@ -151,7 +156,7 @@ function diagnosi(config, cartella, root, repo, deps = {}) {
   } catch {
     versione = null
   }
-  return { trovati, versione }
+  return { trovati, versione, impronta }
 }
 
 /**

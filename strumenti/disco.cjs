@@ -81,18 +81,69 @@ function scriviDati(file, testo) {
 }
 
 // --- F11.4: il rapporto a chipManager ---------------------------------------------------------------------------------
-const URL_RAPPORTO = 'https://github.com/Elite9400/chipManager/issues/new?'
-/** Ogni riga del rapporto viene dagli elenchi chiusi del pannello (hooks/rapporto.ts): qui si ricontrolla la forma. */
-const RIGA_RAPPORTO = /^(### chipManager report|- (mod|host): [0-9a-z.-]{1,20}|- surface: [a-z]{1,10}|- (account|project) shape: [A-Za-z:, ]{1,600}|- doctor findings: [A-Za-z., ]{1,800})$/
-const rapportoValido = t => typeof t === 'string' && t.length <= 4000 && t.split('\n').every(r => RIGA_RAPPORTO.test(r))
+// Gli stessi elenchi chiusi di hooks/rapporto.ts (un test di parità li confronta): la difesa al confine non si fida del pannello.
+const TITOLO_RAPPORTO = 'chipManager report: doctor findings'
+const RILIEVI_RAPPORTO = ['config.illeggibile', 'config.senzaCopie', 'config.campoIgnoto', 'config.nonValido', 'config.restrizioneLarga', 'config.modoNonValido',
+  'percorso.config', 'percorso.dati', 'percorso.macchina', 'percorso.registro', 'registro.sviluppo', 'lock.api', 'lock.apiIlleggibile', 'chiavi.residue',
+  'azioni.orfane', 'azioni.progettiIgnoti', 'accesso.claude', 'accesso.codex', 'accesso.github', 'host.impostazioniApi', 'host.advisor', 'host.versione', 'connessione']
+const CAMPI_ACCOUNT_RAPPORTO = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi', 'modoLavoro']
+const CAMPI_PROGETTO_RAPPORTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude',
+  'consigliere', 'restrizioni', 'modoLavoro']
+const SUPERFICI_RAPPORTO = ['desktop', 'terminal', 'vscode', 'mobile', 'unknown']
+const TIPI_RAPPORTO = ['null', 'array', 'object', 'number', 'boolean', 'string']
+const VERSIONE_RAPPORTO = /^(\d{1,4}\.\d{1,4}\.\d{1,5}(-dev)?|unknown)$/
 
-/** Apre nel browser SOLO l'URL del nuovo issue di chipManager: argv fisso per sistema, mai una shell. */
-function apriUrl(url) {
-  if (typeof url !== 'string' || !url.startsWith(URL_RAPPORTO) || url.length > 7000 || /[\s"'<>^&|]/.test(url)) return [2, '']
+/** `campo:tipo, …` con campi dell'elenco, nell'ordine dell'elenco e senza ripetizioni, o `none`. */
+function formaRapportoValida(s, campi) {
+  if (s === 'none') return true
+  let prima = -1
+  for (const parte of s.split(', ')) {
+    const [campo, tipo, ...resto] = parte.split(':')
+    const i = campi.indexOf(campo)
+    if (resto.length || i <= prima || !TIPI_RAPPORTO.includes(tipo)) return false
+    prima = i
+  }
+  return true
+}
+
+/** Il rapporto esattamente come lo scrive `rapportoRedatto`: sette righe, ogni valore da un elenco chiuso. */
+function rapportoValido(t) {
+  if (typeof t !== 'string' || t.length > 4000) return false
+  const r = t.split('\n')
+  if (r.length !== 7 || r[0] !== '### chipManager report') return false
+  const valore = (riga, prefisso) => (riga.startsWith(prefisso) ? riga.slice(prefisso.length) : null)
+  const [mod, sup, host, acc, pro, fin] = [[1, '- mod: '], [2, '- surface: '], [3, '- host: '], [4, '- account shape: '], [5, '- project shape: '], [6, '- doctor findings: ']]
+    .map(([i, p]) => valore(r[i], p))
+  if ([mod, sup, host, acc, pro, fin].some(x => x === null)) return false
+  if (!VERSIONE_RAPPORTO.test(mod) || !VERSIONE_RAPPORTO.test(host) || !SUPERFICI_RAPPORTO.includes(sup)) return false
+  if (!formaRapportoValida(acc, CAMPI_ACCOUNT_RAPPORTO) || !formaRapportoValida(pro, CAMPI_PROGETTO_RAPPORTO)) return false
+  if (fin === 'none') return true
+  const codici = fin.split(', ')
+  return codici.every((c, i) => RILIEVI_RAPPORTO.includes(c) && (i === 0 || codici[i - 1] < c))
+}
+
+/**
+ * Apre nel browser SOLO il nuovo issue di chipManager: https, host esatto github.com, percorso esatto, i soli parametri
+ * `title` (fisso) e `body` (un rapporto valido). Argv fisso per sistema, mai una shell. `deps.avvia` solo per le prove.
+ */
+function apriUrl(url, deps = {}) {
+  if (typeof url !== 'string' || url.length > 7000 || /[\s"'<>\\^`{|}]/.test(url)) return [2, '']
+  let u
+  try {
+    u = new URL(url)
+  } catch {
+    return [2, '']
+  }
+  const chiavi = [...u.searchParams.keys()]
+  if (u.protocol !== 'https:' || u.hostname !== 'github.com' || u.port || u.username || u.password || u.hash || u.pathname !== '/Elite9400/chipManager/issues/new' ||
+      chiavi.length !== 2 || chiavi[0] !== 'title' || chiavi[1] !== 'body' || u.searchParams.get('title') !== TITOLO_RAPPORTO || !rapportoValido(u.searchParams.get('body'))) return [2, '']
   const argv = process.platform === 'win32' ? ['rundll32', 'url.dll,FileProtocolHandler', url] : process.platform === 'darwin' ? ['open', url] : ['xdg-open', url]
   try {
-    const [eseguibile, argomenti] = comandoReale(argv)
-    spawn(eseguibile, argomenti, { stdio: 'ignore', detached: true, windowsHide: true }).unref()
+    if (deps.avvia) deps.avvia(argv)
+    else {
+      const [eseguibile, argomenti] = comandoReale(argv)
+      spawn(eseguibile, argomenti, { stdio: 'ignore', detached: true, windowsHide: true }).unref()
+    }
     return [0, '']
   } catch {
     return [1, '']
@@ -101,7 +152,7 @@ function apriUrl(url) {
 
 /** `gh issue create` sul solo repository di chipManager, con il corpo in un file temporaneo cancellato dopo. */
 function segnalaGh(richiesta) {
-  if (!oggetto(richiesta) || richiesta.titolo !== 'chipManager report: doctor findings' || !rapportoValido(richiesta.corpo)) return [2, '']
+  if (!oggetto(richiesta) || richiesta.titolo !== TITOLO_RAPPORTO || !rapportoValido(richiesta.corpo)) return [2, '']
   const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'chipmanager-rapporto-'))
   const file = path.join(dir, 'corpo.md')
   try {
@@ -121,6 +172,8 @@ function segnalaGh(richiesta) {
 const COPIE = 3
 const fileContatori = file => `${file}.contatori`
 const intero = v => (Number.isInteger(v) && v >= 0 ? v : 0)
+/** L'impronta dei byte del config: il CAS del ripristino la confronta (anche su un file che non è UTF-8 valido). */
+const improntaByte = b => crypto.createHash('sha256').update(b).digest('hex')
 
 /** Un config che si può usare: un oggetto, con `progetti` e `account` oggetti se ci sono, e regole efficaci valide. */
 function configValido(c) {
@@ -158,34 +211,42 @@ function leggiContatori(file) {
 }
 
 /**
- * Ogni scrittura riuscita del config: il file, poi la copia più recente in `.bak1` (le altre scalano fino a `.bak3`) e il
- * file dei contatori (il massimo mai visto). Copie e contatori dopo la scrittura: se non riescono la scrittura resta
- * valida e il doctor lo dice («senza copie»).
+ * Ogni scrittura del config. PRIMA i contatori (il massimo fra file dei contatori, config attuale e nuovo): se non si
+ * salvano, il config non si scrive. Poi il config, poi la copia più recente in `.bak1` (le altre scalano fino a
+ * `.bak3`): una rotazione che non riesce lascia valida la scrittura e il doctor lo dice («senza copie»).
  */
 function scriviConfig(file, testo) {
+  let attuale = { versione: 0, progetti: {} }
+  try {
+    attuale = contatoriDi(JSON.parse(fs.readFileSync(file, 'utf8')))
+  } catch {
+    // config assente o illeggibile: valgono il file dei contatori e il nuovo testo
+  }
+  const k = maxContatori(maxContatori(leggiContatori(file), attuale), contatoriDi(JSON.parse(testo)))
+  scriviDati(fileContatori(file), JSON.stringify(k))
   scriviDati(file, testo)
   try {
     for (let i = COPIE; i > 1; i--) if (fs.existsSync(`${file}.bak${i - 1}`)) fs.renameSync(`${file}.bak${i - 1}`, `${file}.bak${i}`)
     scriviDati(`${file}.bak1`, testo)
-    const k = maxContatori(leggiContatori(file), contatoriDi(JSON.parse(testo)))
-    scriviDati(fileContatori(file), JSON.stringify({ versione: k.versione, progetti: k.progetti }))
   } catch (e) {
     if (!(e instanceof Error)) throw e
   }
 }
 
 /**
- * Ripristina l'ultima copia valida, sotto il mutex di `configura`, con CAS sui BYTE osservati (anche un JSON rotto).
- * Prima copia l'attuale in `config.json.corrotto-<istante>`, poi sostituisce in modo atomico. Ogni contatore monotòno
- * diventa max(attuale leggibile, file dei contatori, copia) + 1 e l'origine dei pesi «manuale»: un lavoro avviato su una
- * generazione vecchia o un «Annulla» di una proposta di prima non valgono più. Il registro della spesa non si tocca.
- * stdin `{ atteso }`: 0 ripristinato, 4 il file è cambiato, 5 nessuna copia valida (non fa niente), 3 occupato.
+ * Ripristina l'ultima copia valida, sotto il mutex di `configura`, con CAS sull'IMPRONTA dei byte osservati (anche un
+ * JSON rotto o non UTF-8). Prima copia in binario l'attuale in `config.json.corrotto-<istante>`, poi sostituisce in modo
+ * atomico. Per OGNI progetto (della copia, dei contatori o del file attuale) generazione della board e revisione dei
+ * pesi diventano max(attuale leggibile, file dei contatori, copia) + 1, con la board spenta se la copia non ne ha una,
+ * e l'origine dei pesi «manuale»: un lavoro avviato su una generazione vecchia o un «Annulla» di prima non valgono più.
+ * Il registro della spesa non si tocca. stdin `{ impronta }` (sha256 esadecimale, null = file assente): 0 ripristinato,
+ * 4 il file è cambiato, 5 nessuna copia valida (non fa niente), 3 occupato.
  */
 async function ripristinaConfig(file, richiesta) {
-  if (!oggetto(richiesta) || !(richiesta.atteso === null || typeof richiesta.atteso === 'string')) return [2, '']
+  if (!oggetto(richiesta) || !(richiesta.impronta === null || (typeof richiesta.impronta === 'string' && /^[0-9a-f]{64}$/.test(richiesta.impronta)))) return [2, '']
   const r = await conMutex(mutexConfig(file), 8000, () => {
-    const ora = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null
-    if (ora !== richiesta.atteso) return [4, '']
+    const ora = fs.existsSync(file) ? fs.readFileSync(file) : null
+    if ((ora === null ? null : improntaByte(ora)) !== richiesta.impronta) return [4, '']
     let copia = null
     let n = 0
     for (const i of [1, 2, 3]) {
@@ -204,18 +265,24 @@ async function ripristinaConfig(file, richiesta) {
     if (ora !== null) scriviDati(`${file}.corrotto-${new Date().toISOString().replace(/[:.]/g, '-')}`, ora)
     let attuali = { versione: 0, progetti: {} }
     try {
-      attuali = contatoriDi(JSON.parse(ora))
+      attuali = contatoriDi(JSON.parse(ora.toString('utf8')))
     } catch {
       // illeggibile: valgono il file dei contatori e la copia
     }
     const k = maxContatori(maxContatori(attuali, leggiContatori(file)), contatoriDi(copia))
     const progetti = {}
-    for (const [repo, p] of Object.entries(copia.progetti ?? {})) {
-      const x = k.progetti[repo]
-      progetti[repo] = !oggetto(p) ? p : { ...p, pesiRevisione: x.pesiRevisione + 1, pesiOrigine: { tipo: 'manuale' },
-        ...(oggetto(p.board) && { board: { ...p.board, generazione: x.generazione + 1 } }) }
+    for (const repo of new Set([...Object.keys(copia.progetti ?? {}), ...Object.keys(k.progetti)])) {
+      const p = copia.progetti?.[repo]
+      if (p !== undefined && !oggetto(p)) {
+        progetti[repo] = p
+        continue
+      }
+      const x = k.progetti[repo] ?? { generazione: 0, pesiRevisione: 0 }
+      const b = oggetto(p?.board) ? p.board : {}
+      progetti[repo] = { ...p, pesiRevisione: x.pesiRevisione + 1, pesiOrigine: { tipo: 'manuale' },
+        board: { ...b, modo: typeof b.modo === 'string' ? b.modo : 'spenta', generazione: x.generazione + 1 } }
     }
-    const nuovo = { ...copia, ...(copia.progetti !== undefined && { progetti }), ...(copia.versione !== undefined && { versione: k.versione + 1 }) }
+    const nuovo = { ...copia, ...(Object.keys(progetti).length && { progetti }), ...((copia.versione !== undefined || k.versione > 0) && { versione: k.versione + 1 }) }
     scriviConfig(file, JSON.stringify(nuovo, null, 2))
     return [0, JSON.stringify({ copia: n })]
   })
