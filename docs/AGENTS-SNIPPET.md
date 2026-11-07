@@ -16,8 +16,11 @@ Work that deserves its own session (one branch, one review) goes to the chipMana
 - Always set `corsia`: R0 text, R1 small with tests, R2 ordinary, R3 large, R4–R5 sensitive.
 - Leave `esecutore`, `modello`, `effort`, `destinazione` out unless you have a reason: the panel balances them
   within `routing.json` and live limits. On well-specified R1–R2 work set `effort: "medium"`.
-- Words like auth…, login, password, permissions or personal data make an action R4 (Opus/Fable, effort high,
-  local, Claude review). Use them only for really sensitive work; mark that work R4 yourself.
+- Sensitive work (auth, permissions, personal data): always set `corsia: "R4"` and `sensibile: true` yourself.
+- Text detection also forces R4 (Opus/Fable, effort high, local, Claude review) on: words starting with `auth`
+  (also `author`), `login`, `password`, `passwd`, `mfa`, `otp`, `csrf`, `permess…`, `PII`, `dati personali`,
+  `codice fiscale`, project terms. Reword false matches in non-sensitive briefs.
+- Put spec paths in the brief: `piano` shows a file on the board but never reaches the session.
 - Before a batch, load and call `risorse_agenti`: `regole.lette: false` means nothing starts; `percentuale` is
   plan used; data older than 5 minutes is not current; skip providers over their critical threshold.
 - `dipende`: only ids that must be merged first. Independent actions run in parallel.
@@ -25,5 +28,6 @@ Work that deserves its own session (one branch, one review) goes to the chipMana
 - In a started session: when the branch is pushed and reported, call `aggiorna_azione` with the id, the
   `tentativo` from the mandate and `stato: "consegnata"`; report the review with `revisione.esito`
   (`in-corso`, `approvata`, `da-correggere`).
+- Exception, `api-claude` runs: commit in the worktree, never push; the review comes after delivery.
 - Call `proponi_pesi` or `proponi_impostazioni` only when the user asks.
 ```

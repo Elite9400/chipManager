@@ -24,7 +24,7 @@ the prompt the mod builds from your brief for the started session. The **owner**
 | `accodata` | panel | waits for merged dependencies, the Codex lane or a parallel slot |
 | `in-avvio` | panel | reserved under a machine mutex, attempt token `az-…` issued |
 | `avviata` | panel (or you, only when the panel asks you to start it) | a session is working on it |
-| `consegnata` | the started session, with `aggiorna_azione` | branch pushed, report sent |
+| `consegnata` | the started session, with `aggiorna_azione`; for `api-claude`, the launcher | branch pushed, report sent (`api-claude`: committed in its worktree, not pushed) |
 | `completata` | panel | the branch is merged (registry task closed) or the owner marked it done |
 | `fallita` | panel or the starting session | the start failed; the owner retries |
 | `scartata` | the proposer or the owner | withdrawn; the owner can undo it |
@@ -33,6 +33,7 @@ Rules that follow from it:
 
 - **Delivered is not done.** Dependents start only when the dependency is `completata`, that is merged.
 - Review happens inside the started session before delivery (see [Reviewer](#reviewer)); report its outcome.
+  Exception, `api-claude`: the headless run commits without pushing and the review happens after delivery.
 - The owner can change every field before the start. Your presets are a proposal.
 
 ## When to propose an action, and when not
@@ -79,13 +80,14 @@ Verify: <exact commands to run, and which output proves it>.
 | `Run all tests and make sure everything is perfect.` | no criterion | `Done when: npm test passes and the new case for empty input is covered.` |
 
 Keep every word that changes what the session does; cut the rest. Name files and commands; they are cheaper than
-description. Put long specs in a repository file and pass its path in `piano` (`.md`/`.txt`, relative path).
+description. Put long specs in a repository file and write its path **in the brief**: the mandate is built from
+the brief only. `piano` (`.md`/`.txt`, relative path) shows the same file on the board; it does not reach the session.
 
 ## Choose the options
 
-Set what you know; leave the rest to the balancer. The balancer fills **only** omitted fields, tries every
-combination the rules allow and keeps the best score (weights × lane factor × free margin of the provider ÷ sessions
-already on that model). Explicit fields always stay.
+Set what you know; leave the rest to the balancer. It fills **only** omitted executor, model, effort and reviewer,
+among combinations the rules allow ([Defaults and balancing](#defaults-and-balancing)). It never sets the
+destination. Explicit fields always stay.
 
 ### Lane (`corsia`): always set it
 
@@ -98,12 +100,15 @@ already on that model). Explicit fields always stay.
 | R4 | sensitive: auth, permissions, personal data, project terms | Claude author Opus or Fable, effort ≥ high, Claude reviewer, local only, no bypass |
 | R5 | highest risk | same guards as R4 |
 
-- The lane drives cost. On R0–R1 the balancer breaks ties toward the lowest-ranked allowed Claude model; with the
-  Automatic profile it also scores `high`/`xhigh` effort down. Without a lane, Codex is never chosen (it needs one).
-- The mod makes an action R4 when title, brief or background match `auth…`, `login`, `password`, `mfa`, `otp`,
-  `csrf`, `permess…`, `PII`, personal-data terms, or the project's own terms. `sensibile: false` does not undo it.
-  Matching is by word start: `author`, `authority` and `auth-free` count. Reword when the work is not sensitive.
-- Mark real sensitive work yourself: `corsia: "R4"` or `sensibile: true`.
+- The lane drives cost (see [Defaults and balancing](#defaults-and-balancing)). Without a lane, Codex is never
+  chosen (it needs one).
+- **Mark sensitive work yourself, always:** `corsia: "R4"` (or `"R5"`) **and** `sensibile: true`. Do not rely on
+  text detection: it is a safety net with a short, partly Italian word list.
+- The safety net makes an action R4 when title, brief or a background contains one of these words (case-insensitive,
+  whole word): `auth` and every word starting with it, `login`, `password`, `passwd`, `mfa`, `otp`, `csrf`, words
+  starting with `permess` (Italian), `PII`, `dati personali`, `codice fiscale`, or a term from the project's
+  `sensibili` list. English `permissions` or `personal data` do **not** trigger it. `sensibile: false` never undoes it.
+- Known false positives: `author`, `authority`, `auth-free`. Reword them when the work is not sensitive.
 
 ### Executor (`esecutore`) and model (`modello`)
 
@@ -115,9 +120,9 @@ already on that model). Explicit fields always stay.
 | Sensitive (R4–R5) | `claude` with Opus or Fable (enforced) |
 | Not sure | leave both out |
 
-Allowed models come from `routing.json` (listed in the `modello` schema and in `risorse_agenti`). On R2–R3 with
-equal scores the balancer keeps the first allowed model, often the most capable: name a lighter model when the task
-is well specified. Describe the outcome, not the steps: Anthropic says so for Fable
+Allowed models come from `routing.json` (listed in the `modello` schema and in `risorse_agenti`). Name a lighter
+model yourself when the task is well specified and the balancer might keep a heavier one (see
+[Defaults and balancing](#defaults-and-balancing)). Describe the outcome, not the steps: Anthropic says so for Fable
 ([model configuration](https://code.claude.com/docs/en/model-config)), OpenAI for Codex
 ([prompting](https://learn.chatgpt.com/codex/prompting)).
 
@@ -133,9 +138,29 @@ Effort is a behavioural signal, not a token budget; lower effort means fewer and
 | Ambiguous design, hard bug, sensitive lane (minimum, enforced) | `high` |
 | Long agentic run over ~30 minutes | `xhigh` |
 
-- Omitted effort: the mod uses `high` for Claude and the lane's `corsia_codex` effort for Codex (a minimum).
-  Set `medium` yourself on well-specified R1–R2 work to save cost.
 - `max` is never offered. Each model has a cap (`tetto_per_modello`).
+- On well-specified R1–R2 work set `medium` yourself: an omitted effort can end at `high` (next section).
+
+### Defaults and balancing
+
+Two steps fill an omitted field. Keep them apart when you predict the result.
+
+**Starting preference** (`effortDi`, `modelloDi`):
+
+- Effort: `high` for Claude when allowed; for Codex the lane's `corsia_codex` effort (also a minimum).
+- Model: the first allowed model of the executor in `routing.json`.
+
+**Balancing result** (`bilancia`): every allowed combination of the omitted fields is scored (weights × lane factor
+× free margin ÷ sessions on that model) and the best wins. On equal scores:
+
+- the starting preference stays, unless one of the rules below applies;
+- Saving profile (*Risparmio*): Codex wins over Claude when allowed;
+- lanes R0–R1, or the Saving and Speed (*Velocità*) profiles, with no model named: the lowest-ranked allowed
+  Claude model wins.
+
+With the Automatic profile on R0–R1, `high` and `xhigh` score lower, so an omitted effort usually ends at `medium`.
+With weights or a provider over its critical threshold, scores differ and any allowed combination can win. Explicit
+fields always stay.
 
 ### Reviewer
 
@@ -241,6 +266,8 @@ The mandate ends with the action id and the attempt token. Use them exactly.
 | No `corsia` | no Codex, no lane-based savings | always set the lane |
 | `opus` + `xhigh` on a small fix | high cost, no gain | omit model; `effort: "medium"` |
 | Words like `author`, `login` in a non-sensitive brief | forced R4: Opus/Fable, high, local | reword |
+| Sensitive work left to text detection | `permissions`, `personal data` do not trigger R4 | `corsia: "R4"` + `sensibile: true` |
+| Spec path only in `piano` | the session never sees it | write the path in the brief |
 | `dipende` on everything | serial queue | depend only on what must be merged first |
 | Naming a provider over its critical threshold | slow or blocked start | read `risorse_agenti`, leave the engine out |
 | Delivered but not reported | panel stays `avviata` | `aggiorna_azione` with `consegnata` and `tentativo` |

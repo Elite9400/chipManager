@@ -49,27 +49,36 @@ main gaps are missing meaning, not excess length.
 ### 3. Say what the balancer chose in the `suggerisci_azione` result — high gain, ~80 chars
 
 - Where: `hooks/register.tsx:2091`. Now: `Action a-… in the panel (position N, claude → review codex).`
-- The agent does not learn the model, effort, lane or destination the balancer filled, nor that its text made the
-  action R4. It cannot tell the owner the cost, nor fix an accidental R4.
-- Proposal: `Action a-… in the panel (position 3, R2, claude-sonnet-5-5 · medium → review codex; local).` and, when
-  `sensibile()` matched text, `R4 because the text matches "<term>"`. Cost: one `corsiaDi` / `modelloDi` /
-  `effortDi` call each; the matching term needs `SENSIBILE_RE.exec` instead of `test`.
+- The agent does not learn the model and effort the balancer filled (`bilancia` fills executor, model, effort and
+  reviewer, never the destination), the effective lane, or why the action became sensitive. It cannot tell the
+  owner the cost, nor fix an accidental R4.
+- Proposal, effective values only: `Action a-… in the panel (position 3, lane R2, claude-sonnet-5-5 · medium →
+  review codex; runs: local).` Lane from `corsiaDi`, model and effort from `modelloDi` / `effortDi`, where it runs
+  from `modalitaDi` (`local`, `cloud`, `api-claude`, `esterno`). With no explicit destination say
+  `runs: not set (owner or destination advisor decides)`, since the advisor in `applica` mode can set it later.
+- When `sensibile()` is true, name **one cause**, checked in this order: explicit `sensibile: true`; lane R4/R5 set
+  by the proposer; a built-in term (`SENSIBILE_RE.exec`, `hooks/logica.ts:389`); a project term (the compiled
+  `terminiRe` list, `exec`); the project term list does not compile, so all text counts as sensitive (`TUTTO`,
+  fail-closed). Needs a small `causaSensibile` helper beside `sensibile`, with one test per cause.
 
-### 4. Sensitive-term false positives — high gain on cost, small regex change
+### 4. Sensitive-term false positives — known, record only; no regex change without full tests
 
 - Where: `SENSIBILE_RE`, `hooks/logica.ts:389`: `\b(auth\w*|login|…|permess\w*|…)\b`, matched on title, brief and
   backgrounds (`sensibile`).
-- `auth\w*` matches `author`, `authored`, `authority`, `authentic` (art provenance); `login` also matches a
-  "login page copy" text change. Each match forces R4: Opus or Fable author, effort ≥ high, Claude adversarial
-  reviewer, local only (`violazioni`). That is the most expensive configuration the mod has.
-- Proposal: `auth(?:n|z|entic\w*|ori[sz]\w*|-?token)?` or an explicit list (`auth`, `authn`, `authz`,
-  `authenticat\w*`, `authoriz\w*`). Keep fail-closed for the real terms; add a test with `author`.
-- Pair with proposal 3 so an agent can see and reword a false match.
+- Known false positives: `author`, `authored`, `authority`. Each forces R4: Opus or Fable author, effort ≥ high,
+  Claude adversarial reviewer, local only (`violazioni`), the most expensive configuration the mod has.
+- Known gaps: English `permissions` and `personal data` do not match (only Italian `permess…` and `dati personali`).
+- No regex proposal here. Narrowing `auth\w*` easily drops true positives such as `authMiddleware`, `authGuard` or
+  `auth_controller`. Change it only together with a full positive and negative test table (identifiers in
+  camelCase, snake_case and kebab-case, English and Italian prose), and keep it fail-closed.
+- Mitigation already in the docs: the guide and the snippet tell agents to mark sensitive work explicitly
+  (`corsia: "R4"` and `sensibile: true`) and to reword known false matches. Proposal 3 makes the cause visible.
 
 ### 5. Default effort when omitted — medium gain, owner decision
 
-- Where: `effortDi`, `hooks/logica.ts:384`: an omitted Claude effort becomes `high`; `bilancia` tries it first and
-  keeps it on ties (R2–R5, or any lane without weights outside Automatic R0–R1).
+- Where: `effortDi`, `hooks/logica.ts:384`: the starting preference for an omitted Claude effort is `high`;
+  `bilancia` tries it first and keeps it on equal scores. Only the Automatic profile on R0–R1 scores `high` down
+  (so R1 can end at `medium`, `tests/pesi.test.tsx`); elsewhere `high` stays unless weights change the scores.
 - Anthropic's defaults are lower for the current models: Opus 5.5 and Haiku 5.5 default to `medium`; Sonnet 5.5
   starts at `medium` for well-specified agentic tasks; lower effort means fewer, terser tool calls
   ([Effort](https://platform.claude.com/docs/en/build-with-claude/effort)).
@@ -113,7 +122,7 @@ main gaps are missing meaning, not excess length.
 
 - `suggerisci_azione` could end with `Guide: github.com/Elite9400/chipManager/blob/main/docs/GUIDE-FOR-AGENTS.md`
   (+70 chars always loaded). Useful for models that do not read the README; the snippet covers projects that paste
-  it. Lower priority than 1–4.
+  it. Lower priority than 1–3.
 
 ## Checked and fine
 
