@@ -737,7 +737,7 @@ export function chiaviApiVietate(s: unknown): string[] | null {
  * dell'account, e qui non passerebbero comunque). Una forma che non torna vale come controllo fallito.
  */
 export function controlloDa(v: unknown): ControlloEsecuzione | undefined {
-  const o = v as { claude?: Record<string, unknown>; github?: Record<string, unknown>; fonti?: unknown }
+  const o = v as { claude?: Record<string, unknown>; github?: Record<string, unknown>; codex?: unknown; fonti?: unknown }
   if (!o || typeof o !== 'object' || !o.claude || !o.github || !Array.isArray(o.fonti)) return undefined
   const NOMI = ['utente', 'progetto', 'locale', 'gestite', 'flag', 'ambiente'] as const
   const fonti: ControlloEsecuzione['fonti'] = []
@@ -751,6 +751,7 @@ export function controlloDa(v: unknown): ControlloEsecuzione | undefined {
   const host = o.github.host
   return {
     claude: { trovato: o.claude.trovato === true, loggedIn: o.claude.loggedIn === true, ...(typeof metodo === 'string' && /^[a-z._-]{1,20}$/i.test(metodo) && { metodo }) },
+    ...(o.codex && typeof o.codex === 'object' ? { codex: { trovato: (o.codex as Record<string, unknown>).trovato === true, loggedIn: (o.codex as Record<string, unknown>).loggedIn === true } } : {}),
     github: { trovato: o.github.trovato === true, loggedIn: o.github.loggedIn === true, remote: o.github.remote === true, ...(typeof host === 'string' && /^[a-z0-9.-]{1,100}$/i.test(host) && { host }) },
     fonti,
   }

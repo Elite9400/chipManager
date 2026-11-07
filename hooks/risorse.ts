@@ -31,6 +31,9 @@ export const unitaIn = (u: Limite['unita'], lingua: Lingua) => (u === 'richieste
 export const RISORSE_VUOTE: Risorse = { limiti: [], proxy: 'proxy.nonVerificato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } }
 export const FREE_COMMIT = 'fb07845faf7cf986ea9f3692e055076035dd8739'
 const immagine = `chipmanager-freellmapi:${FREE_COMMIT.slice(0, 12)}`
+/** F11.3: la versione di questi hooks; il doctor la confronta con quella su disco (una sessione non ricaricata). */
+export const VERSIONE_MOD = '2.2.0'
+
 export const INSTALLAZIONE = [
   ['docker', 'build', '--build-arg', `FREELLMAPI_COMMIT_SHA=${FREE_COMMIT}`, '-t', immagine, `https://github.com/tashfeenahmed/freellmapi.git#${FREE_COMMIT}`],
   ['docker', 'run', '-d', '--name', 'chipmanager-freellmapi', '--user', '1000:1000', '--cap-drop=ALL', '--security-opt=no-new-privileges', '-p', '127.0.0.1:3001:3001', '-v', 'chipmanager-freellmapi-data:/app/server/data', immagine],

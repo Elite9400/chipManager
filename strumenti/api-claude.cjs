@@ -681,12 +681,15 @@ function statoEsecuzione(root, deps = {}) {
       return { trovato: true, loggedIn: false }
     }
   })()
+  // F11: Codex conta solo per il codice d'uscita di `codex login status`; l'output non si legge né si salva.
+  const cx = esegui(['codex', 'login', 'status'], deps)
   const gh = esegui(['gh', 'auth', 'status', '--hostname', 'github.com'], deps)
   const remote = esegui(['git', '-C', root, 'remote', 'get-url', 'origin'], deps)
   const host = remote && remote.codice === 0 ? hostGit(remote.testo) : undefined
   return {
     claude,
     github: { trovato: !!gh, loggedIn: !!gh && gh.codice === 0, remote: host === 'github.com', ...(host && { host }) },
+    codex: { trovato: !!cx, loggedIn: !!cx && cx.codice === 0 },
     fonti: blocchiDettagliati(deps.fonti ?? fontiImpostazioni(root), deps.env ?? process.env),
   }
 }
@@ -698,7 +701,8 @@ function statoEsecuzione(root, deps = {}) {
  * a qualunque età. Se il comando non c'è o non parte, la riga da copiare.
  */
 async function accedi(tipo, deps = {}) {
-  const argv = tipo === 'claude' ? ['claude', 'auth', 'login'] : tipo === 'gh' ? ['gh', 'auth', 'login', '--web', '--hostname', 'github.com', '--git-protocol', 'https'] : null
+  const argv = tipo === 'claude' ? ['claude', 'auth', 'login'] : tipo === 'gh' ? ['gh', 'auth', 'login', '--web', '--hostname', 'github.com', '--git-protocol', 'https']
+    : tipo === 'codex' ? ['codex', 'login'] : null
   if (!argv) return [2, '']
   const copia = [1, JSON.stringify({ copia: argv.join(' ') })]
   try {
@@ -748,6 +752,6 @@ async function comando(cmd, a, stdin, opz = {}) {
 }
 
 module.exports = {
-  comando, lanciaApi, eseguiApi, booleano, worktreeInvariato, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
+  comando, dirPredefinita, lanciaApi, eseguiApi, booleano, worktreeInvariato, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
   leggiSpesa, spesoNelMese, fileSpesa, regoleApi, percorsiAccount, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
 }

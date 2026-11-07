@@ -1584,6 +1584,8 @@ test('F6.7 stato-esecuzione: con eseguibili finti escono solo sì/no, metodo e h
   const finti = eseguibiliFinti({
     claude: `process.stdout.write(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', email: 'persona@esempio.it', orgId: 'org-segreto-42', orgName: 'Ditta Segreta' }))`,
     gh: `process.stderr.write('Logged in to github.com account utente-segreto (keyring)'); process.exit(0)`,
+    // F11: di `codex login status` conta solo il codice d'uscita; quello che stampa non esce mai.
+    codex: `process.stdout.write('Logged in using ChatGPT (persona@esempio.it)'); process.exit(0)`,
     git: `process.stdout.write('https://utente-segreto:ghp_tokensegreto@github.com/acme/progetto.git\\n')`,
   })
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(path|anthropic_api_key)$/i.test(k)))
@@ -1594,13 +1596,14 @@ test('F6.7 stato-esecuzione: con eseguibili finti escono solo sì/no, metodo e h
   assert.deepStrictEqual(JSON.parse(r.stdout), {
     claude: { trovato: true, loggedIn: true, metodo: 'claude.ai' },
     github: { trovato: true, loggedIn: true, remote: true, host: 'github.com' },
+    codex: { trovato: true, loggedIn: true },
     fonti: [{ nome: 'progetto', file: path.join(root, '.claude', 'settings.json'), chiavi: ['forceLoginGatewayUrl'] }],
   })
   // Un metodo che non è una parola semplice non passa; claude assente, gh scollegato, remote non GitHub.
   assert.strictEqual(API.statoEsecuzione(root, { fonti: [], env: {}, esegui: a => (a[0] === 'claude' ? { codice: 0, testo: '{"loggedIn":true,"authMethod":"api_key"}' } : null) }).claude.metodo, 'api_key')
   const altro = eseguibiliFinti({ gh: 'process.exit(1)', git: `process.stdout.write('git@gitlab.example.org:acme/x.git')` })
   const r2 = spawnSync(process.execPath, [ENTRATA, 'stato-esecuzione', tmp()], { encoding: 'utf8', env: { ...env, PATH: altro } })
-  assert.deepStrictEqual(JSON.parse(r2.stdout), { claude: { trovato: false }, github: { trovato: true, loggedIn: false, remote: false, host: 'gitlab.example.org' }, fonti: [] })
+  assert.deepStrictEqual(JSON.parse(r2.stdout), { claude: { trovato: false }, github: { trovato: true, loggedIn: false, remote: false, host: 'gitlab.example.org' }, codex: { trovato: false, loggedIn: false }, fonti: [] })
 })
 
 test('F6.7 accedi: di GitHub esce solo il codice; l\'output del login non tocca mai il disco; un solo login finché vive, a qualunque età', async t => {
@@ -2415,4 +2418,136 @@ test('F11.1 proposte: il modo di lavoro si propone in entrambi gli strati, solo 
   }
   // profilo e consigliere restano fuori dal modo di lavoro.
   assert.strictEqual(D.propostaImpostazioniNonValida({ ...base, account: { profilo: 'qualita' } }), 'account.profilo')
+})
+
+// --- F11.3: copie del config, ripristino, diagnosi del doctor --------------------------------------------------------
+
+/** Tutti i file sotto `dir` con il loro contenuto: due fotografie uguali = niente scritto, rinominato o cancellato. */
+const albero = dir => Object.fromEntries(fs.readdirSync(dir, { recursive: true }).map(String).sort()
+  .map(n => [n, fs.statSync(path.join(dir, n)).isDirectory() ? 'cartella' : fs.readFileSync(path.join(dir, n), 'utf8')]))
+
+test('F11.3 copie: ogni scrittura del config tiene le ultime 3 versioni valide (bak1 la più recente) e i contatori più alti', async () => {
+  const file = path.join(tmp(), 'config.json')
+  const scrivi = campi => D.configura(file, { atteso: fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null, repo: 'owner/prova', campi })
+  for (const modo of ['accesa', 'riassunti', 'spenta', 'accesa']) assert.strictEqual(await scrivi({ board: { modo } }), 0)
+  const gen = i => JSON.parse(fs.readFileSync(`${file}.bak${i}`, 'utf8')).progetti['owner/prova'].board.generazione
+  assert.strictEqual(fs.readFileSync(`${file}.bak1`, 'utf8'), fs.readFileSync(file, 'utf8'))
+  assert.deepStrictEqual([gen(1), gen(2), gen(3)], [4, 3, 2])
+  assert.strictEqual(fs.existsSync(`${file}.bak4`), false)
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(`${file}.contatori`, 'utf8')).progetti['owner/prova'], { generazione: 4, pesiRevisione: 0 })
+})
+
+test('F11.3 ripristino: CAS sui byte (anche JSON rotto), copia del rotto, nessuna copia = niente; il registro della spesa non si tocca', async () => {
+  const dir = tmp()
+  const file = path.join(dir, 'config.json')
+  const spesa = path.join(dir, 'spesa-api.json')
+  fs.writeFileSync(spesa, '{"mesi":{}}')
+  // Nessuna copia: 5 e niente cambia.
+  fs.writeFileSync(file, '{ rotto')
+  assert.deepStrictEqual(await D.ripristinaConfig(file, { atteso: '{ rotto' }), [5, ''])
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), '{ rotto')
+  fs.rmSync(file)
+  assert.strictEqual(await D.configura(file, { atteso: null, repo: 'owner/prova', campi: { soloLocale: true } }), 0)
+  fs.writeFileSync(file, '{ rotto di nuovo')
+  // Il CAS è sui byte visti: un altro testo è un conflitto.
+  assert.deepStrictEqual(await D.ripristinaConfig(file, { atteso: '{ altro' }), [4, ''])
+  assert.deepStrictEqual(await D.ripristinaConfig(file, { atteso: '{ rotto di nuovo' }), [0, JSON.stringify({ copia: 1 })])
+  assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).progetti['owner/prova'].soloLocale, true)
+  const rotti = fs.readdirSync(dir).filter(n => n.startsWith('config.json.corrotto-'))
+  assert.strictEqual(rotti.length, 1)
+  assert.strictEqual(fs.readFileSync(path.join(dir, rotti[0]), 'utf8'), '{ rotto di nuovo')
+  assert.strictEqual(fs.readFileSync(spesa, 'utf8'), '{"mesi":{}}')
+  // Dal comando: un percorso del config sotto un repository si rifiuta come per configura.
+  const repo = fuori()
+  assert.strictEqual(spawnSync('git', ['init', '-q', repo]).status, 0)
+  assert.strictEqual(esegui(['ripristina-config', path.join(repo, 'config.json')], JSON.stringify({ atteso: null })).status, 6)
+})
+
+test('F11.3 N2: generazione 3 → 4 → config rotto → ripristino della copia con 3: la generazione è 5 e il lavoro vecchio è rifiutato', async () => {
+  const b = preparaBoard()
+  fs.writeFileSync(b.config, JSON.stringify({ progetti: { [b.repo]: { board: { modo: 'riassunti', generazione: 2 } } } }))
+  assert.strictEqual(await imposta(b, 'accesa'), 3)
+  assert.strictEqual(bc(b, 'board-scrivi', 3, ['h3'], HTML).status, 0)
+  assert.strictEqual(await imposta(b, 'riassunti'), 4)
+  // La copia più recente è rotta anch'essa: si ripristina quella con la generazione 3, ma il contatore ha visto 4.
+  fs.writeFileSync(`${b.config}.bak1`, '{ rotta')
+  fs.writeFileSync(b.config, '{ rotto')
+  assert.deepStrictEqual(await D.ripristinaConfig(b.config, { atteso: '{ rotto' }), [0, JSON.stringify({ copia: 2 })])
+  const p = JSON.parse(fs.readFileSync(b.config, 'utf8')).progetti[b.repo]
+  assert.deepStrictEqual([p.board.modo, p.board.generazione, p.pesiOrigine], ['accesa', 5, { tipo: 'manuale' }])
+  for (const g of [3, 4]) assert.strictEqual(bc(b, 'board-scrivi', g, [`v${g}`], HTML).status, 4)
+  assert.strictEqual(bc(b, 'board-scrivi', 5, ['h5'], HTML).status, 0)
+})
+
+test('F11.3 N2: dopo il ripristino «Annulla» di una proposta di pesi applicata prima è rifiutato; la revisione cresce', async () => {
+  const a = ambientePesi()
+  const id = (await proponi(a)).id
+  assert.strictEqual((await decidi(a, id, 0, 'applica', 'd-ripristino1')).codice, 0)
+  assert.strictEqual(a.leggi().pesiRevisione, 1)
+  fs.writeFileSync(a.config, 'non json')
+  assert.strictEqual((await D.ripristinaConfig(a.config, { atteso: 'non json' }))[0], 0)
+  assert.deepStrictEqual([a.leggi().pesiRevisione, a.leggi().pesiOrigine], [2, { tipo: 'manuale' }])
+  assert.deepStrictEqual(await pesiAnnulla(a.config, REPO_PESI, id, 'u-ripristino1'), [4, 'helper.dopoApplicazione'])
+})
+
+test('F11.3 diagnosi: ogni rilievo su un caso finto, in sola lettura (lock, chiavi, registri, config e azioni restano identici)', () => {
+  const casa = fuori()
+  const dati = path.join(casa, 'dati')
+  const dm = path.join(casa, 'macchina')
+  fs.mkdirSync(path.join(dm, 'chiavi-api'), { recursive: true })
+  fs.mkdirSync(dati)
+  const config = path.join(casa, 'config.json')
+  fs.writeFileSync(config, JSON.stringify({
+    futuro: 1, account: { apiClaude: { budgetUsd: 5, tetto: 1 }, modoLavoro: { parallelo: 12 }, segreto: 'x' },
+    progetti: { 'owner/prova': { fornitori: ['claude', 'codex'], milestoneGithub: true, restrizioni: { apiTetto: 3 }, ignoto: 1 }, 'altro/progetto': { modoLavoro: { effortPredefinito: { R5: 'low' } } } },
+  }))
+  fs.writeFileSync(path.join(dati, 'spesa-api.json'), '{}')
+  fs.writeFileSync(path.join(dati, 'a-orfana01.json'), JSON.stringify({ id: 'a-orfana01' }))
+  fs.writeFileSync(path.join(dati, 'a-ignota01.json'), JSON.stringify({ id: 'a-ignota01', repo: 'nessuno/progetto' }))
+  fs.writeFileSync(path.join(dm, 'api-claude.json'), JSON.stringify({ tentativo: 'az-vecchio1', istante: '2026-11-01T10:00:00.000Z' }))
+  fs.writeFileSync(path.join(dm, 'chiavi-api', 'az-residuo1.key'), 'k')
+  const fonte = path.join(casa, 'settings.json')
+  fs.writeFileSync(fonte, JSON.stringify({ env: { ANTHROPIC_API_KEY: 'x', CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '0' } }))
+  const prima = albero(casa)
+  const chiamate = []
+  const esito = require('./diagnosi.cjs').diagnosi(config, dati, casa, 'owner/prova', {
+    dm, adesso: () => Date.parse('2026-11-01T10:30:00.000Z'), fonti: [{ nome: 'utente', file: fonte }], env: {},
+    esegui: argv => (chiamate.push(argv.join(' ')), argv[0] === 'claude' ? { codice: 0, testo: '{"loggedIn":true}' } : { codice: 1, testo: 'non usato' }),
+  })
+  assert.deepStrictEqual(albero(casa), prima)
+  const codici = esito.trovati.map(t => t.codice)
+  for (const c of ['config.campoIgnoto', 'config.restrizioneLarga', 'config.modoNonValido', 'config.senzaCopie', 'registro.sviluppo', 'lock.api', 'chiavi.residue',
+    'azioni.orfane', 'azioni.progettiIgnoti', 'accesso.codex', 'accesso.github', 'host.impostazioniApi', 'host.advisor'])
+    assert.ok(codici.includes(c), c)
+  assert.ok(!codici.includes('accesso.claude'))
+  assert.deepStrictEqual(esito.trovati.find(t => t.codice === 'lock.api'), { codice: 'lock.api', minuti: 30 })
+  assert.deepStrictEqual(esito.trovati.filter(t => t.codice === 'config.campoIgnoto').map(t => t.campo).sort(), ['futuro', 'ignoto', 'segreto'])
+  assert.deepStrictEqual(esito.trovati.filter(t => t.codice === 'config.modoNonValido').map(t => t.campo), ['modoLavoro.parallelo', 'modoLavoro.effortPredefinito.R5'])
+  // Codex conta solo per il codice d'uscita di `codex login status`.
+  assert.ok(chiamate.includes('codex login status'))
+  assert.strictEqual(esito.versione, JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version)
+  // Config illeggibile: lo dice con il numero di copie valide, senza toccarlo.
+  fs.writeFileSync(config, '{ rotto')
+  const rotto = require('./diagnosi.cjs').diagnosi(config, dati, casa, 'owner/prova', { dm, fonti: [], env: {}, esegui: () => null })
+  assert.deepStrictEqual(rotto.trovati.find(t => t.codice === 'config.illeggibile'), { codice: 'config.illeggibile', copie: 0 })
+  assert.strictEqual(fs.readFileSync(config, 'utf8'), '{ rotto')
+})
+
+test('F11.3 archivia il registro per cartella: rinomina reversibile, mai sovrascritto; poi la diagnosi non lo trova più', async () => {
+  const dati = path.join(fuori(), 'dati')
+  fs.mkdirSync(dati)
+  fs.writeFileSync(path.join(dati, 'spesa-api.json'), '{"vecchio":true}')
+  const r = esegui(['archivia-registro', dati])
+  assert.strictEqual(r.status, 0, r.stdout)
+  const nomi = fs.readdirSync(dati)
+  assert.strictEqual(nomi.length, 1)
+  assert.match(nomi[0], /^spesa-api\.json\.archiviato-/)
+  assert.strictEqual(fs.readFileSync(path.join(dati, nomi[0]), 'utf8'), '{"vecchio":true}')
+  assert.deepStrictEqual(JSON.parse(esegui(['archivia-registro', dati]).stdout), { archiviato: false })
+})
+
+test('F11.3 versione: la costante degli hooks è quella del manifesto (il doctor le confronta per una sessione non ricaricata)', () => {
+  const hooks = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'risorse.ts'), 'utf8')
+  const manifesto = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version
+  assert.strictEqual(/export const VERSIONE_MOD = '([^']+)'/.exec(hooks)?.[1], manifesto)
 })

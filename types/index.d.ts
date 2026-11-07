@@ -320,13 +320,19 @@ export type LockApi = { motivo: 'in-corso' | 'senza-pid' | 'discendenti' | 'chia
 export type ControlloEsecuzione = {
   claude: { trovato: boolean; loggedIn?: boolean; metodo?: string }
   github: { trovato: boolean; loggedIn: boolean; remote: boolean; host?: string }
+  /** F11: solo il codice d'uscita di `codex login status`. */
+  codex?: { trovato: boolean; loggedIn: boolean }
   /**
    * Le fonti che bloccano `api-claude`, dallo stesso controllo dell'avvio (file dell'helper e fonti dell'host): il file, le
    * chiavi di impostazione responsabili (mai i valori), o `illeggibile`. `ambiente` è la variabile ANTHROPIC_API_KEY.
    */
   fonti: { nome: 'utente' | 'progetto' | 'locale' | 'gestite' | 'flag' | 'ambiente'; file?: string; chiavi?: string[]; illeggibile?: boolean }[]
 }
-export type TipoAccesso = 'claude' | 'gh'
+export type TipoAccesso = 'claude' | 'gh' | 'codex'
+/** F11.3: un rilievo del doctor: un codice di un elenco chiuso e pochi dettagli (numeri, nomi di campo della mod). */
+export type Rilievo = { codice: string; [dettaglio: string]: unknown }
+/** F11.3: l'ultima diagnosi del doctor (solo in memoria). */
+export type StatoDoctor = { trovati?: Rilievo[]; quando?: string; inCorso?: boolean; fallita?: boolean }
 export type PassoEsecuzione = 'claude' | 'github' | 'chiave' | 'fonti' | 'budget'
 /** F6.7: l'ultimo controllo, i login avviati da qui (fino a quando si ricontrolla), la riga da copiare, la procedura guidata. */
 export type StatoEsecuzione = {
@@ -410,7 +416,8 @@ export type VoceImpostazioni = { id: string; quando: string; proponente: { id: s
 
 /** La vista Impostazioni: sezione aperta, ultimo errore in linea e procedure guidate fatte in linea (popup rifiutato). */
 export type StatoImpostazioni = {
-  sezione: 'connessioni' | 'soglie' | 'modo' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate' | 'esecuzione' | 'lingua' | 'legenda'
+  // F11: `setup` e `doctor` si aprono da `/chipmanager --setup` e `--doctor`, non dalle chip delle sezioni.
+  sezione: 'connessioni' | 'soglie' | 'modo' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate' | 'esecuzione' | 'lingua' | 'legenda' | 'setup' | 'doctor'
   /** F11.1: lo strato che la sezione Modo di lavoro modifica (assente = Account). */
   ambitoModo?: 'account' | 'progetto'
   errore?: { dove: string; testo: Messaggio }
@@ -457,6 +464,8 @@ declare module 'claude-code' {
       lockApi: Shaped<LockApi | null>
       /** F6.7: lo stato della sezione Esecuzione (controllo ✓/✗, login in corso, procedura guidata). */
       esecuzione: Shaped<StatoEsecuzione>
+      /** F11.3: l'ultima diagnosi del doctor. */
+      doctor: Shaped<StatoDoctor>
       /** F6.4: la spesa a crediti API del mese (stimata), dal registro dell'helper; null = non configurata o illeggibile. */
       spesaApi: Shaped<{ mese: string; speso: number | null; progetto?: number | null } | null>
       vive: Shaped<Record<string, Vita>>

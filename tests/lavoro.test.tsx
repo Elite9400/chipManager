@@ -116,6 +116,8 @@ function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexO
       return fine(0)
     }
     if (cmd === 'stato-esecuzione' && opz.esecuzione) return fine(0, opz.esecuzione)
+    // F11.3: una diagnosi con ogni rilievo, per le prove di larghezza e di lingua della pagina Doctor.
+    if (cmd === 'diagnosi') return fine(0, JSON.stringify({ trovati: TUTTI_RILIEVI, versione: '9.9.9' }))
     // Come l'helper vero: CAS sul testo intero, poi la stessa fusione per strato (gemello TS di applicaPatch).
     if (cmd === 'configura') {
       const q = JSON.parse(String(e.init?.stdin)) as { atteso: string | null; repo: string; campi: Record<string, unknown>; account?: Record<string, unknown>; lingua?: string; togli?: { progetto?: string[]; account?: string[] } }
@@ -527,6 +529,8 @@ test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazi
         await ui.press({ key: `sezione-${s}-premi` })
         await controlla(s)
       }
+      await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+      await controlla('doctor')
       await ui.press({ key: 'vista-lavoro' })
       await ui.unmount()
     }
@@ -603,6 +607,9 @@ test('lingue: a 60 colonne nel terminale nessuna riga supera la larghezza e ness
       await ui.press({ key: `sezione-${s}-premi` })
       await controlla(s)
     }
+    // F11.3: la pagina Doctor con ogni rilievo, in ogni lingua.
+    await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+    await controlla('doctor')
     await ui.unmount()
   }
 })
@@ -795,6 +802,17 @@ test('F8.1 guardia: le schede delle viste hanno come etichetta il solo nome, in 
 })
 
 // --- F9: garanzia di non regressione (elenco ordinato dei controlli ed effetti dei callback, prima e dopo) ----------
+
+/** F11.3: un rilievo per codice, con i dettagli più lunghi che il pannello mostra. */
+const TUTTI_RILIEVI = [
+  { codice: 'config.illeggibile', copie: 3 }, { codice: 'config.senzaCopie' }, { codice: 'config.campoIgnoto', strato: 'progetto', progetto: false, campo: 'campoMoltoLungoDaUnaVersioneFutura' },
+  { codice: 'config.nonValido', progetto: true }, { codice: 'config.restrizioneLarga', progetto: true, campo: 'apiLimiteMeseUsd' },
+  { codice: 'config.modoNonValido', strato: 'account', campo: 'modoLavoro.effortPredefinito.R5' }, { codice: 'percorso.config' }, { codice: 'percorso.dati' },
+  { codice: 'percorso.macchina' }, { codice: 'percorso.registro' }, { codice: 'registro.sviluppo' }, { codice: 'lock.api', minuti: 1440 }, { codice: 'lock.apiIlleggibile' },
+  { codice: 'chiavi.residue', n: 12 }, { codice: 'azioni.orfane', n: 7 }, { codice: 'azioni.progettiIgnoti', n: 30 }, { codice: 'accesso.claude', trovato: true },
+  { codice: 'accesso.codex', trovato: true }, { codice: 'accesso.github', trovato: true }, { codice: 'host.impostazioniApi', fonti: ['utente', 'progetto', 'gestite'] },
+  { codice: 'host.advisor', fonte: 'gestite' },
+]
 
 const SEZIONI_F9 = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda']
 const PANE_F9 = (surface: 'desktop' | 'terminal' | 'vscode' | 'mobile', colonne: number) =>

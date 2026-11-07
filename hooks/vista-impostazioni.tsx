@@ -5,7 +5,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { Fornitore, PassoEsecuzione, Pendenti, Peso, RisorseProgetto, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni } from '../types'
+import type { Fornitore, PassoEsecuzione, Pendenti, Peso, Rilievo, RisorseProgetto, StatoDoctor, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni } from '../types'
 import {
   budgetDa,
   campiDaProposta,
@@ -56,6 +56,27 @@ export async function apriImpostazioni($: EngineInterface, c: Ctx) {
 /** «Apri le impostazioni» di una proposta di pesi: la sezione Bilanciamento, dove la proposta resta in evidenza. */
 export async function apriBilanciamento($: EngineInterface) {
   await update($, statoVista, (s): StatoVista => ({ ...s, sezione: 'bilanciamento', errore: undefined }))
+}
+
+// --- F11.3: il doctor ----------------------------------------------------------------------------------------------
+/** L'ultima diagnosi (in memoria): la scrive il comando, la legge la pagina Doctor. */
+export const statoDoctor = atom({ plugin: 'chip-manager', key: 'doctor' } as const, {} as StatoDoctor, { shape: 'doctor-1' })
+/** I codici che la pagina sa dire: un codice fuori elenco non si mostra (e non entra mai in un rapporto). */
+export const RILIEVI = ['config.illeggibile', 'config.senzaCopie', 'config.campoIgnoto', 'config.nonValido', 'config.restrizioneLarga', 'config.modoNonValido',
+  'percorso.config', 'percorso.dati', 'percorso.macchina', 'percorso.registro', 'registro.sviluppo', 'lock.api', 'lock.apiIlleggibile', 'chiavi.residue',
+  'azioni.orfane', 'azioni.progettiIgnoti', 'accesso.claude', 'accesso.codex', 'accesso.github', 'host.impostazioniApi', 'host.advisor', 'host.versione', 'connessione']
+/** Gli avvisi (!): il resto blocca qualcosa (✗). */
+const AVVISI = ['config.senzaCopie', 'config.campoIgnoto', 'config.modoNonValido', 'chiavi.residue', 'azioni.orfane', 'azioni.progettiIgnoti', 'host.advisor', 'host.versione', 'connessione']
+/** Il pulsante del rimedio, dove c'è: gli altri rilievi si riportano soltanto. */
+const RIMEDIO = (r: Rilievo): Chiave | undefined =>
+  r.codice.startsWith('accesso.') ? 'doc.accedi' : r.codice === 'lock.api' ? 'doc.libera' : r.codice === 'registro.sviluppo' ? 'doc.archivia'
+    : r.codice === 'config.illeggibile' && Number(r.copie) > 0 ? 'doc.ripristina' : undefined
+/** Il testo di un rilievo, con i soli dettagli che il codice prevede (numeri e nomi di campo della mod). */
+export const testoRilievo = (T: T, r: Rilievo) => {
+  const dove = r.strato === 'account' ? T('doc.account') : r.progetto === false ? T('doc.altro') : T('doc.questo')
+  const p = { n: Number(r.n ?? 0), minuti: Number(r.minuti ?? 0), copie: Number(r.copie ?? 0), campo: String(r.campo ?? ''), dove,
+    fonte: String(r.fonte ?? ''), fonti: Array.isArray(r.fonti) ? r.fonti.join(', ') : '', fornitore: String(r.fornitore ?? '') }
+  return { titolo: T(`doc.r.${r.codice}` as Chiave, p), rimedio: T(`doc.f.${r.codice}` as Chiave, p), avviso: AVVISI.includes(r.codice) }
 }
 
 const SEZIONI: { valore: Sezione; testo: Chiave }[] = [
@@ -510,6 +531,39 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         didascalia('soglie-account', T('imp.valeTuttiProgetti')),
         ...(d.fornitoriInUso.length ? d.fornitoriInUso.map(sogliaUi) : [didascalia('soglie-vuote', T('sog.vuote'))]),
         budgetUi(),
+      ],
+    })
+  }
+
+  // --- Doctor (F11.3) ---------------------------------------------------------------------------------
+  const doctorVista = await read($, statoDoctor)
+  const doctor = () => {
+    const dv = doctorVista
+    const trovati = dv.trovati ?? []
+    const righe = trovati.map(x => ({ r: x, ...testoRilievo(T, x) }))
+    const rapporto = righe.map(x => `${x.avviso ? '!' : '✗'} ${x.titolo} — ${x.rimedio}`).join('\n') || T('doc.tuttoBene')
+    const stato = dv.inCorso ? T('doc.inCorso') : dv.fallita ? T('doc.fallita') : T('doc.stato', { n: trovati.length })
+    return u.Sezione({
+      chiave: 'pagina-doctor',
+      titolo: T('doc.titolo'),
+      descrizione: T('doc.descrizione'),
+      stato,
+      figli: [
+        dv.fallita ? nota1('doctor-fallita', STATO.errore, '✗', T('doc.fallita')) : null,
+        !dv.inCorso && !dv.fallita && dv.quando && !trovati.length ? nota1('doctor-ok', STATO.inCorso, '✓', T('doc.tuttoBene')) : null,
+        ...righe.map((x, i) => (
+          <Box key={`doctor-rilievo-${i}`} flexDirection="column">
+            {nota1(`doctor-rilievo-${i}-titolo`, x.avviso ? STATO.attesa : STATO.errore, x.avviso ? '!' : '✗', `${T(x.avviso ? 'doc.avviso' : 'doc.problema')} · ${x.titolo}`)}
+            {didascalia(`doctor-rilievo-${i}-rimedio`, x.rimedio)}
+            {RIMEDIO(x.r) ? <Button key={`doctor-rimedio-${i}`} variant="secondary" label={x.r.codice.startsWith('accesso.') ? `${T(RIMEDIO(x.r)!)} · ${({ 'accesso.claude': 'Claude', 'accesso.codex': 'Codex', 'accesso.github': 'GitHub' } as Record<string, string>)[x.r.codice]}` : T(RIMEDIO(x.r)!)} onPress={() => void c.rimedio(x.r)} /> : null}
+          </Box>
+        )),
+        <Box key="doctor-azioni" flexDirection="row" flexWrap="wrap" gap={1}>
+          <Button key="doctor-ricontrolla" variant="primary" label={T('doc.ricontrolla')} onPress={() => void c.diagnosi()} />
+          <Button key="doctor-copia" variant="secondary" label={T('doc.copia')}
+            onPress={() => void $.ui.copy({ text: rapporto }).then(x => x.isCopied && $.ui.toast(T('doc.copiato')))} />
+          <Button key="doctor-indietro" plain label={T('doc.indietro')} onPress={() => void cambia(s => ({ ...s, sezione: 'connessioni', errore: undefined }))} />
+        </Box>,
       ],
     })
   }
@@ -1101,6 +1155,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       : vista.sezione === 'lingua' ? lingua()
       : vista.sezione === 'soglie' ? soglie()
       : vista.sezione === 'modo' ? modoLavoro()
+      : vista.sezione === 'doctor' ? doctor()
       : vista.sezione === 'bilanciamento' ? bilanciamento()
         : vista.sezione === 'progetto' ? await progetto()
           : vista.sezione === 'board' ? board()

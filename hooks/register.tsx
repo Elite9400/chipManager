@@ -1,10 +1,11 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { ControlloEsecuzione, LockApi, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni, Vista } from '../types'
+import type { ControlloEsecuzione, LockApi, Rilievo, StatoDoctor, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni, Vista } from '../types'
 import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Fornitore, Limite, Motore, Pendenti, Permessi, Peso, PropostaPesi, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
 import { alLavoroDa, cambiatiAltrove, campoNonValido, conBozza, contestoPerModello, impostazioniCorrenti, percorsiTolti, perStrato, propostaDa, propostaImpostazioniDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
 import {
+  connesso,
   attive,
   bilancia,
   causaSensibile,
@@ -78,8 +79,8 @@ import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salv
 import type { Lingua, Msg } from './lingua'
 import { disegna } from './pannello'
 import type { EsitoApplica } from './pannello'
-import { ripristinaImpostazioni, versaProposta } from './vista-impostazioni'
-import { fonte, INSTALLAZIONE, nomeLimiteIn, nomiStrumenti, osservaRisorse, RISORSE_VUOTE } from './risorse'
+import { RILIEVI, ripristinaImpostazioni, versaProposta } from './vista-impostazioni'
+import { fonte, INSTALLAZIONE, nomeLimiteIn, nomiStrumenti, osservaRisorse, RISORSE_VUOTE, VERSIONE_MOD } from './risorse'
 
 // Lo scanner dello stato vuole l'atomo scritto nel file che lo usa: register e pannello ne tengono
 // una copia identica (stesso plugin, chiave e shape), che indirizza lo stesso valore.
@@ -101,6 +102,8 @@ const statoBoard = atom({ plugin: 'chip-manager', key: 'board' } as const, {} as
 const lockApi = atom({ plugin: 'chip-manager', key: 'lockApi' } as const, null as LockApi | null, { shape: 'lock-api-1' })
 const spesaApi = atom({ plugin: 'chip-manager', key: 'spesaApi' } as const, null as { mese: string; speso: number | null; progetto?: number | null } | null, { shape: 'spesa-api-2' })
 const esecuzione = atom({ plugin: 'chip-manager', key: 'esecuzione' } as const, {} as StatoEsecuzione, { shape: 'esecuzione-1' })
+/** F11.3: l'ultima diagnosi del doctor (la stessa chiave che legge la pagina Doctor). */
+const statoDoctor = atom({ plugin: 'chip-manager', key: 'doctor' } as const, {} as StatoDoctor, { shape: 'doctor-1' })
 const vistaOra = atom({ plugin: 'chip-manager', key: 'vista' } as const, 'lavoro' as Vista)
 const impostazioni = atom({ plugin: 'chip-manager', key: 'impostazioni' } as const, { sezione: 'connessioni' } as StatoImpostazioni, { shape: 'impostazioni-1' })
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: 0 } as Consumo, { shape: 'consumo-2' })
@@ -1177,10 +1180,56 @@ async function decidiLockApi($: Eng, azione: 'libera' | 'termina') {
   }
 }
 
+// --- F11.3: il doctor ----------------------------------------------------------------------------------------------
+/** La diagnosi in sola lettura (helper `diagnosi`) più quello che sa solo il pannello: fornitori non connessi, versione. */
+async function diagnosiDoctor($: Eng) {
+  await update($, statoDoctor, s => ({ ...s, inCorso: true, fallita: false }))
+  try {
+    const [sessione, chi, r] = await Promise.all([$.session.repo().catch(() => null), chiSonoIo($), leggiRegole($)])
+    const e = await helper($, ['diagnosi', await fileConfig($), await cartella($), sessione?.root ?? '', chi.repo ?? ''])
+    if (e.codice !== 0) throw new Error('diagnosi')
+    const v = JSON.parse(e.testo) as { trovati?: unknown; versione?: unknown }
+    // Solo i codici noti, con i soli dettagli attesi: niente testo libero dall'helper.
+    const trovati: Rilievo[] = (Array.isArray(v.trovati) ? v.trovati : []).filter((x): x is Rilievo => !!x && typeof x === 'object' && RILIEVI.includes((x as Rilievo).codice))
+    for (const f of r.risorse.fornitori) if (!connesso(r, f)) trovati.push({ codice: 'connessione', fornitore: f })
+    if (typeof v.versione === 'string' && v.versione !== VERSIONE_MOD) trovati.push({ codice: 'host.versione' })
+    const quando = new Date(await $.clock.now()).toISOString()
+    await update($, statoDoctor, (): StatoDoctor => ({ trovati, quando }))
+  } catch {
+    await update($, statoDoctor, (): StatoDoctor => ({ fallita: true }))
+  }
+}
+
+/** Un rimedio: «Accedi» parte dal clic; ripristino, archivio e «Libera» chiedono conferma. Poi si ricontrolla. */
+async function rimedioDoctor($: Eng, opz: Record<string, unknown>, r: Rilievo) {
+  const T = await lingue($)
+  if (r.codice === 'accesso.claude' || r.codice === 'accesso.codex' || r.codice === 'accesso.github')
+    await accedi($, r.codice === 'accesso.claude' ? 'claude' : r.codice === 'accesso.codex' ? 'codex' : 'gh')
+  else if (r.codice === 'lock.api') {
+    await aggiornaLockApi($)
+    await decidiLockApi($, 'libera')
+  } else if (r.codice === 'registro.sviluppo' || r.codice === 'config.illeggibile') {
+    const si = T('doc.applica')
+    const domanda = T(r.codice === 'registro.sviluppo' ? 'doc.chiediArchivia' : 'doc.chiediRipristina')
+    if ((await $.ui.ask(domanda, { options: [si, T('comune.annulla')], header: 'chipManager' }).catch(() => '')) !== si) return
+    if (r.codice === 'registro.sviluppo') {
+      const e = await helper($, ['archivia-registro', await cartella($)])
+      $.ui.toast(T(e.codice === 0 ? 'doc.archiviato' : 'doc.nonRiuscito'))
+    } else {
+      const f = await fileConfig($)
+      const atteso = await $.fs.read(f).then(x => String(x)).catch(() => null)
+      const e = await helper($, ['ripristina-config', f], JSON.stringify({ atteso }))
+      $.ui.toast(T(e.codice === 0 ? 'doc.ripristinato' : e.codice === 5 ? 'doc.nessunaCopia' : e.codice === 4 ? 'errore.configCambiata' : 'doc.nonRiuscito'))
+      if (e.codice === 0) await aggiornaRisorse($, opz)
+    }
+  } else return
+  await diagnosiDoctor($)
+}
+
 // --- F6.7: la sezione Esecuzione si configura da qui, senza terminale -----------------------------------------------
 
 /** Le righe da copiare se un login non parte: fisse, come l'argv dell'helper (mai testo letto da un processo). */
-const RIGHE_ACCESSO: Record<TipoAccesso, string> = { claude: 'claude auth login', gh: 'gh auth login --web --hostname github.com --git-protocol https' }
+const RIGHE_ACCESSO: Record<TipoAccesso, string> = { claude: 'claude auth login', gh: 'gh auth login --web --hostname github.com --git-protocol https', codex: 'codex login' }
 /** I ricontrolli dei login avviati da questo pannello: al più uno per tipo. */
 const ricontrolli = new Map<TipoAccesso, { id: number; cancel: () => void }>()
 let ultimoRicontrollo = 0
@@ -1265,7 +1314,7 @@ async function ricontrolla($: Eng, tipo: TipoAccesso, fino: number, id: number) 
     (await $.ui.panes().then(l => l.some(p => p.id === PANE && p.isShown)).catch(() => false))
   if (aSchermo && (await $.clock.now()) < fino) {
     const c = await controllaEsecuzione($)
-    if (ricontrolli.get(tipo)?.id !== id || !(tipo === 'claude' ? c?.claude.loggedIn : c?.github.loggedIn)) return
+    if (ricontrolli.get(tipo)?.id !== id || !(tipo === 'claude' ? c?.claude.loggedIn : tipo === 'codex' ? c?.codex?.loggedIn : c?.github.loggedIn)) return
   }
   if (ricontrolli.get(tipo)?.id !== id) return
   ricontrolli.get(tipo)!.cancel()
@@ -2184,10 +2233,21 @@ export const register: Register = (on, options) => {
     return started
   })
 
-  on('command.run', { command: 'chipmanager' }, async $ => {
+  on('command.run', { command: 'chipmanager' }, async ($, e) => {
     await carica($)
+    // F11: `--setup` e `--doctor` aprono il pannello sulla loro pagina delle Impostazioni; altro testo non cambia niente.
+    const parole = (e.args ?? '').trim().split(/\s+/).filter(Boolean)
+    const pagina = parole.includes('--doctor') ? ('doctor' as const) : parole.includes('--setup') ? ('setup' as const) : undefined
+    if (pagina) {
+      await update($, impostazioni, (s): StatoImpostazioni => ({ ...s, sezione: pagina, errore: undefined }))
+      await update($, vistaOra, (): Vista => 'impostazioni')
+    }
     await $.ui.open({ id: PANE, title: TITOLO, focus: true })
-    return { text: (await lingue($))('comando.aperto') }
+    // Il pannello è già aperto su «Controllo in corso»; il comando torna a diagnosi finita (in sola lettura, ≤ 20 s).
+    if (pagina === 'doctor') await diagnosiDoctor($)
+    const T = await lingue($)
+    const ignote = parole.filter(p => p !== '--doctor' && p !== '--setup')
+    return { text: [T(pagina === 'doctor' ? 'comando.doctor' : pagina === 'setup' ? 'comando.setup' : 'comando.aperto'), ignote.length ? T('comando.ignoto', { testo: ignote.join(' ').slice(0, 60) }) : ''].filter(Boolean).join(' ') }
   })
 
   on('tool.call', { tool: 'mcp__chip-manager__suggerisci_azione' }, async ($, e) => {
@@ -2394,6 +2454,8 @@ export const register: Register = (on, options) => {
       liberaApi: () => decidiLockApi($, 'libera'),
       terminaApi: () => decidiLockApi($, 'termina'),
       controllaEsecuzione: () => controllaEsecuzione($),
+      diagnosi: () => diagnosiDoctor($),
+      rimedio: r => rimedioDoctor($, opz, r),
       cambiaSessione: (a, campo, valore) => cambiaSessione($, a.id, campo, valore),
       ricontrollaCambio: a => ricontrollaCambio($, a.id),
       accedi: tipo => accedi($, tipo),

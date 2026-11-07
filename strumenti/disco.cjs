@@ -80,6 +80,111 @@ function scriviDati(file, testo) {
   scriviAtomico(file, testo)
 }
 
+// --- F11.3: copie del config e contatori monotòni ----------------------------------------------------------------
+const COPIE = 3
+const fileContatori = file => `${file}.contatori`
+const intero = v => (Number.isInteger(v) && v >= 0 ? v : 0)
+
+/** Un config che si può usare: un oggetto, con `progetti` e `account` oggetti se ci sono, e regole efficaci valide. */
+function configValido(c) {
+  if (!oggetto(c) || (c.progetti !== undefined && !oggetto(c.progetti)) || (c.account !== undefined && !oggetto(c.account))) return false
+  try {
+    for (const p of Object.values(c.progetti ?? {})) regole.regoleEfficaci(c.account, p)
+    if (!c.progetti || !Object.keys(c.progetti).length) regole.regoleEfficaci(c.account, {})
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** I contatori monotòni di un config: generazione della board e revisione dei pesi per progetto, `versione` della radice. */
+function contatoriDi(c) {
+  const progetti = {}
+  if (oggetto(c?.progetti))
+    for (const [repo, p] of Object.entries(c.progetti)) if (oggetto(p)) progetti[repo] = { generazione: intero(p.board?.generazione), pesiRevisione: intero(p.pesiRevisione) }
+  return { versione: intero(c?.versione), progetti }
+}
+const maxContatori = (a, b) => ({
+  versione: Math.max(a.versione, b.versione),
+  progetti: Object.fromEntries([...new Set([...Object.keys(a.progetti), ...Object.keys(b.progetti)])].map(r => [r, {
+    generazione: Math.max(a.progetti[r]?.generazione ?? 0, b.progetti[r]?.generazione ?? 0),
+    pesiRevisione: Math.max(a.progetti[r]?.pesiRevisione ?? 0, b.progetti[r]?.pesiRevisione ?? 0),
+  }])),
+})
+function leggiContatori(file) {
+  try {
+    const v = JSON.parse(fs.readFileSync(fileContatori(file), 'utf8'))
+    return contatoriDi({ versione: v.versione, progetti: Object.fromEntries(Object.entries(oggetto(v.progetti) ? v.progetti : {}).map(([r, k]) => [r, { board: { generazione: k?.generazione }, pesiRevisione: k?.pesiRevisione }])) })
+  } catch {
+    return { versione: 0, progetti: {} }
+  }
+}
+
+/**
+ * Ogni scrittura riuscita del config: il file, poi la copia più recente in `.bak1` (le altre scalano fino a `.bak3`) e il
+ * file dei contatori (il massimo mai visto). Copie e contatori dopo la scrittura: se non riescono la scrittura resta
+ * valida e il doctor lo dice («senza copie»).
+ */
+function scriviConfig(file, testo) {
+  scriviDati(file, testo)
+  try {
+    for (let i = COPIE; i > 1; i--) if (fs.existsSync(`${file}.bak${i - 1}`)) fs.renameSync(`${file}.bak${i - 1}`, `${file}.bak${i}`)
+    scriviDati(`${file}.bak1`, testo)
+    const k = maxContatori(leggiContatori(file), contatoriDi(JSON.parse(testo)))
+    scriviDati(fileContatori(file), JSON.stringify({ versione: k.versione, progetti: k.progetti }))
+  } catch (e) {
+    if (!(e instanceof Error)) throw e
+  }
+}
+
+/**
+ * Ripristina l'ultima copia valida, sotto il mutex di `configura`, con CAS sui BYTE osservati (anche un JSON rotto).
+ * Prima copia l'attuale in `config.json.corrotto-<istante>`, poi sostituisce in modo atomico. Ogni contatore monotòno
+ * diventa max(attuale leggibile, file dei contatori, copia) + 1 e l'origine dei pesi «manuale»: un lavoro avviato su una
+ * generazione vecchia o un «Annulla» di una proposta di prima non valgono più. Il registro della spesa non si tocca.
+ * stdin `{ atteso }`: 0 ripristinato, 4 il file è cambiato, 5 nessuna copia valida (non fa niente), 3 occupato.
+ */
+async function ripristinaConfig(file, richiesta) {
+  if (!oggetto(richiesta) || !(richiesta.atteso === null || typeof richiesta.atteso === 'string')) return [2, '']
+  const r = await conMutex(mutexConfig(file), 8000, () => {
+    const ora = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null
+    if (ora !== richiesta.atteso) return [4, '']
+    let copia = null
+    let n = 0
+    for (const i of [1, 2, 3]) {
+      try {
+        const c = JSON.parse(fs.readFileSync(`${file}.bak${i}`, 'utf8'))
+        if (configValido(c)) {
+          copia = c
+          n = i
+          break
+        }
+      } catch {
+        // copia assente o rotta: la prossima
+      }
+    }
+    if (!copia) return [5, '']
+    if (ora !== null) scriviDati(`${file}.corrotto-${new Date().toISOString().replace(/[:.]/g, '-')}`, ora)
+    let attuali = { versione: 0, progetti: {} }
+    try {
+      attuali = contatoriDi(JSON.parse(ora))
+    } catch {
+      // illeggibile: valgono il file dei contatori e la copia
+    }
+    const k = maxContatori(maxContatori(attuali, leggiContatori(file)), contatoriDi(copia))
+    const progetti = {}
+    for (const [repo, p] of Object.entries(copia.progetti ?? {})) {
+      const x = k.progetti[repo]
+      progetti[repo] = !oggetto(p) ? p : { ...p, pesiRevisione: x.pesiRevisione + 1, pesiOrigine: { tipo: 'manuale' },
+        ...(oggetto(p.board) && { board: { ...p.board, generazione: x.generazione + 1 } }) }
+    }
+    const nuovo = { ...copia, ...(copia.progetti !== undefined && { progetti }), ...(copia.versione !== undefined && { versione: k.versione + 1 }) }
+    scriviConfig(file, JSON.stringify(nuovo, null, 2))
+    return [0, JSON.stringify({ copia: n })]
+  })
+  return r.occupato ? [3, ''] : r.valore
+}
+
 function scriviAtomico(file, testo) {
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`
   fs.writeFileSync(tmp, testo, { mode: 0o600 })
@@ -346,7 +451,7 @@ async function configura(file, richiesta) {
     }
     const progetti = { ...c.progetti, [richiesta.repo]: progetto }
     const radice = { ...c, progetti, ...(Object.keys(account).length && { account: nuovoAccount }), ...(richiesta.lingua !== undefined && { lingua: richiesta.lingua }) }
-    scriviDati(file, JSON.stringify(radice, null, 2))
+    scriviConfig(file, JSON.stringify(radice, null, 2))
     return 0
   })
   return r.occupato ? 3 : r.valore
@@ -373,7 +478,7 @@ async function configuraUtente(file, richiesta) {
     if (prima !== richiesta.atteso) return 4
     const c = prima === null ? {} : JSON.parse(prima)
     if (!c || typeof c !== 'object' || Array.isArray(c)) return 2
-    scriviDati(file, JSON.stringify({ ...c, ...campi }, null, 2))
+    scriviConfig(file, JSON.stringify({ ...c, ...campi }, null, 2))
     return 0
   })
   return r.occupato ? 3 : r.valore
@@ -1226,7 +1331,7 @@ async function pesiDecidi(file, repo, idVoce, versione, esito, idDecisione, opz 
       const R = revisioneDi(prog)
       if (R !== v.partenza.revisione || !ugualiPesi(pesiProfiloDi(prog), partenza)) return [4, TESTI_PESI.primaDellaProposta]
       const origine = { tipo: 'proposta', id: idDecisione, voce: v.id, versione: v.versione }
-      scriviDati(file, JSON.stringify(conProgetto(c, repo, conPesiProfilo(prog, v.risultato, R + 1, origine)), null, 2))
+      scriviConfig(file, JSON.stringify(conProgetto(c, repo, conPesiProfilo(prog, v.risultato, R + 1, origine)), null, 2))
       opz.dopoConfig?.()
       Object.assign(v, { stato: 'applicata', decisione: { id: idDecisione, esito, quando, revisione: R + 1 } })
     } else Object.assign(v, { stato: 'rifiutata', decisione: { id: idDecisione, esito, quando } })
@@ -1250,7 +1355,7 @@ async function pesiAnnulla(file, repo, idVoce, idAnnullamento, opz = {}) {
     const partenza = oggetto(v.partenza) ? { profilo: v.partenza.profilo, pesi: v.partenza.pesi } : null
     if (!pesiProfiloOk(partenza)) return [4, TESTI_PESI.campi]
     const origine = { tipo: 'annullamento', id: idAnnullamento, voce: v.id, versione: v.versione }
-    scriviDati(file, JSON.stringify(conProgetto(c, repo, conPesiProfilo(prog, partenza, R + 1, origine)), null, 2))
+    scriviConfig(file, JSON.stringify(conProgetto(c, repo, conPesiProfilo(prog, partenza, R + 1, origine)), null, 2))
     opz.dopoConfig?.()
     Object.assign(v, { stato: 'annullata', annullamento: { id: idAnnullamento, quando: new Date().toISOString(), revisione: R + 1 } })
     v.versione += 1
@@ -1275,7 +1380,7 @@ async function comandoHelper(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {
   // F6.2: la corsia a crediti API di Claude vive in un modulo suo (letto qui, a modulo caricato).
   if (/^((lancia|esegui|stato|libera|termina)-api|stato-esecuzione|accedi)$/.test(cmd ?? '')) return require('./api-claude.cjs').comando(cmd, a, stdin, { dirMacchina })
   // F10: config e cartelle dei dati fuori da ogni albero git e da ogni link, prima di qualunque lettura o scrittura.
-  const sicuro = cmd === 'cas' ? path.dirname(a[0] ?? '') : /^(configura|configura-utente|board-[a-z]+|pesi-[a-z]+|impostazioni-[a-z]+|prenota|lancia-cli|esegui-cli|stato-cli)$/.test(cmd ?? '') ? a[0] : undefined
+  const sicuro = cmd === 'cas' ? path.dirname(a[0] ?? '') : /^(configura|configura-utente|ripristina-config|board-[a-z]+|pesi-[a-z]+|impostazioni-[a-z]+|prenota|lancia-cli|esegui-cli|stato-cli)$/.test(cmd ?? '') ? a[0] : undefined
   if (sicuro !== undefined) {
     try {
       percorsoSicuro(sicuro)
@@ -1286,6 +1391,10 @@ async function comandoHelper(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {
   }
   if (cmd === 'configura' && a.length === 1) return esci(await configura(a[0], stdin()))
   if (cmd === 'configura-utente' && a.length === 1) return esci(await configuraUtente(a[0], stdin()))
+  // F11.3: il doctor. La diagnosi legge soltanto (anche percorsi rifiutati: li riporta); i rimedi sono comandi a parte.
+  if (cmd === 'ripristina-config' && a.length === 1) return esci(...(await ripristinaConfig(a[0], stdin())))
+  if (cmd === 'diagnosi' && a.length === 4) return esci(0, JSON.stringify(require('./diagnosi.cjs').diagnosi(...a, { dm: dirMacchina })))
+  if (cmd === 'archivia-registro' && a.length === 1) return esci(...(await require('./diagnosi.cjs').archiviaRegistro(a[0])))
   if (cmd === 'lancia-cli' && a.length === 3) return esci(await lanciaCli(...a, stdin()))
   if (cmd === 'esegui-cli' && a.length === 3) return esci(await eseguiCli(...a, stdin()))
   if (cmd === 'stato-cli' && a.length === 2 && tentativoValido(a[1])) {
@@ -1322,7 +1431,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, scriviAtomico, scriviDati, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, configValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

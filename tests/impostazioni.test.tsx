@@ -195,6 +195,9 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
   /** F6.7: l'uscita di `stato-esecuzione` (null = l'helper fallisce) e l'esito di `accedi`; si contano entrambi. */
   const esec = {
     stato: (): string | null => JSON.stringify({ claude: { trovato: true, loggedIn: true }, github: { trovato: true, loggedIn: true, remote: true, host: 'github.com' }, fonti: [] }),
+    /** F11.3: l'uscita di `diagnosi` (null = l'helper fallisce) e gli esiti dei rimedi. */
+    diagnosi: (): string | null => JSON.stringify({ trovati: [], versione: '2.2.0' }),
+    ripristina: (_stdin: string): [number, string] => [0, '{"copia":1}'],
     accedi: (_tipo: string): [number, string] => [0, '{}'],
     /** Le fonti di impostazioni dell'host (`$.settings.read`); null = non si legge. */
     impostazioni: (_source: string): unknown => ({}),
@@ -345,6 +348,12 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
       const t = esec.stato()
       return t === null ? fine(2) : fine(0, t)
     }
+    if (cmd === 'diagnosi') {
+      const t = esec.diagnosi()
+      return t === null ? fine(1) : fine(0, t)
+    }
+    if (cmd === 'ripristina-config') return fine(...esec.ripristina(String(e.init?.stdin ?? '')))
+    if (cmd === 'archivia-registro') return fine(0, '{"archiviato":true}')
     if (cmd === 'accedi') {
       esec.accessi.push(String(file))
       return fine(...esec.accedi(String(file)))
@@ -450,6 +459,91 @@ test('F11.1 Modo di lavoro: «Tutti i progetti» e «Questo progetto» scrivono 
   c = JSON.parse(amb.disco.get(CONFIG)!)
   expect('modoLavoro' in c.progetti['esempio/demo']).toBe(false)
   expect(c.account.modoLavoro).toEqual({ effortPredefinito: { R0: 'low' }, codexSandbox: 'read-only' })
+})
+
+// --- F11.3: il doctor ----------------------------------------------------------------------------------------------
+/** I testi disegnati (stringhe ed etichette), per cercare una frase. */
+const testi = (n: unknown): string[] =>
+  typeof n === 'string' ? [n] : !n || typeof n !== 'object' ? [] : Array.isArray(n) ? n.flatMap(testi)
+    : [...((n as { props?: { label?: unknown } }).props?.label !== undefined ? [String((n as { props: { label: unknown } }).props.label)] : []), ...testi((n as { children?: unknown }).children)]
+const DIAGNOSI = {
+  trovati: [
+    { codice: 'config.illeggibile', copie: 2 },
+    { codice: 'registro.sviluppo' },
+    { codice: 'accesso.codex', trovato: true },
+    { codice: 'config.campoIgnoto', strato: 'progetto', progetto: true, campo: 'ignoto' },
+    // Un codice che il pannello non conosce non si mostra mai (né il suo testo).
+    { codice: 'segreto.nuovo', testo: 'X:/casa/persona/progetto-segreto' },
+  ],
+  versione: '9.9.9',
+}
+
+test('F11.3 doctor: /chipmanager --doctor apre la pagina e diagnostica; codici ignoti scartati; versione su disco diversa = avviso', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': {} } }))
+  amb.esec.diagnosi = () => JSON.stringify(DIAGNOSI)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const r = await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  expect(String((r as { text?: unknown }).text)).toContain('doctor')
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  expect(await ui.find({ key: 'pagina-doctor' })).toBeDefined()
+  expect(amb.processi.filter(p => p[2] === 'diagnosi').length).toBe(1)
+  const testo = testi(await ui.drawn()).join('\n')
+  for (const t of ['Config unreadable (2 valid copies)', 'Spend register of a development build', 'Codex not signed in', 'Unknown field ignoto (this project)', 'The mod on disk is newer'])
+    expect([t, testo.includes(t)]).toEqual([t, true])
+  expect(testo).not.toContain('progetto-segreto')
+  expect(testo).not.toContain('segreto.nuovo')
+  // Rimedi solo dove ci sono: Restore, Archive, Sign in; il campo ignoto si riporta soltanto.
+  expect((await ui.find({ key: 'doctor-rimedio-0' }))?.props).toMatchObject({ label: 'Restore…' })
+  expect(await ui.find({ key: 'doctor-rimedio-3' })).toBeUndefined()
+})
+
+test('F11.3 doctor: un rimedio solo su conferma; annullato non tocca niente; confermato ripristina con il CAS sui byte e ricontrolla', async ($, on) => {
+  const amb = ambiente(on)
+  amb.esec.diagnosi = () => JSON.stringify(DIAGNOSI)
+  amb.disco.set(CONFIG, '{ rotto')
+  const stdin: string[] = []
+  amb.esec.ripristina = s => (stdin.push(s), [0, '{"copia":1}'])
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  amb.popup.risposta = () => 'Cancel'
+  await ui.press({ key: 'doctor-rimedio-0' })
+  await ui.press({ key: 'doctor-rimedio-1' })
+  expect(amb.processi.filter(p => p[2] === 'ripristina-config' || p[2] === 'archivia-registro').length).toBe(0)
+  expect(amb.domande.length).toBe(2)
+  amb.popup.risposta = () => 'Apply fix'
+  await ui.press({ key: 'doctor-rimedio-0' })
+  expect(stdin).toEqual([JSON.stringify({ atteso: '{ rotto' })])
+  expect(amb.toast).toContain('Config restored')
+  expect(amb.processi.filter(p => p[2] === 'diagnosi').length).toBe(2)
+  // «Accedi» parte dal clic, senza popup: il login staccato di Codex.
+  await ui.press({ key: 'doctor-rimedio-2' })
+  expect(amb.processi.some(p => p[2] === 'accedi' && p[3] === 'codex')).toBe(true)
+})
+
+test('F11.3 doctor: helper che non risponde = «non è partito»; nessun rilievo = «Niente da sistemare»; il rapporto si copia', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': {} } }))
+  amb.esec.diagnosi = () => null
+  const copiati: string[] = []
+  on('ui.copy', (_, e) => (copiati.push(String((e as { text?: unknown }).text)), { value: { isCopied: true } as never }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  const ui = await $.ui.mount({ ...PANE('terminal', 60) })
+  expect(testi(await ui.drawn()).join('\n')).toContain('The check did not run')
+  amb.esec.diagnosi = () => JSON.stringify({ trovati: [], versione: '2.2.0' })
+  await ui.press({ key: 'doctor-ricontrolla' })
+  expect(testi(await ui.drawn()).join('\n')).toContain('Nothing to fix.')
+  await ui.press({ key: 'doctor-copia' })
+  expect(copiati).toEqual(['Nothing to fix.'])
+  await ui.press({ key: 'doctor-indietro' })
+  expect(await ui.find({ key: 'pagina-connessioni' })).toBeDefined()
 })
 
 test('F11.1 proposte: il modo di lavoro si propone per progetto e account e si fonde con quello scritto; profilo e consigliere non sono modo', () => {

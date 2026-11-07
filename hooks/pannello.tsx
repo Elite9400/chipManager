@@ -9,7 +9,7 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
 
-import type { LockApi, TipoAccesso } from '../types'
+import type { LockApi, Rilievo, TipoAccesso } from '../types'
 import type { Azione, Chiamante, Consumo, Fornitore, Limite, Motore, Pendenti, Peso, PropostaPesi, Regole, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoBoard, StatoImpostazioni, Traguardi, Vista, Vita } from '../types'
 import { annullabile as pesiAnnullabili, daDecidere, decisaIl, descriviPesi, statoVisto, TESTI_PESI } from './bilanciamento'
 import {
@@ -94,6 +94,9 @@ export type Ctx = {
   ricontrollaCambio: (a: Azione) => Promise<unknown>
   /** F6.7: il controllo ✓/✗ della sezione Esecuzione, i login a un clic, il menu /config. */
   controllaEsecuzione: () => Promise<unknown>
+  /** F11.3: il doctor: diagnosi in sola lettura e un rimedio su conferma, poi di nuovo la diagnosi. */
+  diagnosi: () => Promise<unknown>
+  rimedio: (r: Rilievo) => Promise<unknown>
   accedi: (tipo: TipoAccesso) => Promise<unknown>
   apriConfig: () => Promise<unknown>
   /** F6.2: «Libera» e «Termina» del lock della corsia API, ciascuno con il suo popup. */
