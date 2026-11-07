@@ -32,7 +32,7 @@ import {
   valoreConfig,
 } from './bilanciamento'
 import type { Profilo } from './bilanciamento'
-import { cartellaDati, conMisura, connesso, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, passiMancanti, piuPieno, SOGLIA_PREDEFINITA, sogliaDi, TETTO_API_PREDEFINITO, velo } from './logica'
+import { cartellaDati, conMisura, connesso, durata, endpointLocale, FORNITORI, livelloDi, modoEfficace, nomeModello, passiMancanti, piuPieno, SOGLIA_PREDEFINITA, sogliaDi, TETTO_API_PREDEFINITO, velo } from './logica'
 import type { Ctx, Dati } from './pannello'
 import { eMsg, Errore, LEGENDA, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
 import type { Chiave, Lingua, T } from './lingua'
@@ -61,6 +61,7 @@ export async function apriBilanciamento($: EngineInterface) {
 const SEZIONI: { valore: Sezione; testo: Chiave }[] = [
   { valore: 'connessioni', testo: 'imp.sezione.connessioni' },
   { valore: 'soglie', testo: 'imp.sezione.soglie' },
+  { valore: 'modo', testo: 'imp.sezione.modo' },
   { valore: 'bilanciamento', testo: 'imp.sezione.bilanciamento' },
   { valore: 'progetto', testo: 'imp.sezione.progetto' },
   { valore: 'board', testo: 'imp.sezione.board' },
@@ -71,7 +72,7 @@ const SEZIONI: { valore: Sezione; testo: Chiave }[] = [
 ]
 /** F10: le sezioni dello strato Account (uguali in tutti i progetti) e quelle del Progetto della sessione. */
 // La Legenda resta l'ultima sezione, in fondo al gruppo del Progetto.
-const SEZIONI_ACCOUNT: readonly Sezione[] = ['connessioni', 'soglie', 'esecuzione', 'lingua']
+const SEZIONI_ACCOUNT: readonly Sezione[] = ['connessioni', 'soglie', 'modo', 'esecuzione', 'lingua']
 const TIPO = (t: string) => t[0]!.toUpperCase() + t.slice(1)
 
 /**
@@ -509,6 +510,66 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         didascalia('soglie-account', T('imp.valeTuttiProgetti')),
         ...(d.fornitoriInUso.length ? d.fornitoriInUso.map(sogliaUi) : [didascalia('soglie-vuote', T('sog.vuote'))]),
         budgetUi(),
+      ],
+    })
+  }
+
+  // --- Modo di lavoro (F11.1) -------------------------------------------------------------------------
+  // Un solo insieme di controlli per i due strati: «Tutti i progetti» scrive l'account, «Questo progetto» lo sostituisce
+  // campo per campo. Si mostra il valore efficace dello strato scelto (quello che eredita, se lo strato non lo dice).
+  const modoLavoro = () => {
+    const progetto = vista.ambitoModo === 'progetto'
+    const strato = (progetto ? r.strato.modoLavoro : r.account.modoLavoro) ?? {}
+    const campo = progetto ? 'modoLavoro' : 'account.modoLavoro'
+    const m = progetto ? r.modoLavoro : modoEfficace(r.account.modoLavoro, undefined)
+    const scrivi = (dove: string, patch: Record<string, unknown>) => salva(dove, () => ({ [campo]: { ...strato, ...patch } }))()
+    const SI_NO = [{ valore: 'si', testo: T('modo.si') }, { valore: 'no', testo: T('modo.no') }]
+    const stato = T('modo.stato', { effort: m.effortPredefinito.R0, codex: m.codexSandbox === 'read-only' ? T('modo.codexLegge') : T('modo.codexScrive') })
+    const effort = (c: 'R0' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5') =>
+      u.GruppoChip({
+        // Il contesto (la corsia) rende unico il nome di ogni chip: «R0, low».
+        chiave: `modo-effort-${c}`, etichetta: T('modo.effort', { corsia: c }), contesto: c, modo: 'scelta', valore: m.effortPredefinito[c],
+        // Le guardie restano: R4/R5 mai sotto high.
+        voci: (c === 'R4' || c === 'R5' ? ['high', 'xhigh'] : ['low', 'medium', 'high', 'xhigh']).map(x => ({ valore: x, testo: x })),
+        onCambia: v => scrivi(`modo-effort-${c}`, { effortPredefinito: { ...strato.effortPredefinito, [c]: v } }),
+      })
+    return u.Sezione({
+      chiave: 'pagina-modo',
+      titolo: T('imp.sezione.modo'),
+      descrizione: T('modo.descrizione'),
+      stato,
+      figli: [
+        u.GruppoChip({
+          chiave: 'modo-ambito', etichetta: T('modo.ambito'), modo: 'scelta', valore: progetto ? 'progetto' : 'account',
+          voci: [{ valore: 'account', testo: T('modo.account') }, { valore: 'progetto', testo: T('modo.progetto', { repo: io?.repo ?? '—' }) }],
+          onCambia: v => void cambia(s => ({ ...s, ambitoModo: v as 'account' | 'progetto', errore: undefined })),
+        }),
+        didascalia('modo-ambito-nota', progetto ? T('modo.notaProgetto') : T('imp.valeTuttiProgetti')),
+        ...(['R0', 'R1', 'R2', 'R3', 'R4', 'R5'] as const).map(effort),
+        u.GruppoChip({
+          chiave: 'modo-codex', etichetta: T('modo.codex'), modo: 'scelta', valore: m.codexSandbox,
+          voci: [{ valore: 'workspace-write', testo: T('modo.codexScrive') }, { valore: 'read-only', testo: T('modo.codexLegge') }],
+          onCambia: v => scrivi('modo-codex', { codexSandbox: v }),
+        }),
+        u.GruppoChip({
+          chiave: 'modo-parallelo', etichetta: T('modo.parallelo'), modo: 'scelta', valore: String(m.parallelo ?? ''),
+          voci: [{ valore: '', testo: T('modo.parOspite') }, ...[1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ valore: String(n), testo: String(n) }))],
+          // null toglie il campo: torna a valere l'opzione dell'host `paralleli`.
+          onCambia: v => scrivi('modo-parallelo', { parallelo: v ? Number(v) : null }),
+        }),
+        u.GruppoChip({
+          chiave: 'modo-auditor', etichetta: T('modo.auditor'), contesto: T('modo.auditorBreve'), modo: 'scelta', valore: m.auditorSuggerito ? 'si' : 'no', voci: SI_NO,
+          onCambia: v => scrivi('modo-auditor', { auditorSuggerito: v === 'si' }),
+        }),
+        u.GruppoChip({
+          chiave: 'modo-incrociata', etichetta: T('modo.incrociata'), contesto: T('modo.incrociataBreve'), modo: 'scelta', valore: m.revisioneIncrociata ? 'si' : 'no', voci: SI_NO,
+          onCambia: v => scrivi('modo-incrociata', { revisioneIncrociata: v === 'si' }),
+        }),
+        Object.keys(strato).length ? (
+          <Button key="modo-ripristina" plain label={progetto ? T('modo.eredita') : T('modo.predefiniti')}
+            onPress={() => salva('modo-ripristina', () => ({ [campo]: null }))()} />
+        ) : null,
+        ...['modo-ripristina', 'modo-codex', 'modo-parallelo', 'modo-auditor', 'modo-incrociata', ...['R0', 'R1', 'R2', 'R3', 'R4', 'R5'].map(c => `modo-effort-${c}`)].map(errore),
       ],
     })
   }
@@ -1039,6 +1100,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       : vista.sezione === 'legenda' ? legenda()
       : vista.sezione === 'lingua' ? lingua()
       : vista.sezione === 'soglie' ? soglie()
+      : vista.sezione === 'modo' ? modoLavoro()
       : vista.sezione === 'bilanciamento' ? bilanciamento()
         : vista.sezione === 'progetto' ? await progetto()
           : vista.sezione === 'board' ? board()

@@ -3,7 +3,7 @@
 import type { Azione, Chiamante, Fornitore, Limite, Pendenti, Peso, PesiProfilo, PropostaImpostazioni, PropostaPesi, Regolazione, Regole, RisorseProgetto, SessioneProgetto, Soglia } from '../types'
 import { ALIAS_UNITA, data, eMsg, errore, LINGUE, msg, t } from './lingua'
 import type { Chiave, Lingua, Msg } from './lingua'
-import { bilancia, corsiaDi, effortDi, FORNITORI, idAuditor, modelloDi, motivoAuditor, nomeModello, pesoValido, profiloDi, rangoModello, restrizioneLarga, restrizioniDa, risorseDa, violazioni, violazioniAvvio } from './logica'
+import { bilancia, corsiaDi, effortDi, FORNITORI, idAuditor, modelloDi, modoNonValido, motivoAuditor, nomeModello, pesoValido, profiloDi, rangoModello, restrizioneLarga, restrizioniDa, risorseDa, violazioni, violazioniAvvio } from './logica'
 
 export type Profilo = NonNullable<RisorseProgetto['profilo']>
 
@@ -139,12 +139,12 @@ export const manualiDaScrivere = (limiti: readonly Limite[]) =>
  * F10: i campi dello strato Account nella bozza, con il prefisso `account.` (lo toglie la scrittura): così base, conflitti
  * e «Riapplica» funzionano uguali per i due strati, e una modifica all'account nascosta da una restrizione non sfugge.
  */
-export const CAMPI_ACCOUNT = ['account.soglie', 'account.apiClaude', 'account.freellmapi']
+export const CAMPI_ACCOUNT = ['account.soglie', 'account.apiClaude', 'account.freellmapi', 'account.modoLavoro']
 /**
  * I campi che stanno nella bozza; i budget manuali no: si scrivono subito, e Applica non li tocca mai. Del progetto, `soglie`
  * e `apiClaude` (dei build di sviluppo) e `restrizioni` sono restrizioni: la bozza le toglie o le restringe soltanto.
  */
-export const CAMPI_BOZZA = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere', 'restrizioni', ...CAMPI_ACCOUNT]
+export const CAMPI_BOZZA = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere', 'restrizioni', 'modoLavoro', ...CAMPI_ACCOUNT]
 /** Il valore GREZZO di un campo (mai quello efficace) nella forma che scrive `configura`; null = assente. */
 export function valoreConfig(r: RisorseProgetto, k: string): unknown {
   switch (k) {
@@ -156,6 +156,8 @@ export function valoreConfig(r: RisorseProgetto, k: string): unknown {
     case 'account.soglie': return r.account.soglie
     case 'account.apiClaude': return r.account.apiClaude ?? null
     case 'account.freellmapi': return r.account.freellmapi ?? null
+    case 'account.modoLavoro': return r.account.modoLavoro ?? null
+    case 'modoLavoro': return r.strato.modoLavoro ?? null
     case 'account.limitiManuali': return manualiDaScrivere(r.account.limitiManuali)
     case 'limitiManuali': return manualiDaScrivere(r.limitiManuali.filter(l => l.progetto))
     default: return (r as Record<string, unknown>)[k]
@@ -180,10 +182,12 @@ export function grezzi(r: RisorseProgetto) {
     soglie: r.strato.soglie, board: r.board, limitiManuali: valoreConfig(r, 'limitiManuali'),
     ...(r.strato.apiClaude && { apiClaude: r.strato.apiClaude }), ...(r.consigliere && { consigliere: r.consigliere }), ...(r.profilo && { profilo: r.profilo }),
     ...(Object.keys(r.strato.restrizioni).length && { restrizioni: r.strato.restrizioni }),
+    ...(r.strato.modoLavoro && { modoLavoro: r.strato.modoLavoro }),
   }
   const account: Record<string, unknown> = {
     soglie: r.account.soglie, limitiManuali: valoreConfig(r, 'account.limitiManuali'),
     ...(r.account.apiClaude && { apiClaude: r.account.apiClaude }), ...(r.account.freellmapi && { freellmapi: r.account.freellmapi }),
+    ...(r.account.modoLavoro && { modoLavoro: r.account.modoLavoro }),
   }
   return { progetto, account }
 }
@@ -275,6 +279,11 @@ export const piena = (p: Pendenti | undefined) => (p && (Object.keys(p.campi).le
 export function conBozza(r: RisorseProgetto, campi: Record<string, unknown>) {
   const g = grezzi(r)
   const { progetto, account } = perStrato(campi)
+  // F11.1: un modo di lavoro che viola le guardie o non ha la forma si rifiuta in scrittura, con il nome del campo.
+  for (const m of [progetto.modoLavoro, account.modoLavoro]) {
+    const campo = modoNonValido(m)
+    if (campo) return msg('cfg.modoLavoro', { campo })
+  }
   const nuove = risorseDa(senzaNull({ ...g.progetto, ...progetto }), senzaNull({ ...g.account, ...account }))
   if (eMsg(nuove) || progetto.restrizioni === undefined || progetto.restrizioni === null) return nuove
   const restrizioni = restrizioniDa(progetto.restrizioni)
@@ -290,6 +299,7 @@ export const SEZIONE_DI: Record<string, Chiave> = {
   soloLocale: 'imp.sezione.progetto', milestoneGithub: 'imp.sezione.progetto', board: 'imp.sezione.board', restrizioni: 'imp.sezione.progetto',
   freellmapi: 'imp.sezione.avanzate', apiClaude: 'imp.sezione.esecuzione', consigliere: 'imp.sezione.esecuzione', lingua: 'imp.sezione.lingua',
   'account.soglie': 'imp.sezione.soglie', 'account.apiClaude': 'imp.sezione.esecuzione', 'account.freellmapi': 'imp.sezione.avanzate',
+  'account.modoLavoro': 'imp.sezione.modo', modoLavoro: 'imp.sezione.modo',
 }
 
 // --- proposte di impostazioni (F7.1) -----------------------------------------------------------------------
@@ -345,7 +355,7 @@ export function propostaImpostazioniDa(x: unknown): { proposta: PropostaImpostaz
   if (x.progetto !== undefined) {
     const q = x.progetto
     if (!o(q) || !Object.keys(q).length) return no('progetto', 'valore')
-    const g = chiavi(q, ['profilo', 'board', 'consigliere', 'restrizioni'], 'progetto')
+    const g = chiavi(q, ['profilo', 'board', 'consigliere', 'restrizioni', 'modoLavoro'], 'progetto')
     if (g) return g
     const pr: NonNullable<PropostaImpostazioni['progetto']> = {}
     if (q.profilo !== undefined) {
@@ -384,12 +394,17 @@ export function propostaImpostazioniDa(x: unknown): { proposta: PropostaImpostaz
       }
       pr.restrizioni = restrizioni
     }
+    if (q.modoLavoro !== undefined) {
+      const campo = q.modoLavoro === null ? 'modoLavoro' : modoNonValido(q.modoLavoro)
+      if (campo || !Object.keys(q.modoLavoro as object).length) return no(`progetto.${campo ?? 'modoLavoro'}`, 'valore')
+      pr.modoLavoro = q.modoLavoro as NonNullable<PropostaImpostazioni['progetto']>['modoLavoro']
+    }
     p.progetto = pr
   }
   if (x.account !== undefined) {
     const a = x.account
     if (!o(a) || !Object.keys(a).length) return no('account', 'valore')
-    const g = chiavi(a, ['soglie', 'apiClaude'], 'account')
+    const g = chiavi(a, ['soglie', 'apiClaude', 'modoLavoro'], 'account')
     if (g) return g
     const ac: NonNullable<PropostaImpostazioni['account']> = {}
     if (a.soglie !== undefined) {
@@ -404,6 +419,11 @@ export function propostaImpostazioniDa(x: unknown): { proposta: PropostaImpostaz
       if (a.apiClaude.budgetUsd !== undefined && !numeroIn(a.apiClaude.budgetUsd, 0.01, 100_000)) return no('account.apiClaude.budgetUsd', 'valore')
       if (a.apiClaude.tetto !== undefined && !numeroIn(a.apiClaude.tetto, 0.01, 1_000)) return no('account.apiClaude.tetto', 'valore')
       ac.apiClaude = { ...(a.apiClaude.budgetUsd !== undefined && { budgetUsd: a.apiClaude.budgetUsd as number }), ...(a.apiClaude.tetto !== undefined && { tetto: a.apiClaude.tetto as number }) }
+    }
+    if (a.modoLavoro !== undefined) {
+      const campo = a.modoLavoro === null ? 'modoLavoro' : modoNonValido(a.modoLavoro)
+      if (campo || !Object.keys(a.modoLavoro as object).length) return no(`account.${campo ?? 'modoLavoro'}`, 'valore')
+      ac.modoLavoro = a.modoLavoro as NonNullable<PropostaImpostazioni['account']>['modoLavoro']
     }
     p.account = ac
   }
@@ -433,7 +453,12 @@ export function campiDaProposta(p: PropostaImpostazioni, r: RisorseProgetto): Re
     const ora = r.strato.restrizioni
     campi.restrizioni = { ...ora, ...q.restrizioni, ...((ora.soglie || q.restrizioni.soglie) && { soglie: { ...ora.soglie, ...q.restrizioni.soglie } }) }
   }
+  // F11.1: il modo di lavoro proposto si fonde con quello scritto dello stesso strato (effort per corsia compreso).
+  const modo = (ora: Record<string, unknown> | undefined, nuovo: Record<string, unknown>) => ({ ...ora, ...nuovo,
+    ...(ora?.effortPredefinito || nuovo.effortPredefinito ? { effortPredefinito: { ...(ora?.effortPredefinito as object), ...(nuovo.effortPredefinito as object) } } : {}) })
+  if (q.modoLavoro) campi.modoLavoro = modo(r.strato.modoLavoro, q.modoLavoro)
   const a = p.account ?? {}
+  if (a.modoLavoro) campi['account.modoLavoro'] = modo(r.account.modoLavoro, a.modoLavoro)
   if (a.soglie) campi['account.soglie'] = { ...r.account.soglie, ...a.soglie }
   if (a.apiClaude) campi['account.apiClaude'] = { ...r.account.apiClaude, ...a.apiClaude }
   return campi
@@ -454,9 +479,9 @@ export const toccaAccount = (campi: Record<string, unknown>) => Object.keys(camp
  * I valori dello strato sono quelli scritti (assente = eredita); gli efficaci sono quelli che il pannello applica.
  */
 export const impostazioniCorrenti = (r: RisorseProgetto, lingua: Lingua) => ({
-  project: { profilo: profiloDi(r), board: r.board.modo, consigliere: r.consigliere ?? 'spento', restrizioni: r.strato.restrizioni },
-  account: { soglie: r.account.soglie, apiClaude: r.account.apiClaude ?? null, appliesTo: 'all projects' },
-  effective: { soglie: r.soglie, apiClaude: r.apiClaude ?? null },
+  project: { profilo: profiloDi(r), board: r.board.modo, consigliere: r.consigliere ?? 'spento', restrizioni: r.strato.restrizioni, modoLavoro: r.strato.modoLavoro ?? {} },
+  account: { soglie: r.account.soglie, apiClaude: r.account.apiClaude ?? null, modoLavoro: r.account.modoLavoro ?? {}, appliesTo: 'all projects' },
+  effective: { soglie: r.soglie, apiClaude: r.apiClaude ?? null, modoLavoro: r.modoLavoro },
   lingua,
 })
 
@@ -484,7 +509,9 @@ export function presetChi(a: Azione, preset: PresetChi, r: Regole, limiti: reado
   // Qualità, solo senza una scelta: sulle corsie alte un auditor di rango più alto, se la candidata completa (auditor
   // compreso) non viola niente di più di quella senza: niente auditor dove la modalità non lo ammette (il cloud).
   const alta = ['R3', 'R4', 'R5'].includes(corsiaDi(a, r) ?? '')
-  if (preset === 'qualita' && a.auditor === undefined && alta && modello) {
+  // F11.1: con «auditor suggerito» acceso anche il preset consigliato propone l'auditor, alle stesse condizioni.
+  const conAuditor = preset === 'qualita' || (preset === 'consigliato' && !!r.risorse.modoLavoro?.auditorSuggerito)
+  if (conAuditor && a.auditor === undefined && alta && modello) {
     const candidata: Azione = { ...a, esecutore: s.esecutore, modello: s.modello, effort: s.effort, auditor: undefined, senzaAuditor: undefined }
     const senza = violazioni(candidata, r).map(m => JSON.stringify(m))
     auditor = ['opus', 'fable'].find(x => !motivoAuditor(modello, x) && rangoModello(idAuditor(x)!) > rangoModello(modello) &&

@@ -472,11 +472,17 @@ async function leggiRegole($: Eng) {
   const freellmapi = chiaviFornitori.freellmapi || !!(await $.env.get('FREELLMAPI_KEY').catch(() => undefined))
   const connessi: Fornitore[] = ['claude', 'codex', ...(deepseek ? ['deepseek' as const] : []), ...(freellmapi ? ['freellmapi' as const] : [])]
   r = { ...r, chiaveApi: chiaveApiPresente, connessi }
+  paralleloModo = r.risorse.modoLavoro?.parallelo
   if (!uguale(await read($, regole), r)) await update($, regole, () => r)
   return r
 }
 
-function maxParalleli(options: Record<string, unknown>) {
+/** F11.1: il parallelo del modo di lavoro dell'ultima lettura delle regole, per il disegno (che non le rilegge). */
+let paralleloModo: number | undefined
+/** Le sessioni avviate insieme: modo di lavoro (dalle regole passate, o dall'ultima lettura) > opzione dell'host `paralleli` > 3. */
+function maxParalleli(options: Record<string, unknown>, r?: Regole) {
+  const modo = r ? r.risorse.modoLavoro?.parallelo : paralleloModo
+  if (modo !== undefined) return modo
   const n = Number(options.paralleli ?? 3)
   return Number.isInteger(n) && n >= 1 && n <= 10 ? n : 3
 }
@@ -712,7 +718,7 @@ async function decidi(
     if (opz.manuale && (chi.lanciatore !== 'desktop' || a.esecutore === 'freellmapi' || modalitaDi(a) === 'api-claude')) blocchi.push(msg('v.manualeDesktop'))
     if (blocchi.length) return { blocchi }
     // «qui» non occupa un posto di sessione nuova, ma la corsia Codex sì.
-    const piano = await conCorsia($, codex => pianifica([a], lista, r, opz.qui ? Number.MAX_SAFE_INTEGER : maxParalleli(options), codex, x => violazioniAvvio(x, r, tutte, chi, opz.qui)))
+    const piano = await conCorsia($, codex => pianifica([a], lista, r, opz.qui ? Number.MAX_SAFE_INTEGER : maxParalleli(options, r), codex, x => violazioniAvvio(x, r, tutte, chi, opz.qui)))
     if (piano.bloccate.length) return { blocchi: piano.bloccate[0]!.motivi }
     if (piano.coda.length) {
       const motivo = piano.coda[0]!.motivo
@@ -960,7 +966,7 @@ async function chiediQui($: Eng, options: Record<string, unknown>, id: string) {
 async function pianoProposte($: Eng, options: Record<string, unknown>) {
   const [tutte, r, chi] = await Promise.all([carica($, { completa: true }), leggiRegole($), chiSonoIo($)])
   const lista = delProgetto(tutte, chi)
-  const max = maxParalleli(options)
+  const max = maxParalleli(options, r)
   const proposte = lista.filter(a => a.stato === 'proposta')
   // Le violazioni della configurazione effettiva (chi avvia) entrano nel piano: una bloccata non consuma posti.
   const limitiOra = (await read($, risorse)).limiti
@@ -1523,7 +1529,7 @@ async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti)
   // Prima di filtrare le code si rilegge chi avvia: un avvio non aspetta la finestra della cache.
   const chiOra = await chiSonoIo($)
   const limitiOra = (await read($, risorse)).limiti
-  const pronte = (await conCorsia($, codex => pianifica(accodate, adesso, r, maxParalleli(options), codex, a => violazioniAvvio(a, r, tutteOra, chiOra), limitiOra))).avvia
+  const pronte = (await conCorsia($, codex => pianifica(accodate, adesso, r, maxParalleli(options, r), codex, a => violazioniAvvio(a, r, tutteOra, chiOra), limitiOra))).avvia
   for (const a of pronte) await avvia($, options, a.id).catch(() => undefined)
 }
 
@@ -1690,7 +1696,7 @@ function valida(e: Record<string, unknown>, r: Regole, esistenti: readonly Azion
     const tutti = errori.join('; ')
     return tutti.length <= 600 ? tutti : `${tutti.slice(0, 597)}...`
   }
-  return {
+  const suggerita: Suggerita = {
     piano: e.piano as string | undefined,
     titolo: (e.titolo as string).trim(),
     brief: e.brief as string,
@@ -1713,6 +1719,10 @@ function valida(e: Record<string, unknown>, r: Regole, esistenti: readonly Azion
     ramo: e.ramo as string | undefined,
     base: e.base as string | undefined,
   }
+  // F11.1: senza revisione incrociata (solo R0–R2) e senza un revisore scelto, nessun revisore; R3+ come sempre.
+  if (e.revisore === undefined && r.risorse.modoLavoro?.revisioneIncrociata === false && ['R0', 'R1', 'R2'].includes(corsiaDi(suggerita as never, r) ?? ''))
+    suggerita.revisore = 'nessuno'
+  return suggerita
 }
 
 // Una riga per proprietà, senza perdere vincoli: i dettagli stanno nei rifiuti di valida(), che l'agente legge quando sbaglia.

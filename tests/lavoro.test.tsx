@@ -8,7 +8,7 @@ import type { Azione, Limite } from '../types'
 import { t } from '../hooks/lingua'
 import { DiscoIt } from './disco-it'
 import { applicaPatch } from '../hooks/bilanciamento'
-import { ANTEPRIMA, confrontaF9, controlliF9, fineF9, normaF9 } from './f9'
+import { ANTEPRIMA, confrontaControlli, confrontaF9, controlliF9, fineF9, normaF9 } from './f9'
 import { PRIMA } from './f9-prima'
 
 type On = Parameters<TestBody>[1]
@@ -504,7 +504,7 @@ test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazi
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', progetti: { 'acme/progetto': {} } }))
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda']
+  const SEZIONI = ['connessioni', 'soglie', 'modo', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda']
   for (const surface of SUPERFICI)
     for (const colonne of LARGHEZZE) {
       const ui = await $.ui.mount(PANE(surface, colonne))
@@ -567,7 +567,7 @@ test('lingue: a 60 colonne nel terminale nessuna riga supera la larghezza e ness
   const amb = ambiente(on, MATRICE_EN)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda']
+  const SEZIONI = ['connessioni', 'soglie', 'modo', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda']
   for (const lingua of ['en', 'it', 'es', 'fr', 'de', 'pt']) {
     // F10: account e restrizioni del progetto, così si disegnano anche gruppi, restrizioni, pillole ed eccezioni.
     amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua,
@@ -813,7 +813,7 @@ test('F9 non regressione: elenco ordinato dei controlli per vista e per superfic
       const scorciatoie = c.map(x => x.hotkey).filter(k => k !== undefined)
       expect([vista, chiavi.filter((k, i) => chiavi.indexOf(k) !== i)]).toEqual([vista, []])
       expect([vista, scorciatoie.filter((k, i) => scorciatoie.indexOf(k) !== i)]).toEqual([vista, []])
-      confrontaF9(`controlli:${surface}:${vista}`, c)
+      confrontaControlli(`controlli:${surface}:${vista}`, c)
     }
     await ui.press({ key: 'vista-lavoro' })
     await foto('lavoro')
@@ -823,7 +823,8 @@ test('F9 non regressione: elenco ordinato dei controlli per vista e per superfic
     await ui.press({ key: 'vista-carico' })
     await foto('carico')
     await ui.press({ key: 'impostazioni' })
-    for (const s of SEZIONI_F9) {
+    // F11: la sezione Modo di lavoro è nuova; i suoi controlli vanno nella fotografia di F11.
+    for (const s of [...SEZIONI_F9, 'modo']) {
       await ui.press({ key: `sezione-${s}-premi` })
       await foto(`impostazioni-${s}`)
     }

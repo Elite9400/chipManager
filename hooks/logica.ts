@@ -1,4 +1,5 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
+import type { ModoLavoro, ModoLavoroEfficace } from '../types'
 import type { Azione, BoardProgetto, Chiamante, Consumo, ControlloEsecuzione, Corsia, Destinazione, Fornitore, Limite, PassoEsecuzione, Peso, Regole, Restrizioni, RisorseProgetto, SessioneProgetto, Soglia, SogliePerStrato, StratoAccount, StatoAzione, StratoProgetto, Traguardo, Vita } from '../types'
 import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
@@ -48,6 +49,7 @@ export const RISORSE_DEFAULT: RisorseProgetto = {
   board: { modo: 'spenta', generazione: 0 },
   account: { soglie: {}, limitiManuali: [] },
   strato: { soglie: {}, freellmapi: { livello: 'niente' }, restrizioni: {} },
+  modoLavoro: { effortPredefinito: { R0: 'medium', R1: 'medium', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', auditorSuggerito: false, revisioneIncrociata: true },
 }
 export const REGOLE_DEFAULT: Regole = {
   lette: false,
@@ -212,6 +214,69 @@ function manualiDa(v: unknown, progetto: boolean): Limite[] | undefined {
  * F10: lo strato Account (`account` nella radice del config). Assente = vuoto; una forma non valida ferma tutto (nel
  * dubbio si blocca). Campi sconosciuti ignorati: una versione più nuova può aggiungerne.
  */
+// --- F11.1: il modo di lavoro --------------------------------------------------------------------------------------
+const EFFORT_MODO = ['low', 'medium', 'high', 'xhigh'] as const
+const CORSIE_MODO: readonly Corsia[] = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5']
+const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata']
+/** Le corsie dove l'effort non scende sotto high: un valore più basso viola la guardia e non vale. */
+const sottoHigh = (c: string, x: string) => (c === 'R4' || c === 'R5') && EFFORT_MODO.indexOf(x as never) < 2
+
+/**
+ * Il modo di lavoro di uno strato come si legge: un campo che non vale (forma, valore o guardia) si ignora, come se non
+ * ci fosse (eredita). Null = assente. Le guardie restano le stesse dell'avvio: R4/R5 mai sotto high.
+ */
+export function modoDa(v: unknown): ModoLavoro {
+  if (!oggettoRisorse(v)) return {}
+  const out: ModoLavoro = {}
+  if (oggettoRisorse(v.effortPredefinito)) {
+    const e: NonNullable<ModoLavoro['effortPredefinito']> = {}
+    for (const c of CORSIE_MODO) {
+      const x = v.effortPredefinito[c]
+      if (typeof x === 'string' && (EFFORT_MODO as readonly string[]).includes(x) && !sottoHigh(c, x)) e[c] = x as (typeof EFFORT_MODO)[number]
+    }
+    if (Object.keys(e).length) out.effortPredefinito = e
+  }
+  if (v.codexSandbox === 'workspace-write' || v.codexSandbox === 'read-only') out.codexSandbox = v.codexSandbox
+  if (Number.isInteger(v.parallelo) && (v.parallelo as number) >= 1 && (v.parallelo as number) <= 8) out.parallelo = v.parallelo as number
+  if (typeof v.auditorSuggerito === 'boolean') out.auditorSuggerito = v.auditorSuggerito
+  if (typeof v.revisioneIncrociata === 'boolean') out.revisioneIncrociata = v.revisioneIncrociata
+  return out
+}
+
+/** In scrittura il modo di lavoro si rifiuta con il nome del primo campo che non vale (null = togli il campo). */
+export function modoNonValido(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined
+  if (!oggettoRisorse(v)) return 'modoLavoro'
+  const ignoto = Object.keys(v).find(k => !CAMPI_MODO.includes(k))
+  if (ignoto) return `modoLavoro.${ignoto.replace(/[^A-Za-z0-9_]/g, '?').slice(0, 40)}`
+  const e = v.effortPredefinito
+  if (e !== undefined && e !== null) {
+    if (!oggettoRisorse(e)) return 'modoLavoro.effortPredefinito'
+    for (const [c, x] of Object.entries(e))
+      if (!CORSIE_MODO.includes(c as Corsia) || (x !== null && (typeof x !== 'string' || !(EFFORT_MODO as readonly string[]).includes(x) || sottoHigh(c, x))))
+        return `modoLavoro.effortPredefinito.${c.replace(/[^A-Za-z0-9_]/g, '?').slice(0, 10)}`
+  }
+  if (v.codexSandbox !== undefined && v.codexSandbox !== null && v.codexSandbox !== 'workspace-write' && v.codexSandbox !== 'read-only') return 'modoLavoro.codexSandbox'
+  if (v.parallelo !== undefined && v.parallelo !== null && !(Number.isInteger(v.parallelo) && (v.parallelo as number) >= 1 && (v.parallelo as number) <= 8)) return 'modoLavoro.parallelo'
+  for (const k of ['auditorSuggerito', 'revisioneIncrociata'])
+    if (v[k] !== undefined && v[k] !== null && typeof v[k] !== 'boolean') return `modoLavoro.${k}`
+  return undefined
+}
+
+/** Il modo efficace: per campo il progetto sostituisce l'account, poi i predefiniti (R0–R2 medium, R3–R5 high, Codex workspace-write). */
+export function modoEfficace(account: ModoLavoro | undefined, progetto: ModoLavoro | undefined): ModoLavoroEfficace {
+  const d = RISORSE_DEFAULT.modoLavoro
+  const effortPredefinito = Object.fromEntries(CORSIE_MODO.map(c => [c, progetto?.effortPredefinito?.[c] ?? account?.effortPredefinito?.[c] ?? d.effortPredefinito[c]])) as ModoLavoroEfficace['effortPredefinito']
+  const parallelo = progetto?.parallelo ?? account?.parallelo
+  return {
+    effortPredefinito,
+    codexSandbox: progetto?.codexSandbox ?? account?.codexSandbox ?? d.codexSandbox,
+    ...(parallelo !== undefined && { parallelo }),
+    auditorSuggerito: progetto?.auditorSuggerito ?? account?.auditorSuggerito ?? d.auditorSuggerito,
+    revisioneIncrociata: progetto?.revisioneIncrociata ?? account?.revisioneIncrociata ?? d.revisioneIncrociata,
+  }
+}
+
 export function accountDa(v: unknown): StratoAccount | Msg {
   const errore = msg('cfg.account')
   if (v === undefined || v === null) return { soglie: {}, limitiManuali: [] }
@@ -225,7 +290,8 @@ export function accountDa(v: unknown): StratoAccount | Msg {
   if (f !== undefined && (!oggettoRisorse(f) || (f.endpoint !== undefined && !endpointLocale(f.endpoint)))) return errore
   // Grezzo, come sta nel file: il tetto predefinito vale solo per i valori efficaci (rilievo 5), mai per basi e proposte.
   return { soglie, limitiManuali, ...(api && { apiClaude: { budgetUsd: api.budgetUsd as number, ...(api.tetto !== undefined && { tetto: api.tetto as number }) } }),
-    ...(f && typeof f.endpoint === 'string' && { freellmapi: { endpoint: f.endpoint } }) }
+    ...(f && typeof f.endpoint === 'string' && { freellmapi: { endpoint: f.endpoint } }),
+    ...(v.modoLavoro !== undefined && v.modoLavoro !== null && { modoLavoro: modoDa(v.modoLavoro) }) }
 }
 
 /** F10: le restrizioni del progetto (`progetti[repo].restrizioni`); undefined se la forma non vale. */
@@ -272,6 +338,7 @@ export function regoleEfficaci(account: StratoAccount, progetto: StratoProgetto 
     apiClaude,
     endpoint: progetto.freellmapi.endpoint ?? account.freellmapi?.endpoint ?? RISORSE_DEFAULT.freellmapi.endpoint,
     limitiManuali: [...account.limitiManuali.filter(l => !diProgetto.has(l.id)), ...progetto.limitiManuali],
+    modoLavoro: modoEfficace(account.modoLavoro, progetto.modoLavoro),
   }
 }
 
@@ -344,12 +411,14 @@ export function risorseDa(p: Record<string, unknown>, accountGrezzo?: unknown): 
     // Solo un endpoint scritto nel progetto lo sostituisce: il predefinito non vale come eccezione.
     freellmapi: { livello, ...(p.freellmapi !== undefined && p.freellmapi !== null && typeof f.endpoint === 'string' && { endpoint: f.endpoint }) },
     restrizioni,
+    ...(p.modoLavoro !== undefined && p.modoLavoro !== null && { modoLavoro: modoDa(p.modoLavoro) }),
   }
   const e = regoleEfficaci(account, { ...strato, limitiManuali: manualiProgetto })
   return { ...(e.apiClaude && { apiClaude: e.apiClaude }), ...(consigliere && { consigliere }), board, fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
     freellmapi: { livello, endpoint: e.endpoint },
     pesi: pesi.map(x => ({ tipo: x.tipo, nome: x.nome, percentuale: x.percentuale, assoluto: x.assoluto })), limitiManuali: e.limitiManuali,
     soglie: e.soglie,
+    modoLavoro: e.modoLavoro,
     ...(profilo && { profilo }), ...(pesiRevisione !== undefined && { pesiRevisione }), ...(pesiOrigine && { pesiOrigine }), account, strato }
 }
 
@@ -492,13 +561,25 @@ export function effortPer(regole: Regole, modello: string) {
   return i >= 0 ? regole.effort.slice(0, i + 1) : regole.effort
 }
 
+/**
+ * L'effort di una chip. Una scelta esplicita ammessa vince (le guardie la controllano all'avvio). Senza scelta (F11.1): il
+ * più alto fra il modo di lavoro per la corsia (predefinito R0–R2 medium, R3–R5 high; senza corsia high), il minimo di
+ * Codex per la corsia (corsia_codex) e high per R4/R5 o sensibile; FreeLLMAPI low. Poi il primo ammesso da lì in su.
+ */
 export const effortDi = (a: Azione, regole: Regole = REGOLE_DEFAULT) => {
   const ammessi = effortPer(regole, modelloDi(a, regole))
   if (a.effort && ammessi.includes(a.effort)) return a.effort
-  // Codex senza effort scelto: quello che corsia_codex prescrive per la corsia.
-  const daCorsia = a.esecutore === 'codex' ? regole.corsiaCodex.effort[corsiaDi(a, regole) ?? ''] : undefined
-  if (daCorsia && ammessi.includes(daCorsia)) return daCorsia
-  return ammessi.includes('high') ? 'high' : ammessi.at(-1)!
+  if (a.esecutore === 'freellmapi' && ammessi.includes('low')) return 'low'
+  const ordine = regole.effort
+  const corsia = corsiaDi(a, regole)
+  const modo = regole.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro
+  const candidati = [
+    corsia ? modo.effortPredefinito[corsia] : 'high',
+    a.esecutore === 'codex' ? regole.corsiaCodex.effort[corsia ?? ''] : undefined,
+    corsia === 'R4' || corsia === 'R5' || sensibile(a, regole) ? 'high' : undefined,
+  ].filter((x): x is string => !!x && ordine.includes(x))
+  const voluto = candidati.reduce((m, x) => (ordine.indexOf(x) > ordine.indexOf(m) ? x : m), candidati[0] ?? 'high')
+  return ammessi.find(x => ordine.indexOf(x) >= ordine.indexOf(voluto)) ?? ammessi.at(-1)!
 }
 
 // Superfici sensibili in ogni progetto (corsia R4: niente delega in autonomia, revisione obbligatoria). Quelle
@@ -1176,8 +1257,9 @@ export function mandato(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strument
     parti.push(
       `**Engine: Codex (\`${modello}\`, effort ${effort}).** You coordinate and do not write the code: pass the brief below to Codex, ` +
         'ALWAYS through the machine lane (one Codex run at a time): ' +
-        `\`${conCorsia(s, false, `codex exec -m ${modello} -c model_reasoning_effort="${effort}" -C <your worktree> -`)}\` with the brief on stdin. ` +
-        'Then check the tests and the diff.',
+        `\`${conCorsia(s, false, `codex exec -m ${modello} -c model_reasoning_effort="${effort}" -s ${(regole.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).codexSandbox} -C <your worktree> -`)}\` with the brief on stdin. ` +
+        // F11.1: Codex modifica soltanto (la sandbox protegge .git e di solito non ha rete): commit e push restano a te.
+        'Codex only edits files; you commit and push. Then check the tests and the diff.',
     )
   }
   parti.push(a.brief.trim())

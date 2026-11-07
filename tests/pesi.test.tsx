@@ -84,9 +84,11 @@ test('corsia: una chip di documentazione in R1 senza effort va a medium invece c
   const r = conRisorse({ fornitori: ['claude'] })
   const a = azione('a-corsia03', 'R1', { revisore: 'claude' })
   expect(bilancia(a, { esecutore: 'claude', modello: 'claude-sonnet-5-5' }, r, [], [a], CHI).effort).toBe('medium')
-  // In R2 la preferenza resta high.
+  // F11.1: in R2 il predefinito è medium (prima high); il modo di lavoro può riportarlo a high.
   const b = azione('a-corsia04', 'R2', { revisore: 'claude' })
-  expect(bilancia(b, { esecutore: 'claude', modello: 'claude-sonnet-5-5' }, r, [], [b], CHI).effort).toBe('high')
+  expect(bilancia(b, { esecutore: 'claude', modello: 'claude-sonnet-5-5' }, r, [], [b], CHI).effort).toBe('medium')
+  const alto = conRisorse({ fornitori: ['claude'], modoLavoro: { ...RISORSE_DEFAULT.modoLavoro, effortPredefinito: { ...RISORSE_DEFAULT.modoLavoro.effortPredefinito, R2: 'high' } } })
+  expect(bilancia(b, { esecutore: 'claude', modello: 'claude-sonnet-5-5' }, alto, [], [b], CHI).effort).toBe('high')
 })
 
 test('corsia nel massivo, caso predefinito: Automatico senza nessun peso salvato, la R1 a xhigh scende sotto la R3', () => {
@@ -472,10 +474,12 @@ test('P2 Codex: contesto di una sessione Codex con l\'istante del token_count; s
 test('P2 spareggio: l\'ordine per vicinanza vale solo con Automatico in R0–R1; altrove resta il più basso ammesso', () => {
   // Chiamante a medium: high (preferito) non è avviabile da lui; fra gli altri, a pari punteggio, l'ordine di sempre.
   const chi = { ...CHI, effort: 'medium' }
-  const r = conRisorse({ fornitori: ['claude'] })
+  // F11.1: il predefinito di R2 è medium; qui il modo di lavoro lo riporta a high per provare lo spareggio.
+  const r = conRisorse({ fornitori: ['claude'], modoLavoro: { ...RISORSE_DEFAULT.modoLavoro, effortPredefinito: { ...RISORSE_DEFAULT.modoLavoro.effortPredefinito, R2: 'high' } } })
   const a = azione('a-spareg01', 'R2', { revisore: 'claude' })
   expect(bilancia(a, { esecutore: 'claude', modello: 'claude-sonnet-5-5' }, r, [], [a], chi).effort).toBe('low')
-  const p = conRisorse({ fornitori: ['claude'], profilo: 'personalizzato', pesi: [{ tipo: 'effort', nome: 'high', percentuale: -40, assoluto: 0 }] })
+  const p = conRisorse({ fornitori: ['claude'], profilo: 'personalizzato', pesi: [{ tipo: 'effort', nome: 'high', percentuale: -40, assoluto: 0 }],
+    modoLavoro: { ...RISORSE_DEFAULT.modoLavoro, effortPredefinito: { ...RISORSE_DEFAULT.modoLavoro.effortPredefinito, R1: 'high' } } })
   expect(bilancia({ ...a, corsia: 'R1' }, { esecutore: 'claude', modello: 'claude-sonnet-5-5' }, p, [], [a], CHI).effort).toBe('low')
 })
 

@@ -419,7 +419,52 @@ const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
     requestId: 'chipManager',
     props: { title: 'chipManager', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
   }) as const
-const SEZIONI = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda'] as const
+const SEZIONI = ['connessioni', 'soglie', 'modo', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda'] as const
+
+test('F11.1 Modo di lavoro: «Tutti i progetti» e «Questo progetto» scrivono i due strati con un solo Applica; R4/R5 mai sotto high', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  expect((await ui.find({ key: 'modo-effort-R0-medium-premi' }))?.props).toMatchObject({ variant: 'primary' })
+  expect((await ui.find({ key: 'modo-codex-workspace-write-premi' }))?.props).toMatchObject({ variant: 'primary' })
+  expect([await ui.find({ key: 'modo-effort-R4-low-premi' }), await ui.find({ key: 'modo-effort-R5-medium-premi' })]).toEqual([undefined, undefined])
+  await ui.press({ key: 'modo-effort-R0-low-premi' })
+  await ui.press({ key: 'modo-codex-read-only-premi' })
+  // Il progetto eredita dall'account finché non sceglie: R0 a low anche qui.
+  await ui.press({ key: 'modo-ambito-progetto-premi' })
+  expect((await ui.find({ key: 'modo-effort-R0-low-premi' }))?.props).toMatchObject({ variant: 'primary' })
+  await ui.press({ key: 'modo-parallelo-2-premi' })
+  await ui.press({ key: 'modo-incrociata-no-premi' })
+  expect(amb.configure()).toBe(0)
+  await ui.press({ key: 'applica' })
+  expect(amb.configure()).toBe(1)
+  let c = JSON.parse(amb.disco.get(CONFIG)!)
+  expect(c.account.modoLavoro).toEqual({ effortPredefinito: { R0: 'low' }, codexSandbox: 'read-only' })
+  expect(c.progetti['esempio/demo'].modoLavoro).toEqual({ parallelo: 2, revisioneIncrociata: false })
+  // «Usa i valori dell'account» toglie lo strato del progetto; l'account resta.
+  await ui.press({ key: 'modo-ripristina' })
+  await ui.press({ key: 'applica' })
+  c = JSON.parse(amb.disco.get(CONFIG)!)
+  expect('modoLavoro' in c.progetti['esempio/demo']).toBe(false)
+  expect(c.account.modoLavoro).toEqual({ effortPredefinito: { R0: 'low' }, codexSandbox: 'read-only' })
+})
+
+test('F11.1 proposte: il modo di lavoro si propone per progetto e account e si fonde con quello scritto; profilo e consigliere non sono modo', () => {
+  const v = propostaImpostazioniDa({ motivo: 'Lavoro leggero.', progetto: { modoLavoro: { effortPredefinito: { R1: 'low' } } }, account: { modoLavoro: { codexSandbox: 'read-only' } } })
+  expect(v).toHaveProperty('proposta')
+  const r = risorseDa({ modoLavoro: { effortPredefinito: { R0: 'high' }, parallelo: 4 } }, { modoLavoro: { auditorSuggerito: true } }) as never
+  expect(campiDaProposta((v as { proposta: never }).proposta, r)).toEqual({
+    modoLavoro: { effortPredefinito: { R0: 'high', R1: 'low' }, parallelo: 4 },
+    'account.modoLavoro': { auditorSuggerito: true, codexSandbox: 'read-only' },
+  })
+  for (const m of [{ effortPredefinito: { R4: 'medium' } }, { parallelo: 9 }, { codexSandbox: 'danger-full-access' }, { profilo: 'qualita' }, {}])
+    expect(propostaImpostazioniDa({ motivo: 'x', progetto: { modoLavoro: m } })).toHaveProperty('errore')
+  expect(propostaImpostazioniDa({ motivo: 'x', account: { profilo: 'qualita' } })).toHaveProperty('errore')
+  expect(propostaImpostazioniDa({ motivo: 'x', account: { consigliere: 'applica' } })).toHaveProperty('errore')
+})
 
 test('lingua: config assente = inglese; la scelta va nella bozza, Applica la scrive con configura (CAS) e il pannello cambia', async ($, on) => {
   const amb = ambiente(on)

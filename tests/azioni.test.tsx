@@ -50,6 +50,7 @@ import {
   dipendenzeChiuse,
   durata,
   effortPer,
+  effortDi,
   datiLocali,
   faseDiAzione,
   mandato,
@@ -132,6 +133,64 @@ test('mandato: Codex esegue con il coordinatore della corsia, Claude rivede', ()
   expect(m.prompt).toContain('Review: Claude (you)')
   expect(m.prompt).toContain('stato "consegnata"')
   expect(m.background.length).toBeGreaterThanOrEqual(80)
+})
+
+// --- F11.1: il modo di lavoro ---------------------------------------------------------------------------------------
+const conModo = (modo: Record<string, unknown>) => ({ ...R, risorse: { ...R.risorse, modoLavoro: { ...RISORSE_DEFAULT.modoLavoro, ...modo } } }) as typeof R
+
+test('F11.1 effort: senza scelta medium su R0–R2 e high su R3–R5; il modo lo cambia; minimi di Codex, R4/R5 e sensibile vincono', () => {
+  const chip = (id: string, corsia: Azione['corsia'], extra: Partial<Azione> = {}) => base(id, 1, { corsia, modello: 'claude-sonnet-5-5', ...extra })
+  expect((['R0', 'R1', 'R2', 'R3', 'R4', 'R5'] as const).map((c, i) => effortDi(chip(`a-modo000${i}`, c), R))).toEqual(['medium', 'medium', 'medium', 'high', 'high', 'high'])
+  // Il modo di lavoro sceglie il predefinito della corsia.
+  const modo = conModo({ effortPredefinito: { ...RISORSE_DEFAULT.modoLavoro.effortPredefinito, R1: 'low', R3: 'xhigh' } })
+  expect([effortDi(chip('a-modo0011', 'R1'), modo), effortDi(chip('a-modo0012', 'R3'), modo)]).toEqual(['low', 'xhigh'])
+  // Una scelta esplicita ammessa resta (le guardie la controllano all'avvio).
+  expect(effortDi(chip('a-modo0013', 'R1', { effort: 'xhigh' }), modo)).toBe('xhigh')
+  // Sensibile: mai sotto high, anche con R1 a low nel modo.
+  expect(effortDi(chip('a-modo0014', 'R1', { sensibile: true }), modo)).toBe('high')
+  // Codex: il minimo di corsia_codex vince su un predefinito più basso.
+  const codex = base('a-modo0015', 1, { esecutore: 'codex', revisore: 'claude', modello: 'gpt-6-astra', corsia: 'R3' })
+  expect(effortDi(codex, conModo({ effortPredefinito: { ...RISORSE_DEFAULT.modoLavoro.effortPredefinito, R3: 'high' } }))).toBe(effortDi(codex, R))
+})
+
+test('F11.1 mandato: Codex esecutore modifica soltanto (sandbox del modo, predefinita workspace-write); il revisore resta read-only', () => {
+  const codex = base('a-codex02', 1, { esecutore: 'codex', revisore: 'claude', modello: 'gpt-6-astra', corsia: 'R3', tentativo: 'az-abc' })
+  const m = mandato(codex, R, { disco: 'D:/m/disco.cjs' })
+  expect(m.prompt).toContain('-s workspace-write -C <your worktree> -')
+  expect(m.prompt).toContain('Codex only edits files; you commit and push.')
+  expect(mandato(codex, conModo({ codexSandbox: 'read-only' }), { disco: 'D:/m/disco.cjs' }).prompt).toContain('-s read-only -C <your worktree> -')
+  const rev = mandato(base('a-claude2', 1), conModo({ codexSandbox: 'workspace-write' }), { disco: 'D:/m/disco.cjs' })
+  expect(rev.prompt).toContain('corsia-codex --revisione -- codex exec -c model_reasoning_effort="xhigh" -s read-only')
+  expect(rev.prompt).not.toContain('workspace-write')
+})
+
+test('F11.1 revisione incrociata spenta: senza revisore scelto R0–R2 vanno senza revisore; R3+ e le scelte esplicite restano', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ account: { modoLavoro: { revisioneIncrociata: false } }, progetti: { 'acme/progetto': { milestoneGithub: true } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.', corsia: 'R1' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Motore', brief: 'Riscrivi il pianificatore.', corsia: 'R3' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs 2', brief: 'Aggiorna la guida.', corsia: 'R1', revisore: 'codex' } as never)
+  const per = (t: string) => amb.azione().find(a => a.titolo === t)!.revisore
+  expect([per('Docs'), per('Motore'), per('Docs 2')]).toEqual(['nessuno', 'codex', 'codex'])
+})
+
+test('F11.1 parallelo: il modo di lavoro vince sull\'opzione dell\'host e sul 3 predefinito', { options: { paralleli: '5' } }, async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { milestoneGithub: true, modoLavoro: { parallelo: 1 } } } }))
+  const domande: string[] = []
+  conferme(on, q => (domande.push(q), q.startsWith('Avvio 1 sessione') ? 'Avvia' : 'Annulla'))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const t of ['Uno', 'Due', 'Tre']) await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: t, brief: `Aggiorna ${t}.`, corsia: 'R1' } as never)
+  const r = await $.tool.call({ tool: 'mcp__chip-manager__risorse_agenti' } as never)
+  expect(JSON.parse(String((r as { result?: unknown }).result)).politica.modoLavoro.parallelo).toBe(1)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'tutte' })
+  expect(domande[0]).toContain('massimo 1 in parallelo')
+  expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(1)
+  await ui.unmount()
 })
 
 test('mandato: Claude esegue, Codex rivede prendendo la corsia della macchina', () => {

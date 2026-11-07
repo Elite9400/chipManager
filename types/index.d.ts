@@ -24,7 +24,26 @@ export type SogliePerStrato = Partial<Record<Fornitore, Soglia | null>>
 /** F10: le restrizioni di un progetto (`progetti[repo].restrizioni`): possono solo restringere l'account, mai allargarlo. */
 export type Restrizioni = { soglie?: SogliePerStrato; apiLimiteMeseUsd?: number; apiTetto?: number }
 /** F10: lo strato Account (`account` nella radice del config), uguale in tutti i progetti; letto e convalidato, senza predefiniti. */
-export type StratoAccount = { soglie: SogliePerStrato; limitiManuali: Limite[]; apiClaude?: { budgetUsd: number; tetto?: number }; freellmapi?: { endpoint: string } }
+export type StratoAccount = { soglie: SogliePerStrato; limitiManuali: Limite[]; apiClaude?: { budgetUsd: number; tetto?: number }; freellmapi?: { endpoint: string }; modoLavoro?: ModoLavoro }
+/**
+ * F11.1: il modo di lavoro di uno strato, grezzo (assente o null = eredita). Preferenze, non guardie: il progetto
+ * sostituisce l'account campo per campo; le guardie (minimi di corsia e di motore, R4/R5, permessi) vincono sempre.
+ */
+export type ModoLavoro = {
+  effortPredefinito?: Partial<Record<Corsia, 'low' | 'medium' | 'high' | 'xhigh'>>
+  codexSandbox?: 'workspace-write' | 'read-only'
+  parallelo?: number
+  auditorSuggerito?: boolean
+  revisioneIncrociata?: boolean
+}
+/** F11.1: il modo di lavoro efficace (account, progetto e predefiniti combinati). */
+export type ModoLavoroEfficace = {
+  effortPredefinito: Record<Corsia, 'low' | 'medium' | 'high' | 'xhigh'>
+  codexSandbox: 'workspace-write' | 'read-only'
+  parallelo?: number
+  auditorSuggerito: boolean
+  revisioneIncrociata: boolean
+}
 /**
  * F10: i campi del progetto che si combinano con l'account, come stanno nel config (nessun valore efficace): le soglie e
  * l'`apiClaude` dei build di sviluppo valgono come restrizioni, l'endpoint di progetto sostituisce quello dell'account.
@@ -34,6 +53,8 @@ export type StratoProgetto = {
   apiClaude?: { budgetUsd: number; tetto?: number }
   freellmapi: { livello: 'niente' | 'R1' | 'R2'; endpoint?: string }
   restrizioni: Restrizioni
+  /** F11.1: il modo di lavoro del progetto (sostituisce l'account campo per campo). */
+  modoLavoro?: ModoLavoro
 }
 export type RisorseProgetto = {
   fornitori: Fornitore[]
@@ -60,6 +81,8 @@ export type RisorseProgetto = {
   pesiRevisione?: number
   /** Chi ha fatto l'ultima scrittura di profilo o pesi. Assente = manuale. */
   pesiOrigine?: { tipo: 'proposta' | 'annullamento' | 'manuale'; id?: string; voce?: string; versione?: number }
+  /** F11.1: il modo di lavoro efficace. */
+  modoLavoro: ModoLavoroEfficace
   /** F10: lo strato Account letto dal config, per modificarlo e per i conflitti (valori grezzi, mai efficaci). */
   account: StratoAccount
   /** F10: i campi del progetto che si combinano con l'account, grezzi. */
@@ -377,16 +400,19 @@ export type PropostaImpostazioni = {
     board?: { modo: BoardProgetto['modo'] }
     consigliere?: 'spento' | 'suggerisci' | 'applica'
     restrizioni?: Restrizioni
+    modoLavoro?: ModoLavoro
   }
   /** F10: la patch dello strato Account: cambia le impostazioni di tutti i progetti. */
-  account?: { soglie?: SogliePerStrato; apiClaude?: { budgetUsd?: number; tetto?: number } }
+  account?: { soglie?: SogliePerStrato; apiClaude?: { budgetUsd?: number; tetto?: number }; modoLavoro?: ModoLavoro }
   lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
 }
 export type VoceImpostazioni = { id: string; quando: string; proponente: { id: string; titolo: string }; proposta: PropostaImpostazioni }
 
 /** La vista Impostazioni: sezione aperta, ultimo errore in linea e procedure guidate fatte in linea (popup rifiutato). */
 export type StatoImpostazioni = {
-  sezione: 'connessioni' | 'soglie' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate' | 'esecuzione' | 'lingua' | 'legenda'
+  sezione: 'connessioni' | 'soglie' | 'modo' | 'bilanciamento' | 'progetto' | 'board' | 'avanzate' | 'esecuzione' | 'lingua' | 'legenda'
+  /** F11.1: lo strato che la sezione Modo di lavoro modifica (assente = Account). */
+  ambitoModo?: 'account' | 'progetto'
   errore?: { dove: string; testo: Messaggio }
   guida?: Fornitore
   bozza?: { fornitore?: Fornitore; tipo?: string }

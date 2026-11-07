@@ -2101,7 +2101,7 @@ test('F10 parità: regoleEfficaci TS e CJS danno le stesse soglie, gli stessi cr
     { account: {}, progetto: { restrizioni: { apiLimiteMeseUsd: '5' } } },
     { account: {}, progetto: { soglie: { claude: { attenzione: 90, critica: 90 } } } },
   ]
-  const ts = conLogica(`console.log(JSON.stringify(ingresso.map(c => { const r = nuova.risorseDa(c.progetto, c.account); return r.k ? null : { soglie: r.soglie, apiClaude: r.apiClaude ?? null, endpoint: r.freellmapi.endpoint } })))`, [...validi, ...nonValidi])
+  const ts = conLogica(`console.log(JSON.stringify(ingresso.map(c => { const r = nuova.risorseDa(c.progetto, c.account); return r.k ? null : { soglie: r.soglie, apiClaude: r.apiClaude ?? null, endpoint: r.freellmapi.endpoint, modoLavoro: r.modoLavoro } })))`, [...validi, ...nonValidi])
   validi.forEach((c, i) => {
     assert.notStrictEqual(ts[i], null, JSON.stringify(c))
     assert.deepStrictEqual(R.regoleEfficaci(c.account, c.progetto), ts[i], JSON.stringify(c))
@@ -2335,4 +2335,84 @@ test('F10 giro 2, rilievo 2: «esecuzioni» diventata junction dopo il lancio: i
   fs.writeFileSync(API.fileLock(dm), JSON.stringify({ tentativo: 'az-svin0002', istante: new Date().toISOString() }))
   await assert.rejects(API.eseguiApi(dir, 'a-svin00002', 'az-svin0002', ingressoApi(root), { dirMacchina: dm, avvia: () => { avvii++ }, git: () => { worktree++; return '' } }), /helper\.collegamento/)
   assert.deepStrictEqual([avvii, worktree], [0, 0])
+})
+
+// --- F11.1: il modo di lavoro --------------------------------------------------------------------------------------
+
+const MODI_VALIDI = [
+  {},
+  { effortPredefinito: { R0: 'low', R3: 'xhigh', R4: 'xhigh' } },
+  { effortPredefinito: { R1: null }, codexSandbox: 'read-only', parallelo: 8, auditorSuggerito: true, revisioneIncrociata: false },
+  { parallelo: null, codexSandbox: null, auditorSuggerito: null },
+]
+const MODI_NON_VALIDI = [
+  [], 'x', { profilo: 'qualita' }, { consigliere: 'applica' }, { effortPredefinito: { R4: 'medium' } }, { effortPredefinito: { R5: 'low' } },
+  { effortPredefinito: { R9: 'high' } }, { effortPredefinito: { R0: 'max' } }, { effortPredefinito: [] }, { codexSandbox: 'danger-full-access' },
+  { parallelo: 0 }, { parallelo: 9 }, { parallelo: 2.5 }, { parallelo: '3' }, { auditorSuggerito: 'sì' }, { revisioneIncrociata: 1 },
+]
+
+test('F11.1 parità: modo di lavoro efficace e controllo in scrittura uguali nel pannello e nell\'helper', () => {
+  const R = require('./regole.cjs')
+  const coppie = [
+    [undefined, undefined],
+    [{ effortPredefinito: { R0: 'low', R3: 'xhigh' }, parallelo: 5 }, undefined],
+    [{ effortPredefinito: { R0: 'low' }, codexSandbox: 'read-only', revisioneIncrociata: false }, { effortPredefinito: { R0: 'high', R2: 'low' }, parallelo: 2, codexSandbox: 'workspace-write' }],
+    // In lettura un campo che non vale si ignora (eredita): mai un R4 sotto high, mai un parallelo fuori 1–8.
+    [{ effortPredefinito: { R4: 'low', R1: 'xhigh' }, parallelo: 40, codexSandbox: 'tutto' }, { effortPredefinito: { R5: 'medium' }, auditorSuggerito: 'sì', ignoto: 1 }],
+    [{ parallelo: null }, { parallelo: 3, auditorSuggerito: true }],
+  ]
+  const ts = conLogica(`console.log(JSON.stringify({
+  efficaci: ingresso.coppie.map(([a, p]) => nuova.risorseDa(p === null ? {} : { modoLavoro: p }, a === null ? undefined : { modoLavoro: a }).modoLavoro),
+  scrittura: ingresso.modi.map(m => nuova.modoNonValido(m) ?? null),
+}))`, { coppie: coppie.map(([a, p]) => [a ?? null, p ?? null]), modi: [...MODI_VALIDI, ...MODI_NON_VALIDI] })
+  coppie.forEach(([a, p], i) =>
+    assert.deepStrictEqual(R.regoleEfficaci(a === undefined ? undefined : { modoLavoro: a }, p === undefined ? {} : { modoLavoro: p }).modoLavoro, ts.efficaci[i], JSON.stringify([a, p])))
+  assert.deepStrictEqual(ts.efficaci[0], { effortPredefinito: { R0: 'medium', R1: 'medium', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', auditorSuggerito: false, revisioneIncrociata: true })
+  // Il progetto sostituisce l'account campo per campo; null o assente eredita.
+  assert.deepStrictEqual(ts.efficaci[2], { effortPredefinito: { R0: 'high', R1: 'medium', R2: 'low', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', parallelo: 2, auditorSuggerito: false, revisioneIncrociata: false })
+  assert.deepStrictEqual(ts.efficaci[3].effortPredefinito, { R0: 'medium', R1: 'xhigh', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' })
+  assert.strictEqual(ts.efficaci[3].parallelo, undefined)
+  MODI_VALIDI.forEach((m, i) => {
+    assert.strictEqual(ts.scrittura[i], null, JSON.stringify(m))
+    assert.strictEqual(R.modoNonValido(m), null, JSON.stringify(m))
+  })
+  MODI_NON_VALIDI.forEach((m, i) => {
+    assert.ok(ts.scrittura[MODI_VALIDI.length + i], JSON.stringify(m))
+    assert.strictEqual(R.modoNonValido(m), ts.scrittura[MODI_VALIDI.length + i], JSON.stringify(m))
+  })
+})
+
+test('F11.1 configura: il modo di lavoro di progetto e account si scrive e si fonde; un valore che viola le guardie si rifiuta', async () => {
+  const file = path.join(tmp(), 'config.json')
+  fs.writeFileSync(file, JSON.stringify({ progetti: { 'owner/prova': { fornitori: ['claude'] } } }))
+  const scrivi = q => D.configura(file, { atteso: fs.readFileSync(file, 'utf8'), repo: 'owner/prova', campi: {}, ...q })
+  assert.strictEqual(await scrivi({ campi: { modoLavoro: { effortPredefinito: { R0: 'low' }, parallelo: 2 } }, account: { modoLavoro: { codexSandbox: 'read-only' } } }), 0)
+  assert.strictEqual(await scrivi({ campi: { modoLavoro: { effortPredefinito: { R3: 'xhigh' }, parallelo: null } } }), 0)
+  const c = JSON.parse(fs.readFileSync(file, 'utf8'))
+  assert.deepStrictEqual(c.progetti['owner/prova'].modoLavoro, { effortPredefinito: { R0: 'low', R3: 'xhigh' }, parallelo: null })
+  assert.deepStrictEqual(c.account.modoLavoro, { codexSandbox: 'read-only' })
+  for (const modoLavoro of MODI_NON_VALIDI) {
+    assert.strictEqual(await scrivi({ campi: { modoLavoro } }), 2, JSON.stringify(modoLavoro))
+    assert.strictEqual(await scrivi({ account: { modoLavoro } }), 2, JSON.stringify(modoLavoro))
+  }
+  // Anche dopo la fusione: un R4 sotto high aggiunto a un modo valido si rifiuta.
+  assert.strictEqual(await scrivi({ campi: { modoLavoro: { effortPredefinito: { R4: 'low' } } } }), 2)
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), c)
+  // null toglie lo strato intero (torna a ereditare).
+  assert.strictEqual(await scrivi({ campi: { modoLavoro: null }, account: { modoLavoro: null } }), 0)
+  const d = JSON.parse(fs.readFileSync(file, 'utf8'))
+  assert.strictEqual('modoLavoro' in d.progetti['owner/prova'], false)
+  assert.strictEqual('modoLavoro' in d.account, false)
+})
+
+test('F11.1 proposte: il modo di lavoro si propone in entrambi gli strati, solo con i suoi campi e valori validi', () => {
+  const base = { motivo: 'Lavoro leggero' }
+  assert.strictEqual(D.propostaImpostazioniNonValida({ ...base, progetto: { modoLavoro: { effortPredefinito: { R0: 'low' }, parallelo: 4 } } }), null)
+  assert.strictEqual(D.propostaImpostazioniNonValida({ ...base, account: { modoLavoro: { codexSandbox: 'read-only', revisioneIncrociata: false } } }), null)
+  for (const m of [...MODI_NON_VALIDI, {}, null]) {
+    assert.ok(D.propostaImpostazioniNonValida({ ...base, progetto: { modoLavoro: m } }), JSON.stringify(m))
+    assert.ok(D.propostaImpostazioniNonValida({ ...base, account: { modoLavoro: m } }), JSON.stringify(m))
+  }
+  // profilo e consigliere restano fuori dal modo di lavoro.
+  assert.strictEqual(D.propostaImpostazioniNonValida({ ...base, account: { profilo: 'qualita' } }), 'account.profilo')
 })

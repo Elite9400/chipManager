@@ -3,6 +3,7 @@
 // correzione dichiarata lo chiede, mai per la grafica.
 import { expect } from 'claude-code/testing'
 
+import { NUOVI_F11 } from './f11-nuovi'
 import { PRIMA } from './f9-prima'
 
 export type ControlloF9 = { tipo?: string; chiave?: unknown; label?: unknown; hotkey?: unknown; variant?: unknown; value?: unknown; options?: unknown; gestori: string[] }
@@ -33,13 +34,26 @@ export const normaF9 = (v: unknown) =>
 const mancanti: [string, unknown][] = []
 
 /**
+ * F11: i controlli che non esistevano prima di F11 (sezione Modo di lavoro, setup, doctor). Non toccano la fotografia di
+ * F9: si tolgono prima del confronto con quella e si confrontano con la loro, in tests/f11-nuovi.ts.
+ */
+export const nuovoF11 = (k: unknown) => typeof k === 'string' && /^(sezione-modo|modo-|setup-|doctor-)/.test(k)
+
+/** I controlli di una vista: quelli di prima contro la fotografia di F9, i nuovi contro quella di F11; una vista nuova tutta in F11. */
+export function confrontaControlli(chiave: string, c: ControlloF9[]) {
+  if (!(chiave in PRIMA)) return confrontaF9(chiave, c, NUOVI_F11)
+  confrontaF9(chiave, c.filter(x => !nuovoF11(x.chiave)))
+  confrontaF9(chiave, c.filter(x => nuovoF11(x.chiave)), NUOVI_F11)
+}
+
+/**
  * Confronta `chiave` con la fotografia «prima» (tests/f9-prima.ts). Una chiave che la fotografia non ha ancora si
  * raccoglie: `fineF9` la restituisce in un errore, da cui si scrive la fotografia (solo dal codice prima di F9).
  */
-export function confrontaF9(chiave: string, valore: unknown) {
+export function confrontaF9(chiave: string, valore: unknown, foto: Record<string, unknown> = PRIMA) {
   const v = normaF9(valore)
-  if (!(chiave in PRIMA)) mancanti.push([chiave, v])
-  else expect([chiave, v]).toEqual([chiave, PRIMA[chiave]])
+  if (!(chiave in foto)) mancanti.push([chiave, v])
+  else expect([chiave, v]).toEqual([chiave, foto[chiave]])
 }
 
 /** Alla fine di ogni test F9: se mancano chiavi nella fotografia, il test fallisce e le stampa. */

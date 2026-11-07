@@ -338,6 +338,8 @@ async function configura(file, richiesta) {
       // Lo strato Account e le restrizioni devono valere; le restrizioni scritte adesso possono solo restringere.
       regole.regoleEfficaci(nuovoAccount, progetto)
       if ('restrizioni' in campi && progetto.restrizioni !== undefined && regole.restrizioneLarga(nuovoAccount, progetto.restrizioni)) return 2
+      // F11.1: il modo di lavoro scritto adesso deve valere dopo la fusione (forma, valori, R4/R5 mai sotto high).
+      if (('modoLavoro' in campi && regole.modoNonValido(progetto.modoLavoro)) || ('modoLavoro' in account && regole.modoNonValido(nuovoAccount.modoLavoro))) return 2
     } catch (e) {
       if (e instanceof regole.NonValido) return 2
       throw e
@@ -351,8 +353,8 @@ async function configura(file, richiesta) {
 }
 
 /** I campi di `progetti[repo]` che `configura` scrive (F10: `restrizioni`); quelli dell'account (`account` nella radice). */
-const CAMPI_PROGETTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere', 'restrizioni']
-const CAMPI_ACCOUNT = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi']
+const CAMPI_PROGETTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere', 'restrizioni', 'modoLavoro']
+const CAMPI_ACCOUNT = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi', 'modoLavoro']
 
 /** I campi di primo livello che appartengono all'utente, non a un progetto, e come devono essere. */
 const CAMPI_UTENTE = { lingua: v => ['en', 'it', 'es', 'fr', 'de', 'pt'].includes(v) }
@@ -1054,7 +1056,7 @@ function propostaImpostazioniNonValida(x) {
   if (x.progetto !== undefined) {
     const q = x.progetto
     if (!oggetto(q) || !Object.keys(q).length) return 'progetto'
-    const g = solo(q, ['profilo', 'board', 'consigliere', 'restrizioni'], 'progetto.')
+    const g = solo(q, ['profilo', 'board', 'consigliere', 'restrizioni', 'modoLavoro'], 'progetto.')
     if (g) return g
     if (q.profilo !== undefined && !PROFILI.includes(q.profilo)) return 'progetto.profilo'
     if (q.board !== undefined) {
@@ -1074,11 +1076,15 @@ function propostaImpostazioniNonValida(x) {
       if (r.apiLimiteMeseUsd !== undefined && !numeroIn(r.apiLimiteMeseUsd, 0.01, 100_000)) return 'progetto.restrizioni.apiLimiteMeseUsd'
       if (r.apiTetto !== undefined && !numeroIn(r.apiTetto, 0.01, 1_000)) return 'progetto.restrizioni.apiTetto'
     }
+    if (q.modoLavoro !== undefined) {
+      const m = q.modoLavoro === null ? 'modoLavoro' : regole.modoNonValido(q.modoLavoro)
+      if (m || !Object.keys(q.modoLavoro).length) return `progetto.${m ?? 'modoLavoro'}`
+    }
   }
   if (x.account !== undefined) {
     const a = x.account
     if (!oggetto(a) || !Object.keys(a).length) return 'account'
-    const g = solo(a, ['soglie', 'apiClaude'], 'account.')
+    const g = solo(a, ['soglie', 'apiClaude', 'modoLavoro'], 'account.')
     if (g) return g
     const sg = a.soglie === undefined ? null : soglie(a.soglie, 'account.soglie')
     if (sg) return sg
@@ -1088,6 +1094,10 @@ function propostaImpostazioniNonValida(x) {
       if (h) return h
       if (a.apiClaude.budgetUsd !== undefined && !numeroIn(a.apiClaude.budgetUsd, 0.01, 100_000)) return 'account.apiClaude.budgetUsd'
       if (a.apiClaude.tetto !== undefined && !numeroIn(a.apiClaude.tetto, 0.01, 1_000)) return 'account.apiClaude.tetto'
+    }
+    if (a.modoLavoro !== undefined) {
+      const m = a.modoLavoro === null ? 'modoLavoro' : regole.modoNonValido(a.modoLavoro)
+      if (m || !Object.keys(a.modoLavoro).length) return `account.${m ?? 'modoLavoro'}`
     }
   }
   if (x.lingua !== undefined && !LINGUE_PROPOSTA.includes(x.lingua)) return 'lingua'

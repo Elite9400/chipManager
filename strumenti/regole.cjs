@@ -47,6 +47,68 @@ function apiDa(v, campo) {
   return { budgetUsd: v.budgetUsd, ...(v.tetto !== undefined && { tetto: v.tetto }) }
 }
 
+// --- F11.1: il modo di lavoro (gemello di modoDa, modoNonValido e modoEfficace in hooks/logica.ts) ---------------------
+const EFFORT_MODO = ['low', 'medium', 'high', 'xhigh']
+const CORSIE_MODO = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5']
+const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata']
+const MODO_PREDEFINITO = { effortPredefinito: { R0: 'medium', R1: 'medium', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', auditorSuggerito: false, revisioneIncrociata: true }
+const sottoHigh = (c, x) => (c === 'R4' || c === 'R5') && EFFORT_MODO.indexOf(x) < 2
+const paralleloValido = v => Number.isInteger(v) && v >= 1 && v <= 8
+
+/** In lettura un campo che non vale si ignora (eredita); null = assente. Non lancia mai. */
+function modoDa(v) {
+  if (!oggetto(v)) return {}
+  const out = {}
+  if (oggetto(v.effortPredefinito)) {
+    const e = {}
+    for (const c of CORSIE_MODO) {
+      const x = v.effortPredefinito[c]
+      if (typeof x === 'string' && EFFORT_MODO.includes(x) && !sottoHigh(c, x)) e[c] = x
+    }
+    if (Object.keys(e).length) out.effortPredefinito = e
+  }
+  if (v.codexSandbox === 'workspace-write' || v.codexSandbox === 'read-only') out.codexSandbox = v.codexSandbox
+  if (paralleloValido(v.parallelo)) out.parallelo = v.parallelo
+  if (typeof v.auditorSuggerito === 'boolean') out.auditorSuggerito = v.auditorSuggerito
+  if (typeof v.revisioneIncrociata === 'boolean') out.revisioneIncrociata = v.revisioneIncrociata
+  return out
+}
+
+/** In scrittura: il nome del primo campo che non vale, o null (stesso testo del pannello). */
+function modoNonValido(v) {
+  if (v === undefined || v === null) return null
+  if (!oggetto(v)) return 'modoLavoro'
+  const pulito = (k, n) => k.replace(/[^A-Za-z0-9_]/g, '?').slice(0, n)
+  const ignoto = Object.keys(v).find(k => !CAMPI_MODO.includes(k))
+  if (ignoto) return `modoLavoro.${pulito(ignoto, 40)}`
+  const e = v.effortPredefinito
+  if (e !== undefined && e !== null) {
+    if (!oggetto(e)) return 'modoLavoro.effortPredefinito'
+    for (const [c, x] of Object.entries(e))
+      if (!CORSIE_MODO.includes(c) || (x !== null && (typeof x !== 'string' || !EFFORT_MODO.includes(x) || sottoHigh(c, x)))) return `modoLavoro.effortPredefinito.${pulito(c, 10)}`
+  }
+  if (v.codexSandbox !== undefined && v.codexSandbox !== null && v.codexSandbox !== 'workspace-write' && v.codexSandbox !== 'read-only') return 'modoLavoro.codexSandbox'
+  if (v.parallelo !== undefined && v.parallelo !== null && !paralleloValido(v.parallelo)) return 'modoLavoro.parallelo'
+  for (const k of ['auditorSuggerito', 'revisioneIncrociata']) if (v[k] !== undefined && v[k] !== null && typeof v[k] !== 'boolean') return `modoLavoro.${k}`
+  return null
+}
+
+/** Per campo il progetto sostituisce l'account, poi i predefiniti. */
+function modoEfficace(accountGrezzo, progettoGrezzo) {
+  const a = modoDa(accountGrezzo)
+  const p = modoDa(progettoGrezzo)
+  const d = MODO_PREDEFINITO
+  const effortPredefinito = Object.fromEntries(CORSIE_MODO.map(c => [c, p.effortPredefinito?.[c] ?? a.effortPredefinito?.[c] ?? d.effortPredefinito[c]]))
+  const parallelo = p.parallelo ?? a.parallelo
+  return {
+    effortPredefinito,
+    codexSandbox: p.codexSandbox ?? a.codexSandbox ?? d.codexSandbox,
+    ...(parallelo !== undefined && { parallelo }),
+    auditorSuggerito: p.auditorSuggerito ?? a.auditorSuggerito ?? d.auditorSuggerito,
+    revisioneIncrociata: p.revisioneIncrociata ?? a.revisioneIncrociata ?? d.revisioneIncrociata,
+  }
+}
+
 function accountDa(v) {
   if (v === undefined || v === null) return { soglie: {} }
   if (!oggetto(v)) no('account')
@@ -101,7 +163,8 @@ function regoleEfficaci(accountGrezzo, progettoGrezzo) {
     const limite = Math.min(r.apiLimiteMeseUsd ?? Infinity, legacy?.budgetUsd ?? Infinity)
     apiClaude = { budgetUsd: account.apiClaude.budgetUsd, tetto, ...(limite < account.apiClaude.budgetUsd && { limiteProgettoUsd: limite }) }
   }
-  return { soglie, apiClaude, endpoint: (fp && fp.endpoint) ?? account.endpoint ?? ENDPOINT_PREDEFINITO }
+  const modoLavoro = modoEfficace(oggetto(accountGrezzo) ? accountGrezzo.modoLavoro : undefined, p.modoLavoro)
+  return { soglie, apiClaude, endpoint: (fp && fp.endpoint) ?? account.endpoint ?? ENDPOINT_PREDEFINITO, modoLavoro }
 }
 
 /** Il motivo per cui le restrizioni allargherebbero l'account, o null (più severo = valore più basso). Lancia se non valgono. */
@@ -163,4 +226,4 @@ function applicaPatch(prima, patch, togli = []) {
   return out
 }
 
-module.exports = { regoleEfficaci, restrizioneLarga, accountDa, restrizioniDa, applicaPatch, NonValido, FORNITORI }
+module.exports = { regoleEfficaci, restrizioneLarga, accountDa, restrizioniDa, applicaPatch, modoNonValido, modoEfficace, NonValido, FORNITORI }
