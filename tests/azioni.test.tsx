@@ -3465,7 +3465,8 @@ test('UX agenti (3): causaSensibile, una causa nell\'ordine flag, corsia, termin
   expect(causaSensibile(pulito, { ...R, sensibili: ['('] })).toEqual({ tipo: 'listaNonValida' })
   expect(causaSensibile({ ...pulito, brief: 'Gestione magazzino.' }, { ...R, sensibili: ['magazzino'] })).toEqual({ tipo: 'termineProgetto', termine: 'magazzino' })
   // Coerente con sensibile(): stessa risposta sì/no.
-  for (const [a, r] of [[pulito, R], [{ ...pulito, brief: 'author' }, R], [pulito, { ...R, sensibili: ['('] }]] as const)
+  const casi: [typeof pulito, typeof R][] = [[pulito, R], [{ ...pulito, brief: 'author' }, R], [pulito, { ...R, sensibili: ['('] }]]
+  for (const [a, r] of casi)
     expect(causaSensibile(a, r) !== undefined).toBe(sensibile(a, r))
 })
 
