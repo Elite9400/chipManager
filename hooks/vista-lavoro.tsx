@@ -1033,7 +1033,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
           r.effort && ui.Pillola({ chiave: `ses-effort-${r.id}`, segno: barreEffort(r.effort), colore: EFFORT[r.effort as keyof typeof EFFORT] ?? GRIGIO, testo: r.effort, mono: true }),
         ] }),
         pezzi(`ses-dati-${r.id}`, [
-          r.contesto !== undefined && <Text mono>{`${T('ses.contesto')} ${r.contesto}%`}</Text>,
+          r.contesto !== undefined && <Text>{`${T('ses.contesto')} `}<Text mono>{`${r.contesto}%`}</Text></Text>,
           <Text mono dimColor>{r.qui ? T('tempo.adesso') : quando(r.attivita)}</Text>,
           r.ramo && <Text mono wrap="wrap" dimColor>{r.ramo}</Text>,
           extraSessione(r) && <Text dimColor>{extraSessione(r)}</Text>,
@@ -1184,6 +1184,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       <Box key="sez-avvio" flexDirection="column" gap={conVelo ? 'sm' : 1}>
         {ui.Riga({
           chiave: 'testa-avvio',
+          intestazione: true,
           classe,
           principale: titoloSezione('t-avvio', T('sez.daAvviare'), daAvviare.length),
           azioni: [

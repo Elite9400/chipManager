@@ -1004,6 +1004,8 @@ const it: Dizionario = {
   "doc.inCorso": "Controllo in corso…",
   "doc.stato": { one: "1 rilievo", other: "{n} rilievi" },
   "doc.tuttoBene": "Niente da sistemare.",
+  "doc.attenzione": "Richiede attenzione",
+  "doc.superati": "Tutti i controlli superati",
   "doc.fallita": "Il controllo non è partito: l'helper non ha risposto.",
   "doc.ricontrolla": "Ricontrolla",
   "doc.copia": "Copia il rapporto",

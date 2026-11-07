@@ -2,8 +2,8 @@
 // con la stessa API sul desktop e sul terminale. Le chip e la Gamma non imitano controlli HTML: la scelta si
 // legge dal segno (● / ○) e dall'etichetta, il valore della Gamma è scritto e si cambia con − e +.
 // F9.1: due rese per superficie. Desktop (anche vscode e mobile): schede velate con bordo arrotondato, pillole con il
-// velo della propria tinta, intestazioni in maiuscolo, barre spesse fatte di Box. Terminale: lo stile developer di
-// F5.2/F8 (glifi colorati, testo nell'inchiostro, barre a blocchi). Stessi dati, stesse azioni (chiave, label,
+// velo della propria tinta, etichette di sezione in maiuscolo solo sul desktop, barre spesse fatte di Box. Terminale:
+// lo stile developer di F5.2/F8 (glifi colorati, testo nell'inchiostro, barre a blocchi). Stessi dati, stesse azioni (chiave, label,
 // onPress) nello stesso ordine: cambia solo la presentazione.
 import type { ElementTable, RenderSurface } from 'claude-code'
 
@@ -215,7 +215,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
         {p.stato}
       </Text>
     ) : null
-    // F9.4: sul desktop la sezione è una scheda (fondo velato, bordo arrotondato), con il titolo in maiuscolo attenuato.
+    // F12: il titolo della scheda conserva la grafia tradotta; solo Intestazione rende maiuscole le etichette di sezione.
     return (
       <Box
         key={p.chiave}
@@ -227,8 +227,8 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
         padding={terminale || p.interna ? 0 : 'md'}
       >
         <Box flexDirection={terminale ? 'column' : 'row'} justifyContent="space-between" flexWrap="wrap" gap={terminale ? 0 : 'xs'}>
-          <Text size="caption" weight="semibold" wrap="wrap">
-            {terminale ? p.titolo : p.titolo.toLocaleUpperCase(lingua)}
+          <Text size="body" weight="semibold" wrap="wrap">
+            {p.titolo}
           </Text>
           {stato}
         </Box>
@@ -241,12 +241,12 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
   }
 
   /** Principale e azioni: sulla stessa riga (le azioni vanno a capo se serve) tranne su `stretta`, dove stanno sotto. */
-  function Riga(p: { chiave: string; principale: Nodo; azioni: Nodo[]; classe: Classe }) {
+  function Riga(p: { chiave: string; principale: Nodo; azioni: Nodo[]; classe: Classe; intestazione?: boolean }) {
     const sotto = p.classe === 'stretta'
     return (
       <Box
         key={p.chiave}
-        hover={terminale || !p.azioni.some(Boolean) ? undefined : { backgroundColor: velo(ACCENTO, VELO.hover) }}
+        hover={terminale || p.intestazione || !p.azioni.some(Boolean) ? undefined : { backgroundColor: velo(ACCENTO, VELO.hover) }}
         flexDirection={sotto ? 'column' : 'row'}
         flexWrap={sotto ? undefined : 'wrap'}
         justifyContent="space-between"
@@ -333,7 +333,9 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
   /**
    * F9.4: la scheda di una chip o di una sezione. Desktop: fondo velato (`VELO.riquadro`), bordo arrotondato (nella tinta
    * dell'allerta se c'è, altrimenti attenuato), padding e velo d'accento sotto il puntatore. Terminale: un blocco
-   * semplice, senza bordo né hover.
+   * semplice, senza hover; il bordo si conserva sulle schede intere.
+   * Una sola base VELO.riquadro: editor e passi interni non aggiungono schede. Niente hover sulle barre d'uso o
+   * d'intestazione, anche con pulsanti: solo record azionabili e righe interattive ricevono il velo.
    */
   function Scheda(p: { chiave: string; allerta?: string; figli: unknown[]; gap?: number; compatta?: boolean; interattiva?: boolean; bordoTerminale?: boolean }) {
     // F12 (spec §2): nel terminale la scheda intera tiene gli angoli arrotondati, come prima; i record compatti no.
@@ -378,7 +380,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     return (
       <Box key={p.chiave} flexDirection="row" justifyContent="space-between" columnGap="xs">
         <Text key={`${p.chiave}-titolo`} size="caption" weight="semibold" dimColor>
-          {p.titolo.toLocaleUpperCase(lingua)}
+          {surface === 'desktop' ? p.titolo.toLocaleUpperCase(lingua) : p.titolo}
         </Text>
         {p.conteggio === undefined ? null : (
           <Text key={`${p.chiave}-n`} size="caption" dimColor tabular>

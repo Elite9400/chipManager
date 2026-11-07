@@ -454,6 +454,7 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
       <Box flexDirection="column" gap={conVelo ? 'sm' : 1}>
         {ui.Riga({
           chiave: 'testata',
+          intestazione: true,
           classe,
           principale: marchio,
           azioni: [

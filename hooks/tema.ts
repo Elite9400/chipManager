@@ -15,6 +15,8 @@ export const ALFA_VELO = '1F'
 /**
  * F8.3: le opacità dei veli (esadecimale su 255), una scala sola. Le viste non ne scrivono altre: lo controlla prova-disco.
  * `hover` è lo sfondo di una riga sotto il puntatore; `carico` la scala delle celle della vista Carico.
+ * F12: una sola base `riquadro` sotto le pillole, mai schede annidate. Niente hover sulle barre d'uso o
+ * d'intestazione (anche con pulsanti): solo record azionabili e righe interattive, per conservare il contrasto composto ≥ 3:1.
  */
 export const VELO = {
   scelta: ALFA_VELO,

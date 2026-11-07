@@ -38,7 +38,6 @@ import { eMsg, Errore, LEGENDA, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua
 import type { Chiave, Lingua, T } from './lingua'
 import { INSTALLAZIONE, nomeLimiteIn, unitaIn } from './risorse'
 import { ACCENTO, ALFA_VELO, GRIGIO, LIVELLO, STATO } from './tema'
-import { componenti } from './ui'
 import { urlRapporto } from './rapporto'
 
 type StatoVista = StatoImpostazioni
@@ -302,7 +301,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const { T, c, Input, regoleOra, adesso, capacita, sb, configura, nota1, NOME_FORNITORE, MOTORI, motore, ultime, io } = d
   const { Box, Text, Button } = d.el
   const terminale = !d.conVelo
-  const u = componenti(d.el, terminale ? 'terminal' : 'desktop', T.lingua)
+  const u = d.ui
   const classe = d.classe
   const vista = await read($, statoVista)
   // I controlli mostrano la bozza sopra le regole lette; una bozza che non passa più la validazione non si mostra.
@@ -578,7 +577,10 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const setup = async () => {
     const i = Math.min(Math.max(vista.passoSetup ?? 0, 0), PASSI_SETUP.length - 1)
     const passo = PASSI_SETUP[i]!
-    const stato = T(`set.p.${passo}` as Chiave)
+    const nomePasso = T(`set.p.${passo}` as Chiave)
+    const progresso = T('set.passo', { n: i + 1, m: PASSI_SETUP.length })
+    // Right-aligned in the section header: the step name in the terminal, «Step n of m» on graphical surfaces.
+    const stato = terminale ? nomePasso : progresso
     const vai = (n: number) => {
       if (PASSI_SETUP[n] === 'accessi') void c.controllaEsecuzione()
       void cambia(s => ({ ...s, passoSetup: n, errore: undefined }))
@@ -623,7 +625,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       stato,
       figli: [
         <Text key="setup-passo" weight="semibold" wrap="wrap">
-          {`${T('set.passo', { n: i + 1, m: PASSI_SETUP.length })} · ${T(`set.p.${passo}` as Chiave)}${PASSI_TUOI.includes(passo) ? ` · ${T('set.tu')}` : ''}`}
+          {`${terminale ? `${progresso} · ` : ''}${nomePasso}${PASSI_TUOI.includes(passo) ? ` · ${T('set.tu')}` : ''}`}
         </Text>,
         didascalia('setup-spiega', T(`set.d.${passo}` as Chiave)),
         ...corpo,
@@ -644,15 +646,18 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const trovati = dv.trovati ?? []
     const righe = trovati.map(x => ({ r: x, ...testoRilievo(T, x) }))
     const rapporto = righe.map(x => `${x.avviso ? '!' : '✗'} ${x.titolo} — ${x.rimedio}`).join('\n') || T('doc.tuttoBene')
-    const esito = dv.inCorso ? T('doc.inCorso') : dv.fallita ? T('doc.fallita') : !dv.quando || !dv.trovati ? T('proxy.nonVerificato') : T('doc.stato', { n: trovati.length })
-    const stato = `${esito}${dv.quando ? ` · ${T('tr.aggiornato', { ora: T.ora(dv.quando) })}` : ''}`
+    const verificato = !!dv.quando && !!dv.trovati
+    const esito = dv.inCorso ? T('doc.inCorso') : dv.fallita ? T('doc.fallita') : !verificato ? T('proxy.nonVerificato') : T(trovati.length ? 'doc.attenzione' : 'doc.superati')
+    const segno = dv.inCorso ? '…' : dv.fallita ? '✗' : !verificato ? '—' : trovati.length ? '!' : '✓'
+    const colore = dv.inCorso ? GRIGIO : dv.fallita ? STATO.errore : !verificato ? GRIGIO : trovati.length ? STATO.attesa : STATO.inCorso
+    const stato = [verificato ? T('doc.stato', { n: trovati.length }) : '', dv.quando ? T('tr.aggiornato', { ora: T.ora(dv.quando) }) : ''].filter(Boolean).join(' · ')
     return u.Sezione({
       chiave: 'pagina-doctor',
       titolo: T('doc.titolo'),
       descrizione: T('doc.descrizione'),
       stato,
       figli: [
-        dv.fallita ? nota1('doctor-fallita', STATO.errore, '✗', T('doc.fallita')) : null,
+        u.Pillola({ chiave: 'doctor-esito', segno, colore, testo: esito }),
         !dv.inCorso && !dv.fallita && dv.quando && dv.trovati && !trovati.length ? nota1('doctor-ok', STATO.inCorso, '✓', T('doc.tuttoBene')) : null,
         ...righe.map((x, i) => (
           <Box key={`doctor-rilievo-${i}`} flexDirection="column" gap={terminale ? 0 : 'xs'}>
@@ -1142,7 +1147,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
         </Box>,
         // La procedura guidata: un passo mancante alla volta, ognuno si può saltare; si chiude da sola quando è tutto ✓.
         passo ? (
-          <Box key="ese-guida-passo" flexDirection="column" gap={terminale ? 1 : 'sm'} borderStyle="single">
+          <Box key="ese-guida-passo" flexDirection="column" gap={terminale ? 1 : 'sm'} borderStyle={terminale ? 'single' : undefined}>
             <Text key="ese-guida-titolo" weight="semibold">{`${T('ese.guida')} · ${T('ese.guidaPasso', { n: mancanti.indexOf(passo) + 1, tot: mancanti.length })}`}</Text>
             {azione(passo, 'guida')}
             {copia('guida')}
@@ -1292,7 +1297,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       <Box key="sezioni" flexDirection="column" gap={terminale ? 1 : 'sm'}>
         {[true, false].map(account => (
           <Box key={account ? 'sezioni-account' : 'sezioni-progetto'} flexDirection="column" gap={terminale ? 0 : 'xs'}>
-            <Text size="caption" weight="semibold" dimColor>{account ? T('imp.gruppoAccount') : T('imp.gruppoProgetto', { repo: io?.repo ?? '—' })}</Text>
+            {u.Intestazione({ chiave: account ? 'titolo-account' : 'titolo-progetto', titolo: account ? T('imp.gruppoAccount') : T('imp.gruppoProgetto', { repo: io?.repo ?? '—' }) })}
             <Box flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
               {SEZIONI.filter(s => SEZIONI_ACCOUNT.includes(s.valore) === account).map(s =>
                 u.Chip({

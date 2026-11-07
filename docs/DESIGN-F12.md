@@ -144,7 +144,7 @@ Host spacing names are supported; their pixel mapping is host-owned. These are e
 | Usage/progress bar | Existing one-caption-line Box fill; no vertical padding | 1 character row | 12px thick, 6px radius |
 | Gamma | One-caption-line track | Existing textual track | Not applicable |
 
-Brand: `title`, chip semibold, Manager bold. Card titles: `body`, semibold. Section labels: `caption`, semibold; uppercase only on desktop, using the current locale. Explanations: `caption`, host dim ink. Operational warnings and missing-data labels use normal ink. Use monospace for model IDs, paths, commands, and percentages; tabular digits for changing counts.
+Brand: `title`, chip semibold, Manager bold. Card titles (including Load and Settings `Sezione` cards): `body`, semibold, title case as supplied by the translation; never force uppercase. Section labels outside cards (including Settings navigation groups): `caption`, semibold; uppercase only on the `desktop` surface, using the current locale, with translated casing on vscode, mobile, and terminal. Explanations: `caption`, host dim ink. Operational warnings and missing-data labels use normal ink. Use monospace for model IDs, paths, commands, and percentages; within a session's context fragment only the percentage is monospace, not its translated label. Use tabular digits for changing counts.
 
 Do not prescribe unsupported `borderRadius`, `fontSize`, CSS shadows, custom focus props, or Button background props in the host tree.
 
@@ -195,7 +195,7 @@ Use native primary chrome and native foreground. Do not fake a filled button wit
 
 **Hover and focus**
 
-Hover changes only `backgroundColor` on a stable, uniquely keyed Box. Apply to actionable work/session records and existing interactive rows. No hover on passive Load cards, milestone cards, or Gamma tracks.
+Hover changes only `backgroundColor` on a stable, uniquely keyed Box. Apply to actionable work/session records and existing interactive rows. No hover on heading bars (including the common header and To start, even when they contain buttons), passive Load cards, milestone cards, usage bars, or Gamma tracks.
 
 Keep native keyboard focus, control keys, hotkeys, and traversal order. Do not add autofocus or make the whole card clickable. Focus must survive refresh without moving to Start. All controls remain visible without hover.
 
@@ -341,18 +341,18 @@ Empty Work keeps the existing introductory explanation. Empty sessions distingui
 
 **Load — desktop**
 
-Each existing section becomes a neutral `Sezione` card. Matrix first; no new dashboard tiles or charts.
+Each existing section becomes a neutral `Sezione` card with a title-case title. Matrix first; no new dashboard tiles or charts.
 
 ```text
 +-----------------------------------------------------------+
-| MODEL x EFFORT                                            |
+| Model x effort                                            |
 | Model              low       medium      high      xhigh  |
 | Sonnet 5.5           0          2 +1        0          0   |
 | GPT-6 Astra          0          0           0          1   |
 | Working count; + queued                                   |
 +-----------------------------------------------------------+
 +-----------------------------------------------------------+
-| LIMITS AND BUDGET                                         |
+| Limits and budget                                         |
 | Claude - warning 70%, critical 90%                         |
 | Claude plan - 5 h: 70% used, at warning                    |
 | [#####################.........] 70% used                  |
@@ -361,7 +361,7 @@ Each existing section becomes a neutral `Sezione` card. Matrix first; no new das
 | [###...........................]                          |
 +-----------------------------------------------------------+
 +-----------------------------------------------------------+
-| CONTEXT WINDOWS                                           |
+| Context windows                                           |
 | Update the API reference [###########................] 38% |
 +-----------------------------------------------------------+
 ```
@@ -419,10 +419,10 @@ Retain 10-cell narrow bars and 20-cell standard bars; context bars retain their 
 Keep both navigation groups above the selected section. A sidebar would unnecessarily alter reading geometry and control traversal.
 
 ```text
-Account - all projects
+ACCOUNT - ALL PROJECTS
 Connections  [Thresholds]  Language  Execution
 
-Project - acme/chipManager
+PROJECT - ACME/CHIPMANAGER
 Balancing  Project  Board  Advanced  Legend
 
 +--------------------------------------------------------+
@@ -516,7 +516,7 @@ No second column of form controls at 120. Allow translated navigation and action
 
 **F11 setup and doctor visual patterns**
 
-There is no F11 implementation or specification in this checkout. These are presentation contracts for its eventual screens, not authorization to add steps, controls, or behaviour. F11 owns the step count, action names, ordering, and completion rules.
+F11 setup and doctor are implemented in `vista-impostazioni.tsx`. Apply these presentation contracts to their existing steps, controls, and behaviour. F11 owns the step count, action names, ordering, and completion rules; the drawings below are illustrative. On graphical surfaces, setup places its existing “Step n of m” at the right of the card header. The execution guide is an inset of its enclosing card, with no second border or card veil; terminal keeps its existing step outline.
 
 Desktop setup:
 
@@ -548,7 +548,7 @@ Doctor                                  Checked 11:22
 Recheck
 ```
 
-Use one card, not a card for every check. Status is sign + words; evidence and correction sit beneath the relevant check. Optional/unconfigured is distinct from failed. Never show credential values. A missing result reads “Not checked”; it cannot contribute to “All checks passed.”
+Use one card, not a card for every check. The overall-result pill uses sign + words: `! Needs attention`, `✓ All checks passed`, or `— Not checked` (reusing the translated not-checked label). Checking and failed diagnostics replace that result with their existing explicit status. Keep the finding count and last-check time in the header; evidence and correction sit beneath the relevant check. Optional/unconfigured is distinct from failed. Never show credential values. A missing result cannot contribute to “All checks passed.”
 
 Terminal versions:
 
@@ -674,7 +674,7 @@ For a neutral card, existing board text contrast is **14.762/16.996:1** for dark
 | `tests/f9-prima.ts` | Only the six variant-field edits listed below. |
 | `tests/f9.ts` | No normalization or comparison relaxation. |
 
-No `Pulsante` wrapper is needed: native `Button.variant` already owns the required behaviour. Reuse translations; no existing control label changes. F11-specific files cannot be named until they exist; capture their pre-F12 control baseline after F11 lands.
+No `Pulsante` wrapper is needed: native `Button.variant` already owns the required behaviour. Reuse translations; add the two doctor result labels in all six dictionaries, with no existing control label changes. Preserve the F11 control baseline in `tests/f11-nuovi.ts`.
 
 **Intentional control snapshot changes — exhaustive**
 

@@ -8,7 +8,7 @@ import { blocchi, classeDi, componenti } from '../hooks/ui'
 // e si premono chiamando l'`onPress` dell'albero restituito: un hook di test non ha pulsanti premibili per nome.
 
 const SUPERFICI = ['desktop', 'terminal'] as const
-type Superficie = (typeof SUPERFICI)[number]
+type Superficie = (typeof SUPERFICI)[number] | 'vscode' | 'mobile'
 type U = ReturnType<typeof componenti>
 type Engine = Parameters<TestBody>[0]
 type On = Parameters<TestBody>[1]
@@ -180,7 +180,7 @@ test('Sezione e Riga: titolo e stato affiancati sul desktop, stato sotto sul ter
         ),
       }),
     )
-    expect(await ui.find({ type: 'Text', text: surface === 'terminal' ? 'Connessioni' : 'CONNESSIONI' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Connessioni' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '2 collegati · 1 da collegare' })).toBeDefined()
     const testa = (albero as { children: { props: Record<string, unknown> }[] }).children[0]!
     expect(testa.props.flexDirection).toBe(surface === 'terminal' ? 'column' : 'row')
@@ -353,6 +353,7 @@ test('F12: spazi nominati, pillole arrotondate, sezioni interne senza secondo ve
       u.Chip({ chiave: 'stato', testo: 'Pronto', segno: '○', colore: STATO.coda }),
       u.Sezione({ chiave: 'interna', titolo: 'Passo', interna: true, figli: [] }),
       u.Riga({ chiave: 'passiva', classe: 'media', principale: 'Uso', azioni: [] }),
+      u.Riga({ chiave: 'intestazione', classe: 'media', principale: 'Da avviare', azioni: ['Avvia tutte'], intestazione: true }),
       u.Barra({ chiave: 'uso', pct: 95, colore: LIVELLO.critica, celle: 10 }),
       u.Gamma({ chiave: 'gamma', etichetta: 'Soglia', valore: 50, min: 0, max: 100, passo: 5, onCambia: () => {} }),
     ] }))
@@ -367,6 +368,19 @@ test('F12: spazi nominati, pillole arrotondate, sezioni interne senza secondo ve
       visita(x.children)
     }
     visita(albero)
+    await ui.unmount()
+  }
+})
+
+test('F12: titoli delle schede in grafia tradotta, etichette maiuscole solo sul desktop', async ($, on) => {
+  const monta = banco(on)
+  for (const surface of ['desktop', 'vscode', 'mobile', 'terminal'] as const) {
+    const { ui } = await monta($, surface, u => [
+      u.Intestazione({ chiave: 'gruppo', titolo: 'Da avviare' }),
+      u.Sezione({ chiave: 'scheda', titolo: 'Limiti e budget', figli: [] }),
+    ])
+    expect(await ui.find({ type: 'Text', text: surface === 'desktop' ? 'DA AVVIARE' : 'Da avviare' })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: 'Limiti e budget' }))?.props).toMatchObject({ size: 'body', weight: 'semibold' })
     await ui.unmount()
   }
 })

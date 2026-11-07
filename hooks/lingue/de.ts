@@ -1004,6 +1004,8 @@ const de: Dizionario = {
   "doc.inCorso": "Prüfung läuft…",
   "doc.stato": { one: "1 Befund", other: "{n} Befunde" },
   "doc.tuttoBene": "Nichts zu beheben.",
+  "doc.attenzione": "Handlungsbedarf",
+  "doc.superati": "Alle Prüfungen bestanden",
   "doc.fallita": "Die Prüfung lief nicht: der Helper hat nicht geantwortet.",
   "doc.ricontrolla": "Erneut prüfen",
   "doc.copia": "Bericht kopieren",

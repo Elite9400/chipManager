@@ -1006,6 +1006,8 @@ const en = {
   "doc.inCorso": "Checking…",
   "doc.stato": { one: "1 finding", other: "{n} findings" },
   "doc.tuttoBene": "Nothing to fix.",
+  "doc.attenzione": "Needs attention",
+  "doc.superati": "All checks passed",
   "doc.fallita": "The check did not run: the helper did not answer.",
   "doc.ricontrolla": "Check again",
   "doc.copia": "Copy report",

@@ -1004,6 +1004,8 @@ const fr: Dizionario = {
   "doc.inCorso": "Vérification…",
   "doc.stato": { one: "1 constat", other: "{n} constats" },
   "doc.tuttoBene": "Rien à corriger.",
+  "doc.attenzione": "Intervention nécessaire",
+  "doc.superati": "Toutes les vérifications réussies",
   "doc.fallita": "La vérification n'a pas tourné : le helper n'a pas répondu.",
   "doc.ricontrolla": "Revérifier",
   "doc.copia": "Copier le rapport",

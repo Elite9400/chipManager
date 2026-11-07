@@ -1004,6 +1004,8 @@ const es: Dizionario = {
   "doc.inCorso": "Comprobando…",
   "doc.stato": { one: "1 hallazgo", other: "{n} hallazgos" },
   "doc.tuttoBene": "Nada que arreglar.",
+  "doc.attenzione": "Requiere atención",
+  "doc.superati": "Todas las comprobaciones superadas",
   "doc.fallita": "La comprobación no se ejecutó: el helper no respondió.",
   "doc.ricontrolla": "Comprobar de nuevo",
   "doc.copia": "Copiar informe",
