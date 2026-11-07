@@ -525,10 +525,31 @@ function terminiRe(lista: readonly string[] | undefined) {
  * Sensibile se lo dice il testo (titolo, mandato E contesto: tutto ciò che arriva alla sessione), la corsia
  * o il proponente; un `false` esplicito non spegne l'evidenza.
  */
-export const sensibile = (a: Pick<Azione, 'sensibile' | 'titolo' | 'brief' | 'corsia' | 'background'>, regole: Pick<Regole, 'sensibili'> & Partial<Pick<Regole, 'background'>>) => {
-  if (a.sensibile === true || a.corsia === 'R4' || a.corsia === 'R5') return true
+export const sensibile = (a: Pick<Azione, 'sensibile' | 'titolo' | 'brief' | 'corsia' | 'background'>, regole: Pick<Regole, 'sensibili'> & Partial<Pick<Regole, 'background'>>) =>
+  causaSensibile(a, regole) !== undefined
+
+/** Perché un'azione è sensibile, una causa sola: per dirlo all'agente che la propone. */
+export type CausaSensibile =
+  | { tipo: 'flag' }
+  | { tipo: 'corsia'; corsia: Corsia }
+  | { tipo: 'termine'; termine: string }
+  | { tipo: 'listaNonValida' }
+  | { tipo: 'termineProgetto'; termine: string }
+
+/**
+ * La causa, in quest'ordine: `sensibile: true`, corsia R4/R5, un termine fisso, la lista del progetto che non compila
+ * (TUTTO: va detta prima di cercare, perché TUTTO trova qualunque testo), un termine del progetto. undefined = non sensibile.
+ */
+export function causaSensibile(a: Pick<Azione, 'sensibile' | 'titolo' | 'brief' | 'corsia' | 'background'>, regole: Pick<Regole, 'sensibili'> & Partial<Pick<Regole, 'background'>>): CausaSensibile | undefined {
+  if (a.sensibile === true) return { tipo: 'flag' }
+  if (a.corsia === 'R4' || a.corsia === 'R5') return { tipo: 'corsia', corsia: a.corsia }
   const testo = `${a.titolo}\n${a.brief}\n${a.background ?? ''}\n${regole.background ?? ''}`
-  return SENSIBILE_RE.test(testo) || !!terminiRe(regole.sensibili)?.test(testo)
+  const fisso = SENSIBILE_RE.exec(testo)
+  if (fisso) return { tipo: 'termine', termine: fisso[0] }
+  const progetto = terminiRe(regole.sensibili)
+  if (progetto === TUTTO) return { tipo: 'listaNonValida' }
+  const trovato = progetto?.exec(testo)
+  return trovato ? { tipo: 'termineProgetto', termine: trovato[0] } : undefined
 }
 
 // Forme di dati che non devono uscire dalla rete locale: codice fiscale,

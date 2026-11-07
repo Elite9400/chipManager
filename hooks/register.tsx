@@ -7,6 +7,8 @@ import { alLavoroDa, cambiatiAltrove, campoNonValido, conBozza, contestoPerModel
 import {
   attive,
   bilancia,
+  causaSensibile,
+  corsiaDi,
   BASE_RE,
   cartellaDati,
   checkoutDi,
@@ -1639,45 +1641,54 @@ const DESTINAZIONI = ['local', 'cloud', 'api-claude'] as const
 type Suggerita = Omit<Azione, 'id' | 'versione' | 'stato' | 'creata' | 'aggiornata' | 'ordine'> & { ordine?: number }
 
 function valida(e: Record<string, unknown>, r: Regole, esistenti: readonly Azione[]): string | Suggerita {
+  // Tutti gli errori in una risposta: un agente li corregge in un giro. Ogni controllo che usa un valore viene dopo il suo tipo.
+  const errori: string[] = []
   const str = (k: string, max: number, obbl = false) => {
     const v = e[k]
-    if (v === undefined || v === null || v === '') return obbl ? `missing ${k}` : undefined
-    if (typeof v !== 'string' || v.length > max) return `${k}: text up to ${max} characters`
-    return undefined
+    if (v === undefined || v === null || v === '') return obbl ? (errori.push(`missing ${k}`), false) : true
+    if (typeof v !== 'string' || v.length > max) return errori.push(`${k}: text up to ${max} characters`), false
+    return true
   }
-  const err =
-    str('titolo', 200, true) ?? str('brief', 20000, true) ?? str('background', 4000) ?? str('modello', 100) ?? str('effort', 10)
-  if (err) return err
-  if (!(e.titolo as string).trim()) return 'missing titolo'
-  if (!(e.brief as string).trim()) return 'missing brief'
+  if (str('titolo', 200, true) && !(e.titolo as string).trim()) errori.push('missing titolo')
+  if (str('brief', 20000, true) && !(e.brief as string).trim()) errori.push('missing brief')
+  str('background', 4000)
+  const modelloOk = str('modello', 100)
+  const effortOk = str('effort', 10)
   const esecutore = (e.esecutore ?? 'claude') as Motore
   const revisore = (e.revisore ?? (esecutore !== 'claude' ? 'claude' : 'codex')) as Revisore
-  if (!MOTORI.includes(esecutore)) return 'esecutore: claude | codex | freellmapi'
-  if (!REVISORI.includes(revisore)) return 'revisore: claude | codex | nessuno'
-  if (e.modello !== undefined && !r.modelli[esecutore].includes(e.modello as string))
-    return `modello for ${esecutore}: ${r.modelli[esecutore].join(', ')}`
-  if (e.effort !== undefined && !r.effort.includes(e.effort as string)) return `effort: ${r.effort.join(', ')}`
+  const esecutoreOk = MOTORI.includes(esecutore)
+  if (!esecutoreOk) errori.push('esecutore: claude | codex | freellmapi')
+  if (!REVISORI.includes(revisore)) errori.push('revisore: claude | codex | nessuno')
+  if (esecutoreOk && modelloOk && e.modello !== undefined && !r.modelli[esecutore].includes(e.modello as string))
+    errori.push(`modello for ${esecutore}: ${r.modelli[esecutore].join(', ')}`)
+  if (effortOk && e.effort !== undefined && !r.effort.includes(e.effort as string)) errori.push(`effort: ${r.effort.join(', ')}`)
   const dipende = e.dipende ?? []
   if (!Array.isArray(dipende) || dipende.length > 20 || !dipende.every(d => typeof d === 'string' && ID_RE.test(d)))
-    return 'dipende: list of ids returned by suggerisci_azione'
-  // Solo azioni che esistono e non sono scartate: un riferimento inventato non deve sbloccarsi da solo.
-  const ignote = dipende.filter(d => !esistenti.some(x => x.id === d && x.stato !== 'scartata'))
-  if (ignote.length) return `dipende: actions that do not exist or were discarded: ${ignote.join(', ')}`
+    errori.push('dipende: list of ids returned by suggerisci_azione')
+  else {
+    // Solo azioni che esistono e non sono scartate: un riferimento inventato non deve sbloccarsi da solo.
+    const ignote = dipende.filter(d => !esistenti.some(x => x.id === d && x.stato !== 'scartata'))
+    if (ignote.length) errori.push(`dipende: actions that do not exist or were discarded: ${ignote.join(', ')}`)
+  }
   const ordine = e.ordine
-  if (ordine !== undefined && (!Number.isInteger(ordine) || (ordine as number) < 1 || (ordine as number) > 999)) return 'ordine: integer 1-999'
+  if (ordine !== undefined && (!Number.isInteger(ordine) || (ordine as number) < 1 || (ordine as number) > 999)) errori.push('ordine: integer 1-999')
   const issue = e.issue
-  if (issue !== undefined && (!Number.isInteger(issue) || (issue as number) < 1)) return 'issue: integer'
-  if (e.corsia !== undefined && !CORSIE.includes(e.corsia as Corsia)) return `corsia: ${CORSIE.join(', ')}`
-  if (e.permessi !== undefined && !PERMESSI_VALIDI.includes(e.permessi as never)) return `permessi: ${PERMESSI_VALIDI.join(', ')}`
-  if (e.contesto !== undefined && !CONTESTI.includes(e.contesto as never)) return 'contesto: fresh | fork'
-  if (e.destinazione !== undefined && !DESTINAZIONI.includes(e.destinazione as never)) return `destinazione: ${DESTINAZIONI.join(' | ')}`
+  if (issue !== undefined && (!Number.isInteger(issue) || (issue as number) < 1)) errori.push('issue: integer')
+  if (e.corsia !== undefined && !CORSIE.includes(e.corsia as Corsia)) errori.push(`corsia: ${CORSIE.join(', ')}`)
+  if (e.permessi !== undefined && !PERMESSI_VALIDI.includes(e.permessi as never)) errori.push(`permessi: ${PERMESSI_VALIDI.join(', ')}`)
+  if (e.contesto !== undefined && !CONTESTI.includes(e.contesto as never)) errori.push('contesto: fresh | fork')
+  if (e.destinazione !== undefined && !DESTINAZIONI.includes(e.destinazione as never)) errori.push(`destinazione: ${DESTINAZIONI.join(' | ')}`)
   for (const k of ['worktree', 'sveglia', 'sensibile'] as const)
-    if (e[k] !== undefined && typeof e[k] !== 'boolean') return `${k}: true | false`
-  if (e.ramo !== undefined && (typeof e.ramo !== 'string' || !RAMO_RE.test(e.ramo))) return 'ramo: [a-z0-9-], up to 40'
-  if (e.base !== undefined && (typeof e.base !== 'string' || !BASE_RE.test(e.base))) return 'base: name of a local branch'
+    if (e[k] !== undefined && typeof e[k] !== 'boolean') errori.push(`${k}: true | false`)
+  if (e.ramo !== undefined && (typeof e.ramo !== 'string' || !RAMO_RE.test(e.ramo))) errori.push('ramo: [a-z0-9-], up to 40')
+  if (e.base !== undefined && (typeof e.base !== 'string' || !BASE_RE.test(e.base))) errori.push('base: name of a local branch')
   if (e.piano !== undefined) {
     const no = pianoValido(e.piano)
-    if (no) return t('en', no.k, no.p)
+    if (no) errori.push(t('en', no.k, no.p))
+  }
+  if (errori.length) {
+    const tutti = errori.join('; ')
+    return tutti.length <= 600 ? tutti : `${tutti.slice(0, 597)}...`
   }
   return {
     piano: e.piano as string | undefined,
@@ -1711,15 +1722,15 @@ const schemaSuggerisci = (r: Regole) => ({
     titolo: { type: 'string', description: 'Under 60 characters: the session title.' },
     brief: { type: 'string', description: 'Self-contained brief: task, files, scope, when it is done.' },
     background: { type: 'string', description: 'Optional context; never sent to the cloud.' },
-    esecutore: { type: 'string', enum: MOTORI, description: 'Default claude. Codex only for non-sensitive R1-R3.' },
+    esecutore: { type: 'string', enum: MOTORI, description: `Default claude. Codex on ${r.corsiaCodex.corsie.join(', ')}, never sensitive.` },
     revisore: { type: 'string', enum: REVISORI, description: 'Default the other engine; mandatory on sensitive chips.' },
     modello: { type: 'string', description: `Claude: ${r.modelli.claude.join(', ')}. Codex: ${r.modelli.codex.join(', ')}.` },
     effort: { type: 'string', enum: r.effort },
-    corsia: { type: 'string', enum: CORSIE, description: 'Missing: R4 if the text touches sensitive surfaces.' },
+    corsia: { type: 'string', enum: CORSIE, description: 'Set it. R0 text, R1 small+tests, R2 ordinary, R3 large, R4-R5 sensitive (Opus/Fable, local; forced by sensitive text).' },
     ordine: { type: 'integer', description: '1 = first; default last.' },
     dipende: { type: 'array', items: { type: 'string' }, description: 'Existing ids to complete and merge first.' },
     issue: { type: 'integer', description: 'GitHub issue: registry and milestone.' },
-    sensibile: { type: 'boolean', description: 'true if it touches auth, permissions, PII or sensitive modules (R4); false does not override the text.' },
+    sensibile: { type: 'boolean', description: 'true for auth, permissions, personal data, sensitive modules (R4); false never overrides the text.' },
     permessi: { type: 'string', enum: PERMESSI_VALIDI, description: 'Missing: same as who starts it (sensitive: acceptEdits).' },
     worktree: { type: 'boolean', description: 'Default true.' },
     contesto: { type: 'string', enum: CONTESTI, description: 'fresh (default): brief only; fork: the conversation.' },
@@ -2043,7 +2054,8 @@ export const register: Register = (on, options) => {
       description:
         'Puts an action in the “chipManager” panel instead of proposing it in chat: the owner reviews and starts it. ' +
         'One call per action, in start order; `dipende` with the returned ids for chains. Returns the id. ' +
-        'Engine, model and effort left out are chosen by the panel; the margins are in `risorse_agenti`.',
+        'Engine, model and effort left out are chosen by the panel; the margins are in `risorse_agenti`. ' +
+        'Guide: github.com/Elite9400/chipManager/blob/main/docs/GUIDE-FOR-AGENTS.md',
       inputSchema: schemaSuggerisci(r),
       isDeferred: false,
     })
@@ -2060,7 +2072,7 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'proponi_pesi',
       description:
-        'Proposes a balancing profile and/or weight adjustments for this project, with the reason (data in `risorse_agenti`). ' +
+        'Only when the user asks for it: proposes a balancing profile and/or weight adjustments for this project, with the reason (data in `risorse_agenti`). ' +
         'It changes nothing: the proposal appears in the panel and the owner decides it.',
       inputSchema: {
         type: 'object',
@@ -2124,10 +2136,9 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'aggiorna_azione',
       description:
-        'Updates an action of the “chipManager” panel. From the started session: "consegnata" when the work is delivered (branch pushed, ' +
-        'report to the coordinator; the merge decides the closing), with the `tentativo` written in the brief. After a start asked of this ' +
-        'session: "avviata" with `sessione`, or "fallita". From the proposer: "scartata". The review outcome is reported with ' +
-        '`revisione` (even without `stato`): from the started session with its `tentativo`, or from the proposer.',
+        'Reports on a “chipManager” action. Started session: "consegnata" with the `tentativo` of your mandate; the review outcome in ' +
+        '`revisione`, with or without `stato`. Proposer: "scartata", or `revisione` without `tentativo`. A start asked of this ' +
+        'session: "presa", then "avviata" with `sessione`, or "fallita".',
       inputSchema: {
         type: 'object',
         properties: {
@@ -2193,9 +2204,16 @@ export const register: Register = (on, options) => {
     )
     void $.ui.open({ id: PANE, title: TITOLO })
     const blocchi = violazioni(a, r, [...lista, a])
+    // I valori effettivi dopo il bilanciamento (la destinazione no: la sceglie il committente o il consigliere).
+    const causa = causaSensibile(a, r)
+    const perche = !causa ? '' : causa.tipo === 'flag' ? 'sensibile: true' : causa.tipo === 'corsia' ? `lane ${causa.corsia} set by the proposer`
+      : causa.tipo === 'termine' ? `the text contains "${causa.termine}"` : causa.tipo === 'termineProgetto' ? `the text matches the project term "${causa.termine}"`
+      : 'the project term list does not compile, so all text counts as sensitive'
     return {
       result:
-        `Action ${a.id} in the panel (position ${a.ordine}, ${a.esecutore} → review ${a.revisore}).` +
+        `Action ${a.id} in the panel (position ${a.ordine}, lane ${corsiaDi(a, r) ?? 'none'}, ${a.esecutore} ${modelloDi(a, r)} · ${effortDi(a, r)} → ` +
+        `review ${a.revisore}; runs: ${modalitaDi(a)}).` +
+        (causa ? ` Sensitive (lane ${corsiaDi(a, r)}): ${perche}.` : '') +
         (blocchi.length ? ` Warning, as it is it cannot start: ${testo('en', msg('err.nonParte', { motivi: blocchi }))}.` : ''),
     }
   })

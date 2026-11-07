@@ -62,6 +62,7 @@ import {
   regoleDa,
   repoGithub,
   sensibile,
+  causaSensibile,
   sopra,
   sposta,
   stimaArrivo,
@@ -2752,7 +2753,8 @@ test('strumenti: descrizioni brevi (tetto in caratteri, non token); risorse_agen
     return t.description.length + props.reduce((n, p) => n + (p.description?.length ?? 0), 0)
   }
   // 2.4.0: 2021 e 435 caratteri (descrizione dello strumento più quelle delle proprietà), con il routing d'esempio.
-  expect(caratteri('suggerisci_azione')).toBeLessThanOrEqual(1300)
+  // 2.2.0 (UX agenti): +R0–R5 nella corsia e il link alla guida, unico strumento sempre caricato che li porta.
+  expect(caratteri('suggerisci_azione')).toBeLessThanOrEqual(1450)
   expect(caratteri('risorse_agenti')).toBeLessThanOrEqual(250)
   expect(amb.registrati.find(x => x.name === 'risorse_agenti')!.isDeferred).toBe(true)
   expect(amb.registrati.find(x => x.name === 'suggerisci_azione')!.isDeferred).toBe(false)
@@ -3411,4 +3413,74 @@ test('F7 giro 2, rilievo 1: «Cambia» rivaluta con l\'elenco riletto: una dipen
   expect(amb.chiamate.filter(c => c.tool === 'set_session_effort')).toHaveLength(1)
   expect(JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!)).toMatchObject({ effort: 'xhigh', cambio: { esito: 'fatto' } })
   await ui.unmount()
+})
+
+test('UX agenti (1, 6, 8, 9, 11): corsie spiegate, corsie Codex dal routing, aggiorna_azione corto, pesi solo su richiesta, guida', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const t = (nome: string) => amb.registrati.find(x => x.name === nome)!
+  const props = (nome: string) => (t(nome).inputSchema as { properties: Record<string, { description?: string }> }).properties
+  // 1: il significato di R0–R5 nello schema della corsia.
+  expect(props('suggerisci_azione').corsia!.description).toMatch(/R0 .*R1 .*R2 .*R3 .*R4-R5/)
+  // 9: le corsie di Codex vengono da routing.json (corsia_codex.esegue.corsie), non da un testo fisso.
+  expect(props('suggerisci_azione').esecutore!.description).toContain('R1, R2, R3')
+  // 11: la guida per gli agenti.
+  expect(t('suggerisci_azione').description).toContain('docs/GUIDE-FOR-AGENTS.md')
+  // 8: proporre pesi solo su richiesta dell'utente, come le impostazioni.
+  expect(t('proponi_pesi').description).toMatch(/^Only when the user/)
+  // 6: più corto (era 479 caratteri), con la revisione senza stato e quella del proponente.
+  const d = t('aggiorna_azione').description
+  expect(d.length).toBeLessThanOrEqual(330)
+  for (const parola of ['"consegnata"', '"scartata"', '"presa"', '"avviata"', '"fallita"', '`revisione`', 'without `stato`', 'without `tentativo`'])
+    expect(d).toContain(parola)
+})
+
+test('UX agenti (3): il risultato di suggerisci_azione dice corsia, modello, effort e modalità effettivi, e la causa della sensibilità', async ($, on) => {
+  ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const testoDi = async (args: Record<string, unknown>) =>
+    String(((await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', ...args } as never)) as { result?: unknown }).result)
+  const codex = await testoDi({ titolo: 'Fix ricerca', brief: 'Correggi il dedup.', esecutore: 'codex', corsia: 'R2' })
+  expect(codex).toContain('lane R2')
+  expect(codex).toMatch(/codex gpt-[\w.-]+ · xhigh → review claude/)
+  expect(codex).toContain('runs: local')
+  expect(codex).not.toContain('Sensitive')
+  const api = await testoDi({ titolo: 'Prova', brief: 'x', destinazione: 'api-claude' })
+  expect(api).toContain('runs: api-claude')
+  const autore = await testoDi({ titolo: 'Pagina', brief: 'Fix the author list.' })
+  expect(autore).toContain('lane R4')
+  expect(autore).toContain('Sensitive')
+  expect(autore).toContain('"author"')
+})
+
+test('UX agenti (3): causaSensibile, una causa nell\'ordine flag, corsia, termine, lista non valida, termine del progetto', () => {
+  const pulito = base('a-causa001', 1, { brief: 'Aggiorna il README.' })
+  expect(causaSensibile(pulito, R)).toBeUndefined()
+  expect(causaSensibile({ ...pulito, sensibile: true, corsia: 'R5', brief: 'login' }, R)).toEqual({ tipo: 'flag' })
+  expect(causaSensibile({ ...pulito, corsia: 'R5', brief: 'login' }, R)).toEqual({ tipo: 'corsia', corsia: 'R5' })
+  expect(causaSensibile({ ...pulito, brief: 'Fix the author list.' }, R)).toEqual({ tipo: 'termine', termine: 'author' })
+  // La lista del progetto che non compila rende sensibile tutto: si dice PRIMA di cercare un termine del progetto.
+  expect(causaSensibile(pulito, { ...R, sensibili: ['('] })).toEqual({ tipo: 'listaNonValida' })
+  expect(causaSensibile({ ...pulito, brief: 'Gestione magazzino.' }, { ...R, sensibili: ['magazzino'] })).toEqual({ tipo: 'termineProgetto', termine: 'magazzino' })
+  // Coerente con sensibile(): stessa risposta sì/no.
+  for (const [a, r] of [[pulito, R], [{ ...pulito, brief: 'author' }, R], [pulito, { ...R, sensibili: ['('] }]] as const)
+    expect(causaSensibile(a, r) !== undefined).toBe(sensibile(a, r))
+})
+
+test('UX agenti (7): suggerisci_azione rifiuta con tutti gli errori in una volta, dopo i controlli di tipo', async ($, on) => {
+  ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const r = (await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: '   ', brief: 'x', effort: 'ultra', ordine: 0, esecutore: 'gemini', modello: 'm' } as never)) as { deny?: string; text?: string }
+  const testo = r.deny ?? r.text ?? ''
+  for (const parte of ['missing titolo', 'effort:', 'ordine: integer 1-999', 'esecutore: claude | codex | freellmapi']) expect(testo).toContain(parte)
+  // Con un esecutore non valido il modello non si controlla contro una lista che non esiste.
+  expect(testo).not.toContain('modello for')
+  // Tipi sbagliati: rifiuto, mai un'eccezione.
+  const tipi = (await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 7, brief: ['x'], dipende: 'a-x' } as never)) as { deny?: string; text?: string }
+  expect(tipi.deny ?? tipi.text).toContain('titolo: text up to 200 characters')
+  expect(tipi.deny ?? tipi.text).toContain('brief: text up to 20000 characters')
+  expect(tipi.deny ?? tipi.text).toContain('dipende: list of ids')
 })
