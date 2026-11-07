@@ -1,0 +1,48 @@
+// F9: la garanzia di non regressione della grafica. La fotografia «prima» si scrive una volta sola, dal codice che precede
+// F9, in tests/f9-prima.ts (nel commit che la introduce); da lì in poi i test confrontano. Si cambia solo se una
+// correzione dichiarata lo chiede, mai per la grafica.
+import { expect } from 'claude-code/testing'
+
+import { PRIMA } from './f9-prima'
+
+export type ControlloF9 = { tipo?: string; chiave?: unknown; label?: unknown; hotkey?: unknown; variant?: unknown; value?: unknown; options?: unknown; gestori: string[] }
+
+/** L'elenco ORDINATO dei controlli dell'albero disegnato: tipo, chiave, etichetta, scorciatoia, variante, valore e opzioni, gestori. */
+export function controlliF9(n: unknown): ControlloF9[] {
+  if (!n || typeof n !== 'object') return []
+  if (Array.isArray(n)) return n.flatMap(controlliF9)
+  const x = n as Record<string, unknown> & { type?: string; props?: Record<string, unknown>; children?: unknown }
+  const gestori = Object.keys(x).filter(k => !['type', 'props', 'children'].includes(k) && !!x[k] && typeof x[k] === 'object' && 'handle' in (x[k] as object)).sort()
+  const p = x.props ?? {}
+  const proprio = gestori.length || ['Button', 'Select', 'Input'].includes(x.type ?? '')
+    ? [{ tipo: x.type, chiave: p.key, label: p.label, hotkey: p.hotkey, variant: p.variant, value: p.value, options: p.options, gestori }] : []
+  return [...proprio, ...controlliF9(x.children)]
+}
+
+/** Toglie da un valore ciò che cambia a ogni esecuzione (istanti, gettoni di tentativo, id generati). */
+export const normaF9 = (v: unknown) =>
+  JSON.parse(JSON.stringify(v ?? null)
+    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, 'ISTANTE')
+    .replace(/az-[a-z0-9]{6,20}/g, 'az-TENTATIVO')
+    // L'ora del giorno (per esempio nell'etichetta di «Aggiorna»): dipende dall'orologio della prova.
+    .replace(/\b\d{1,2}:\d{2}( ?[ap]m)?\b/gi, 'HH:MM')
+    .replace(/"(gettone|tentativo|epoca|handle)":\s*"?[^",}]*"?/g, '"$1":"X"')) as unknown
+
+const mancanti: [string, unknown][] = []
+
+/**
+ * Confronta `chiave` con la fotografia «prima» (tests/f9-prima.ts). Una chiave che la fotografia non ha ancora si
+ * raccoglie: `fineF9` la restituisce in un errore, da cui si scrive la fotografia (solo dal codice prima di F9).
+ */
+export function confrontaF9(chiave: string, valore: unknown) {
+  const v = normaF9(valore)
+  if (!(chiave in PRIMA)) mancanti.push([chiave, v])
+  else expect([chiave, v]).toEqual([chiave, PRIMA[chiave]])
+}
+
+/** Alla fine di ogni test F9: se mancano chiavi nella fotografia, il test fallisce e le stampa. */
+export function fineF9() {
+  if (!mancanti.length) return
+  const testo = JSON.stringify(Object.fromEntries(mancanti.splice(0)))
+  throw new Error(`F9FOTO<<${testo}>>F9FOTO`)
+}

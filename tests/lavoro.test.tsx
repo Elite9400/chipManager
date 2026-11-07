@@ -7,6 +7,7 @@ import { ACCENTO, contrasto, GRIGIO, ICONA, MOTORE, SFONDI, sopra, STATO } from 
 import type { Azione, Limite } from '../types'
 import { t } from '../hooks/lingua'
 import { DiscoIt } from './disco-it'
+import { confrontaF9, controlliF9, fineF9 } from './f9'
 
 type On = Parameters<TestBody>[1]
 const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
@@ -78,7 +79,10 @@ function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexO
   })
   on('fs.write', (_, e) => (disco.set(p(e.path), e.text), { value: undefined }))
   on('ui.panes', () => ({ value: [{ id: 'chipManager', title: 'chipManager', isShown: true, isFocused: false, isPlaced: true }] }))
+  // F9: gli argomenti di ogni processo (helper compreso), per confrontare gli effetti prima e dopo.
+  const processi: string[][] = []
   on('process.run', (_, e) => {
+    processi.push([...e.argv].slice(2))
     const [, , cmd, ...a] = e.argv
     const fine = (exitCode: number, stdout = '') => ({ value: { exitCode, stdout, stderr: '' } as never })
     if (e.argv[1]?.endsWith('/fornitori.cjs'))
@@ -120,7 +124,7 @@ function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexO
   on('command.register', () => ({ value: { command: 'chipmanager' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   const azione = (id: string) => JSON.parse(disco.get(`${DIR}/${id}.json`)!) as Azione
-  return { disco, chiamate, toast, azione, avvii: () => chiamate.filter(c => c.tool === 'start_session') }
+  return { disco, chiamate, toast, processi, azione, avvii: () => chiamate.filter(c => c.tool === 'start_session') }
 }
 
 const PANE = (surface: 'desktop' | 'terminal', colonne: number) =>
@@ -767,4 +771,71 @@ test('F8.1 guardia: le schede delle viste hanno come etichetta il solo nome, in 
     await ui.unmount()
   }
   for (const k of ['ui.selezionato', 'ui.nonSelezionato', 'vista.etichettaScelta']) expect(t('it', k as never)).toBe(k)
+})
+
+// --- F9: garanzia di non regressione (elenco ordinato dei controlli ed effetti dei callback, prima e dopo) ----------
+
+const SEZIONI_F9 = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda']
+const PANE_F9 = (surface: 'desktop' | 'terminal' | 'mobile', colonne: number) =>
+  ({ ...PANE(surface === 'mobile' ? 'desktop' : surface, colonne), surface }) as unknown as ReturnType<typeof PANE>
+
+test('F9 non regressione: elenco ordinato dei controlli per vista e per superficie uguale a prima di F9 (chiavi e scorciatoie uniche)', async ($, on) => {
+  const amb = ambiente(on, MATRICE_EN)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', account: { apiClaude: { budgetUsd: 20, tetto: 2 } }, progetti: { 'acme/progetto': {} } }))
+  mock.clock(on)
+  for (const surface of ['desktop', 'terminal', 'mobile'] as const) {
+    await $.session.start({ cwd: '/', surface: surface === 'mobile' ? 'desktop' : surface, isInteractive: true })
+    const ui = await $.ui.mount(PANE_F9(surface, surface === 'terminal' ? 100 : 130))
+    const foto = async (vista: string) => {
+      const c = controlliF9(await ui.drawn())
+      const chiavi = c.map(x => x.chiave).filter(k => k !== undefined)
+      const scorciatoie = c.map(x => x.hotkey).filter(k => k !== undefined)
+      expect([vista, chiavi.filter((k, i) => chiavi.indexOf(k) !== i)]).toEqual([vista, []])
+      expect([vista, scorciatoie.filter((k, i) => scorciatoie.indexOf(k) !== i)]).toEqual([vista, []])
+      confrontaF9(`controlli:${surface}:${vista}`, c)
+    }
+    await ui.press({ key: 'vista-lavoro' })
+    await foto('lavoro')
+    await ui.press({ key: 'mod-a-avviab01' })
+    await foto('lavoro-dettagli')
+    await ui.press({ key: 'mod-a-avviab01' })
+    await ui.press({ key: 'vista-carico' })
+    await foto('carico')
+    await ui.press({ key: 'impostazioni' })
+    for (const s of SEZIONI_F9) {
+      await ui.press({ key: `sezione-${s}-premi` })
+      await foto(`impostazioni-${s}`)
+    }
+    await ui.press({ key: 'vista-lavoro' })
+    await ui.unmount()
+  }
+  fineF9()
+})
+
+test('F9 non regressione: gli effetti di Avvia, Dove, Scarta e Applica (chiamate all\'helper e all\'app, scritture) uguali a prima', { options: { anthropicApiKey: 'sk-ant-prova-0123456789' } }, async ($, on) => {
+  const amb = ambiente(on, MATRICE_EN)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', account: { apiClaude: { budgetUsd: 20, tetto: 2 } }, progetti: { 'acme/progetto': {} } }))
+  const processi = amb.processi
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 130))
+  const fotografa = async (nome: string, fai: () => Promise<unknown>) => {
+    const p0 = processi.length
+    const c0 = amb.chiamate.length
+    const prima = new Map(amb.disco)
+    await fai()
+    const scritti = [...amb.disco.entries()].filter(([k, v]) => prima.get(k) !== v).map(([k, v]) => [k, k.endsWith('.json') ? JSON.parse(v) : v]).sort()
+    confrontaF9(`effetti:${nome}`, { helper: processi.slice(p0).filter(a => !['occupata', 'limiti'].includes(a[0] ?? '')), app: amb.chiamate.slice(c0), scritti })
+  }
+  await fotografa('dove', () => ui.press({ key: 'dove-a-avviab01' }))
+  await fotografa('avvia', () => ui.press({ key: 'avvia-a-avviab01' }))
+  await fotografa('scarta', () => ui.press({ key: 'scarta-a-blocca01' }))
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-bilanciamento-premi' })
+  await fotografa('applica', async () => {
+    await ui.press({ key: 'profilo-risparmio-premi' })
+    await ui.press({ key: 'applica' })
+  })
+  await ui.unmount()
+  fineF9()
 })

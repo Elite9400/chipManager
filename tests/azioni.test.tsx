@@ -76,6 +76,7 @@ import type { Azione, Chiamante, Consumo, Limite, Regole } from '../types'
 import { applicaPatch, diversoDa, presetChi, TETTO_RISORSE } from '../hooks/bilanciamento'
 import type { Consiglio } from '../hooks/logica'
 import { DiscoIt } from './disco-it'
+import { confrontaF9, controlliF9, fineF9 } from './f9'
 import { chiaveOTesto } from '../hooks/lingua'
 import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
 import { chiaveRiassunto } from '../hooks/board'
@@ -3484,4 +3485,40 @@ test('UX agenti (7): suggerisci_azione rifiuta con tutti gli errori in una volta
   expect(tipi.deny ?? tipi.text).toContain('titolo: text up to 200 characters')
   expect(tipi.deny ?? tipi.text).toContain('brief: text up to 20000 characters')
   expect(tipi.deny ?? tipi.text).toContain('dipende: list of ids')
+
+// --- F9: garanzia di non regressione per «Cambia» (le altre azioni in lavoro.test.tsx) --------------------------------
+
+test('F9 non regressione: «Cambia» modello ed effort, i controlli della sessione al lavoro e le chiamate prodotte uguali a prima', async ($, on) => {
+  const amb = ambiente(on, {
+    strumenti: STRUMENTI_CAMBIO,
+    mcp: (_s, tool, args) => {
+      const x = args as { session_id?: string }
+      if (tool === 'set_session_model' || tool === 'set_session_effort') return { isError: false, content: [{ type: 'text', text: 'ok' }] }
+      if (tool === 'get_session' && x.session_id === SID) return { isError: false, content: [{ type: 'text', text: JSON.stringify({ model: 'claude-sonnet-5-5', effort: 'xhigh' }) }] }
+      return undefined
+    },
+  })
+  const a = alLavoro('a-cmbf9001')
+  amb.disco.set(`X:/orch/azioni/${a.id}.json`, JSON.stringify(a))
+  rispondiCambia(on, 'Cambia')
+  mock.clock(on)
+  for (const surface of ['desktop', 'terminal'] as const) {
+    await $.session.start({ cwd: '/', surface, isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE(surface) })
+    await ui.press({ key: 'ricarica' })
+    confrontaF9(`controlli:${surface}:sessione-al-lavoro`, controlliF9(await ui.drawn()))
+    await ui.unmount()
+  }
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  const record = () => JSON.parse(amb.disco.get(`X:/orch/azioni/${a.id}.json`)!) as Azione
+  const c0 = amb.chiamate.length
+  await ui.select({ key: `cambia-mod-${a.id}`, value: 'claude-sonnet-5-5' })
+  await finche(() => record().cambio?.esito === 'fatto')
+  await ui.select({ key: `cambia-eff-${a.id}`, value: 'xhigh' })
+  await finche(() => record().cambio?.campo === 'effort')
+  confrontaF9('effetti:cambia', { app: amb.chiamate.slice(c0).filter(c => c.tool !== 'list_sessions'), record: { ...record(), versione: 0 } })
+  await ui.unmount()
+  fineF9()
 })
