@@ -135,3 +135,18 @@ Il **terminale** resta nello stile developer di F5.2/F8, ripulito come `terminal
 - **Valori degli `Input` — accolto.** L'elenco dei controlli confrontato include anche `value` degli `Input`, per esempio il filtro di `vista-lavoro.tsx`, oltre a opzioni e valore dei `Select`.
 - **Anteprima del terminale — accolto.** Il kit non dipinge, quindi l'anteprima del terminale è una **simulazione testuale dichiarata**, ricavata dall'albero disegnato a larghezza fissa e marcata in chiaro come «simulazione, non resa dell'host». La resa vera del terminale viene solo dalle catture reali del committente.
 - **Dato di contrasto — accolto.** I valori corretti di `ACCENTO` sono: 3,99:1 su `#FFFFFF`, **3,80:1 su `#262624`**, 5,27:1 su `#000000`. La soglia grafica 3:1 resta soddisfatta e il marchio in grassetto la rispetta su tutti e tre gli sfondi.
+
+## Attuazione: valori finali (7 novembre 2026)
+
+- **Veli.** `VELO.pillola` = `14`; `VELO.riquadro` (fondo della scheda) passa da `14` a `0A`: con `14` nessuna tinta
+  regge 3:1 sul proprio velo sopra la scheda su tutti e quattro gli sfondi (massimo ≈ 2,95:1, misurato); con `0A` sì.
+- **Tinte ritoccate nella luminosità** (stessa tinta), minimo misurato su chiaro e scuro, fermo e hover, e sugli sfondi
+  nudi: motore Claude `#C06547`, Codex `#0D9070`, FreeLLMAPI `#B662A1`; stati in corso `#189245`, attesa `#B46F09`,
+  errore `#E14444`, coda `#6C80A1`, consegnata `#8277B4`. Tutte fra 3,04:1 e 3,07:1. L'errore della board resta
+  `#DC2626` perché è testo (≥ 4,5:1).
+- **Famiglie:** Opus `#BE682F`, Sonnet `#1B8B9E`, Haiku `#5D8C23`, Fable `#A662CA`, GPT `#3282D1`.
+- **Effort** (blu → indaco → viola): low `#4982C2`, medium `#487CE2`, high `#6775E4`, xhigh `#806FDF`, max `#9469D3`.
+- **Marchio:** `MARCHIO = { glifo: '▣', colore: ACCENTO }`, deroga scritta in `tema.ts`.
+- **Non fatto in F9** (resta come oggi): «Chi lavora» in pillole e le sessioni al lavoro in schede compatte; la
+  primitiva `Pulsante` (i pulsanti restano quelli dell'host, con le stesse varianti, per non toccare l'elenco dei
+  controlli).

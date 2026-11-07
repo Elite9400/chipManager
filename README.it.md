@@ -590,7 +590,21 @@ attraverso un file `apiKeyHelper` che si cancella a fine esecuzione.
 
 ## Aspetto
 
-Il pannello segue uno stile developer, uguale su desktop e terminale:
+Due grafiche, un solo comportamento: il desktop è ricco, il terminale resta in stile developer. Mostrano gli stessi
+dati e offrono le stesse azioni, con le stesse chiavi ed etichette, nello stesso ordine.
+
+- **Desktop.** Ogni chip è una scheda su fondo appena velato, con angoli arrotondati; gli attributi sono pillole,
+  ciascuna con il velo della propria tinta: `◆` motore, `●` famiglia del modello (Opus, Sonnet, Haiku, Fable, GPT),
+  blocchi dell'effort in una scala dal blu all'indaco, `↺` revisore, `▲` sensibile. Le chip sensibili e bloccate hanno
+  il bordo rosso; una chip in coda mostra una fascia ambra con `◔`. Le intestazioni delle sezioni sono in maiuscolo con
+  il conteggio a destra; le barre d'uso sono spesse; le sezioni delle Impostazioni sono schede e la barra **Applica** è
+  in evidenza.
+- **Terminale.** Una riga compatta per gruppo di attributi — `◆ Claude · ● Opus 5.5 · ▰▰▱▱ medium · ↺ rivede Codex` —
+  con glifi colorati, testo nell'inchiostro del terminale e barre a blocchi `▕████▌   ▏`.
+- **Il marchio.** «▣ chip**Manager**»: il glifo e «Manager» (in grassetto) nell'accento, «chip» nell'inchiostro, poi il
+  progetto e la versione. È l'unica eccezione dichiarata al «testo solo nell'inchiostro dell'host».
+
+Comune alle due:
 
 - **Gli stati sono un glifo e una parola**, mai il solo colore: `● In corso`, `○ In coda`, `◐ In avvio`,
   `? Avvio incerto`, `✓ Consegnata`, `✗ Avvio fallito`, `⏸ Ferma`.
@@ -759,6 +773,8 @@ Il lavoro è stato pianificato in fasi e blocchi, che nel pannello non compaiono
   con un clic.
 - **F7** — [sessioni e mod](docs/PIANO-F7.md): proposte di impostazioni, «Cambia», auditor, «Chi lavora».
 - **F8** — [revisione grafica](docs/PIANO-F8.md): etichette di stato, hover, token dei colori, rifinitura di «Chi lavora».
+- **F9** — [due grafiche](docs/PIANO-F9.md): desktop ricco e terminale developer, marchio, colori per famiglie di
+  modelli ed effort.
 - **F10** — [account e progetto](docs/PIANO-F10.md): installazione per progetto o globale, impostazioni dell'account per
   tutti i progetti, restrizioni del progetto, un solo registro della spesa API.
 

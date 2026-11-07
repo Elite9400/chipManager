@@ -113,6 +113,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Changed
 
+- **Two looks, one behaviour.** The desktop is rich: chips are cards on a lightly tinted background, attributes are
+  pills with the veil of their own tint (engine, model family, effort, reviewer, sensitive), sensitive and blocked chips
+  have a red border, a queued chip shows an amber band, section headers are uppercase with the count, usage bars are
+  thick, Settings sections are cards and the Apply bar is highlighted. The terminal keeps the developer style, with the
+  same attributes on one compact line. Both show the same data and the same actions, with the same keys, labels and
+  order: a test compares the ordered list of controls of every view and surface, and the effects of Start, Where,
+  Discard, Change and Apply, with those recorded before the redesign.
+- **New title and brand**: «▣ chip**Manager**» with the glyph and «Manager» in the accent, the project and the version;
+  the summary line becomes pills on the desktop. The board uses the same brand.
+- **Colours for model families and effort**: one dot colour per family (Opus, Sonnet, Haiku, Fable, GPT) and an effort
+  scale from blue to indigo and violet, never red or yellow. Every sign holds at least 3:1 on its own veil over the
+  card, on light and dark backgrounds and under the pointer; the engine and state tints were adjusted in lightness for
+  this.
 - **Developer style.** States are a glyph and a word, never colour alone; data in monospace, effort as `▰▰▱▱`
   bars and usage as block bars with both ends labelled. Text uses the host's own ink and dim colour; the accent
   `#0A86C9` marks only graphics (borders, bars, glyphs, veils), at least 3:1 on light and dark backgrounds. Every
@@ -197,7 +210,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - The auditor is set per session only on the API lane; on desktop and terminal sessions `/advisor` changes your
   default for every session.
 - Extra usage credits in the cloud are not documented: check on your account.
-- Dimmed text, hover and keyboard focus on the desktop app were verified only in manual testing.
+- Dimmed text, hover and keyboard focus on the desktop app were verified only in manual testing; the desktop and
+  terminal looks are checked on real captures, not by the tests, which check structure, controls and contrast.
 
 Development history: the plans behind this release, in Italian, are in [`docs/`](docs/).
 

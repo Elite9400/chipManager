@@ -32,12 +32,12 @@ import {
   valoreConfig,
 } from './bilanciamento'
 import type { Profilo } from './bilanciamento'
-import { cartellaDati, conMisura, connesso, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, passiMancanti, piuPieno, SOGLIA_PREDEFINITA, sogliaDi, TETTO_API_PREDEFINITO } from './logica'
+import { cartellaDati, conMisura, connesso, durata, endpointLocale, FORNITORI, livelloDi, nomeModello, passiMancanti, piuPieno, SOGLIA_PREDEFINITA, sogliaDi, TETTO_API_PREDEFINITO, velo } from './logica'
 import type { Ctx, Dati } from './pannello'
 import { eMsg, Errore, LEGENDA, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
 import type { Chiave, Lingua, T } from './lingua'
 import { INSTALLAZIONE, nomeLimiteIn, unitaIn } from './risorse'
-import { GRIGIO, LIVELLO, STATO } from './tema'
+import { ACCENTO, ALFA_VELO, GRIGIO, LIVELLO, STATO } from './tema'
 import { componenti } from './ui'
 
 type StatoVista = StatoImpostazioni
@@ -1046,7 +1046,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
               : connessioni()
 
   return (
-    <Box key="configurazione" flexDirection="column" gap={1}>
+    <Box key="configurazione" flexDirection="column" gap={terminale ? 1 : 2}>
       {/* F10: le sezioni in due gruppi, Account (tutti i progetti) e Progetto (owner/repo). */}
       <Box key="sezioni" flexDirection="column" gap={1}>
         {[true, false].map(account => (
@@ -1078,7 +1078,9 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       {vista.propostaInCoda ? nota1('proposta-in-coda', STATO.coda, '◔', T('imp.propostaInCoda', { da: vista.propostaInCoda.proponente.titolo || vista.propostaInCoda.proponente.id.slice(0, 14) })) : null}
       {corpo}
       {pendenti > 0 && (
-        <Box key="pendenti" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center" borderStyle="single" borderDimColor paddingX={1}>
+        // F9.4: la barra «Applica» in evidenza sul desktop: bordo e velo d'accento (il testo resta nell'inchiostro).
+        <Box key="pendenti" flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center" borderStyle={terminale ? 'single' : 'round'}
+          borderColor={terminale ? undefined : ACCENTO} borderDimColor={terminale} backgroundColor={terminale ? undefined : velo(ACCENTO, ALFA_VELO)} paddingX={1}>
           <Text key="pendenti-n">{vista.applicando && inVolo ? T('imp.salvando') : T('imp.nonSalvate', { n: pendenti })}</Text>
           <Button key="applica" variant="primary" hotkey="s" label={T('imp.applica')} onPress={() => void applicaBozza($, c, T)} />
           <Button key="annulla-modifiche" plain dimColor label={T('imp.annullaModifiche')} onPress={() => void inBozza(s => ({ ...s, pendenti: undefined, errore: undefined }))} />

@@ -3,11 +3,11 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { ACCENTO, contrasto, GRIGIO, ICONA, MOTORE, SFONDI, sopra, STATO } from '../hooks/tema'
+import { ACCENTO, contrasto, EFFORT, FAMIGLIA, GRIGIO, ICONA, MOTORE, SFONDI, sopra, STATO } from '../hooks/tema'
 import type { Azione, Limite } from '../types'
 import { t } from '../hooks/lingua'
 import { DiscoIt } from './disco-it'
-import { confrontaF9, controlliF9, fineF9 } from './f9'
+import { ANTEPRIMA, confrontaF9, controlliF9, fineF9 } from './f9'
 
 type On = Parameters<TestBody>[1]
 const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
@@ -298,7 +298,9 @@ test('C1: i colori del pannello sono solo gettoni di tema.ts; ogni segno colorat
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await clock.advance(20_000)
-  const gettoni = new Set<string>([ACCENTO, GRIGIO, ...Object.values(STATO), ...Object.values(MOTORE)])
+  // F9.2: anche le famiglie dei modelli e la scala dell'effort; ogni segno si misura sul fondo composto (velo della pillola,
+  // fondo della scheda, eventuali altri veli), come prima.
+  const gettoni = new Set<string>([ACCENTO, GRIGIO, ...Object.values(STATO), ...Object.values(MOTORE), ...Object.values(FAMIGLIA), ...Object.values(EFFORT)])
   const visti = new Set<string>()
   // `fondi`: i backgroundColor degli antenati (con il loro alfa), dal più esterno; il segno si misura sul fondo composto.
   const visita = (n: unknown, fondi: string[] = []): void => {
@@ -838,4 +840,35 @@ test('F9 non regressione: gli effetti di Avvia, Dove, Scarta e Applica (chiamate
   })
   await ui.unmount()
   fineF9()
+})
+
+// F9.5: l'anteprima per il committente. Solo con ANTEPRIMA a true (tests/f9.ts): il test restituisce gli alberi
+// disegnati (desktop e terminale, viste Lavoro, Carico e Impostazioni con le fixture d'esempio) in un errore marcato, da
+// cui uno script fuori dal repo genera l'HTML e la simulazione testuale. Nelle prove normali non fa niente.
+test('F9.5 anteprima (solo con ANTEPRIMA in tests/f9.ts): gli alberi disegnati delle viste, desktop e terminale', async ($, on) => {
+  if (!ANTEPRIMA) return
+  const amb = ambiente(on, MATRICE_EN, [
+    { id: 'claude-week', fornitore: 'claude', nome: 'Claude plan · weekly', percentuale: 42, unita: '%', fonte: 'app', letto: new Date().toISOString() },
+    { id: 'codex-prim', fornitore: 'codex', nome: 'Codex plan · primary', percentuale: 76, unita: '%', fonte: 'codex', letto: new Date().toISOString() },
+  ])
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', account: { apiClaude: { budgetUsd: 20, tetto: 2 } }, progetti: { 'acme/progetto': { soglie: { claude: { attenzione: 50, critica: 60 } } } } }))
+  const clock = mock.clock(on)
+  const alberi: Record<string, unknown> = {}
+  for (const [surface, colonne] of [['desktop', 110], ['terminal', 100]] as const) {
+    await $.session.start({ cwd: '/', surface, isInteractive: true })
+    await clock.advance(20_000)
+    const ui = await $.ui.mount(PANE(surface, colonne))
+    await ui.press({ key: 'vista-lavoro' })
+    alberi[`${surface}:lavoro`] = await ui.drawn()
+    await ui.press({ key: 'vista-carico' })
+    alberi[`${surface}:carico`] = await ui.drawn()
+    await ui.press({ key: 'impostazioni' })
+    for (const s of ['soglie', 'esecuzione']) {
+      await ui.press({ key: `sezione-${s}-premi` })
+      alberi[`${surface}:impostazioni-${s}`] = await ui.drawn()
+    }
+    await ui.press({ key: 'vista-lavoro' })
+    await ui.unmount()
+  }
+  throw new Error(`F9ANTEPRIMA<<${JSON.stringify(alberi)}>>F9ANTEPRIMA`)
 })

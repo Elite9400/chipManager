@@ -575,7 +575,20 @@ are never deleted automatically. The API Claude lane runs the same way, with the
 
 ## Look and feel
 
-The panel follows a developer style, the same on desktop and terminal:
+Two looks, one behaviour: the desktop is rich, the terminal stays developer-style. Both show the same data and offer
+the same actions, with the same keys and labels, in the same order.
+
+- **Desktop.** Each chip is a card on a lightly tinted background with rounded corners; its attributes are pills, each
+  with the veil of its own tint: `◆` engine, `●` model family (Opus, Sonnet, Haiku, Fable, GPT), effort blocks in a
+  blue-to-indigo scale, `↺` reviewer, `▲` sensitive. Sensitive and blocked chips have a red border; a queued chip shows
+  an amber band with `◔`. Section headers are uppercase with the count on the right; usage bars are thick; Settings
+  sections are cards and the **Apply** bar is highlighted.
+- **Terminal.** One compact line per attribute group — `◆ Claude · ● Opus 5.5 · ▰▰▱▱ medium · ↺ reviewed by Codex` —
+  with coloured glyphs, text in the terminal's ink and block bars `▕████▌   ▏`.
+- **The brand.** «▣ chip**Manager**»: the glyph and «Manager» (bold) in the accent, «chip» in ink, then the project and
+  the version. It is the one declared exception to "text only in the host's ink".
+
+Common to both:
 
 - **States are a glyph and a word**, never colour alone: `● Running`, `○ Queued`, `◐ Starting`,
   `? Start uncertain`, `✓ Delivered`, `✗ Start failed`, `⏸ Stopped`.
@@ -739,6 +752,8 @@ The work was planned in phases and blocks, which are not shown in the panel. The
 - **F6** — [where it runs](docs/PIANO-F6.md): cloud, API Claude credits, destination advisor, one-click setup.
 - **F7** — [sessions and the mod](docs/PIANO-F7.md): settings proposals, «Change», auditor, «Who works».
 - **F8** — [graphic review](docs/PIANO-F8.md): status labels, hover, colour tokens, «Who works» polish.
+- **F9** — [two looks](docs/PIANO-F9.md): rich desktop and developer terminal, brand, colours for model families and
+  effort.
 - **F10** — [account and project](docs/PIANO-F10.md): install per project or globally, account settings for all
   projects, project restrictions, one API spend log.
 

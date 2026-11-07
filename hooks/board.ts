@@ -18,7 +18,7 @@ import {
   mandato,
 } from './logica'
 import type { Strumenti } from './logica'
-import { cssVariabiliBoard } from './tema'
+import { cssVariabiliBoard, MARCHIO } from './tema'
 import { giorno, LEGENDA, letto, ora, traduttore } from './lingua'
 import type { Lingua, T } from './lingua'
 
@@ -186,7 +186,7 @@ ${a.background ? `<h4>${esc(T('board.background'))}</h4><pre>${esc(a.background)
 const CSS = `${cssVariabiliBoard()}
 body{background:var(--fondo);color:var(--testo);font:14px/1.45 system-ui,sans-serif;max-width:960px;margin:0 auto;padding:16px}
 code,pre,dd,summary .tenue{font-family:var(--mono);font-size:13px}
-h1{margin:0 0 4px}h2{border-bottom:2px solid var(--accento);padding-bottom:4px;margin-top:32px}h4{margin:16px 0 4px}
+h1{margin:0 0 4px}.marchio b,.glifo{color:var(--accento)}h2{border-bottom:2px solid var(--accento);padding-bottom:4px;margin-top:32px}h4{margin:16px 0 4px}
 details{border:1px solid var(--bordo);border-radius:4px;margin:4px 0;padding:4px 10px}summary{cursor:pointer;font-weight:600}
 details:target{outline:2px solid var(--accento)}.segno{color:var(--accento)}.tenue{color:var(--tenue);font-weight:400}
 .errore,.segno.fallita{color:var(--errore)}pre{white-space:pre-wrap;word-break:break-word;background:var(--velo);padding:8px;border-radius:4px;max-height:480px;overflow:auto}
@@ -224,7 +224,7 @@ export function board(d: DatiBoard): string {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 ${d.impronta ? `<meta name="chipmanager-impronta" content="${esc(d.impronta)}">` : ''}
 <title>Board · ${esc(d.progetto)}</title><style>${CSS}</style></head><body>
-<header><h1>${esc(d.progetto)}</h1>
+<header><h1><span class="marchio"><span class="glifo">${MARCHIO.glifo}</span> ${MARCHIO.nome[0]}<b>${MARCHIO.nome[1]}</b></span> <span class="tenue">· ${esc(d.progetto)}</span></h1>
 <p class="tenue">${esc(T('board.generata', { quando: data(T, d.generata), versione: d.versione, fonte: d.regole.lette ? d.regole.fonte : T('regole.nonLetteAncora') }))}</p>
 <p>${esc([T('sintesi.alLavoro', { n: inCorso.filter(a => a.stato === 'avviata').length }), T('board.sintesiAttesa', { n: attesa.length }), T('sintesi.daAvviare', { n: lista.filter(a => a.stato === 'proposta').length })].join(' · '))}</p></header>
 <main>

@@ -46,3 +46,9 @@ export function fineF9() {
   const testo = JSON.stringify(Object.fromEntries(mancanti.splice(0)))
   throw new Error(`F9FOTO<<${testo}>>F9FOTO`)
 }
+
+/**
+ * F9.5: l'anteprima per il committente. Spento nelle prove; per ricavare gli alberi disegnati si mette a true in locale,
+ * si eseguono le prove e si rimette a false (l'anteprima si genera fuori dal repo da quegli alberi).
+ */
+export const ANTEPRIMA = false

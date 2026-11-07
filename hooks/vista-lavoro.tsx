@@ -45,7 +45,7 @@ import type { Msg } from './lingua'
 import type { Dati } from './pannello'
 import { diversoDa, presetChi, PRESET_CHI, PROFILI } from './bilanciamento'
 import type { PresetChi } from './bilanciamento'
-import { ACCENTO, GRIGIO, MOTORE, STATO, VELO } from './tema'
+import { ACCENTO, EFFORT, FAMIGLIA, famigliaDi, GRIGIO, MOTORE, STATO, VELO } from './tema'
 
 // Copia identica degli atomi di register.tsx (lo scanner li vuole nel file che li usa).
 const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as Msg | string | null)
@@ -483,22 +483,32 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     </Box>
   )
 
-  /** Le informazioni di lavoro in inchiostro: il colore solo sul ◆ del motore e sul ▲ della corsia sensibile. */
+  /**
+   * Le informazioni di lavoro come pillole (F9.2): il segno nella sua tinta (◆ motore, ● famiglia del modello, blocchi
+   * dell'effort nella scala blu→indaco, ↺ revisore, ▲ sensibile) e la parola nell'inchiostro. Sul desktop ognuna ha il
+   * velo della propria tinta; nel terminale stanno in fila, separate da «·».
+   */
   const infoLavoro = (a: Azione) => {
     const effort = effortDi(a, regoleOra)
     const corsia = corsiaDi(a, regoleOra)
     const prima = a.dipende.map(x => tutte.find(y => y.id === x)?.titolo ?? x)
     const ms = milestoneDi(a)
-    return pezzi(`info-${a.id}`, [
-      <Text><Text color={MOTORE[a.esecutore]}>{'◆ '}</Text>{motore(a.esecutore)}</Text>,
-      <Text mono>{nomeModello(modelloDi(a, regoleOra))}</Text>,
-      <Text mono>{`${barreEffort(effort)} ${effort}`}</Text>,
-      <Text>{a.revisore === 'nessuno' ? T('info.senzaRevisione') : T('info.rivede', { motore: motore(a.revisore) })}</Text>,
-      sensibile(a, regoleOra) ? <Text><Text color={STATO.errore}>{'▲ '}</Text>{T('info.sensibile', { corsia: corsia ?? 'R4' })}</Text> : corsia && <Text mono>{corsia}</Text>,
-      a.issue && <Text mono>{`#${a.issue}`}</Text>,
-      ms && <Text>{`◎ ${corto(ms.titolo, 28)}`}</Text>,
-      prima.length > 0 && <Text>{T('info.dopo', { titoli: corto(prima.join(T('info.separatore')), 40) })}</Text>,
-    ])
+    const modello = modelloDi(a, regoleOra)
+    const famiglia = famigliaDi(modello)
+    const k = `info-${a.id}`
+    return ui.Pillole({ chiave: k, voci: [
+      ui.Pillola({ chiave: `${k}-motore`, segno: '◆', colore: MOTORE[a.esecutore], testo: motore(a.esecutore) }),
+      ui.Pillola({ chiave: `${k}-modello`, segno: '●', colore: famiglia ? FAMIGLIA[famiglia] : GRIGIO, testo: nomeModello(modello), mono: true }),
+      ui.Pillola({ chiave: `${k}-effort`, segno: barreEffort(effort), colore: EFFORT[effort as keyof typeof EFFORT] ?? GRIGIO, testo: effort, mono: true }),
+      ui.Pillola({ chiave: `${k}-rev`, segno: '↺', colore: a.revisore === 'nessuno' ? GRIGIO : MOTORE[a.revisore],
+        // Il ↺ sta già nel segno della pillola: dalla frase si toglie quello iniziale.
+        testo: a.revisore === 'nessuno' ? T('info.senzaRevisione') : T('info.rivede', { motore: motore(a.revisore) }).replace(/^↺\s*/, '') }),
+      sensibile(a, regoleOra) ? ui.Pillola({ chiave: `${k}-sensibile`, segno: '▲', colore: STATO.errore, testo: T('info.sensibile', { corsia: corsia ?? 'R4' }) })
+        : corsia && <Text key={`${k}-corsia`} mono>{corsia}</Text>,
+      a.issue && <Text key={`${k}-issue`} mono>{`#${a.issue}`}</Text>,
+      ms && <Text key={`${k}-ms`}>{`◎ ${corto(ms.titolo, 28)}`}</Text>,
+      prima.length > 0 && <Text key={`${k}-dopo`}>{T('info.dopo', { titoli: corto(prima.join(T('info.separatore')), 40) })}</Text>,
+    ] })
   }
   /** La chip dello stato, con il segno nel suo colore e la parola nell'inchiostro. */
   const chipStato = (a: Azione) => {
@@ -559,7 +569,12 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
             {T('info.sblocca', { n: sblocca })}
           </Text>
         )}
-        {a.stato === 'accodata' && a.motivoCoda && nota1(`coda-${a.id}`, STATO.coda, '◔', T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) }))}
+        {/* F9.4: un'attesa è una fascia ambra dentro la scheda sul desktop, con ◔; nel terminale la riga di sempre. */}
+        {a.stato === 'accodata' && a.motivoCoda && (conVelo ? (
+          <Box key={`coda-${a.id}-fascia`} flexDirection="row" paddingX={1} backgroundColor={velo(STATO.attesa, VELO.pillola)}>
+            {nota1(`coda-${a.id}`, STATO.attesa, '◔', T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) }))}
+          </Box>
+        ) : nota1(`coda-${a.id}`, STATO.coda, '◔', T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) })))}
         {a.contesto === 'fork' && a.origineFork && (
           <Text size="caption" dimColor>
             {a.origineFork === io?.io
@@ -814,7 +829,8 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const bloccatoQui = a.stato === 'proposta' ? violazioniAvvio(a, regoleOra, tutte, io, true) : []
     const bloccata = blocchi.length > 0
     const mia = !!io && a.lanciataDa === io.io
-    const allerta = bloccata || a.stato === 'fallita' ? STATO.errore : ferma(a) ? STATO.attesa : undefined
+    // F9.4: anche le sensibili (R4/R5) hanno il bordo rosso, come la loro pillola ▲.
+    const allerta = bloccata || a.stato === 'fallita' || sensibile(a, regoleOra) ? STATO.errore : ferma(a) ? STATO.attesa : undefined
     const brief = a.brief.split('\n').find(r => r.trim())?.trim() ?? ''
     const avviata = a.stato === 'avviata' || a.stato === 'consegnata'
     const pulsanti = [
@@ -862,6 +878,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         borderStyle={conVelo ? 'round' : undefined}
         borderColor={conVelo ? allerta : undefined}
         borderDimColor={conVelo && !allerta}
+        backgroundColor={conVelo ? velo(GRIGIO, VELO.riquadro) : undefined}
         paddingX={conVelo ? 1 : 0}
       >
         {testa(
@@ -883,7 +900,12 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
             {corto(brief, Math.max(40, 2 * (colonne - 8)))}
           </Text>
         )}
-        {a.stato === 'accodata' && a.motivoCoda && nota1(`coda-${a.id}`, STATO.coda, '◔', T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) }))}
+        {/* F9.4: un'attesa è una fascia ambra dentro la scheda sul desktop, con ◔; nel terminale la riga di sempre. */}
+        {a.stato === 'accodata' && a.motivoCoda && (conVelo ? (
+          <Box key={`coda-${a.id}-fascia`} flexDirection="row" paddingX={1} backgroundColor={velo(STATO.attesa, VELO.pillola)}>
+            {nota1(`coda-${a.id}`, STATO.attesa, '◔', T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) }))}
+          </Box>
+        ) : nota1(`coda-${a.id}`, STATO.coda, '◔', T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) })))}
         {a.errore && nota1(`err-${a.id}`, STATO.attesa, '!', T.m(letto(a.erroreCodice, a.erroreParametri, a.errore)))}
         {bloccata && nota1(`blocco-${a.id}`, STATO.errore, '▲', `${T('motivi.primo', { motivo: T.m(blocchi[0]) })}${blocchi.length > 1 ? ` (+${blocchi.length - 1})` : ''}`)}
         <Box key={`azioni-${a.id}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">

@@ -585,7 +585,8 @@ test('suggerisci, rivedi le opzioni, avvia una volta sola', async ($, on) => {
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE(surface) })
-    expect(await ui.find({ type: 'Text', text: /^Da avviare e in coda/ })).toBeDefined()
+    // F9.4 supera la forma: sul desktop l'intestazione è in maiuscolo («DA AVVIARE E IN CODA»), nel terminale no.
+    expect(await ui.find({ type: 'Text', text: /^Da avviare e in coda/i })).toBeDefined()
     await ui.press({ key: `mod-${id}` })
     expect(await ui.find({ key: `perm-${id}` })).toBeDefined()
     await ui.select({ key: `perm-${id}`, value: 'auto' })
@@ -1523,7 +1524,8 @@ test('2.0: fonti sconosciute, vecchie, future e manuali non fingono margini fres
   expect(limiteFresco(vecchio)).toBe(false)
   expect(limiteFresco({ ...LIMITE, letto: '2999-01-01T00:00:00Z' })).toBe(false)
   expect(coloreLimite(vecchio)).toBe('#808080')
-  expect(coloreLimite({ ...LIMITE, percentuale: 95 })).toBe('#DC2626')
+  // F9.2: la tinta del critico è stata ritoccata (regge 3:1 anche sul proprio velo); il gettone resta STATO.errore.
+  expect(coloreLimite({ ...LIMITE, percentuale: 95 })).toBe(STATO.errore)
   expect(punteggio(base('a-margin01', 1), R, [vecchio], [])).toBe(punteggio(base('a-margin01', 1), R, [], []))
   expect(punteggio(base('a-margin01', 1), R, [{ ...LIMITE, manuale: true }], [])).toBe(punteggio(base('a-margin01', 1), R, [], []))
 })
@@ -1589,7 +1591,8 @@ test('2.0: limiti sempre visibili e impostazioni modificabili su desktop e termi
   for (const surface of ['desktop', 'terminal'] as const) {
     const ui = await $.ui.mount({ ...PANE(surface) })
     await ui.press({ key: 'vista-carico' })
-    expect(await ui.find({ type: 'Text', text: /^Limiti e budget$/ })).toBeDefined()
+    // F9.4: intestazione in maiuscolo sul desktop.
+    expect(await ui.find({ type: 'Text', text: /^Limiti e budget$/i })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^Nessun limite collegato · vai a Impostazioni$/ })).toBeDefined()
     await ui.press({ key: 'impostazioni' })
     // C2: le regolazioni sono a cinque posizioni, dietro «Regola a mano» (che resta aperto fra un montaggio e l'altro).
@@ -2109,8 +2112,9 @@ test('2.3: vista Carico: matrice modello × effort, limiti per fornitore con le 
     expect(await ui.find({ type: 'Text', text: /(GPT-6 Astra|gpt-6-astra): 1 sessione · 61k token/ })).toBeDefined()
     // Su `stretta` la matrice diventa un elenco per modello (C1.4).
     const stretta = colonne < 70
-    for (const testo of [/^Al lavoro per modello ed effort$/, stretta ? /^Sonnet 5\.5: medium 1 \(\+1 in coda\)$/ : /^Sonnet 5\.5$/, /^Limiti e budget$/, /attenzione da 70% · critica da 90%/, /nessuna soglia/,
-      /^Contesto delle sessioni al lavoro$/, /^Guida delle API$/, /^Codex \+50%\. Valgono solo/, /Nessun avvio nelle ultime 24 ore/])
+    // F9.4: le intestazioni sono in maiuscolo sul desktop (stesse parole), da qui il confronto senza maiuscole.
+    for (const testo of [/^Al lavoro per modello ed effort$/i, stretta ? /^Sonnet 5\.5: medium 1 \(\+1 in coda\)$/ : /^Sonnet 5\.5$/, /^Limiti e budget$/i, /attenzione da 70% · critica da 90%/, /nessuna soglia/,
+      /^Contesto delle sessioni al lavoro$/i, /^Guida delle API$/i, /^Codex \+50%\. Valgono solo/, /Nessun avvio nelle ultime 24 ore/])
       expect(await ui.find({ type: 'Text', text: testo })).toBeDefined()
     // Sonnet 5.5 · medium: una sessione al lavoro e una chip in coda nella stessa cella (sull'elenco, nella riga del modello).
     expect((await ui.findAll({ type: 'Text', text: /^1 \+1$/ })).length).toBe(stretta ? 0 : 1)
@@ -2441,7 +2445,8 @@ test('2.3.1: un fornitore misurato, uno vietato con misura: Carico e sintesi mos
     expect(await ui.find({ type: 'Text', text: /Codex 95%|non letti/ })).toBeUndefined()
     await ui.press({ key: 'vista-carico' })
     expect(await ui.find({ type: 'Text', text: /Claude piano · settimanale: 37% usato/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^▕.+▏ 37% usato$/ })).toBeDefined()
+    // F9.4 supera F5.2 per il solo desktop: barra a blocchi nel terminale, barra a Box sul desktop con il valore accanto.
+    expect(await ui.find({ type: 'Text', text: surface === 'terminal' ? /^▕.+▏ 37% usato$/ : /^ ?37% usato$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /non disponibile|FreeLLMAPI|Claude API|DeepSeek|Codex piano|Codex \(95%\)|Nessun limite collegato/ })).toBeUndefined()
     // Impostazioni resta il posto dove si vedono tutti i fornitori e, per gli ammessi, gli errori delle sonde.
     await ui.press({ key: 'impostazioni' })

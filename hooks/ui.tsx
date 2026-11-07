@@ -1,6 +1,10 @@
 // Componenti comuni del pannello (piano grafica, C0.3 con §9 riga 2): funzioni pure che restituiscono alberi,
 // con la stessa API sul desktop e sul terminale. Le chip e la Gamma non imitano controlli HTML: la scelta si
 // legge dal segno (● / ○) e dall'etichetta, il valore della Gamma è scritto e si cambia con − e +.
+// F9.1: due rese per superficie. Desktop (anche vscode e mobile): schede velate con bordo arrotondato, pillole con il
+// velo della propria tinta, intestazioni in maiuscolo, barre spesse fatte di Box. Terminale: lo stile developer di
+// F5.2/F8 (glifi colorati, testo nell'inchiostro, barre a blocchi). Stessi dati, stesse azioni (chiave, label,
+// onPress) nello stesso ordine: cambia solo la presentazione.
 import type { ElementTable, RenderSurface } from 'claude-code'
 
 import { t } from './lingua'
@@ -209,8 +213,17 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
         {p.stato}
       </Text>
     ) : null
+    // F9.4: sul desktop la sezione è una scheda (fondo velato, bordo arrotondato), con il titolo in maiuscolo attenuato.
     return (
-      <Box key={p.chiave} flexDirection="column" gap={1}>
+      <Box
+        key={p.chiave}
+        flexDirection="column"
+        gap={1}
+        borderStyle={terminale ? undefined : 'round'}
+        borderDimColor={!terminale}
+        backgroundColor={terminale ? undefined : velo(GRIGIO, VELO.riquadro)}
+        paddingX={terminale ? 0 : 1}
+      >
         <Box flexDirection={terminale ? 'column' : 'row'} justifyContent="space-between" flexWrap="wrap" gap={terminale ? 0 : 1}>
           <Text weight="semibold" wrap="wrap">
             {p.titolo}
@@ -248,8 +261,23 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     )
   }
 
-  /** La barra a blocchi fra ▕ e ▏, uguale sul desktop e nel terminale (monospazio); `dopo` è il valore scritto. */
+  /**
+   * Una barra d'uso. Terminale: blocchi fra ▕ e ▏ (monospazio). Desktop (F9.4, supera F5.2 e F8 solo qui): una barra
+   * spessa fatta di Box, la parte piena nella tinta del livello e il resto velato; `dopo` è il valore scritto, accanto.
+   */
   function Barra(p: { chiave: string; pct: number; colore: string; celle: number; dopo?: string }) {
+    if (!terminale) {
+      const pieno = Math.round(Math.min(100, Math.max(0, p.pct)))
+      return (
+        <Box key={p.chiave} flexDirection="row" alignItems="center" gap={1}>
+          <Box key={`${p.chiave}-traccia`} flexDirection="row" flexGrow={1} minWidth={p.celle * 2} borderStyle="round" borderDimColor>
+            {pieno > 0 ? <Box key={`${p.chiave}-pieno`} flexGrow={pieno} backgroundColor={p.colore}><Text size="caption"> </Text></Box> : null}
+            {pieno < 100 ? <Box key={`${p.chiave}-vuoto`} flexGrow={100 - pieno} backgroundColor={velo(GRIGIO, VELO.vuoto)}><Text size="caption"> </Text></Box> : null}
+          </Box>
+          {p.dopo ? <Text key={`${p.chiave}-dopo`} mono>{p.dopo}</Text> : null}
+        </Box>
+      )
+    }
     const b = blocchi(p.pct, p.celle)
     return (
       <Text key={p.chiave} mono>
@@ -261,5 +289,98 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     )
   }
 
-  return { Chip, GruppoChip, Gamma, Sezione, Riga, Barra }
+  /**
+   * F9.2: un attributo come pillola: il segno nella sua tinta e la parola nell'inchiostro, mai il solo colore. Desktop: sul
+   * velo della propria tinta (`VELO.pillola`); terminale: segno colorato e parola, in fila con le altre.
+   */
+  function Pillola(p: { chiave: string; segno: string; colore?: string; testo: string; mono?: boolean }) {
+    // La parola è un testo a sé (le prove e i lettori di schermo la trovano intera); lo spazio sta nel segno.
+    const corpo = [
+      <Text key={`${p.chiave}-segno`} color={p.colore}>{`${p.segno} `}</Text>,
+      <Text key={`${p.chiave}-testo`} mono={p.mono}>{p.testo}</Text>,
+    ]
+    if (terminale) return <Text key={p.chiave}>{corpo}</Text>
+    return (
+      <Box key={p.chiave} flexDirection="row" paddingX={1} backgroundColor={p.colore ? velo(p.colore, VELO.pillola) : velo(GRIGIO, VELO.pillola)}>
+        <Text>{corpo}</Text>
+      </Box>
+    )
+  }
+
+  /** Pillole in fila che vanno a capo: sul terminale separate da «·», sul desktop dallo spazio. */
+  function Pillole(p: { chiave: string; voci: unknown[] }) {
+    const voci = p.voci.filter(Boolean)
+    if (!terminale)
+      return (
+        <Box key={p.chiave} flexDirection="row" flexWrap="wrap" gap={1}>
+          {voci as never}
+        </Box>
+      )
+    return (
+      <Box key={p.chiave} flexDirection="row" flexWrap="wrap" columnGap={1}>
+        {voci.map((v, i) => (
+          <Text key={`${p.chiave}-${i}`}>
+            {i ? <Text dimColor>{'· '}</Text> : ''}
+            {v as never}
+          </Text>
+        ))}
+      </Box>
+    )
+  }
+
+  /**
+   * F9.4: la scheda di una chip o di una sezione. Desktop: fondo velato (`VELO.riquadro`), bordo arrotondato (nella tinta
+   * dell'allerta se c'è, altrimenti attenuato), padding e velo d'accento sotto il puntatore. Terminale: un blocco
+   * semplice, senza bordo né hover.
+   */
+  function Scheda(p: { chiave: string; allerta?: string; figli: unknown[]; gap?: number }) {
+    if (terminale)
+      return (
+        <Box key={p.chiave} flexDirection="column" gap={p.gap}>
+          {p.figli as never}
+        </Box>
+      )
+    return (
+      <Box
+        key={p.chiave}
+        flexDirection="column"
+        gap={p.gap}
+        borderStyle="round"
+        borderColor={p.allerta}
+        borderDimColor={!p.allerta}
+        backgroundColor={velo(GRIGIO, VELO.riquadro)}
+        hover={{ backgroundColor: velo(ACCENTO, VELO.hover) }}
+        paddingX={1}
+      >
+        {p.figli as never}
+      </Box>
+    )
+  }
+
+  /**
+   * F9.4: l'intestazione di un gruppo: in maiuscolo attenuato con il conteggio a destra sul desktop («DA AVVIARE      4»);
+   * nel terminale una riga «Da avviare · 4».
+   */
+  function Intestazione(p: { chiave: string; titolo: string; conteggio?: number }) {
+    if (terminale)
+      return (
+        <Text key={p.chiave} weight="semibold" dimColor>
+          {p.conteggio === undefined ? p.titolo : `${p.titolo} · ${p.conteggio}`}
+        </Text>
+      )
+    return (
+      <Box key={p.chiave} flexDirection="row" justifyContent="space-between" columnGap={1}>
+        <Text key={`${p.chiave}-titolo`} size="caption" weight="semibold" dimColor>
+          {p.titolo.toLocaleUpperCase(lingua)}
+        </Text>
+        {p.conteggio === undefined ? null : (
+          <Text key={`${p.chiave}-n`} size="caption" dimColor tabular>
+            {String(p.conteggio)}
+          </Text>
+        )}
+      </Box>
+    )
+  }
+
+  return { Chip, GruppoChip, Gamma, Sezione, Riga, Barra, Pillola, Pillole, Scheda, Intestazione }
 }

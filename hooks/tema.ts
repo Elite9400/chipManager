@@ -1,6 +1,8 @@
 // Gettoni di colore semantici: l'unico posto con colori esadecimali (piano grafica, C0.2 e §9 riga 8).
 // Il colore marca un segno (●, ◐, ▲, ◔, ✓, ◆) o un velo; le parole restano nell'inchiostro del tema.
 // Ogni tinta usata come segno regge almeno 3:1 sugli sfondi di riferimento, chiari e scuri (test in ui.test.tsx).
+// F9.2: e anche sul proprio velo (`VELO.pillola`) sopra la scheda (`VELO.riquadro`), con e senza il velo di hover: per
+// questo le tinte dei segni sono state ritoccate nella luminosità (stessa tinta), da 2,6–2,9:1 a 3,04–3,07:1.
 
 /** Solo l'icona della mod: sul chiaro non regge 3:1, quindi mai nell'interfaccia. */
 export const ICONA = '#00BFFF'
@@ -17,7 +19,10 @@ export const ALFA_VELO = '1F'
 export const VELO = {
   scelta: ALFA_VELO,
   hover: '14',
-  riquadro: '14',
+  /** F9: il fondo della scheda sul desktop; 0A (4%) perché ogni segno regga 3:1 sul proprio velo sopra di essa. */
+  riquadro: '0A',
+  /** F9.2: il velo di una pillola, nella tinta del suo segno. */
+  pillola: '14',
   testata: '1F',
   vuoto: '33',
   traccia: '4D',
@@ -25,18 +30,41 @@ export const VELO = {
 } as const
 
 export const STATO = {
-  inCorso: '#1A9E4B',
+  inCorso: '#189245',
   /** Ferma, «aspetta te». */
-  attesa: '#C2770A',
+  attesa: '#B46F09',
   /** Fallita, blocchi. */
-  errore: '#DC2626',
+  errore: '#E14444',
   /** Proposta, accodata. */
-  coda: '#6B7FA0',
-  consegnata: '#8B7FC0',
+  coda: '#6C80A1',
+  consegnata: '#8277B4',
 } as const
 
 /** Solo sul segno ◆ del motore. */
-export const MOTORE = { claude: '#C96A4A', codex: '#0E9A78', freellmapi: '#B0569A' } as const
+export const MOTORE = { claude: '#C06547', codex: '#0D9070', freellmapi: '#B662A1' } as const
+
+/** F9.2: la famiglia del modello, un punto colorato distinto dal colore del motore. */
+export const FAMIGLIA = { opus: '#BE682F', sonnet: '#1B8B9E', haiku: '#5D8C23', fable: '#A662CA', gpt: '#3282D1' } as const
+export type Famiglia = keyof typeof FAMIGLIA
+/** La famiglia di un id di modello (`claude-opus-5-5`, `gpt-6-astra`…); undefined per un modello senza famiglia nota. */
+export function famigliaDi(modello: string): Famiglia | undefined {
+  const m = modello.toLowerCase()
+  return (['opus', 'sonnet', 'haiku', 'fable'] as const).find(f => m.includes(f)) ?? (m.startsWith('gpt') ? 'gpt' : undefined)
+}
+
+/**
+ * F9.2: la scala dell'effort, monocroma dal blu all'indaco e al viola: mai rosso o giallo, che restano ad attenzione e
+ * critica (F8). Il livello si legge anche dal numero di blocchi pieni e dalla parola.
+ */
+export const EFFORT = { low: '#4982C2', medium: '#487CE2', high: '#6775E4', xhigh: '#806FDF', max: '#9469D3' } as const
+
+/**
+ * F9.3: DEROGA DICHIARATA, solo per il marchio. «chip» resta nell'inchiostro, «Manager» va in grassetto nell'ACCENTO
+ * (mai nell'ICONA) e il glifo ▣ nell'ACCENTO: un marchio in grassetto è un elemento grafico (3,99:1 su #FFFFFF, 3,80:1 su
+ * #262624, 5,27:1 su #000000), non testo corrente. Nessun altro testo entra nella deroga.
+ */
+/** Il nome è proprio e non si traduce: le due parti, la seconda nell'accento. */
+export const MARCHIO = { glifo: '▣', colore: ACCENTO, nome: ['chip', 'Manager'] } as const
 
 /** `ok` non ha colore. */
 export const LIVELLO = { ok: undefined, attenzione: STATO.attesa, critica: STATO.errore } as const
@@ -55,7 +83,8 @@ export const SFONDI = { chiaro: ['#FFFFFF', '#FAF9F5'], scuro: ['#000000', '#262
  */
 export const BOARD = {
   scuro: { fondo: '#0F1115', testo: '#E5E7EB', tenue: '#9CA3AF', bordo: '#2A2F3A', traccia: '#6B7280', accento: ACCENTO, errore: '#EF4444' },
-  chiaro: { fondo: '#FFFFFF', testo: '#111827', tenue: '#6B7280', bordo: '#E5E7EB', traccia: '#868B94', accento: ACCENTO, errore: STATO.errore },
+  // L'errore della board è testo (≥ 4,5:1 sul bianco): resta il rosso più scuro, non la tinta del segno.
+  chiaro: { fondo: '#FFFFFF', testo: '#111827', tenue: '#6B7280', bordo: '#E5E7EB', traccia: '#868B94', accento: ACCENTO, errore: '#DC2626' },
 } as const
 
 /** Il blocco unico di variabili CSS della board, generato dai valori sopra: scuro di default, chiaro se il sistema lo chiede. */

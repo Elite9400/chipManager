@@ -32,7 +32,7 @@ import {
 import { traduttore } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { RISORSE_VUOTE } from './risorse'
-import { ACCENTO, ALFA_VELO, GRIGIO, STATO, VELO } from './tema'
+import { ACCENTO, ALFA_VELO, GRIGIO, LIVELLO, MARCHIO, MOTORE, STATO, VELO } from './tema'
 import { classeDi, componenti } from './ui'
 import { vistaCarico } from './vista-carico'
 import { apriBilanciamento, apriImpostazioni, lasciaImpostazioni, vistaImpostazioni } from './vista-impostazioni'
@@ -219,11 +219,8 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const aspettaTe = (a: Azione) => aspettaTeDi(a, stati, io?.io, adesso)
   const attese = conta(aspettaTe)
 
-  const titoloSezione = (k: string, testo: string, n?: number) => (
-    <Text key={k} size="caption" weight="medium" dimColor>
-      {n === undefined ? testo : `${testo}  ${n}`}
-    </Text>
-  )
+  /** F9.4: l'intestazione di un gruppo (maiuscolo attenuato e conteggio a destra sul desktop, «Titolo · n» nel terminale). */
+  const titoloSezione = (k: string, testo: string, n?: number) => ui.Intestazione({ chiave: k, titolo: testo, conteggio: n })
 
   // «Al lavoro adesso»: le sessioni del progetto (anche aperte a mano) più le chip avviate di cui l'app non dà la sessione.
   type Riga = SessioneProgetto & { azione?: Azione; parola: string; segno: string; colore: string }
@@ -332,12 +329,23 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
 
 export type Dati = Awaited<ReturnType<typeof comuni>>
 
+/** F9.3: la versione della mod per il marchio, letta una volta dal manifest; null se non si legge (non si mostra). */
+let versioneLetta: string | null | undefined
+async function versioneDi($: Eng) {
+  versioneLetta ??= await $.fs
+    .read(`${$.plugin.root.replace(/\\/g, '/')}/.claude-plugin/plugin.json`)
+    .then(t => String((JSON.parse(t as string) as { version?: unknown }).version ?? '') || null)
+    .catch(() => null)
+  return versioneLetta
+}
+
 export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, colonne = 100) {
   const d = await comuni($, el, surface, c, colonne)
   const { Box, Text, Button } = el
   const { T, conVelo, classe, ui, io, ses, vistaOra, regoleOra, nota, scartata, rotte, adesso, sb, boardPronta, fai, nota1,
     proposte, attese, alLavoro, fornitoriInUso, limiti, NOME_FORNITORE, oraDi } = d
 
+  const versioneOra = await versioneDi($)
   // Riga di sintesi: chi lavora, chi aspetta, e il margine più stretto per fornitore (solo misure fresche).
   const margine = (f: Fornitore) => {
     if (!fornitoriInUso.includes(f)) return undefined
@@ -360,6 +368,40 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     ]
       .filter(Boolean)
       .join(' · ')
+  /**
+   * F9.3: la riga di sintesi sul desktop, in pillole: lo stesso testo, un pezzo per pillola, ciascuno con il segno nella
+   * tinta che dice di che si tratta (al lavoro, aspetta te, da avviare, livello del margine). Il terminale tiene il testo.
+   */
+  const livelloMargine = (f: Fornitore) => {
+    const l = (f === 'claude' || f === 'codex') && fornitoriInUso.includes(f) && etaVecchie(limiti, f, adesso) === undefined ? piuPieno(limiti, f, adesso) : undefined
+    return l ? livelloDi(l.percentuale!, sogliaDi(regoleOra.risorse, f)) : undefined
+  }
+  const pillole = ui.Pillole({
+    chiave: 'sintesi',
+    voci: [
+      ui.Pillola({ chiave: 'sintesi-lavoro', segno: '●', colore: STATO.inCorso, testo: T('sintesi.alLavoro', { n: alLavoro }) }),
+      attese ? ui.Pillola({ chiave: 'sintesi-attese', segno: '⏸', colore: STATO.attesa, testo: T('sintesi.aspettano', { n: attese }) }) : null,
+      proposte ? ui.Pillola({ chiave: 'sintesi-proposte', segno: '○', colore: STATO.coda, testo: T('sintesi.daAvviare', { n: proposte }) }) : null,
+      ...FORNITORI.map(f => {
+        const testo = margine(f)
+        if (!testo) return null
+        const liv = livelloMargine(f)
+        return ui.Pillola({ chiave: `sintesi-${f}`, segno: liv === 'critica' || liv === 'attenzione' ? '▲' : '◆', colore: liv === 'critica' || liv === 'attenzione' ? LIVELLO[liv] : f in MOTORE ? MOTORE[f as keyof typeof MOTORE] : GRIGIO, testo })
+      }),
+    ],
+  })
+  /**
+   * F9.3: il marchio. ▣ e «Manager» in grassetto nell'ACCENTO (deroga dichiarata in tema.ts, solo per il marchio; mai
+   * l'ICONA), «chip» nell'inchiostro; accanto, attenuati, il progetto e la versione.
+   */
+  const marchio = (
+    <Text key="marchio" size="title" wrap="wrap">
+      <Text key="marchio-glifo" color={MARCHIO.colore}>{`${MARCHIO.glifo} `}</Text>
+      <Text key="marchio-chip" weight="semibold">{MARCHIO.nome[0]}</Text>
+      <Text key="marchio-manager" weight="bold" color={MARCHIO.colore}>{MARCHIO.nome[1]}</Text>
+      {io?.repo || versioneOra ? <Text key="marchio-progetto" dimColor>{[io?.repo ? ` · ${io.repo}` : '', versioneOra ? ` · ${versioneOra}` : ''].join('')}</Text> : ''}
+    </Text>
+  )
 
   const VISTE: { id: Vista; nome: string; tasto: string; chiave: string }[] = [
     { id: 'lavoro', nome: T('vista.lavoro'), tasto: '1', chiave: 'vista-lavoro' },
@@ -405,18 +447,14 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
         {ui.Riga({
           chiave: 'testata',
           classe,
-          principale: (
-            <Text size="title" weight="semibold" wrap="wrap">
-              {`chipManager${io?.repo ? ` · ${io.repo}` : ''}`}
-            </Text>
-          ),
+          principale: marchio,
           azioni: [
             boardPronta && <Button key="apri-board" plain hotkey="b" label={T('testata.apriBoard')} onPress={fai(c.apriBoard)} />,
             <Button key="ricarica" plain dimColor hotkey="r" label={ses.letto ? T('testata.aggiornaOra', { ora: T.ora(ses.letto) }) : T('testata.aggiorna')} onPress={fai(c.giro)} />,
             schede,
           ],
         })}
-        <Text dimColor wrap="wrap">{sintesi}</Text>
+        {conVelo ? pillole : <Text dimColor wrap="wrap">{sintesi}</Text>}
         {boardPronta && <Text key="percorso-board" size="caption" dimColor wrap="truncate-middle">{T('testata.percorsoBoard', { percorso: sb.percorso ?? '' })}</Text>}
         {!regoleOra.lette && nota1('regole', STATO.errore, '▲', T('testata.regole', { fonte: d.fonteRegole }))}
         {rotte.length > 0 &&
