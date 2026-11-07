@@ -579,8 +579,9 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const passo = PASSI_SETUP[i]!
     const nomePasso = T(`set.p.${passo}` as Chiave)
     const progresso = T('set.passo', { n: i + 1, m: PASSI_SETUP.length })
-    // Right-aligned in the section header: the step name in the terminal, «Step n of m» on graphical surfaces.
-    const stato = terminale ? nomePasso : progresso
+    // Grafico: «Step n of m» a destra nella testata. Terminale: niente stato in testata, perché la riga del passo dice già
+    // «Step n of m · nome» (il nome non si ripete a 60 colonne).
+    const stato = terminale ? undefined : progresso
     const vai = (n: number) => {
       if (PASSI_SETUP[n] === 'accessi') void c.controllaEsecuzione()
       void cambia(s => ({ ...s, passoSetup: n, errore: undefined }))
