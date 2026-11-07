@@ -1959,7 +1959,8 @@ test('2.2: «Al lavoro adesso» mostra anche le sessioni aperte a mano e quelle 
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await clock.advance(20_000)
   const ui = await $.ui.mount({ ...PANE('desktop') })
-  for (const testo of [/^Guida delle API$/, /^Revisione sessione$/, /^Codex · fix-ricerca$/, /^Sonnet 5\.5$/, /^34%$/, /^61%$/, /aperta a mano/, /^3 al lavoro/])
+  // F12: sul desktop le sessioni sono schede a ogni larghezza, con il contesto in un frammento («contesto 34%»).
+  for (const testo of [/^Guida delle API$/, /^Revisione sessione$/, /^Codex · fix-ricerca$/, /^Sonnet 5\.5$/, /^contesto 34%$/, /^contesto 61%$/, /aperta a mano/, /^3 al lavoro/])
     expect(await ui.find({ type: 'Text', text: testo })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Altro progetto/ })).toBeUndefined()
   // Il contesto si chiede solo per le sessioni al lavoro, mai per quelle ferme.

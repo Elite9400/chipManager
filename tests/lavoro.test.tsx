@@ -290,6 +290,16 @@ test('C1: una chip bloccata dice il primo motivo; «Perché» li elenca tutti, s
   }
 })
 
+/**
+ * F12: le spaziature scritte come gettoni (`padding: 'md'`, `gap: 'sm'`). Il desktop restituisce i gettoni; vscode e
+ * mobile li convertono in celle (sm = 1×0, md = 2×1; gap sm = colonne 1, righe 0): vale l'uno o l'altro, esatto.
+ */
+const CELLE = { sm: { paddingX: 1, paddingY: 0 }, md: { paddingX: 2, paddingY: 1 } } as const
+function spaziF12(props: Record<string, unknown> | undefined, padding: keyof typeof CELLE, altro: Record<string, unknown> = {}) {
+  if (props?.padding !== undefined) expect(props).toMatchObject({ padding, gap: 'sm', ...altro })
+  else expect(props).toMatchObject({ ...CELLE[padding], columnGap: 1, rowGap: 0, ...altro })
+}
+
 test('F12: sessioni in schede grafiche e tabella terminale, controlli stabili a 60/100/120 colonne', async ($, on) => {
   ambiente(on, [az('a-avviab01', 1, { titolo: LUNGO, stato: 'avviata', sessione: SID, lanciataDa: 'sessione-master', avviataIl: '2026-11-05T10:00:00Z' })])
   mock.clock(on)
@@ -307,12 +317,13 @@ test('F12: sessioni in schede grafiche e tabella terminale, controlli stabili a 
       expect(await ui.find({ type: 'Text', text: /^◆ Claude$/ })).toBeDefined()
       expect(controlliF9(await ui.drawn())).toEqual(controlli)
       if (surface !== 'terminal') {
-        const schede: NodoF8[] = []
+        const schede: string[] = []
         visitaF8(await ui.drawn(), x => {
-          if (x.props?.key?.startsWith('ses-') && x.props.backgroundColor === `${GRIGIO}${VELO.riquadro}`) schede.push(x)
+          if (x.props?.key?.startsWith('ses-') && x.props.backgroundColor === `${GRIGIO}${VELO.riquadro}`) schede.push(x.props.key)
         })
         expect(schede.length > 0).toBe(true)
-        for (const scheda of schede) expect(scheda.props).toMatchObject({ padding: 'sm', borderStyle: 'round', gap: 'sm' })
+        // L'albero disegnato ha le props già normalizzate dall'host (padding → paddingX/Y): quelle scritte si leggono con find.
+        for (const k of schede) spaziF12((await ui.find({ key: k }))?.props, 'sm', { borderStyle: 'round' })
       }
     }
     await ui.redraw({ ...PANE_F9(surface, 120).props })
@@ -987,12 +998,13 @@ test('F12: Start primario solo grafico, Queue e Retry secondari; schede e riepil
       expect((await ui.find({ key: 'avvia-a-f12queue' }))?.props.variant).toBe('secondary')
       expect((await ui.find({ key: 'riprova-a-f12retry' }))?.props.variant).toBe('secondary')
       if (surface !== 'terminal') {
-        expect((await ui.find({ key: 'riga-a-f12ready' }))?.props).toMatchObject({ padding: 'md', gap: 'sm' })
+        spaziF12((await ui.find({ key: 'riga-a-f12ready' }))?.props, 'md')
         if (expanded) {
           for (const ruolo of ['motore', 'modello', 'effort', 'auditor', 'rev', 'corsia'])
             expect((await ui.find({ key: `chi-riepilogo-a-f12ready-${ruolo}` }))?.props.borderStyle).toBe('round')
           let basi = 0
-          visitaF8(await ui.drawn(), x => { if (x.props?.backgroundColor === `${GRIGIO}${VELO.riquadro}`) basi++ })
+          // Le schede delle sessioni («Al lavoro adesso», `ses-*`) hanno la loro base: qui contano solo le azioni.
+          visitaF8(await ui.drawn(), x => { if (x.props?.backgroundColor === `${GRIGIO}${VELO.riquadro}` && !x.props?.key?.startsWith('ses-')) basi++ })
           // Tre azioni: l'editor non aggiunge una quarta base.
           expect(basi).toBe(3)
         }

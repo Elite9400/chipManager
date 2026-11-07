@@ -2262,8 +2262,9 @@ test('F12 setup e doctor: una sola scheda, azioni in ordine, bozza e scope invar
     expect(await ui.find({ key: 'sezioni-progetto' })).toBeDefined()
     await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
     expect(basi(await ui.drawn())).toBe(surface === 'terminal' ? 0 : 1)
-    expect(await ui.find({ key: 'doctor-ok' })).toBeDefined()
-    expect((await ui.find({ key: 'pagina-doctor-stato' }))?.text).toContain('·')
+    // I Text non portano la loro chiave nell'albero disegnato: si cercano per testo.
+    expect(await ui.find({ type: 'Text', text: 'Nothing to fix.' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^0 findings · / })).toBeDefined()
     expect((await ui.find({ key: 'doctor-azioni' }))?.props.flexWrap).toBe('wrap')
     await ui.press({ key: 'doctor-indietro' })
     await ui.unmount()
