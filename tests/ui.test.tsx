@@ -98,8 +98,10 @@ test('Chip F5.8: la label è il solo nome; la scelta sta nel colore (primario d\
     // Una chip di stato non è un pulsante: segno e parola, nessuna etichetta di scelta.
     expect(await ui.find({ key: 'st-premi' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: t ? '[● Collegato]' : '● Collegato' })).toBeDefined()
-    // Il bordo e il velo dell'accento solo sul desktop.
-    expect((await ui.find({ key: 'auto' }))?.props).toMatchObject(t ? { paddingX: 0 } : { borderStyle: 'round', borderColor: ACCENTO })
+    // F12.1: native choice buttons own their outline and inset; the group retains its selection tint.
+    expect((await ui.find({ key: 'auto' }))?.props).toMatchObject({ paddingX: 0 })
+    expect((await ui.find({ key: 'auto' }))?.props.borderStyle).toBeUndefined()
+    if (!t) expect((await ui.find({ key: 'auto' }))?.props.backgroundColor).toBe(`${ACCENTO}${ALFA_VELO}`)
     premi(albero, 'auto-premi')
     premi(albero, 'qual-premi')
     premi(albero, 'bud-via')
@@ -182,7 +184,8 @@ test('Sezione e Riga: titolo e stato affiancati sul desktop, stato sotto sul ter
     )
     expect(await ui.find({ type: 'Text', text: 'Connessioni' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '2 collegati · 1 da collegare' })).toBeDefined()
-    const testa = (albero as { children: { props: Record<string, unknown> }[] }).children[0]!
+    // F12.1: title/state and description share a close header group, separate from the section's fields.
+    const testa = (albero as { children: { children: { props: Record<string, unknown> }[] }[] }).children[0]!.children[0]!
     expect(testa.props.flexDirection).toBe(surface === 'terminal' ? 'column' : 'row')
     expect((await ui.find({ key: 'riga-larga' }))?.props).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap' })
     expect((await ui.find({ key: 'riga-media' }))?.props).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap' })
@@ -358,13 +361,17 @@ test('F12: spazi nominati, pillole arrotondate, sezioni interne senza secondo ve
       u.Gamma({ chiave: 'gamma', etichetta: 'Soglia', valore: 50, min: 0, max: 100, passo: 5, onCambia: () => {} }),
     ] }))
     expect((await ui.find({ key: 'carico' }))?.props).toMatchObject(surface === 'terminal' ? { padding: 0 } : { padding: 'md', gap: 'sm', borderStyle: 'round' })
+    // F12.1: heading and description stay closer than the following content groups.
+    expect((await ui.find({ key: 'carico-testata' }))?.props).toMatchObject({ flexDirection: 'column', gap: surface === 'terminal' ? 0 : 'xs' })
     expect((await ui.find({ key: 'interna' }))?.props.backgroundColor).toBeUndefined()
-    if (surface !== 'terminal') expect((await ui.find({ key: 'stato' }))?.props).toMatchObject({ borderStyle: 'round', paddingX: 'xs', backgroundColor: `${STATO.coda}${VELO.pillola}` })
+    if (surface !== 'terminal') expect((await ui.find({ key: 'stato' }))?.props).toMatchObject({ borderStyle: 'round', paddingX: 'xs', flexShrink: 1, backgroundColor: `${STATO.coda}${VELO.pillola}` })
     const visita = (n: unknown): void => {
       if (!n || typeof n !== 'object') return
       if (Array.isArray(n)) return n.forEach(visita)
-      const x = n as { hover?: unknown; children?: unknown }
+      const x = n as { hover?: unknown; props?: { key?: string }; children?: unknown }
       expect(x.hover).toBeUndefined()
+      // F12.1: a passive row must not reserve space for an empty action group.
+      if (x.props?.key === 'passiva') expect([x.children].flat(9).filter(Boolean).length).toBe(1)
       visita(x.children)
     }
     visita(albero)

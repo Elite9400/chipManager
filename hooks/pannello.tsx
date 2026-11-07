@@ -254,7 +254,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const alLavoro = righe.filter(r => r.stato === 'in-corso').length
 
   const cella = (k: string, w: string, figli: unknown, destra = false) => (
-    <Box key={k} width={w} flexDirection="column" alignItems={destra ? 'flex-end' : 'flex-start'} paddingRight={1}>
+    <Box key={k} width={w} flexDirection="column" alignItems={destra ? 'flex-end' : 'flex-start'} paddingRight={conVelo ? 'xs' : 1}>
       {figli as never}
     </Box>
   )
@@ -289,7 +289,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   /** Una proposta aperta: il testo, poi Rivedi (popup), Applica e Rifiuta. `dove` tiene le chiavi uniche fra le viste. */
   const rigaProposta = (dove: string, p: PropostaPesi, conDettaglio = false) => (
     <Box key={`${dove}-${p.id}`} flexDirection="column">
-      <Box flexDirection="row" flexWrap="wrap" gap={conVelo ? 'sm' : 1} alignItems="center">
+      <Box flexDirection="row" flexWrap="wrap" columnGap={conVelo ? 'xs' : 1} rowGap={conVelo ? 'xs' : 0} alignItems="center">
         {nota1(`${dove}-${p.id}-testo`, STATO.attesa, '◐', TESTI_PESI.riga(p, T.lingua))}
         <Button key={`${dove}-${p.id}-rivedi`} plain label={`${T('pesi.rivedi')}${suffisso(p)}`} onPress={() => void rivedi(p)()} />
         <Button key={`${dove}-${p.id}-applica`} plain label={`${T('pesi.applica')}${suffisso(p)}`} onPress={fai(() => c.decidiPesi(p, 'applica'))} />
@@ -306,7 +306,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   // una decisione successiva che non tocca il config (un rifiuto, una scadenza) non toglie la possibilità di annullarla.
   const daAnnullare = tutteProposte.find(p => pesiAnnullabili(p, regoleOra.risorse))
   const vocePesi = (dove: string, p: PropostaPesi) => (
-    <Box key={`${dove}-${p.id}`} flexDirection="row" flexWrap="wrap" gap={conVelo ? 'sm' : 1} alignItems="center">
+    <Box key={`${dove}-${p.id}`} flexDirection="row" flexWrap="wrap" columnGap={conVelo ? 'xs' : 1} rowGap={conVelo ? 'xs' : 0} alignItems="center">
       <Text size="caption" wrap="wrap">{TESTI_PESI.registro(p, T.lingua, adesso)}</Text>
       {p === daAnnullare && (
         <Button key={`${dove}-annulla`} plain label={T('pesi.annullaApplicata')} onPress={fai(() => c.annullaPesi(p))} />
@@ -425,18 +425,17 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
     if (id === 'impostazioni' && vistaOra !== 'impostazioni') await apriImpostazioni($, c)
   }
   const schede = (
-    <Box key="viste" flexDirection="row" flexWrap="wrap" gap={conVelo ? 'sm' : 1}>
+    <Box key="viste" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={conVelo ? 'xs' : 1} rowGap={conVelo ? 'xs' : 0}>
       {VISTE.map(v => {
         const attiva = v.id === vistaOra
         return (
           <Box
             key={`${v.chiave}-chip`}
             flexDirection="row"
-            borderStyle={conVelo ? 'round' : undefined}
             borderColor={conVelo && attiva ? ACCENTO : undefined}
             borderDimColor={conVelo && !attiva}
             backgroundColor={conVelo && attiva ? velo(ACCENTO, ALFA_VELO) : undefined}
-            paddingX={conVelo ? 1 : 0}
+            paddingX={0}
           >
             {attiva ? (
               <Button key={v.chiave} variant="primary" hotkey={v.tasto} label={v.nome} onPress={() => void vai(v.id)} />
@@ -451,16 +450,20 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
 
   return (
     <Box flexDirection="column" gap={conVelo ? 'lg' : 1}>
-      <Box flexDirection="column" gap={conVelo ? 'sm' : 1}>
+      <Box key="testata-gruppo" flexDirection="column" gap={conVelo ? 'sm' : 0}>
         {ui.Riga({
           chiave: 'testata',
           intestazione: true,
           classe,
           principale: marchio,
           azioni: [
-            boardPronta && <Button key="apri-board" plain hotkey="b" label={T('testata.apriBoard')} onPress={fai(c.apriBoard)} />,
-            <Button key="ricarica" plain dimColor hotkey="r" label={ses.letto ? T('testata.aggiornaOra', { ora: T.ora(ses.letto) }) : T('testata.aggiorna')} onPress={fai(c.giro)} />,
-            schede,
+            <Box key="azioni-testata" flexDirection="row" flexWrap="wrap" alignItems="center" gap={conVelo ? 'sm' : 1}>
+              <Box key="strumenti-testata" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={conVelo ? 'xs' : 1} rowGap={conVelo ? 'xs' : 0}>
+                {boardPronta && <Button key="apri-board" plain hotkey="b" label={T('testata.apriBoard')} onPress={fai(c.apriBoard)} />}
+                <Button key="ricarica" plain dimColor hotkey="r" label={ses.letto ? T('testata.aggiornaOra', { ora: T.ora(ses.letto) }) : T('testata.aggiorna')} onPress={fai(c.giro)} />
+              </Box>
+              {schede}
+            </Box>,
           ],
         })}
         {conVelo ? pillole : <Text dimColor wrap="wrap">{sintesi}</Text>}
@@ -475,14 +478,14 @@ export async function disegna($: Eng, el: ElementTable, surface: RenderSurface, 
           )}
       </Box>
       {scartata && (
-        <Box flexDirection="row" gap={conVelo ? 'sm' : 1} alignItems="center" flexWrap="wrap" backgroundColor={conVelo ? velo(GRIGIO, VELO.testata) : undefined} paddingX={1}>
+        <Box flexDirection="row" columnGap={conVelo ? 'xs' : 1} rowGap={conVelo ? 'xs' : 0} alignItems="center" flexWrap="wrap" backgroundColor={conVelo ? velo(GRIGIO, VELO.testata) : undefined} paddingX={conVelo ? 'xs' : 1}>
           <Text>{T('testata.scartata', { titolo: scartata.titolo })}</Text>
           <Button key="annulla-scarto" plain hotkey="u" label={T('comune.annulla')} onPress={fai(() => c.annullaScarto(scartata.id))} />
         </Box>
       )}
       {nota && (
         // Un bordo e non un velo: il rosso del segno sul proprio velo, sul fondo scuro, scende sotto 3:1.
-        <Box borderStyle={conVelo ? 'round' : undefined} borderColor={STATO.errore} paddingX={1}>
+        <Box borderStyle={conVelo ? 'round' : undefined} borderColor={STATO.errore} paddingX={conVelo ? 'xs' : 1}>
           {nota1('nota', STATO.errore, '!', d.T.m(nota))}
         </Box>
       )}

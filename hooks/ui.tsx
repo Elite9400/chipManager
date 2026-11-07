@@ -71,12 +71,13 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
       <Box
         key={p.chiave}
         flexDirection="row"
-        gap={1}
-        borderStyle={terminale ? undefined : 'round'}
+        gap={terminale ? 1 : 'xs'}
+        alignItems="center"
+        borderStyle={terminale || scelta ? undefined : 'round'}
         borderColor={!terminale && p.attiva ? ACCENTO : undefined}
         borderDimColor={!terminale && !p.attiva}
         backgroundColor={!terminale && p.attiva ? velo(ACCENTO, ALFA_VELO) : undefined}
-        paddingX={terminale ? 0 : 1}
+        paddingX={terminale || scelta ? 0 : 'xs'}
       >
         {p.onPress && scelta ? (
           p.attiva ? (
@@ -118,7 +119,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
         <Text size="caption" dimColor>
           {p.etichetta}
         </Text>
-        <Box flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
+        <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={terminale ? 1 : 'xs'} rowGap={terminale ? 0 : 'xs'}>
           {p.voci.map(v =>
             Chip({
               chiave: `${p.chiave}-${v.valore}`,
@@ -226,23 +227,25 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
         backgroundColor={terminale || p.interna ? undefined : velo(GRIGIO, VELO.riquadro)}
         padding={terminale || p.interna ? 0 : 'md'}
       >
-        <Box flexDirection={terminale ? 'column' : 'row'} justifyContent="space-between" flexWrap="wrap" gap={terminale ? 0 : 'xs'}>
-          <Text size="body" weight="semibold" wrap="wrap">
-            {p.titolo}
-          </Text>
-          {stato}
+        <Box key={`${p.chiave}-testata`} flexDirection="column" gap={terminale ? 0 : 'xs'}>
+          <Box flexDirection={terminale ? 'column' : 'row'} justifyContent="space-between" alignItems={terminale ? 'flex-start' : 'center'} flexWrap="wrap" gap={terminale ? 0 : 'xs'}>
+            <Text size="body" weight="semibold" wrap="wrap">
+              {p.titolo}
+            </Text>
+            {stato}
+          </Box>
+          {p.descrizione && <Text size="caption" dimColor wrap="wrap">
+            {p.descrizione}
+          </Text>}
         </Box>
-        {p.descrizione && <Text size="caption" dimColor wrap="wrap">
-          {p.descrizione}
-        </Text>}
         {p.figli as never}
       </Box>
     )
   }
 
-  /** Principale e azioni: sulla stessa riga (le azioni vanno a capo se serve) tranne su `stretta`, dove stanno sotto. */
+  /** Principale e azioni: sotto nelle intestazioni e su `stretta`, altrimenti affiancati; ogni gruppo può andare a capo. */
   function Riga(p: { chiave: string; principale: Nodo; azioni: Nodo[]; classe: Classe; intestazione?: boolean }) {
-    const sotto = p.classe === 'stretta'
+    const sotto = p.classe === 'stretta' || !!p.intestazione
     return (
       <Box
         key={p.chiave}
@@ -253,12 +256,12 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
         alignItems={sotto ? 'flex-start' : 'center'}
         gap={terminale ? (sotto ? 0 : 1) : 'sm'}
       >
-        <Box flexDirection="column" flexShrink={1}>
+        <Box flexDirection="column" width={sotto ? '100%' : undefined} flexShrink={1} gap={terminale ? 0 : 'xs'}>
           {p.principale as never}
         </Box>
-        <Box flexDirection="row" flexWrap="wrap" gap={terminale ? 1 : 'sm'}>
+        {p.azioni.some(Boolean) && <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={terminale ? 1 : 'xs'} rowGap={terminale ? 0 : 'xs'}>
           {p.azioni as never}
-        </Box>
+        </Box>}
       </Box>
     )
   }
@@ -271,7 +274,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     if (!terminale) {
       const pieno = Math.round(Math.min(100, Math.max(0, p.pct)))
       return (
-        <Box key={p.chiave} flexDirection="row" alignItems="center" gap={1}>
+        <Box key={p.chiave} flexDirection="row" flexWrap="wrap" alignItems="center" gap="xs">
           <Box key={`${p.chiave}-traccia`} flexDirection="row" flexGrow={1} minWidth={p.celle * 2} borderStyle="round" borderDimColor>
             {pieno > 0 ? <Box key={`${p.chiave}-pieno`} flexGrow={pieno} backgroundColor={p.colore}><Text size="caption"> </Text></Box> : null}
             {pieno < 100 ? <Box key={`${p.chiave}-vuoto`} flexGrow={100 - pieno} backgroundColor={velo(GRIGIO, VELO.barraVuota)}><Text size="caption"> </Text></Box> : null}
@@ -303,8 +306,8 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     ]
     if (terminale) return <Text key={p.chiave}>{corpo}</Text>
     return (
-      <Box key={p.chiave} flexDirection="row" paddingX="xs" borderStyle="round" borderDimColor backgroundColor={velo(p.colore ?? GRIGIO, VELO.pillola)}>
-        <Text>{corpo}</Text>
+      <Box key={p.chiave} flexDirection="row" flexShrink={1} paddingX="xs" borderStyle="round" borderDimColor backgroundColor={velo(p.colore ?? GRIGIO, VELO.pillola)}>
+        <Text wrap="wrap">{corpo}</Text>
       </Box>
     )
   }
@@ -314,12 +317,12 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
     const voci = p.voci.filter(Boolean)
     if (!terminale)
       return (
-        <Box key={p.chiave} flexDirection="row" flexWrap="wrap" gap="sm">
+        <Box key={p.chiave} flexDirection="row" flexWrap="wrap" alignItems="center" gap="xs">
           {voci as never}
         </Box>
       )
     return (
-      <Box key={p.chiave} flexDirection="row" flexWrap="wrap" columnGap={1}>
+      <Box key={p.chiave} flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1}>
         {voci.map((v, i) => (
           <Text key={`${p.chiave}-${i}`}>
             {i ? <Text dimColor>{'· '}</Text> : ''}
@@ -337,7 +340,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
    * Una sola base VELO.riquadro: editor e passi interni non aggiungono schede. Niente hover sulle barre d'uso o
    * d'intestazione, anche con pulsanti: solo record azionabili e righe interattive ricevono il velo.
    */
-  function Scheda(p: { chiave: string; allerta?: string; figli: unknown[]; gap?: number; compatta?: boolean; interattiva?: boolean; bordoTerminale?: boolean }) {
+  function Scheda(p: { chiave: string; allerta?: string; figli: unknown[]; gap?: number; interattiva?: boolean; bordoTerminale?: boolean }) {
     // F12 (spec §2): nel terminale la scheda intera tiene gli angoli arrotondati, come prima; i record compatti no.
     if (terminale)
       return p.bordoTerminale ? (
@@ -359,7 +362,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
         borderDimColor={!p.allerta}
         backgroundColor={velo(GRIGIO, VELO.riquadro)}
         hover={p.interattiva === false ? undefined : { backgroundColor: velo(ACCENTO, VELO.hover) }}
-        padding={p.compatta ? 'sm' : 'md'}
+        padding="md"
       >
         {p.figli as never}
       </Box>
@@ -378,7 +381,7 @@ export function componenti(el: ElementTable, surface: RenderSurface, lingua: Lin
         </Text>
       )
     return (
-      <Box key={p.chiave} flexDirection="row" justifyContent="space-between" columnGap="xs">
+      <Box key={p.chiave} flexDirection="row" flexGrow={1} flexWrap="wrap" justifyContent="space-between" alignItems="center" gap="xs">
         <Text key={`${p.chiave}-titolo`} size="caption" weight="semibold" dimColor>
           {surface === 'desktop' ? p.titolo.toLocaleUpperCase(lingua) : p.titolo}
         </Text>

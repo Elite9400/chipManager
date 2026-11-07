@@ -270,7 +270,8 @@ test('F12 board: variabili semantiche, parole in inchiostro, disclosure native e
   expect(html).toContain(cssVariabiliBoard())
   for (const [gruppo, tinte] of Object.entries({ stato: STATO, motore: MOTORE, famiglia: FAMIGLIA, effort: EFFORT }))
     for (const [nome, tinta] of Object.entries(tinte)) expect(html).toContain(`--${gruppo}-${nome}:${tinta};--${gruppo}-${nome}-velo:${tinta}${VELO.pillola}`)
-  for (const css of ['summary:hover{background:var(--hover)}', 'summary:focus-visible', 'border-radius:12px;margin:8px 0;padding:16px', '.errore{color:var(--testo)}', '@media (max-width:600px){dl{grid-template-columns:minmax(0,1fr)}', 'white-space:pre-wrap;overflow-wrap:anywhere']) expect(html).toContain(css)
+  // F12.1: card spacing is md, group spacing sm, and pill spacing xs; named CSS spacing replaces F12's literal gaps.
+  for (const css of ['summary:hover{background:var(--hover)}', 'summary:focus-visible', 'border-radius:12px;margin:0 0 var(--md);padding:var(--md)', '.errore{color:var(--testo)}', '@media (max-width:600px){dl{grid-template-columns:minmax(0,1fr)}', 'white-space:pre-wrap;overflow-wrap:anywhere', ':root{--xs:4px;--sm:8px;--md:16px;--lg:24px}', '.gruppo-attributi{display:flex;flex-wrap:wrap;align-items:center;gap:var(--xs)']) expect(html).toContain(css)
   expect(html).not.toMatch(/summary::|list-style:none|details:hover|display:none|<button|<script/i)
   expect(html).toContain('<span class="attributi">')
   expect(html).toContain('--segno:var(--motore-claude)')

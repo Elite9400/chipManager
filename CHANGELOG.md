@@ -137,6 +137,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   board. Card titles retain translated casing; section labels are uppercase only on desktop. Heading bars never
   hover; setup shows progress at the right, guided steps share one card, and doctor has an overall-result pill.
   Only the percentage is monospace in session context fragments. Terminal controls and all action behaviour stay unchanged.
+  F12.1 tightens layout across all surfaces: strict spacing rhythm, grouped attributes, aligned action rows and consistent card insets, with unchanged controls and colours.
 - **Default effort on R0–R2 is now `medium`** (it was `high`) for chips that do not set one; R3–R5 stay `high`, and
   the lane, Codex and sensitive minimums still raise it. To go back, set R0–R2 to `high` in Work mode.
 - **Codex as executor runs with `-s workspace-write`** (it was `-s read-only`): it edits files, and the coordinating

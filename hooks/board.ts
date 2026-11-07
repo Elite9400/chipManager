@@ -171,10 +171,12 @@ function scheda(T: T, a: Azione, d: DatiBoard, lista: readonly Azione[], segno: 
   const m = mandato(a, r, d.strumenti)
   const allerta = a.stato === 'fallita' || blocchi.length || sensibile(a, r) ? ' errore-bordo' : segno === 'attesa' ? ' attesa-bordo' : ''
   return `<details id="t-${esc(a.id)}" class="lavoro${allerta}"><summary><span class="titolo">${esc(a.titolo)}</span><span class="attributi">
-${pillola(`stato-${tintaStato}`, s, a.stato === 'accodata' ? T('stato.accodata') : T(parola))}
+<span>${pillola(`stato-${tintaStato}`, s, a.stato === 'accodata' ? T('stato.accodata') : T(parola))}</span>
+<span class="gruppo-attributi">
 ${pillola(`motore-${a.esecutore}`, '◆', motore(T, a.esecutore))}
 ${pillola(famiglia ? `famiglia-${famiglia}` : 'neutro', '●', nomeModello(modello), true)}
 ${pillola(Object.keys(EFFORT).includes(effort) ? `effort-${effort}` : 'neutro', barreEffort(effort), effort, true)}
+</span>
 ${sensibile(a, r) ? pillola('stato-errore', '▲', T('info.sensibile', { corsia: corsiaDi(a, r) ?? 'R4' })) : ''}
 </span></summary>
 <div class="corpo">
@@ -197,16 +199,20 @@ ${a.background ? `<h4>${esc(T('board.background'))}</h4><pre>${esc(a.background)
 // F5.2: scuro di default, chiaro solo se il sistema lo chiede; i dati in monospazio di sistema, nessun font esterno.
 // F8.3: i colori arrivano solo dal blocco di variabili generato in tema.ts; qui nessun valore scritto a mano.
 const CSS = `${cssVariabiliBoard()}
-body{background:var(--fondo);color:var(--testo);font:14px/1.45 system-ui,sans-serif;max-width:960px;margin:0 auto;padding:16px}
+:root{--xs:4px;--sm:8px;--md:16px;--lg:24px}
+*{box-sizing:border-box}
+body{background:var(--fondo);color:var(--testo);font:14px/1.45 system-ui,sans-serif;max-width:960px;margin:0 auto;padding:var(--md)}
 code,pre,dd,.mono{font-family:var(--mono);font-size:13px}
-h1{margin:0 0 4px;display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}.marchio{white-space:nowrap;font-weight:600}.marchio b,.glifo{color:var(--accento)}h1>.tenue{font-size:14px;overflow-wrap:anywhere}h2{font-size:13px;text-transform:uppercase;border-bottom:1px solid var(--bordo);padding-bottom:4px;margin:24px 0 8px}h4{margin:16px 0 4px}
-details{border:1px solid var(--bordo);border-radius:12px;margin:8px 0;padding:16px;background:var(--velo)}summary{cursor:pointer;font-weight:600;overflow-wrap:anywhere;border-radius:6px}summary:hover{background:var(--hover)}summary:focus-visible,details:target{outline:2px solid var(--accento);outline-offset:4px}
-.titolo{font-size:14px}.attributi{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.pillola{display:inline-block;border:1px solid var(--bordo);border-radius:6px;padding:0 4px;color:var(--testo);background:var(--pillola);font-weight:400;max-width:100%;overflow-wrap:anywhere}.segno{color:var(--segno,var(--accento))}.tenue{color:var(--tenue);font-weight:400}
-.errore{color:var(--testo)}.segno.fallita{color:var(--stato-errore)}.errore-bordo{border-color:var(--stato-errore)}.attesa-bordo{border-color:var(--stato-attesa)}pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:8px 0;max-height:480px;overflow:auto}
-dl{display:grid;grid-template-columns:minmax(0,11em) minmax(0,1fr);gap:4px 8px;margin:0}dt{color:var(--tenue)}dd{margin:0;min-width:0;overflow-wrap:anywhere}
+h1{margin:0 0 var(--xs);display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--xs)}.marchio{white-space:nowrap;font-weight:600}.marchio b,.glifo{color:var(--accento)}h1>.tenue{font-size:14px;overflow-wrap:anywhere}h2{font-size:13px;text-transform:uppercase;margin:var(--lg) 0 var(--sm)}h4{margin:var(--sm) 0 var(--xs)}
+p,ul,ol,pre{margin:0 0 var(--sm)}ul,ol{padding-left:var(--lg)}li+li{margin-top:var(--xs)}
+details{border:1px solid var(--bordo);border-radius:12px;margin:0 0 var(--md);padding:var(--md);background:var(--velo)}summary{cursor:pointer;font-weight:600;overflow-wrap:anywhere;border-radius:6px}summary:hover{background:var(--hover)}summary:focus-visible,details:target{outline:2px solid var(--accento);outline-offset:4px}
+.corpo{margin-top:var(--sm)}.corpo>:first-child{margin-top:0}.corpo>:last-child{margin-bottom:0}
+.titolo{font-size:14px}.attributi{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sm);margin-top:var(--xs)}.gruppo-attributi{display:flex;flex-wrap:wrap;align-items:center;gap:var(--xs);max-width:100%}.pillola{display:inline-block;border:1px solid var(--bordo);border-radius:6px;padding:0 var(--xs);color:var(--testo);background:var(--pillola);font-weight:400;max-width:100%;overflow-wrap:anywhere}.segno{color:var(--segno,var(--accento))}.tenue{color:var(--tenue);font-weight:400}
+.errore{color:var(--testo)}.segno.fallita{color:var(--stato-errore)}.errore-bordo{border-color:var(--stato-errore)}.attesa-bordo{border-color:var(--stato-attesa)}pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:0;max-height:480px;overflow:auto}
+dl{display:grid;grid-template-columns:minmax(0,11em) minmax(0,1fr);gap:var(--xs) var(--sm);margin:0}dt{color:var(--tenue)}dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .barra{display:inline-block;width:160px;max-width:100%;height:12px;border:1px solid var(--traccia);border-radius:6px;overflow:hidden;vertical-align:middle;background:var(--barra-vuota)}.barra>span{display:block;height:100%;background:var(--accento)}
-footer{margin-top:24px;color:var(--tenue);font-size:13px;overflow-wrap:anywhere}
-@media (max-width:600px){dl{grid-template-columns:minmax(0,1fr)}dd{margin-bottom:8px}body{padding:8px}}`
+footer{margin-top:var(--lg);color:var(--tenue);font-size:13px;overflow-wrap:anywhere}
+@media (max-width:600px){dl{grid-template-columns:minmax(0,1fr)}dd{margin-bottom:var(--sm)}dd:last-child{margin-bottom:0}body{padding:var(--sm)}}`
 
 /** La board intera: HTML statico, nessuno script, nessun link costruito da dati, gettoni oscurati. */
 export function board(d: DatiBoard): string {

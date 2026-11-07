@@ -1874,6 +1874,8 @@ test('F10 Impostazioni: gruppi Account e Progetto; le restrizioni del progetto s
   await ui.press({ key: 'restrizione-claude-togli' })
   expect(amb.disco.get(CONFIG)).toBe(prima)
   expect((await ui.find({ key: 'pendenti' }))?.props).toMatchObject({ padding: 'md', backgroundColor: `${ACCENTO}${ALFA_VELO}`, flexWrap: 'wrap' })
+  // F12.1: the save controls remain one aligned group when the count wraps above them.
+  expect((await ui.find({ key: 'pendenti-azioni' }))?.props).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 'xs', rowGap: 'xs' })
   await ui.press({ key: 'applica' })
   // «Rimuovi restrizione» toglie il campo dal progetto; l'account non cambia, i campi sconosciuti restano.
   expect(amb.progettoOra()).not.toHaveProperty('soglie')
@@ -2257,6 +2259,8 @@ test('F12 setup e doctor: una sola scheda, azioni in ordine, bozza e scope invar
       expect(basi(await ui.drawn())).toBe(surface === 'terminal' ? 0 : 1)
       expect((await ui.find({ key: 'pagina-setup' }))?.props.padding).toBe(surface === 'terminal' ? 0 : 'md')
       expect((await ui.find({ key: 'setup-azioni' }))?.props.flexWrap).toBe('wrap')
+      expect((await ui.find({ key: 'setup-introduzione' }))?.props.gap).toBe(surface === 'terminal' ? 0 : 'xs')
+      expect((await ui.find({ key: 'setup-azioni' }))?.props.rowGap).toBe(surface === 'terminal' ? 0 : 'xs')
       expect(await ui.find({ type: 'Text', text: surface === 'terminal' ? new RegExp(`^Step ${i + 1} of 7 · `) : `Step ${i + 1} of 7` })).toBeDefined()
       if (i < 6) await ui.press({ key: 'setup-avanti' })
     }
@@ -2271,6 +2275,7 @@ test('F12 setup e doctor: una sola scheda, azioni in ordine, bozza e scope invar
     expect(await ui.find({ type: 'Text', text: 'All checks passed' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^0 findings · / })).toBeDefined()
     expect((await ui.find({ key: 'doctor-azioni' }))?.props.flexWrap).toBe('wrap')
+    expect((await ui.find({ key: 'doctor-azioni' }))?.props.rowGap).toBe(surface === 'terminal' ? 0 : 'xs')
     await ui.press({ key: 'doctor-indietro' })
     await ui.unmount()
   }

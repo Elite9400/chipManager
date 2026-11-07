@@ -51,7 +51,7 @@ export function vistaCarico(d: Dati) {
       ? T.data(l.reset)
       : undefined
     return (
-      <Box key={`limite-${l.id}`} flexDirection="column">
+      <Box key={`limite-${l.id}`} flexDirection="column" gap={conVelo ? 'xs' : 0}>
         <Text>
           {n === undefined ? <Text color={colore}>{'○ '}</Text> : livello && livello !== 'ok' ? <Text color={colore}>{'▲ '}</Text> : ''}
           {`${nomeLimiteIn(l, T.lingua)}: ${valore}${l.manuale ? ` · ${T('car.manuale')}` : ''}${livello === 'critica' ? ` · ${T('car.oltreCritica')}` : livello === 'attenzione' ? ` · ${T('car.sopraAttenzione')}` : ''}${l.manuale && livello && livello !== 'ok' ? ` ${T('car.dichiarato')}` : ''}`}
@@ -69,7 +69,7 @@ export function vistaCarico(d: Dati) {
     const speso = spesaApiOra?.speso
     const livello = speso === undefined || speso === null ? undefined : livelloDi(Math.min(100, (speso / api.budgetUsd) * 100), sogliaDi(regoleOra.risorse, 'claude'))
     return (
-      <Box key="api-claude" flexDirection="column">
+      <Box key="api-claude" flexDirection="column" gap={conVelo ? 'xs' : 0}>
         <Text wrap="wrap">
           {livello && livello !== 'ok' ? <Text color={COLORE_LIVELLO[livello]}>{'▲ '}</Text> : ''}
           {speso === undefined || speso === null
@@ -119,7 +119,7 @@ export function vistaCarico(d: Dati) {
   const larghezzaEffort = `${Math.floor(64 / Math.max(1, regoleOra.effort.length))}%`
   // Il velo dell'accento più intenso dove si lavora di più: 1, 2, 3 o più sessioni.
   const griglia = (
-    <Box flexDirection="column">
+    <Box flexDirection="column" gap={conVelo ? 'xs' : 0}>
       <Box key="m-testa" flexDirection="row">
         {cella('m-h-mod', '36%', <Text size="caption" dimColor>{T('tab.modello')}</Text>)}
         {regoleOra.effort.map(e => cella(`m-h-${e}`, larghezzaEffort, <Text size="caption" dimColor>{e}</Text>, true))}
@@ -130,7 +130,7 @@ export function vistaCarico(d: Dati) {
           {regoleOra.effort.map(e => {
             const c = conta2(m, e)
             return (
-              <Box key={`m-${m}-${e}`} width={larghezzaEffort} flexDirection="row" justifyContent="flex-end" paddingRight={1}
+              <Box key={`m-${m}-${e}`} width={larghezzaEffort} flexDirection="row" justifyContent="flex-end" paddingRight={conVelo ? 'xs' : 1}
                 backgroundColor={conVelo && c.lavoro ? velo(ACCENTO, VELO.carico[Math.min(3, c.lavoro)]!) : undefined}>
                 <Text tabular>
                   <Text weight={c.lavoro ? 'semibold' : 'regular'} dimColor={!c.lavoro}>{String(c.lavoro)}</Text>
@@ -146,7 +146,7 @@ export function vistaCarico(d: Dati) {
   )
   // Su `stretta` la griglia non entra: un elenco per modello, solo le celle non vuote.
   const elenco = (
-    <Box flexDirection="column">
+    <Box flexDirection="column" gap={conVelo ? 'sm' : 1}>
       {modelliAttivi.map(m => {
         const celle = regoleOra.effort.map(e => ({ e, ...conta2(m, e) })).filter(x => x.lavoro + x.coda > 0)
         const coda = celle.reduce((n, x) => n + x.coda, 0)
@@ -182,9 +182,9 @@ export function vistaCarico(d: Dati) {
       ) : (
         conContesto.map(r =>
           classe === 'stretta' ? (
-            <Box key={`tok-${r.id}`} flexDirection="column">
+            <Box key={`tok-${r.id}`} flexDirection="column" gap={conVelo ? 'xs' : 0}>
               <Text wrap="wrap">{r.titolo}</Text>
-              <Box flexDirection="row" alignItems="center" gap={conVelo ? 'sm' : 1}>
+              <Box flexDirection="row" alignItems="center" gap={conVelo ? 'xs' : 1}>
                 <Box flexGrow={1}>{barraPct(`tok-b-${r.id}`, r.contesto!, STATO.coda, true)}</Box>
                 <Text tabular>{`${r.contesto}%`}</Text>
               </Box>
@@ -192,7 +192,7 @@ export function vistaCarico(d: Dati) {
           ) : (
             <Box key={`tok-${r.id}`} flexDirection="row" alignItems="center">
               {cella(`tok-t-${r.id}`, '40%', <Text wrap="wrap">{r.titolo}</Text>)}
-              <Box width="45%" paddingRight={1}>{barraPct(`tok-b-${r.id}`, r.contesto!, STATO.coda, true)}</Box>
+              <Box width="45%" paddingRight={conVelo ? 'xs' : 1}>{barraPct(`tok-b-${r.id}`, r.contesto!, STATO.coda, true)}</Box>
               {cella(`tok-p-${r.id}`, '15%', <Text tabular>{`${r.contesto}%`}</Text>, true)}
             </Box>
           ),

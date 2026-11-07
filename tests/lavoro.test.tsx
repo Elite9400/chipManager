@@ -323,7 +323,9 @@ test('F12: sessioni in schede grafiche e tabella terminale, controlli stabili a 
         })
         expect(schede.length > 0).toBe(true)
         // L'albero disegnato ha le props già normalizzate dall'host (padding → paddingX/Y): quelle scritte si leggono con find.
-        for (const k of schede) spaziF12((await ui.find({ key: k }))?.props, 'sm', { borderStyle: 'round' })
+        // F12.1: session and work cards share the md inset; density comes from grouping, not narrower card edges.
+        for (const k of schede) spaziF12((await ui.find({ key: k }))?.props, 'md', { borderStyle: 'round' })
+        expect((await ui.find({ key: 'ses-azioni-chip-a-avviab01' }))?.props).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' })
       }
     }
     await ui.redraw({ ...PANE_F9(surface, 120).props })
@@ -813,7 +815,8 @@ test('F8.4 «Chi lavora»: nella scheda compatta l\'auditor ha «Copy» e gli av
   expect(await ui.find({ type: 'Text', text: t('it', 'au.fable') })).toBeDefined()
   await ui.press({ key: `chi-dettagli-${a.id}` })
   const dettagli = await ui.find({ key: `g-chi-dettagli-${a.id}` }) as unknown as NodoF8
-  expect(dettagli.props?.gap).toBeUndefined()
+  // No blank rows in the terminal: F12.1 sets an explicit zero gap, which renders the same as no gap.
+  expect(dettagli.props?.gap ?? 0).toBe(0)
   // Il pulsante dice già «Nascondi dettagli»: nessun titolo «Dettagli» ripetuto dentro.
   expect(await ui.find({ type: 'Text', text: 'Dettagli' })).toBeUndefined()
   await ui.unmount()
@@ -999,7 +1002,12 @@ test('F12: Start primario solo grafico, Queue e Retry secondari; schede e riepil
       expect((await ui.find({ key: 'riprova-a-f12retry' }))?.props.variant).toBe('secondary')
       if (surface !== 'terminal') {
         spaziF12((await ui.find({ key: 'riga-a-f12ready' }))?.props, 'md')
+        // F12.1: execution and review/context attributes wrap independently; utilities trail the main actions.
+        expect(await ui.find({ key: 'info-a-f12ready-esecuzione' })).toBeDefined()
+        expect(await ui.find({ key: 'info-a-f12ready-contesto' })).toBeDefined()
+        expect((await ui.find({ key: 'ordine-a-f12ready' }))?.props).toMatchObject({ flexGrow: 1, justifyContent: 'flex-end', flexWrap: 'wrap' })
         if (expanded) {
+          expect(await ui.find({ key: 'chi-riepilogo-a-f12ready-revisione' })).toBeDefined()
           for (const ruolo of ['motore', 'modello', 'effort', 'auditor', 'rev', 'corsia'])
             expect((await ui.find({ key: `chi-riepilogo-a-f12ready-${ruolo}` }))?.props.borderStyle).toBe('round')
           let basi = 0
