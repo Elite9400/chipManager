@@ -15,7 +15,8 @@ Work that deserves its own session (one branch, one review) goes to the chipMana
 - Do not repeat what the mod adds: lane, review step, reporting step, project background.
 - Always set `corsia`: R0 text, R1 small with tests, R2 ordinary, R3 large, R4–R5 sensitive.
 - Leave `esecutore`, `modello`, `effort` out unless you have a reason: the panel balances them within
-  `routing.json` and live limits. On well-specified R1–R2 work set `effort: "medium"`.
+  `routing.json` and live limits, among allowed and connected providers (DeepSeek and FreeLLMAPI need their key).
+  On well-specified R1–R2 work set `effort: "medium"`.
 - Leave `destinazione` out unless the work needs one place: it runs locally unless the owner or the destination
   advisor changes it; the balancer never sets it.
 - Sensitive work (auth, permissions, personal data): always set `corsia: "R4"` and `sensibile: true` yourself.
@@ -31,5 +32,6 @@ Work that deserves its own session (one branch, one review) goes to the chipMana
   `tentativo` from the mandate and `stato: "consegnata"`; report the review with `revisione.esito`
   (`in-corso`, `approvata`, `da-correggere`).
 - Exception, `api-claude` runs: commit in the worktree, never push; the review comes after delivery.
-- Call `proponi_pesi` or `proponi_impostazioni` only when the user asks.
+- Call `proponi_pesi` or `proponi_impostazioni` only when the user asks. In `proponi_impostazioni`, a `progetto`
+  patch changes this project; an `account` patch changes all projects: tell the user.
 ```

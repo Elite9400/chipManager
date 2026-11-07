@@ -12,6 +12,11 @@ review and start, so the work gets done well at the lowest cost. Short version: 
 - Every start passes the project rules (`routing.json`) and fixed guards: lanes R0–R5, allowed models and efforts,
   reviewer matrix, one Codex run per machine, sensitive work kept local and reviewed.
 - Fields you leave out are filled by the panel's balancer, using live plan limits and the project's weights.
+- Settings have two layers. **Account** (all projects): thresholds, API credits budget, manual limits, FreeLLMAPI
+  endpoint. **Project** (the repository of the session): allowed providers, profile and weights, board, destination
+  advisor, and restrictions that can only be stricter than the account.
+- Installing the mod for one project or for all (`--scope project|local|user`) changes where it is active, not how
+  it behaves: accounts and keys are always the user's, chips always belong to the session's project.
 
 Terms: an **action** (also *chip*) is one proposed unit of work. The **brief** is your task text. The **mandate** is
 the prompt the mod builds from your brief for the started session. The **owner** is the human who decides.
@@ -120,6 +125,10 @@ destination. Explicit fields always stay.
 | Sensitive (R4–R5) | `claude` with Opus or Fable (enforced) |
 | Not sure | leave both out |
 
+A provider must be **allowed** by the project and **connected**. Claude and Codex always count as connected;
+DeepSeek and FreeLLMAPI only with their key (mod options or `DEEPSEEK_API_KEY` / `FREELLMAPI_KEY`). A provider that
+is not connected is left out of automatic choices, and an explicit choice of it does not start.
+
 Allowed models come from `routing.json` (listed in the `modello` schema and in `risorse_agenti`). Name a lighter
 model yourself when the task is well specified and the balancer might keep a heavier one (see
 [Defaults and balancing](#defaults-and-balancing)). Describe the outcome, not the steps: Anthropic says so for Fable
@@ -176,7 +185,7 @@ fields always stay.
 | omit | normally | the owner, or the destination advisor (*consigliere*) when enabled, decides |
 | `local` | needs this machine, local data, Codex, or is sensitive | — |
 | `cloud` | long or parallel work on a GitHub repository, plan below critical | fresh only; title + brief ≤ 1,500 chars; no emails, IPs, keys, `.env`, `storage/`, `NAME=value` lines; no Codex; not sensitive; background never sent; model chosen by the cloud |
-| `api-claude` | plan near its limit and the owner set a monthly API budget | Claude only; fresh; own worktree; not sensitive; capped per run; headless: commits, never pushes |
+| `api-claude` | plan near its limit and an API credits budget is set | needs the account budget and the key in the mod's own option (an `ANTHROPIC_API_KEY` in the environment blocks it); Claude only; fresh; own worktree; not sensitive; each run fits both the account's and the project's month limit; capped per run; headless: commits, never pushes |
 
 ### Context, worktree, permissions
 
@@ -207,10 +216,12 @@ characters; when trimmed, `nota` says what was cut.
 | `regole.modelli`, `regole.effort`, `regole.corsieCodex` | the only values you may set |
 | `limiti[].percentuale` | plan **used**, 0–100, never "left" |
 | `limiti[].letto` | older than 5 minutes = not current; unknown is not free |
-| `politica.soglie` | over `critica`, do not name that provider: leave the engine out |
+| `politica.soglie` | effective thresholds (account and project combined); over `critica`, leave the engine out |
+| `politica.fornitori` | providers this project allows |
+| `chiavi` | `true` / `false` per key; a `false` DeepSeek or FreeLLMAPI key usually means not connected; values never shown |
 | `alLavoro`, `contesto` | sessions per model·effort now; prefer a less loaded model |
-| `destinazioni` | where this project's chips can run, budget and API lane state |
-| `chiavi` | `set` / `missing` only; keys are never shown |
+| `destinazioni` | where this project's chips can run; `api-claude` shows the account budget and spend (all projects), the project spend, cap per run and month limit, and the API lane state |
+| `impostazioni` | `project` and `account` layers as written (absent = inherits), `effective` values, `lingua` |
 
 ## Chains and dependencies
 
@@ -245,8 +256,14 @@ The mandate ends with the action id and the attempt token. Use them exactly.
 - `proponi_pesi` (profile and/or weights 0–4 with `motivo`) and `proponi_impostazioni` change nothing: they fill a
   draft the owner applies or discards. Weight proposals expire after 24 hours.
 - Call them only when the user explicitly asks. Read current values in `risorse_agenti` first.
-- `proponi_impostazioni` accepts only `motivo`, `profilo`, `soglie`, `board`, `consigliere`, `apiClaude`, `lingua`.
-  Any other field (keys, guards, permissions, providers, destinations) rejects the whole proposal.
+- `proponi_impostazioni` takes `motivo` and patches by layer:
+  - `progetto`: `profilo`, `board`, `consigliere`, `restrizioni` (`soglie`, `apiLimiteMeseUsd`, `apiTetto`), which
+    may only be stricter than the account;
+  - `account`: `soglie`, `apiClaude` (`budgetUsd`, `tetto`). An account patch changes **all projects**: say so to
+    the user;
+  - `lingua`.
+- Only the fields you send change; no derived field is filled. Any other field (keys, guards, permissions,
+  providers, destinations) rejects the whole proposal.
 
 ## Hard rules
 

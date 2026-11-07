@@ -5,12 +5,15 @@
 
 Agents interact through five MCP tools: `suggerisci_azione` (propose), `aggiorna_azione` (report delivery and
 review), `risorse_agenti` (read limits and rules), `proponi_pesi` and `proponi_impostazioni` (only on user request).
+Settings have an Account layer shared by all projects and a Project layer that can only restrict it. The mod can be
+installed for all projects or for one (`claude plugin install chip-manager@chipmanager --scope user|project|local`).
 
 ## Docs
 
 - [Guide for agents](docs/GUIDE-FOR-AGENTS.md): lifecycle, briefs, lanes, model and effort choice, reporting, platforms
 - [Agents snippet](docs/AGENTS-SNIPPET.md): short block to paste into CLAUDE.md or AGENTS.md
-- [README](README.md): install, configuration, routing.json, limits and balancing, security guards
+- [README](README.md): install per project or globally, account and project settings, routing.json, limits and
+  balancing, security guards
 
 ## Optional
 
