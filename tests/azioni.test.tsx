@@ -3490,6 +3490,7 @@ test('UX agenti (7): suggerisci_azione rifiuta con tutti gli errori in una volta
   expect(tipi.deny ?? tipi.text).toContain('titolo: text up to 200 characters')
   expect(tipi.deny ?? tipi.text).toContain('brief: text up to 20000 characters')
   expect(tipi.deny ?? tipi.text).toContain('dipende: list of ids')
+})
 
 // --- F9: garanzia di non regressione per «Cambia» (le altre azioni in lavoro.test.tsx) --------------------------------
 
