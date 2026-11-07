@@ -139,7 +139,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Tool descriptions are shorter, in English, and `risorse_agenti` is loaded on demand.
 - **Tool texts for agents**: the `corsia` schema explains R0–R5; the `esecutore` schema names the Codex lanes from
   `routing.json`; `aggiorna_azione` is shorter (479 → 306 characters, loaded in every session); `proponi_pesi`, like
-  `proponi_impostazioni`, is only for when the user asks. `suggerisci_azione` grows from 1,264 to about 1,404
+  `proponi_impostazioni`, is only for when the user asks. `suggerisci_azione` grows from 1,299 to 1,439
   characters with the example routing; the two always-loaded tools together are 33 characters shorter.
 - **`suggerisci_azione` reports every validation error at once**, joined with `;`, instead of the first one.
 - In the terminal, below 80 columns, the sessions table drops context and activity and merges model and effort.

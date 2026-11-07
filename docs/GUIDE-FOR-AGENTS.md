@@ -185,7 +185,7 @@ fields always stay.
 | omit | normally | the owner, or the destination advisor (*consigliere*) when enabled, decides |
 | `local` | needs this machine, local data, Codex, or is sensitive | — |
 | `cloud` | long or parallel work on a GitHub repository, plan below critical | fresh only; title + brief ≤ 1,500 chars; no emails, IPs, keys, `.env`, `storage/`, `NAME=value` lines; no Codex; not sensitive; background never sent; model chosen by the cloud |
-| `api-claude` | plan near its limit and an API credits budget is set | needs the account budget and the key in the mod's own option (an `ANTHROPIC_API_KEY` in the environment blocks it); Claude only; fresh; own worktree; not sensitive; each run fits both the account's and the project's month limit; capped per run; headless: commits, never pushes |
+| `api-claude` | plan near its limit and an API credits budget is set | needs the account budget and the key in the mod's own option (an `ANTHROPIC_API_KEY` in the environment blocks it); Claude only; fresh; own worktree; not sensitive; a run is booked only if its cap fits both the account's and the project's month limit, but the real cost can exceed the cap (budget 10, spent 9, a booking of 1 can end at 10.10): the hard limit is the spend limit of the API key's workspace in the Anthropic Console; headless: commits, never pushes |
 
 ### Context, worktree, permissions
 
@@ -267,8 +267,9 @@ The mandate ends with the action id and the attempt token. Use them exactly.
   - `account`: `soglie`, `apiClaude` (`budgetUsd`, `tetto`). An account patch changes **all projects**: say so to
     the user;
   - `lingua`.
-- Only the fields you send change; no derived field is filled. Any other field (keys, guards, permissions,
-  providers, destinations) rejects the whole proposal.
+- Profile and weights are a pair: proposing `progetto.profilo` also sets that profile's weights (model weights
+  stay). The API values are never derived: a cap proposed alone creates no budget, and a budget creates no cap.
+  Any other field (keys, guards, permissions, providers, destinations) rejects the whole proposal.
 
 ## Hard rules
 

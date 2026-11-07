@@ -13,13 +13,13 @@ gain over cost. Sizes are characters measured in the source; tokens are estimate
 | 4 (sensitive regex) | discarded: record only, see below |
 | 10 (proposer edits) | deferred |
 
-Sizes in characters, from the source, with the test routing (Codex lanes R1, R2, R3):
+Sizes in characters of the registered texts, with the test routing (Codex lanes R1, R2, R3; model lists included):
 
 | Text | Before | After |
 |---|---|---|
-| `suggerisci_azione` description + properties | 300 + 964 = 1,264 | 375 + 1,029 = 1,404 |
+| `suggerisci_azione` description + properties | 1,299 | 1,439 |
 | `aggiorna_azione` description | 479 | 306 |
-| Both always-loaded tools | 1,743 | 1,710 (−33) |
+| Both always-loaded tools | 1,778 | 1,745 (−33) |
 | `proponi_pesi` description (deferred) | 196 | 228 |
 
 The sections below describe the state before the change.
