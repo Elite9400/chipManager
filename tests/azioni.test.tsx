@@ -84,6 +84,9 @@ import { chiaveOTesto } from '../hooks/lingua'
 import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
 import { chiaveRiassunto } from '../hooks/board'
 import { GRIGIO, LIVELLO, STATO } from '../hooks/tema'
+// F13.5: per le prove di sola CPU (orologio finto, molti render) che da sole superano metà dei 5 s del kit e sotto carico
+// li passano: il tempo serve davvero. Il valore non cambia nessuna attesa delle prove, solo il tetto del kit.
+const LUNGA = { timeoutMs: 20_000 }
 
 // Un routing.json d'esempio, nella forma che il pannello legge.
 const ROUTING = {
@@ -166,7 +169,7 @@ test('F11.1 mandato: Codex esecutore modifica soltanto (sandbox del modo, predef
   expect(rev.prompt).not.toContain('workspace-write')
 })
 
-test('F11.1 revisione incrociata spenta: senza revisore scelto R0–R2 vanno senza revisore; R3+ e le scelte esplicite restano', async ($, on) => {
+test('F11.1 revisione incrociata spenta: senza revisore scelto R0–R2 vanno senza revisore; R3+ e le scelte esplicite restano', LUNGA, async ($, on) => {
   const amb = ambiente(on)
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ account: { modoLavoro: { revisioneIncrociata: false } }, progetti: { 'acme/progetto': { milestoneGithub: true } } }))
   mock.clock(on)
@@ -1911,7 +1914,7 @@ test('2.0: impostazioni disegnate prima di una modifica concorrente non la sovra
   await ui.unmount()
 })
 
-test('2.0: fonti e GitHub assenti non fanno rete senza opt-in, budget manuale mantiene fonte e unità', async ($, on) => {
+test('2.0: fonti e GitHub assenti non fanno rete senza opt-in, budget manuale mantiene fonte e unità', LUNGA, async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { limitiManuali: [
@@ -2685,7 +2688,7 @@ test('2.3.1: piano letto senza finestre dopo l\'uso extra: l\'extra (in soldi) r
   await ui.unmount()
 })
 
-test('rilievo 2: due letture dei limiti sovrapposte: quella fallita non riporta indietro la misura appena arrivata', async ($, on) => {
+test('rilievo 2: due letture dei limiti sovrapposte: quella fallita non riporta indietro la misura appena arrivata', LUNGA, async ($, on) => {
   const codex = (percentuale: number) => ({ limiti: [{ id: 'codex-primary', fornitore: 'codex', nome: 'Codex piano · primaria', percentuale, unita: '%', letto: new Date().toISOString(), fonte: 'prova' }],
     proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } })
   const guasta = { limiti: [{ id: 'codex', fornitore: 'codex', nome: 'Codex piano', fonte: 'prova', errore: 'non leggibile' }], proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } }
@@ -3318,7 +3321,7 @@ for (const [nome, strumenti, mod, eff] of [['senza strumenti', [], false, false]
     await ui.unmount()
   })
 
-test('F7.2 «Cambia»: conferma rifiutata o obsoleta non chiama niente; un cambio sotto i minimi di corsia o che cambierebbe il revisore è rifiutato', async ($, on) => {
+test('F7.2 «Cambia»: conferma rifiutata o obsoleta non chiama niente; un cambio sotto i minimi di corsia o che cambierebbe il revisore è rifiutato', LUNGA, async ($, on) => {
   const amb = ambiente(on, { strumenti: STRUMENTI_CAMBIO })
   // Una riga dei revisori anche per Sonnet: il revisore Claude di Opus è Fable, quello di Sonnet è Opus.
   amb.disco.set('X:/repo/.claude/routing.json', JSON.stringify({ ...ROUTING, revisione: { ...ROUTING.revisione,

@@ -30,6 +30,9 @@ import { MAX_URL, rapportoRedatto, urlRapporto } from '../hooks/rapporto'
 import { usoDesktop } from '../hooks/risorse'
 import type { Azione, Chiamante, Peso } from '../types'
 import { DiscoIt } from './disco-it'
+// F13.5: per le prove di sola CPU (orologio finto, molti render) che da sole superano metà dei 5 s del kit e sotto carico
+// li passano: il tempo serve davvero. Il valore non cambia nessuna attesa delle prove, solo il tetto del kit.
+const LUNGA = { timeoutMs: 20_000 }
 
 // Dati d'esempio: nessun progetto reale.
 const ROUTING = {
@@ -447,7 +450,7 @@ const PANE = (surface: 'desktop' | 'terminal', bodyColumns = 90) =>
   }) as const
 const SEZIONI = ['connessioni', 'soglie', 'modo', 'bilanciamento', 'progetto', 'board', 'avanzate', 'esecuzione', 'lingua', 'legenda'] as const
 
-test('F11.1 Modo di lavoro: «Tutti i progetti» e «Questo progetto» scrivono i due strati con un solo Applica; R4/R5 mai sotto high', async ($, on) => {
+test('F11.1 Modo di lavoro: «Tutti i progetti» e «Questo progetto» scrivono i due strati con un solo Applica; R4/R5 mai sotto high', LUNGA, async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -1181,7 +1184,7 @@ test('giro 6, B: un budget salvato mentre Applica parte (durante l\'aggiornament
   await ui.unmount()
 })
 
-test('giro 6, D: un popup d\'uscita aperto prima di un Applica completo e di una nuova modifica non agisce sulla bozza nuova', async ($, on) => {
+test('giro 6, D: un popup d\'uscita aperto prima di un Applica completo e di una nuova modifica non agisce sulla bozza nuova', LUNGA, async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -1488,7 +1491,7 @@ test('F6.7 stato: righe ✓/✗ calcolate dall\'helper; email, organizzazione e 
   await ui.unmount()
 })
 
-test('F6.7 Accedi: un solo login per clic; ricontrollo ogni 5 s che si ferma a login fatto, a 3 minuti o lasciando la sezione', async ($, on) => {
+test('F6.7 Accedi: un solo login per clic; ricontrollo ogni 5 s che si ferma a login fatto, a 3 minuti o lasciando la sezione', LUNGA, async ($, on) => {
   const amb = ambiente(on)
   let fatto = false
   amb.esec.stato = () => JSON.stringify({ ...ESEC_OK, claude: { trovato: true, loggedIn: fatto }, github: { trovato: true, loggedIn: false, remote: true, host: 'github.com' } })
@@ -1609,7 +1612,7 @@ test('F6.7 procedura guidata: i passi mancanti uno alla volta, ognuno si salta; 
   await ui.unmount()
 })
 
-test('F6.7 ricontrollo: una risposta vecchia, tornata dopo un nuovo «Accedi», non ferma il ricontrollo nuovo', async ($, on) => {
+test('F6.7 ricontrollo: una risposta vecchia, tornata dopo un nuovo «Accedi», non ferma il ricontrollo nuovo', LUNGA, async ($, on) => {
   const amb = ambiente(on)
   amb.esec.stato = () => JSON.stringify({ ...ESEC_OK, github: { trovato: true, loggedIn: false, remote: true } })
   const clock = mock.clock(on)

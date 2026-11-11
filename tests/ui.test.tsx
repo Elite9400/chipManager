@@ -3,6 +3,9 @@ import type { TestBody } from 'claude-code/testing'
 
 import { ACCENTO, ALFA_VELO, BOARD, contrasto, cssVariabiliBoard, EFFORT, FAMIGLIA, famigliaDi, GRIGIO, ICONA, LIVELLO, MARCHIO, MOTORE, SFONDI, sopra, STATO, VELO } from '../hooks/tema'
 import { blocchi, classeDi, componenti } from '../hooks/ui'
+// F13.5: per le prove di sola CPU (orologio finto, molti render) che da sole superano metà dei 5 s del kit e sotto carico
+// li passano: il tempo serve davvero. Il valore non cambia nessuna attesa delle prove, solo il tetto del kit.
+const LUNGA = { timeoutMs: 20_000 }
 
 // Dati d'esempio. I componenti si disegnano con l'hook del test (l'albero passa la validazione della superficie)
 // e si premono chiamando l'`onPress` dell'albero restituito: un hook di test non ha pulsanti premibili per nome.
@@ -69,7 +72,7 @@ test('classe di larghezza: stretta sotto 70, media fino a 109, larga da 110', ()
   expect([60, 69, 70, 109, 110, 130].map(classeDi)).toEqual(['stretta', 'stretta', 'media', 'media', 'larga', 'larga'])
 })
 
-test('Chip F5.8: la label è il solo nome; la scelta sta nel colore (primario d\'accento), le altre attenuate; × rimuove', async ($, on) => {
+test('Chip F5.8: la label è il solo nome; la scelta sta nel colore (primario d\'accento), le altre attenuate; × rimuove', LUNGA, async ($, on) => {
   const monta = banco(on)
   for (const surface of SUPERFICI) {
     const premute: string[] = []

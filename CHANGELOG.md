@@ -264,6 +264,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Fixed
 
+- **On Windows the machine locks no longer stay "busy" because of an unrelated program.** Each lock was a local TCP
+  port derived from its name; a port reserved by the system, or held by another program's connection, kept that lock
+  busy for minutes or for good ("another session is writing", exit code 3). On Windows each lock is now a named pipe
+  (`\\.\pipe\chipmanager-<sha256 of the lock name>`), still exclusive, still released when its process dies, and still
+  the same for every spelling of a path. A lock that cannot be created for another reason (permissions, invalid name)
+  now stops with that reason and exit code 7 instead of looking busy. Outside Windows the port stays for this release.
+  **After updating, run `/reload-plugins` in every open session**: a session still on the old code uses the port and
+  one on the new code uses the pipe, so until both are reloaded they do not exclude each other. A session that still
+  runs the old code shows it in `/chipmanager --doctor` ("the mod on disk is newer than the loaded one") when the mod
+  was updated in place.
 - **A moved home or `.claude` no longer blocks the mod.** Links and junctions above the mod's data folder (for example
   `C:\Users\<you>\.claude` moved to another disk) are allowed. The real path must still be outside every repository (no
   `.git`, folder or file, above it), and no link is allowed from the data folder down. The error now names the path and

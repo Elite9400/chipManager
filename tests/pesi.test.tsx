@@ -29,6 +29,9 @@ test('risorse_agenti: ridotta, tiene i 5 modelli con più sessioni (50 → 46), 
 import { bilancia, MOLTIPLICATORE_CORSIA, pianifica, profiloDi, punteggio, regoleDa, risorseDa, RISORSE_DEFAULT, radiceProgetto, sessioniCodex } from '../hooks/logica'
 import type { Azione, Chiamante, Corsia, Peso, Regole, SessioneProgetto } from '../types'
 import { DiscoIt } from './disco-it'
+// F13.5: per le prove di sola CPU (orologio finto, molti render) che da sole superano metà dei 5 s del kit e sotto carico
+// li passano: il tempo serve davvero. Il valore non cambia nessuna attesa delle prove, solo il tetto del kit.
+const LUNGA = { timeoutMs: 20_000 }
 
 // Dati d'esempio: nessun progetto reale.
 const ROUTING = {
@@ -358,7 +361,7 @@ const PANE = (surface: 'desktop' | 'terminal') =>
     props: { title: 'chipManager', isFocused: false, bodyColumns: 90, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
   }) as const
 
-test('proponi_pesi: il proponente è questa sessione; la proposta compare in Lavoro senza popup; un argomento estraneo è rifiutato', async ($, on) => {
+test('proponi_pesi: il proponente è questa sessione; la proposta compare in Lavoro senza popup; un argomento estraneo è rifiutato', LUNGA, async ($, on) => {
   const amb = ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })

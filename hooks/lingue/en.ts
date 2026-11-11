@@ -622,6 +622,7 @@ const en = {
   "helper.senzaMarcatore": "board folder without a marker: left untouched",
   "helper.marcatoreAltrui": "the marker belongs to another project",
   "helper.boardCambiata": "board changed: work discarded",
+  "helper.mutexNonCreabile": "the machine lock cannot be created",
   "helper.riassuntiPolitica": "project policy: no summaries with Claude",
   "helper.giaPrenotata": "already booked",
   "helper.tetto": "daily summary cap reached",

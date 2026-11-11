@@ -58,16 +58,28 @@ const MUTEX_CODEX = 'codex:corsia-della-macchina'
 
 /** Porta 20000-59999 derivata dal nome: stessa porta per lo stesso mutex su tutta la macchina. */
 const porta = nome => 20000 + (crypto.createHash('sha256').update(nome).digest().readUInt32BE(0) % 40000)
+/**
+ * F13.5: il canale che fa da mutex. Su Windows una named pipe con lo sha256 del nome (già canonico): una porta derivata
+ * dal nome poteva essere riservata dal sistema o tenuta da un socket estraneo, e il mutex restava «occupato» per minuti o
+ * per sempre. La pipe è esclusiva (un secondo listen dà EADDRINUSE) e il sistema la chiude alla morte del processo.
+ * shortcut: fuori da Windows resta la porta, con lo stesso limite; i socket Unix lasciano file orfani dopo un crash (issue 2.3).
+ */
+const canale = nome =>
+  process.platform === 'win32' ? `\\\\.\\pipe\\chipmanager-${crypto.createHash('sha256').update(nome).digest('hex')}` : porta(nome)
 const dorme = ms => new Promise(r => setTimeout(r, ms))
 
 function ascolta(nome) {
   return new Promise((ok, ko) => {
     const s = net.createServer()
     s.once('error', ko)
+    const c = canale(nome)
     // exclusive: il socket non si condivide con i worker di cluster; il sistema rifiuta un secondo bind.
-    s.listen({ port: porta(nome), host: '127.0.0.1', exclusive: true }, () => ok(s))
+    if (typeof c === 'string') s.listen({ path: c, exclusive: true }, () => ok(s))
+    else s.listen({ port: c, host: '127.0.0.1', exclusive: true }, () => ok(s))
   })
 }
+/** Il canale è preso da un altro? Sulla pipe solo EADDRINUSE; sulla porta anche EACCES (porta riservata o tenuta). */
+const presoDaAltri = e => e.code === 'EADDRINUSE' || (process.platform !== 'win32' && e.code === 'EACCES')
 
 /** Esegue `fn` tenendo il mutex; null se non si ottiene entro `attesa` ms. */
 /** I mutex di produzione della corsia API e dell'accesso: le prove non devono mai chiederli (giro 4 di F13a, punto 2). */
@@ -81,7 +93,8 @@ async function conMutex(nome, attesa, fn) {
     try {
       server = await ascolta(nome)
     } catch (e) {
-      if (e.code !== 'EADDRINUSE' && e.code !== 'EACCES') throw e
+      // Ogni altro errore (permessi, nome non valido) non è «occupato»: si ferma con il motivo e un codice suo (7).
+      if (!presoDaAltri(e)) throw new Rifiuto(7, `helper.mutexNonCreabile: ${canale(nome)} (${e.code ?? e.message})`)
       if (Date.now() >= fine) return { occupato: true }
       await dorme(25 + Math.random() * 25)
       continue
@@ -1932,7 +1945,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, percorsoCanonico, mutexEsecuzione, registraRadici, figlio, artefatto, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, apriPagina, PAGINE_AIUTO, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, percorsoCanonico, mutexEsecuzione, registraRadici, figlio, artefatto, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, apriPagina, PAGINE_AIUTO, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, canale, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

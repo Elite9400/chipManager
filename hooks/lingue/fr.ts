@@ -620,6 +620,7 @@ const fr: Dizionario = {
   "helper.senzaMarcatore": "dossier de la board sans marqueur : laissé intact",
   "helper.marcatoreAltrui": "le marqueur appartient à un autre projet",
   "helper.boardCambiata": "board modifiée : travail abandonné",
+  "helper.mutexNonCreabile": "impossible de créer le verrou de la machine",
   "helper.riassuntiPolitica": "politique du projet : pas de résumés avec Claude",
   "helper.giaPrenotata": "déjà réservé",
   "helper.tetto": "plafond quotidien de résumés atteint",

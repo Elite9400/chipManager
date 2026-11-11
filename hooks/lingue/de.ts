@@ -620,6 +620,7 @@ const de: Dizionario = {
   "helper.senzaMarcatore": "Board-Ordner ohne Markierung: unverändert gelassen",
   "helper.marcatoreAltrui": "die Markierung gehört zu einem anderen Projekt",
   "helper.boardCambiata": "Board geändert: Arbeit verworfen",
+  "helper.mutexNonCreabile": "Die Sperre des Rechners lässt sich nicht anlegen",
   "helper.riassuntiPolitica": "Projektrichtlinie: keine Zusammenfassungen mit Claude",
   "helper.giaPrenotata": "bereits reserviert",
   "helper.tetto": "tägliche Obergrenze für Zusammenfassungen erreicht",

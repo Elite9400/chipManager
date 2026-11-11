@@ -10,6 +10,9 @@ import { DiscoIt } from './disco-it'
 import { applicaPatch } from '../hooks/bilanciamento'
 import { ANTEPRIMA, confrontaControlli, confrontaF9, controlliF9, fineF9, normaF9 } from './f9'
 import { PRIMA } from './f9-prima'
+// F13.5: per le prove di sola CPU (orologio finto, molti render) che da sole superano metà dei 5 s del kit e sotto carico
+// li passano: il tempo serve davvero. Il valore non cambia nessuna attesa delle prove, solo il tetto del kit.
+const LUNGA = { timeoutMs: 20_000 }
 
 type On = Parameters<TestBody>[1]
 const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
@@ -192,7 +195,7 @@ function pulsanti(n: unknown): Pulsante[] {
 // Le azioni delle righe: il desktop può disegnarne l'etichetta, che deve stare corta e restare unica.
 const AZIONI_RIGA = /^(avvia|riprova|qui|chiedi|perche|annullaT|annulla|fatta|mod|su|giu|scarta)-/
 
-test('C1: a 60, 90 e 130 colonne, desktop e terminale: titoli interi, «▶ Avvia» presente, nessuna azione persa', async ($, on) => {
+test('C1: a 60, 90 e 130 colonne, desktop e terminale: titoli interi, «▶ Avvia» presente, nessuna azione persa', LUNGA, async ($, on) => {
   ambiente(on, MATRICE)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -524,7 +527,7 @@ test('F6 rilievo 8: «Dove…» su più chip aspetta ogni scrittura; una in conf
   await ui.unmount()
 })
 
-test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazioni) non hanno parole italiane, a ogni larghezza', async ($, on) => {
+test('lingue: in inglese le viste (Lavoro, Carico e ogni sezione delle Impostazioni) non hanno parole italiane, a ogni larghezza', LUNGA, async ($, on) => {
   const amb = ambiente(on, MATRICE_EN)
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', progetti: { 'acme/progetto': {} } }))
   mock.clock(on)
@@ -596,7 +599,7 @@ function minima(n: unknown, troppo: string[], limite: number): number {
   return w
 }
 
-test('lingue: a 60 colonne nel terminale nessuna riga supera la larghezza e nessuna etichetta si ripete, in ogni lingua', async ($, on) => {
+test('lingue: a 60 colonne nel terminale nessuna riga supera la larghezza e nessuna etichetta si ripete, in ogni lingua', LUNGA, async ($, on) => {
   const amb = ambiente(on, MATRICE_EN)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
@@ -823,7 +826,7 @@ test('F8.4 «Chi lavora»: nella scheda compatta l\'auditor ha «Copy» e gli av
   await ui.unmount()
 })
 
-test('F8.1 guardia: le schede delle viste hanno come etichetta il solo nome, in sei lingue; le chiavi di stato dei pulsanti non esistono', async ($, on) => {
+test('F8.1 guardia: le schede delle viste hanno come etichetta il solo nome, in sei lingue; le chiavi di stato dei pulsanti non esistono', LUNGA, async ($, on) => {
   const amb = ambiente(on, [])
   mock.clock(on)
   for (const lingua of ['en', 'it', 'es', 'fr', 'de', 'pt'] as const) {
@@ -855,7 +858,7 @@ const SEZIONI_F9 = ['connessioni', 'soglie', 'bilanciamento', 'progetto', 'board
 const PANE_F9 = (surface: 'desktop' | 'terminal' | 'vscode' | 'mobile', colonne: number) =>
   ({ ...PANE(surface === 'terminal' ? 'terminal' : 'desktop', colonne), surface }) as unknown as ReturnType<typeof PANE>
 
-test('F9 non regressione: elenco ordinato dei controlli per vista e per superficie uguale a prima di F9 (chiavi e scorciatoie uniche)', async ($, on) => {
+test('F9 non regressione: elenco ordinato dei controlli per vista e per superficie uguale a prima di F9 (chiavi e scorciatoie uniche)', LUNGA, async ($, on) => {
   const amb = ambiente(on, MATRICE_EN)
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ lingua: 'en', account: { apiClaude: { budgetUsd: 20, tetto: 2 } }, progetti: { 'acme/progetto': {} } }))
   mock.clock(on)
@@ -989,7 +992,7 @@ test('F9 (revisione): la scheda espansa (Dettagli) tiene il fondo della scheda e
 })
 
 
-test('F12: Start primario solo grafico, Queue e Retry secondari; schede e riepilogo con una sola base', async ($, on) => {
+test('F12: Start primario solo grafico, Queue e Retry secondari; schede e riepilogo con una sola base', LUNGA, async ($, on) => {
   const ready = az('a-f12ready', 1)
   ambiente(on, [ready, az('a-f12queue', 2, { dipende: [ready.id] }), az('a-f12retry', 3, { stato: 'fallita' })])
   mock.clock(on)

@@ -620,6 +620,7 @@ const it: Dizionario = {
   "helper.senzaMarcatore": "cartella della board senza marcatore: non la tocco",
   "helper.marcatoreAltrui": "il marcatore è di un altro progetto",
   "helper.boardCambiata": "board cambiata: lavoro scartato",
+  "helper.mutexNonCreabile": "il lucchetto della macchina non si può creare",
   "helper.riassuntiPolitica": "politica del progetto: niente riassunti con Claude",
   "helper.giaPrenotata": "già prenotata",
   "helper.tetto": "tetto giornaliero dei riassunti raggiunto",

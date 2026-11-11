@@ -620,6 +620,7 @@ const es: Dizionario = {
   "helper.senzaMarcatore": "carpeta de la board sin marcador: no se ha tocado",
   "helper.marcatoreAltrui": "el marcador pertenece a otro proyecto",
   "helper.boardCambiata": "board cambiada: trabajo descartado",
+  "helper.mutexNonCreabile": "no se puede crear el bloqueo de la máquina",
   "helper.riassuntiPolitica": "política del proyecto: sin resúmenes con Claude",
   "helper.giaPrenotata": "ya reservada",
   "helper.tetto": "alcanzado el tope diario de resúmenes",
