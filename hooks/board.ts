@@ -222,7 +222,7 @@ export function board(d: DatiBoard): string {
   const adesso = Date.parse(d.generata)
   // Ferme e fallite aspettano il committente; un avvio annullabile lo decide solo chi l'ha chiesto, non la board.
   const attesa = lista.filter(a => aspettaTe(a, d.vive, undefined, adesso))
-  const inCorso = lista.filter(a => ['in-avvio', 'avviata', 'consegnata'].includes(a.stato) && !attesa.includes(a))
+  const inCorso = lista.filter(a => ['in-avvio', 'avviata', 'consegnata', 'attesa-figli'].includes(a.stato) && !attesa.includes(a))
   const prossimi = lista.filter(a => a.stato === 'proposta' || a.stato === 'accodata')
   const chiuse = tutte.filter(a => a.stato === 'completata').sort((x, y) => (y.completataIl ?? y.aggiornata).localeCompare(x.completataIl ?? x.aggiornata))
   const recenti = chiuse.filter(a => adesso - Date.parse(a.completataIl ?? a.aggiornata) <= 30 * GIORNO)

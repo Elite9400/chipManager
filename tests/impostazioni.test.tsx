@@ -478,6 +478,24 @@ test('F11.1 Modo di lavoro: «Tutti i progetti» e «Questo progetto» scrivono 
   expect(c.account.modoLavoro).toEqual({ effortPredefinito: { R0: 'low' }, codexSandbox: 'read-only' })
 })
 
+test('F13.2 Modo di lavoro: il modo dirigente si sceglie per strato e si scrive con Applica; la nota su Fable si vede', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  expect((await ui.find({ key: 'modo-dir-quando-R3+-premi' }))?.props).toMatchObject({ variant: 'primary' })
+  expect((await ui.find({ key: 'modo-dir-figli-8-premi' }))?.props).toMatchObject({ variant: 'primary' })
+  await ui.press({ key: 'modo-ambito-progetto-premi' })
+  await ui.press({ key: 'modo-dir-quando-sempre-premi' })
+  await ui.press({ key: 'modo-dir-figli-4-premi' })
+  await ui.press({ key: 'modo-dir-ripiani-0-premi' })
+  await ui.press({ key: 'applica' })
+  expect(JSON.parse(amb.disco.get(CONFIG)!).progetti['esempio/demo'].modoLavoro).toEqual({ dirigente: { quando: 'sempre', maxFigli: 4, maxRipiani: 0 } })
+  expect(await ui.find({ type: 'Text', text: /Fable può addebitare uso extra/ })).toBeDefined()
+})
+
 // --- F11.3: il doctor ----------------------------------------------------------------------------------------------
 /** I testi disegnati (stringhe ed etichette), per cercare una frase. */
 const testi = (n: unknown): string[] =>

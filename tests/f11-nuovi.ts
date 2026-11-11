@@ -823,6 +823,137 @@ export const NUOVI_F11: Record<string, unknown> = {
    "gestori": [
     "press"
    ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-off-premi",
+   "label": "Director chip, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-R3+-premi",
+   "label": "Director chip, From R3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-sempre-premi",
+   "label": "Director chip, Always",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-opus-5-5-premi",
+   "label": "Opus 5.5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-fable-5-1-premi",
+   "label": "Fable 5.1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-2-premi",
+   "label": "Max children, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-4-premi",
+   "label": "Max children, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-8-premi",
+   "label": "Max children, 8",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-12-premi",
+   "label": "Max children, 12",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-20-premi",
+   "label": "Max children, 20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-0-premi",
+   "label": "Max re-plans, 0",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-1-premi",
+   "label": "Max re-plans, 1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-2-premi",
+   "label": "Max re-plans, 2",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-3-premi",
+   "label": "Max re-plans, 3",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-4-premi",
+   "label": "Max re-plans, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-5-premi",
+   "label": "Max re-plans, 5",
+   "gestori": [
+    "press"
+   ]
   }
  ],
  "controlli:terminal:impostazioni-modo": [
@@ -1272,6 +1403,137 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "modo-incrociata-no-premi",
    "label": "Cross review, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-off-premi",
+   "label": "Director chip, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-R3+-premi",
+   "label": "Director chip, From R3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-sempre-premi",
+   "label": "Director chip, Always",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-opus-5-5-premi",
+   "label": "Opus 5.5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-fable-5-1-premi",
+   "label": "Fable 5.1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-2-premi",
+   "label": "Max children, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-4-premi",
+   "label": "Max children, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-8-premi",
+   "label": "Max children, 8",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-12-premi",
+   "label": "Max children, 12",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-20-premi",
+   "label": "Max children, 20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-0-premi",
+   "label": "Max re-plans, 0",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-1-premi",
+   "label": "Max re-plans, 1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-2-premi",
+   "label": "Max re-plans, 2",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-3-premi",
+   "label": "Max re-plans, 3",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-4-premi",
+   "label": "Max re-plans, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-5-premi",
+   "label": "Max re-plans, 5",
    "gestori": [
     "press"
    ]
@@ -1727,6 +1989,137 @@ export const NUOVI_F11: Record<string, unknown> = {
    "gestori": [
     "press"
    ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-off-premi",
+   "label": "Director chip, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-R3+-premi",
+   "label": "Director chip, From R3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-sempre-premi",
+   "label": "Director chip, Always",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-opus-5-5-premi",
+   "label": "Opus 5.5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-fable-5-1-premi",
+   "label": "Fable 5.1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-2-premi",
+   "label": "Max children, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-4-premi",
+   "label": "Max children, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-8-premi",
+   "label": "Max children, 8",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-12-premi",
+   "label": "Max children, 12",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-20-premi",
+   "label": "Max children, 20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-0-premi",
+   "label": "Max re-plans, 0",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-1-premi",
+   "label": "Max re-plans, 1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-2-premi",
+   "label": "Max re-plans, 2",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-3-premi",
+   "label": "Max re-plans, 3",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-4-premi",
+   "label": "Max re-plans, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-5-premi",
+   "label": "Max re-plans, 5",
+   "gestori": [
+    "press"
+   ]
   }
  ],
  "controlli:mobile:impostazioni-modo": [
@@ -2176,6 +2569,137 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "modo-incrociata-no-premi",
    "label": "Cross review, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-off-premi",
+   "label": "Director chip, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-R3+-premi",
+   "label": "Director chip, From R3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-sempre-premi",
+   "label": "Director chip, Always",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-opus-5-5-premi",
+   "label": "Opus 5.5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-fable-5-1-premi",
+   "label": "Fable 5.1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-2-premi",
+   "label": "Max children, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-4-premi",
+   "label": "Max children, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-8-premi",
+   "label": "Max children, 8",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-12-premi",
+   "label": "Max children, 12",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-20-premi",
+   "label": "Max children, 20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-0-premi",
+   "label": "Max re-plans, 0",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-1-premi",
+   "label": "Max re-plans, 1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-2-premi",
+   "label": "Max re-plans, 2",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-3-premi",
+   "label": "Max re-plans, 3",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-4-premi",
+   "label": "Max re-plans, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-5-premi",
+   "label": "Max re-plans, 5",
    "gestori": [
     "press"
    ]
@@ -3739,6 +4263,137 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "modo-incrociata-no-premi",
    "label": "Cross review, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-off-premi",
+   "label": "Director chip, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-R3+-premi",
+   "label": "Director chip, From R3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-sempre-premi",
+   "label": "Director chip, Always",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-opus-5-5-premi",
+   "label": "Opus 5.5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-fable-5-1-premi",
+   "label": "Fable 5.1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-2-premi",
+   "label": "Max children, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-4-premi",
+   "label": "Max children, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-8-premi",
+   "label": "Max children, 8",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-12-premi",
+   "label": "Max children, 12",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-20-premi",
+   "label": "Max children, 20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-0-premi",
+   "label": "Max re-plans, 0",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-1-premi",
+   "label": "Max re-plans, 1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-2-premi",
+   "label": "Max re-plans, 2",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-3-premi",
+   "label": "Max re-plans, 3",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-4-premi",
+   "label": "Max re-plans, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-5-premi",
+   "label": "Max re-plans, 5",
    "gestori": [
     "press"
    ]
@@ -5493,6 +6148,137 @@ export const NUOVI_F11: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
+   "chiave": "modo-dir-quando-off-premi",
+   "label": "Director chip, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-R3+-premi",
+   "label": "Director chip, From R3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-sempre-premi",
+   "label": "Director chip, Always",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-opus-5-5-premi",
+   "label": "Opus 5.5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-fable-5-1-premi",
+   "label": "Fable 5.1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-2-premi",
+   "label": "Max children, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-4-premi",
+   "label": "Max children, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-8-premi",
+   "label": "Max children, 8",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-12-premi",
+   "label": "Max children, 12",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-20-premi",
+   "label": "Max children, 20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-0-premi",
+   "label": "Max re-plans, 0",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-1-premi",
+   "label": "Max re-plans, 1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-2-premi",
+   "label": "Max re-plans, 2",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-3-premi",
+   "label": "Max re-plans, 3",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-4-premi",
+   "label": "Max re-plans, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-5-premi",
+   "label": "Max re-plans, 5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
    "chiave": "consigliere-spento-premi",
    "label": "Off",
    "variant": "primary",
@@ -7241,6 +8027,137 @@ export const NUOVI_F11: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
+   "chiave": "modo-dir-quando-off-premi",
+   "label": "Director chip, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-R3+-premi",
+   "label": "Director chip, From R3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-sempre-premi",
+   "label": "Director chip, Always",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-opus-5-5-premi",
+   "label": "Opus 5.5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-fable-5-1-premi",
+   "label": "Fable 5.1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-2-premi",
+   "label": "Max children, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-4-premi",
+   "label": "Max children, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-8-premi",
+   "label": "Max children, 8",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-12-premi",
+   "label": "Max children, 12",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-20-premi",
+   "label": "Max children, 20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-0-premi",
+   "label": "Max re-plans, 0",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-1-premi",
+   "label": "Max re-plans, 1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-2-premi",
+   "label": "Max re-plans, 2",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-3-premi",
+   "label": "Max re-plans, 3",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-4-premi",
+   "label": "Max re-plans, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-5-premi",
+   "label": "Max re-plans, 5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
    "chiave": "consigliere-spento-premi",
    "label": "Off",
    "variant": "primary",
@@ -8983,6 +9900,137 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "modo-incrociata-no-premi",
    "label": "Cross review, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-off-premi",
+   "label": "Director chip, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-R3+-premi",
+   "label": "Director chip, From R3",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-quando-sempre-premi",
+   "label": "Director chip, Always",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-opus-5-5-premi",
+   "label": "Opus 5.5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-modello-claude-fable-5-1-premi",
+   "label": "Fable 5.1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-2-premi",
+   "label": "Max children, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-4-premi",
+   "label": "Max children, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-8-premi",
+   "label": "Max children, 8",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-12-premi",
+   "label": "Max children, 12",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-figli-20-premi",
+   "label": "Max children, 20",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-0-premi",
+   "label": "Max re-plans, 0",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-1-premi",
+   "label": "Max re-plans, 1",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-2-premi",
+   "label": "Max re-plans, 2",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-3-premi",
+   "label": "Max re-plans, 3",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-4-premi",
+   "label": "Max re-plans, 4",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-dir-ripiani-5-premi",
+   "label": "Max re-plans, 5",
    "gestori": [
     "press"
    ]

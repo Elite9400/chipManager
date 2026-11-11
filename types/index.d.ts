@@ -32,7 +32,17 @@ export type StratoAccount = { soglie: SogliePerStrato; limitiManuali: Limite[]; 
  * F11.1: il modo di lavoro di uno strato, grezzo (assente o null = eredita). Preferenze, non guardie: il progetto
  * sostituisce l'account campo per campo; le guardie (minimi di corsia e di motore, R4/R5, permessi) vincono sempre.
  */
+/** F13.2: il modo dirigente di uno strato (assente o null = eredita). */
+export type Dirigente = {
+  modello?: string
+  quando?: 'off' | 'R3+' | 'sempre'
+  lavoratori?: Partial<Record<Corsia, string>>
+  maxFigli?: number
+  maxRipiani?: number
+}
+export type DirigenteEfficace = { modello: string; quando: 'off' | 'R3+' | 'sempre'; lavoratori: Record<Corsia, string>; maxFigli: number; maxRipiani: number }
 export type ModoLavoro = {
+  dirigente?: Dirigente
   effortPredefinito?: Partial<Record<Corsia, 'low' | 'medium' | 'high' | 'xhigh'>>
   codexSandbox?: 'workspace-write' | 'read-only'
   parallelo?: number
@@ -43,6 +53,7 @@ export type ModoLavoro = {
 }
 /** F11.1: il modo di lavoro efficace (account, progetto e predefiniti combinati). */
 export type ModoLavoroEfficace = {
+  dirigente: DirigenteEfficace
   effortPredefinito: Record<Corsia, 'low' | 'medium' | 'high' | 'xhigh'>
   codexSandbox: 'workspace-write' | 'read-only'
   parallelo?: number
@@ -154,6 +165,8 @@ export type StatoAzione =
   | 'fallita'
   | 'completata'
   | 'scartata'
+  /** F13.2: una chip dirigente che aspetta le sue figlie: non conta nel parallelo. */
+  | 'attesa-figli'
 /** Le opzioni della chip di sessione dell'app (start_session). */
 export type Permessi = 'default' | 'acceptEdits' | 'plan' | 'auto' | 'bypassPermissions'
 export type Contesto = 'fresh' | 'fork'
@@ -161,7 +174,20 @@ export type Contesto = 'fresh' | 'fork'
 export type Destinazione = 'local' | 'cloud' | 'api-claude'
 
 /** Una riga del pannello: un file JSON in `<dir azioni>/<id>.json`, scritto solo con CAS atomico. */
+/** F13.2: i vincoli della chip dirigente, copiati dall'helper dal record del padre (mai dal testo). */
+export type VincoliPadre = { sensibile: boolean; corsiaMin?: Corsia; datiLan: boolean; fornitori: string[] }
 export type Azione = {
+  /** F13.2: `dirigente` pianifica e assegna; `lavoro` è una figlia (profondità 1). Assente = chip normale. */
+  ruolo?: 'dirigente' | 'lavoro'
+  /** F13.2: l'id della chip dirigente di una figlia. */
+  padre?: string
+  vincoliPadre?: VincoliPadre
+  /** F13.2: i vincoli propri di una dirigente, scritti alla proposta: l'helper li copia nelle figlie. */
+  vincoliPropri?: VincoliPadre
+  /** F13.2: quante volte la dirigente è tornata a pianificare dopo l'attesa delle figlie. */
+  ripiani?: number
+  /** F13.2: scelta esplicita del committente («Dirigente su Opus»): mai un ripiego automatico. */
+  dirigenteSuOpus?: boolean
   id: string
   /** Contatore di scrittura: il CAS dell'helper rifiuta chi scrive su una versione vecchia. */
   versione: number

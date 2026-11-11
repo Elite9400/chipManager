@@ -1219,6 +1219,26 @@ const fr: Dizionario = {
   "doc.nonSpostati": "Données non déplacées : rien n'a changé",
   "doc.r.host.claudeCode": "Claude Code {versione} est antérieur à 2.1.321",
   "doc.f.host.claudeCode": "Fable 5.2 nécessite Claude Code 2.1.321 ou plus récent : mettez à jour Claude Code avant de l'utiliser.",
+  // F13.2: modo dirigente
+  "v.dirigenteFiglia": "une chip directrice ne peut pas être l'enfant d'une autre directrice (profondeur 1)",
+  "v.dirigenteClaude": "une chip directrice tourne sur Claude",
+  "v.fornitorePadre": "{fornitore} n'est pas parmi les fournisseurs admis pour sa chip directrice",
+  // F13.2: corsia CLI senza credenziali dell'abbonamento
+  "err.cliCredenziali": "la voie CLI n'utiliserait pas l'abonnement : {fonti} définissent clé, jeton, helper ou passerelle, ou sont illisibles. Corrigez-les, ou lancez-la depuis l'app de bureau dans une session sur {modello}",
+  "stato.attesaFiglie": "Attend ses chips enfants",
+  // F13.2: modo dirigente nel pannello
+  "dir.riga": "Directrice · enfants {n}/{max} · replans {r}/{maxR}",
+  "dir.costo": "coût des enfants ${osservato} observé, {ignote} inconnus",
+  "dir.fable": "Fable peut facturer un usage supplémentaire si votre forfait le prévoit",
+  "dir.figlia": "Enfant de {titolo} : en garde les contraintes",
+  "az.dirigenteOpus": "Directrice sur Opus",
+  "modo.dirQuando": "Chip directrice",
+  "modo.dirOff": "Désactivée",
+  "modo.dirR3": "Dès R3",
+  "modo.dirSempre": "Toujours",
+  "modo.dirModello": "Modèle de la directrice",
+  "modo.dirFigli": "Enfants au maximum",
+  "modo.dirRipiani": "Replans au maximum",
   // ‹fine›
 }
 

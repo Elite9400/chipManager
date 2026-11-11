@@ -1145,6 +1145,17 @@ async function lanciaCli(dir, id, tentativo, input) {
     if (a.stato !== 'in-avvio' || a.lanciatore !== 'cli' || a.tentativo !== tentativo) return 4
     const file = fileEsecuzione(dir, tentativo)
     if (fs.existsSync(file)) return 4
+    // Un collegamento sotto i dati si rifiuta prima di tutto, come prima del controllo delle credenziali.
+    percorsoSicuro(path.dirname(path.resolve(file)))
+    // F13 (N1): prima di ogni avvio della corsia CLI, le credenziali di tutte le fonti, fatti dell'host compresi: chi
+    // non li passa non parte. Una chiave, un token, un gateway o una fonte illeggibile bloccano, col nome della fonte.
+    const host = input?.fontiHost
+    if (!Array.isArray(host) || host.length > 10 || !host.every(h => oggetto(h) && ['user', 'project', 'local', 'flag', 'policy'].includes(h.source) &&
+        (h.chiavi === null || (Array.isArray(h.chiavi) && h.chiavi.every(k => typeof k === 'string' && k.length < 100)))) || typeof input?.root !== 'string')
+      return [2, JSON.stringify({ motivo: 'fontiHost' })]
+    const API = require('./api-claude.cjs')
+    const blocchi = API.blocchiCli(API.fontiImpostazioni(input.root), process.env, host)
+    if (blocchi.length) return [5, JSON.stringify({ fonti: blocchi })]
     fs.mkdirSync(path.dirname(file), { recursive: true })
     scriviDati(file, JSON.stringify({ id, tentativo, stato: 'in-avvio' }))
     try {
@@ -1160,6 +1171,50 @@ async function lanciaCli(dir, id, tentativo, input) {
     }
   })
   return r.occupato ? 3 : r.valore
+}
+
+/**
+ * F13.2: una figlia della chip dirigente `padre`, sotto il lock delle azioni. I vincoli del padre (sensibilità, corsia
+ * minima, dati di rete locale, fornitori ammessi) si COPIANO dal suo record, mai dal testo della figlia; la figlia non
+ * può essere una dirigente né portare vincoli suoi. Oltre `maxFigli` figlie l'helper rifiuta. stdin `{ padre, figlio,
+ * maxFigli }`: 0 e il record scritto; 4 padre non dirigente al lavoro, figlie al massimo o id già usato; 2 richiesta non valida.
+ */
+async function figlio(dir, richiesta) {
+  registraRadici(dir)
+  const f = richiesta?.figlio
+  if (!oggetto(richiesta) || !idValido(richiesta.padre) || !oggetto(f) || !idValido(f.id) || !Number.isInteger(richiesta.maxFigli) || richiesta.maxFigli < 1 || richiesta.maxFigli > 20) return [2, '']
+  if (f.ruolo !== undefined || f.padre !== undefined || f.vincoliPadre !== undefined || f.vincoliPropri !== undefined) return [2, '']
+  const r = await conMutex(MUTEX_AZIONI(dir), 8000, () => {
+    let padre
+    try {
+      padre = JSON.parse(fs.readFileSync(path.join(dir, `${richiesta.padre}.json`), 'utf8'))
+    } catch {
+      return [4, JSON.stringify({ motivo: 'padre' })]
+    }
+    if (!oggetto(padre) || padre.ruolo !== 'dirigente' || padre.padre !== undefined || !['avviata', 'attesa-figli'].includes(padre.stato)) return [4, JSON.stringify({ motivo: 'padre' })]
+    let n = 0
+    for (const nome of fs.readdirSync(dir).filter(x => /^a-[a-z0-9]+\.json$/.test(x))) {
+      try {
+        if (JSON.parse(fs.readFileSync(path.join(dir, nome), 'utf8')).padre === richiesta.padre) n++
+      } catch {
+        // un record illeggibile non è una figlia di questo padre
+      }
+    }
+    if (n >= richiesta.maxFigli) return [4, JSON.stringify({ motivo: 'maxFigli', n })]
+    const v = oggetto(padre.vincoliPropri) ? padre.vincoliPropri : {}
+    const vincoliPadre = {
+      sensibile: v.sensibile === true,
+      ...(typeof v.corsiaMin === 'string' && /^R[0-5]$/.test(v.corsiaMin) && { corsiaMin: v.corsiaMin }),
+      datiLan: v.datiLan === true,
+      fornitori: Array.isArray(v.fornitori) ? v.fornitori.filter(x => typeof x === 'string' && /^[a-z0-9-]{1,40}$/.test(x)) : [],
+    }
+    const file = path.join(dir, `${f.id}.json`)
+    if (fs.existsSync(file)) return [4, JSON.stringify({ motivo: 'esiste' })]
+    const rec = { ...f, ruolo: 'lavoro', padre: richiesta.padre, vincoliPadre }
+    scriviDati(file, JSON.stringify(rec, null, 2))
+    return [0, JSON.stringify(rec)]
+  })
+  return r.occupato ? [3, ''] : r.valore
 }
 
 /**
@@ -1213,8 +1268,8 @@ async function eseguiCli(dir, id, tentativo, input, deps = {}) {
       percorsoSicuro(file)
       const { cwd } = preparaWorktree(input, tentativo, deps, fuori)
       ramo = fuori.ramo
-      const env = { ...process.env }
-      delete env.CLAUDECODE
+      // F13 (N1): il figlio gira solo con le credenziali dell'abbonamento: chiavi, token e gateway tolti dall'ambiente.
+      const env = require('./api-claude.cjs').ambienteCli(process.env)
       // Ancora subito prima dello spawn: una junction comparsa durante il worktree ferma tutto prima del processo.
       percorsoSicuro(file)
       const p = (deps.avvia ?? avviaComando)(['claude', '-p', '--model', input.modello, '--effort', input.effort, '--permission-mode', input.permessi, '--output-format', 'json'],
@@ -1752,7 +1807,7 @@ async function main(argv, opz = {}) {
   const [cmd, ...a] = argv
   const cartellaDi = f => (typeof f === 'string' && path.isAbsolute(f) ? path.dirname(path.resolve(f)) : undefined)
   if (/^(configura|configura-utente|ripristina-config|pesi-[a-z]+|impostazioni-[a-z]+)$/.test(cmd ?? '')) registraRadici(cartellaDi(a[0]))
-  else if (/^(prenota|lancia-cli|esegui-cli|stato-cli|archivia-registro)$/.test(cmd ?? '')) registraRadici(a[0])
+  else if (/^(prenota|lancia-cli|esegui-cli|stato-cli|archivia-registro|figlio)$/.test(cmd ?? '')) registraRadici(a[0])
   else if (cmd === 'cas') registraRadici(cartellaDi(a[0]))
   else if (/^board-[a-z]+$/.test(cmd ?? '') || cmd === 'diagnosi') registraRadici(cartellaDi(a[0]), a[1])
   else if (cmd === 'sposta-dati') registraRadici(cartellaDi(a[0]), a[2])
@@ -1770,7 +1825,7 @@ async function comandoHelper(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {
   // F6.2: la corsia a crediti API di Claude vive in un modulo suo (letto qui, a modulo caricato).
   if (/^((lancia|esegui|stato|libera|termina)-api|stato-esecuzione|accedi)$/.test(cmd ?? '')) return require('./api-claude.cjs').comando(cmd, a, stdin, { dirMacchina })
   // F10: config e cartelle dei dati fuori da ogni albero git e da ogni link, prima di qualunque lettura o scrittura.
-  const sicuro = cmd === 'cas' ? path.dirname(a[0] ?? '') : /^(configura|configura-utente|ripristina-config|board-[a-z]+|pesi-[a-z]+|impostazioni-[a-z]+|prenota|lancia-cli|esegui-cli|stato-cli)$/.test(cmd ?? '') ? a[0] : undefined
+  const sicuro = cmd === 'cas' ? path.dirname(a[0] ?? '') : /^(configura|configura-utente|ripristina-config|board-[a-z]+|pesi-[a-z]+|impostazioni-[a-z]+|prenota|figlio|lancia-cli|esegui-cli|stato-cli)$/.test(cmd ?? '') ? a[0] : undefined
   if (sicuro !== undefined) {
     try {
       percorsoSicuro(sicuro)
@@ -1789,7 +1844,11 @@ async function comandoHelper(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {
   if (cmd === 'apri-pagina' && a.length === 1) return esci(...apriPagina(a[0]))
   if (cmd === 'sposta-dati' && a.length === 4) return esci(...(await spostaDati(...a, stdin())))
   if (cmd === 'segnala-gh' && !a.length) return esci(...segnalaGh(stdin()))
-  if (cmd === 'lancia-cli' && a.length === 3) return esci(await lanciaCli(...a, stdin()))
+  if (cmd === 'lancia-cli' && a.length === 3) {
+    const r = await lanciaCli(...a, stdin())
+    return Array.isArray(r) ? esci(...r) : esci(r)
+  }
+  if (cmd === 'figlio' && a.length === 1) return esci(...(await figlio(a[0], stdin())))
   if (cmd === 'esegui-cli' && a.length === 3) return esci(await eseguiCli(...a, stdin()))
   if (cmd === 'stato-cli' && a.length === 2 && tentativoValido(a[1])) {
     return esci(0, fs.readFileSync(fileEsecuzione(a[0], a[1]), 'utf8'))
@@ -1825,7 +1884,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, percorsoCanonico, mutexEsecuzione, registraRadici, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, apriPagina, PAGINE_AIUTO, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, percorsoCanonico, mutexEsecuzione, registraRadici, figlio, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, apriPagina, PAGINE_AIUTO, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

@@ -542,6 +542,22 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     return ui.Chip({ chiave: `st-${a.id}`, testo: s.parola, segno: s.segno, colore: s.colore })
   }
 
+  /**
+   * F13.2: la riga della dirigente (figlie e ripiani coi limiti; costo delle figlie osservato o ignoto, mai stimato a caso;
+   * Fable può addebitare uso extra) e quella di una figlia (la sua dirigente).
+   */
+  const rigaDirigente = (a: Azione) => {
+    const d = regoleOra.risorse.modoLavoro.dirigente
+    if (a.padre) return <Text key={`figlia-${a.id}`} size="caption" dimColor wrap="wrap">{T('dir.figlia', { titolo: tutte.find(x => x.id === a.padre)?.titolo ?? a.padre })}</Text>
+    if (a.ruolo !== 'dirigente') return null
+    const figlie = tutte.filter(x => x.padre === a.id)
+    const osservate = figlie.filter(x => typeof x.costoApi === 'number')
+    const parti = [T('dir.riga', { n: figlie.length, max: d.maxFigli, r: a.ripiani ?? 0, maxR: d.maxRipiani })]
+    if (figlie.length) parti.push(T('dir.costo', { osservato: T.numero(osservate.reduce((s, x) => s + (x.costoApi as number), 0), 2), ignote: figlie.length - osservate.length }))
+    if (/fable/.test(modelloDi(a, regoleOra))) parti.push(T('dir.fable'))
+    return <Text key={`dirigente-${a.id}`} size="caption" dimColor wrap="wrap">{parti.join(' · ')}</Text>
+  }
+
   const scheda = (a: Azione) => {
     const modificabile = ['proposta', 'accodata', 'fallita'].includes(a.stato)
     const aperto = espansa === a.id && modificabile
@@ -573,6 +589,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       <Text dimColor size="caption" wrap="wrap">
         {opzioni(a)}
       </Text>,
+      rigaDirigente(a),
       a.dipende.length > 0 &&
         nota1(
           `dip-${a.id}`,
@@ -655,6 +672,13 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
             <Button key={`fatta-${a.id}`} plain label={`${T('az.completata')} ${breve(a)}`} onPress={completa(a)}>{T('az.completata')}</Button>
           )}
           {boardPronta && <Button key={`board-${a.id}`} plain label={T('az.nellaBoard')} onPress={fai(c.apriBoard)} />}
+          {a.ruolo === 'dirigente' && modificabile && !a.dirigenteSuOpus && (
+            <Button key={`su-opus-${a.id}`} plain label={`${T('az.dirigenteOpus')} ${breve(a)}`}
+              onPress={modifica(a, { dirigenteSuOpus: true, modello: 'claude-opus-5-5', effort: undefined })}>{T('az.dirigenteOpus')}</Button>
+          )}
+          {a.stato === 'attesa-figli' && (
+            <Button key={`scarta-${a.id}`} plain dimColor label={`${T('az.scarta')} ${breve(a)}`} onPress={fai(() => c.scarta(a))}>{T('az.scarta')}</Button>
+          )}
           {modificabile && <Button key={`mod-${a.id}`} plain label={`${T(aperto ? 'az.chiudi' : 'az.modifica')} ${breve(a)}`} onPress={apriChiudi(a.id)}>{T(aperto ? 'az.chiudi' : 'az.modifica')}</Button>}
         </Box>
         {modificabile && spostaScarta(a)}

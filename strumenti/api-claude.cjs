@@ -73,6 +73,53 @@ const fileSpesa = dm => path.join(dm, 'spesa-api.json')
 // --- fonti delle impostazioni (§5.2, §6, §7: fail-closed) ---------------------------------------------------
 
 /** Le fonti di impostazioni che `claude -p` leggerebbe nel worktree: utente, progetto, locale e gestite. */
+// --- F13 (N1): la corsia CLI gira solo con le credenziali dell'abbonamento ----------------------------------------------
+// La regola inversa di `chiaviVietate` (che protegge api-claude): qui bloccano chiave API, token, helper della chiave,
+// gateway o selettori di provider e un login forzato sulla console. Il token OAuth dell'abbonamento resta ammesso.
+const ENV_CLI = k => /^ANTHROPIC_(.*_)?(BASE_URL|AUTH_TOKEN|API_KEY)$/.test(k) || /^(CLAUDE_CODE_USE_|ANTHROPIC_(BEDROCK|VERTEX|FOUNDRY)_)/.test(k) || k === 'ANTHROPIC_CUSTOM_HEADERS'
+/** Le chiavi responsabili (mai i valori); null se la forma non è un oggetto. */
+function chiaviVietateCli(s) {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return null
+  if (s.env !== undefined && (!s.env || typeof s.env !== 'object' || Array.isArray(s.env))) return null
+  return [...Object.keys(s.env ?? {}).filter(ENV_CLI).map(k => `env.${k}`),
+    ...Object.keys(s).filter(k => ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'].includes(k)),
+    ...(s.forceLoginMethod === 'console' ? ['forceLoginMethod'] : [])]
+}
+/**
+ * Le fonti che bloccano un avvio della corsia CLI: i quattro file (utente, progetto, locale, gestite), l'ambiente
+ * ereditato e i fatti delle fonti dell'host che il pannello ha letto subito prima (`host`: policy, flag…; `chiavi: null`
+ * = non si legge). Una fonte illeggibile blocca. Solo nomi e chiavi, mai valori.
+ */
+function blocchiCli(fonti, env = process.env, host = []) {
+  const blocchi = []
+  for (const f of fonti) {
+    let testo
+    try {
+      testo = fs.readFileSync(f.file, 'utf8')
+    } catch (e) {
+      if (e.code !== 'ENOENT') blocchi.push({ nome: f.nome, illeggibile: true })
+      continue
+    }
+    let chiavi
+    try {
+      chiavi = chiaviVietateCli(JSON.parse(testo))
+    } catch {
+      chiavi = null
+    }
+    if (chiavi === null) blocchi.push({ nome: f.nome, illeggibile: true })
+    else if (chiavi.length) blocchi.push({ nome: f.nome, chiavi })
+  }
+  const daEnv = Object.keys(env).filter(ENV_CLI)
+  if (daEnv.length) blocchi.push({ nome: 'ambiente', chiavi: daEnv })
+  for (const h of host) {
+    if (h.chiavi === null) blocchi.push({ nome: `host:${h.source}`, illeggibile: true })
+    else if (h.chiavi.length) blocchi.push({ nome: `host:${h.source}`, chiavi: h.chiavi })
+  }
+  return blocchi
+}
+/** L'ambiente del figlio della corsia CLI: senza chiavi, token e gateway (solo le credenziali dell'abbonamento). */
+const ambienteCli = env => Object.fromEntries(Object.entries(env).filter(([k]) => !ENV_CLI(k) && k !== 'CLAUDECODE'))
+
 function fontiImpostazioni(root, env = process.env) {
   const utente = env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, 'settings.json') : path.join(os.homedir(), '.claude', 'settings.json')
   const gestite = process.platform === 'win32' ? 'C:\\Program Files\\ClaudeCode\\managed-settings.json'
@@ -754,6 +801,6 @@ async function comando(cmd, a, stdin, opz = {}) {
 }
 
 module.exports = {
-  comando, dirPredefinita, MUTEX_API, lanciaApi, eseguiApi, booleano, worktreeInvariato, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
+  comando, dirPredefinita, MUTEX_API, chiaviVietateCli, blocchiCli, ambienteCli, lanciaApi, eseguiApi, booleano, worktreeInvariato, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
   leggiSpesa, spesoNelMese, fileSpesa, regoleApi, percorsiAccount, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
 }

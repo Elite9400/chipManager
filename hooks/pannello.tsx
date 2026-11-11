@@ -213,6 +213,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
       }
     if (a.stato === 'fallita') return { colore: STATO.errore, segno: '✗', parola: T('stato.fallita') }
     if (a.stato === 'consegnata') return { colore: STATO.consegnata, segno: '✓', parola: T('stato.consegnata') }
+    if (a.stato === 'attesa-figli') return { colore: STATO.coda, segno: '◐', parola: T('stato.attesaFiglie') }
     if (a.qui) return { colore: STATO.inCorso, segno: '●', parola: T('stato.qui') }
     if (ferma(a)) return { colore: STATO.attesa, segno: '⏸', parola: T('stato.ferma') }
     return { colore: STATO.inCorso, segno: '●', parola: T(stati[a.id] ? 'stato.inCorso' : 'stato.avviata') }
@@ -240,7 +241,9 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
 
   // «Al lavoro adesso»: le sessioni del progetto (anche aperte a mano) più le chip avviate di cui l'app non dà la sessione.
   type Riga = SessioneProgetto & { azione?: Azione; parola: string; segno: string; colore: string }
-  const avviate = lista.filter(a => a.stato === 'avviata' || a.stato === 'in-avvio')
+  // F13.2: una dirigente che aspetta le figlie resta qui, con la sua parola (non conta fra quelle al lavoro).
+  const avviate = lista.filter(a => a.stato === 'avviata' || a.stato === 'in-avvio' || a.stato === 'attesa-figli')
+  const attende = { parola: T('stato.attesaFiglie'), segno: '◐', colore: STATO.coda }
   const righe: Riga[] = ses.lista.map(s => {
     const a = avviate.find(x => (s.motore === 'claude' && x.sessione === s.id) || (s.motore === 'codex' && x.esecutore === 'codex' && !!s.ramo && stati[x.id]?.ramo === s.ramo))
     const fermaOra = a ? ferma(a) : s.stato === 'ferma'
@@ -248,14 +251,22 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
     // Una sessione senza titolo ne prende uno nella lingua del pannello.
     const titolo = s.titolo || T(s.id === 'self' ? 'sessione.questa' : s.motore === 'codex' ? 'sessione.codex' : 'sessione.senzaTitolo')
     if (!a && s.stato === 'ignota') return { ...s, titolo, parola: '—', segno: '○', colore: GRIGIO }
+    if (a?.stato === 'attesa-figli') return { ...s, azione: a, titolo: a.titolo, ...attende }
     return { ...s, azione: a, titolo: a?.titolo ?? titolo, parola: T(fermaOra ? 'sessione.ferma' : 'sessione.inCorso'), segno: fermaOra ? '⏸' : '●', colore: fermaOra ? STATO.attesa : STATO.inCorso }
   })
   for (const a of avviate)
     if (!righe.some(r => r.azione?.id === a.id)) {
       const fermaOra = ferma(a)
+      const riga = {
+        id: `chip-${a.id}`, motore: a.esecutore === 'codex' ? 'codex' as const : 'claude' as const, titolo: a.titolo, ramo: stati[a.id]?.ramo,
+        modello: modelloDi(a, regoleOra), effort: effortDi(a, regoleOra), attivita: stati[a.id]?.ultimaAttivita, azione: a,
+      }
+      if (a.stato === 'attesa-figli') {
+        righe.push({ ...riga, ...attende, stato: 'ignota' })
+        continue
+      }
       righe.push({
-        id: `chip-${a.id}`, motore: a.esecutore === 'codex' ? 'codex' : 'claude', titolo: a.titolo, ramo: stati[a.id]?.ramo,
-        modello: modelloDi(a, regoleOra), effort: effortDi(a, regoleOra), stato: fermaOra ? 'ferma' : 'in-corso', attivita: stati[a.id]?.ultimaAttivita, azione: a,
+        ...riga, stato: fermaOra ? 'ferma' : 'in-corso',
         parola: T(a.stato === 'in-avvio' ? 'stato.inAvvio' : fermaOra ? 'sessione.ferma' : 'sessione.inCorso'), segno: a.stato === 'in-avvio' ? '◐' : fermaOra ? '⏸' : '●',
         colore: a.stato === 'in-avvio' ? STATO.coda : fermaOra ? STATO.attesa : STATO.inCorso,
       })

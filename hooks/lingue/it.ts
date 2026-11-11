@@ -1219,6 +1219,26 @@ const it: Dizionario = {
   "doc.nonSpostati": "Dati non spostati: niente cambiato",
   "doc.r.host.claudeCode": "Claude Code {versione} è più vecchio di 2.1.321",
   "doc.f.host.claudeCode": "Fable 5.2 richiede Claude Code 2.1.321 o successivo: aggiorna Claude Code prima di usarlo.",
+  // F13.2: modo dirigente
+  "v.dirigenteFiglia": "una chip dirigente non può essere figlia di un'altra dirigente (profondità 1)",
+  "v.dirigenteClaude": "una chip dirigente lavora su Claude",
+  "v.fornitorePadre": "{fornitore} non è fra i fornitori ammessi alla sua chip dirigente",
+  // F13.2: corsia CLI senza credenziali dell'abbonamento
+  "err.cliCredenziali": "la corsia CLI non userebbe l'abbonamento: {fonti} impostano chiave, token, helper o gateway, o non si leggono. Correggile, o avviala dall'app desktop da una sessione su {modello}",
+  "stato.attesaFiglie": "Aspetta le sue figlie",
+  // F13.2: modo dirigente nel pannello
+  "dir.riga": "Dirigente · figlie {n}/{max} · ripiani {r}/{maxR}",
+  "dir.costo": "costo delle figlie ${osservato} osservato, {ignote} ignote",
+  "dir.fable": "Fable può addebitare uso extra dove il piano lo prevede",
+  "dir.figlia": "Figlia di {titolo}: ne tiene i vincoli",
+  "az.dirigenteOpus": "Dirigente su Opus",
+  "modo.dirQuando": "Chip dirigente",
+  "modo.dirOff": "Spenta",
+  "modo.dirR3": "Da R3",
+  "modo.dirSempre": "Sempre",
+  "modo.dirModello": "Modello della dirigente",
+  "modo.dirFigli": "Figlie al massimo",
+  "modo.dirRipiani": "Ripiani al massimo",
   // ‹fine›
 }
 

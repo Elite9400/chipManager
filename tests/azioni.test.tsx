@@ -571,11 +571,26 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
     }
     if (cmd === 'lancia-cli') {
       const [dir, id, tentativo] = a
+      // F13 (N1): come l'helper, una fonte dell'host che blocca chiude l'avvio con 5 e i nomi, senza esecuzione.
+      const host = (JSON.parse(e.init?.stdin ?? '{}') as { fontiHost?: { source: string }[] }).fontiHost
+      if (!Array.isArray(host)) return fine(2, '{"motivo":"fontiHost"}')
+      if (host.length) return fine(5, JSON.stringify({ fonti: host.map(h => ({ nome: `host:${h.source}` })) }))
       const az = JSON.parse(disco.get(`${dir}/${id}.json`)!)
       const f = `${dir}/esecuzioni/${tentativo}.json`
       if (az.stato !== 'in-avvio' || az.tentativo !== tentativo || disco.has(f)) return fine(4)
       disco.set(f, JSON.stringify({ id, tentativo, stato: 'avviata', ramo: `chipmanager/${tentativo}` }))
       return fine(0)
+    }
+    // F13.2: come l'helper, la figlia sotto il lock: vincoli copiati dal record del padre, al più maxFigli.
+    if (cmd === 'figlio') {
+      const dir = p(a[0])
+      const req = JSON.parse(String(e.init?.stdin)) as { padre: string; figlio: Azione; maxFigli: number }
+      const padre = JSON.parse(disco.get(`${dir}/${req.padre}.json`) ?? 'null') as Azione | null
+      if (!padre || padre.ruolo !== 'dirigente' || padre.padre || !['avviata', 'attesa-figli'].includes(padre.stato)) return fine(4, '{"motivo":"padre"}')
+      if ([...disco.entries()].filter(([k, v]) => k.startsWith(`${dir}/a-`) && JSON.parse(v).padre === req.padre).length >= req.maxFigli) return fine(4, '{"motivo":"maxFigli"}')
+      const rec = { ...req.figlio, ruolo: 'lavoro', padre: req.padre, vincoliPadre: padre.vincoliPropri }
+      disco.set(`${dir}/${rec.id}.json`, JSON.stringify(rec))
+      return fine(0, JSON.stringify(rec))
     }
     if (cmd === 'stato-cli') return disco.has(`${a[0]}/esecuzioni/${a[1]}.json`) ? fine(0, disco.get(`${a[0]}/esecuzioni/${a[1]}.json`)) : fine(1)
     if (cmd === 'cas') {
@@ -4047,5 +4062,132 @@ test('F13b rilievo 10: Qwen USA chiede l\'host del workspace (validato) e il ril
   await ui.press({ key: 'cmp-rileva' })
   await finche(() => !!amb.processi.find(p => p.argv[1]?.endsWith('/compatibili.cjs') && p.argv[2] === 'rileva'))
   expect(['modelli', !!(await ui.find({ type: 'Text', text: /qwen3:8b, llama3\.2/ }))]).toEqual(['modelli', true])
+  await ui.unmount()
+})
+
+// --- F13.2: modo dirigente nel pannello ------------------------------------------------------------------------------
+
+const ROUTING_F13 = {
+  ...ROUTING,
+  modelli_ammessi: [...ROUTING.modelli_ammessi, 'claude-fable-5-2'],
+  tetto_per_modello: { ...ROUTING.tetto_per_modello, 'claude-fable-5-2': 'xhigh' },
+  revisione: { revisori_ammessi_per_autore: { ...ROUTING.revisione.revisori_ammessi_per_autore, 'claude-fable-5-2': ['claude-opus-5-5', 'motore:codex'],
+    'claude-sonnet-5-5': ['claude-opus-5-5', 'motore:codex'] } },
+}
+const ambienteF13 = (on: Parameters<TestBody>[1], modo: Record<string, unknown> = {}, opz: Parameters<typeof ambiente>[1] = {}) => {
+  const amb = ambiente(on, opz)
+  amb.disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING_F13))
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { milestoneGithub: true, modoLavoro: { dirigente: modo } } } }))
+  return amb
+}
+/** La dirigente al lavoro come la lascerebbe un avvio riuscito: stato, gettone e sessione. */
+const dirigenteAlLavoro = (amb: ReturnType<typeof ambiente>, id: string) => {
+  const f = `X:/orch/azioni/${id}.json`
+  const a = JSON.parse(amb.disco.get(f)!) as Azione
+  amb.disco.set(f, JSON.stringify({ ...a, versione: a.versione + 1, stato: 'avviata', tentativo: 'az-dir00001', sessione: SID }))
+}
+
+test('F13.2 pannello: una R3 nasce dirigente su Fable 5.2 coi suoi vincoli; la figlia la nomina col gettone, eredita i vincoli e prende il lavoratore della corsia', async ($, on) => {
+  const amb = ambienteF13(on, { maxFigli: 1 })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const r = await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Motore', brief: 'Riscrivi il pianificatore.', corsia: 'R3' } as never)
+  expect(String((r as { result?: unknown }).result)).toContain('director')
+  const dir = amb.azione()[0]!
+  // La corsia minima passa alle figlie solo da R4: una R3 non porta tutte le figlie su Opus.
+  expect([dir.ruolo, dir.modello, dir.vincoliPropri]).toEqual(['dirigente', 'claude-fable-5-2', { sensibile: false, datiLan: false, fornitori: ['claude', 'codex'] }])
+  // Una R1 normale non è una dirigente.
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.', corsia: 'R1' } as never)
+  expect(amb.azione().find(a => a.titolo === 'Docs')!.ruolo).toBe(undefined)
+  // Senza la dirigente al lavoro, o col gettone sbagliato: nessuna figlia.
+  const figlia = { tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Rinomina', brief: 'Rinomina un campo.', corsia: 'R1', padre: { id: dir.id, tentativo: 'az-dir00001' } }
+  expect(String((await $.tool.call(figlia as never) as { deny?: unknown }).deny)).toContain('padre must be')
+  dirigenteAlLavoro(amb, dir.id)
+  expect(String((await $.tool.call({ ...figlia, padre: { id: dir.id, tentativo: 'az-altro0001' } } as never) as { deny?: unknown }).deny)).toContain('padre must be')
+  await $.tool.call(figlia as never)
+  const f = amb.azione().find(a => a.titolo === 'Rinomina')!
+  expect([f.ruolo, f.padre, f.vincoliPadre, f.modello, f.stato]).toEqual(['lavoro', dir.id, dir.vincoliPropri, 'claude-sonnet-5-5', 'proposta'])
+  // Oltre maxFigli l'helper rifiuta e la dirigente si ferma col motivo.
+  expect(String((await $.tool.call({ ...figlia, titolo: 'Altra' } as never) as { deny?: unknown }).deny)).toContain('maxFigli')
+})
+
+test('F13.2 pannello: la dirigente aspetta col suo gettone e torna a lavorare entro maxRipiani; una chip normale non aspetta', async ($, on) => {
+  const amb = ambienteF13(on, { maxRipiani: 1 })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Motore', brief: 'Riscrivi il pianificatore.', corsia: 'R3' } as never)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.', corsia: 'R1' } as never)
+  const dir = amb.azione().find(a => a.titolo === 'Motore')!
+  const docs = amb.azione().find(a => a.titolo === 'Docs')!
+  dirigenteAlLavoro(amb, dir.id)
+  dirigenteAlLavoro(amb, docs.id)
+  const stato = (id: string, s: string, tentativo = 'az-dir00001') => $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id, stato: s, tentativo } as never) as Promise<{ deny?: unknown; result?: unknown }>
+  expect(String((await stato(docs.id, 'attesa-figli')).deny)).toContain('only a director')
+  expect(String((await stato(dir.id, 'attesa-figli', 'az-altro0001')).deny)).toContain('not the current one')
+  expect((await stato(dir.id, 'attesa-figli')).deny).toBe(undefined)
+  expect(amb.azione().find(a => a.id === dir.id)!.stato).toBe('attesa-figli')
+  expect((await stato(dir.id, 'avviata')).deny).toBe(undefined)
+  expect(amb.azione().find(a => a.id === dir.id)).toMatchObject({ stato: 'avviata', ripiani: 1 })
+  await stato(dir.id, 'attesa-figli')
+  expect(String((await stato(dir.id, 'avviata')).deny)).toContain('maxRipiani 1')
+  expect(amb.azione().find(a => a.id === dir.id)!.stato).toBe('attesa-figli')
+})
+
+test('F13.2 pannello: scartare la dirigente scarta le figlie mai partite (e l\'annullo le riporta); quelle partite restano', async ($, on) => {
+  const amb = ambienteF13(on)
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Motore', brief: 'Riscrivi il pianificatore.', corsia: 'R3' } as never)
+  const dir = amb.azione()[0]!
+  dirigenteAlLavoro(amb, dir.id)
+  for (const t of ['Uno', 'Due']) await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: t, brief: `Rinomina ${t}.`, corsia: 'R1', padre: { id: dir.id, tentativo: 'az-dir00001' } } as never)
+  const due = amb.azione().find(a => a.titolo === 'Due')!
+  amb.disco.set(`X:/orch/azioni/${due.id}.json`, JSON.stringify({ ...due, versione: due.versione + 1, stato: 'avviata', tentativo: 'az-due00001', sessione: SID }))
+  const d = JSON.parse(amb.disco.get(`X:/orch/azioni/${dir.id}.json`)!) as Azione
+  // Corsia CLI (nessuna sessione dell'app): la riga apre la scheda della chip.
+  amb.disco.set(`X:/orch/azioni/${dir.id}.json`, JSON.stringify({ ...d, versione: d.versione + 1, stato: 'attesa-figli', sessione: undefined, lanciatore: 'cli' }))
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await clock.advance(20_000)
+  expect(await ui.find({ type: 'Text', text: /Aspetta le sue figlie/ })).toBeDefined()
+  await ui.press({ key: `apri-${dir.id}` })
+  await ui.press({ key: `scarta-${dir.id}` })
+  expect(amb.azione().map(a => [a.titolo, a.stato]).sort()).toEqual([['Due', 'avviata'], ['Motore', 'scartata'], ['Uno', 'scartata']])
+  await ui.press({ key: 'annulla-scarto' })
+  expect(amb.azione().map(a => [a.titolo, a.stato]).sort()).toEqual([['Due', 'avviata'], ['Motore', 'attesa-figli'], ['Uno', 'proposta']])
+  await ui.unmount()
+})
+
+test('F13.2 pannello: una dirigente su Fable da una sessione Opus va sulla corsia CLI; una fonte dell\'host che blocca la chiude col motivo, senza ripiego', async ($, on) => {
+  const amb = ambienteF13(on, {}, { impostazioni: source => (source === 'policy' ? { apiKeyHelper: '/bin/chiave' } : {}) })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Motore', brief: 'Riscrivi il pianificatore.', corsia: 'R3' } as never)
+  const dir = amb.azione()[0]!
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `avvia-${dir.id}` })
+  const lancio = amb.processi.filter(p => p.argv[2] === 'lancia-cli')
+  expect(lancio.length).toBe(1)
+  expect(JSON.parse(lancio[0]!.stdin!)).toMatchObject({ modello: 'claude-fable-5-2', fontiHost: [{ source: 'policy', chiavi: ['apiKeyHelper'] }] })
+  expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(0)
+  const a = amb.azione()[0]!
+  expect([a.stato, a.lanciatore, a.modello, a.erroreCodice]).toEqual(['fallita', 'cli', 'claude-fable-5-2', 'err.cliCredenziali'])
+  expect(a.erroreParametri).toEqual({ fonti: 'host:policy', modello: 'Fable 5.2' })
+  await ui.unmount()
+})
+
+test('F13.2 pannello: «Dirigente su Opus» è solo una scelta del committente: modello Opus, e la dirigente parte dal desktop', async ($, on) => {
+  const amb = ambienteF13(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Motore', brief: 'Riscrivi il pianificatore.', corsia: 'R3' } as never)
+  const dir = amb.azione()[0]!
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `mod-${dir.id}` })
+  expect(await ui.find({ type: 'Text', text: /Dirigente · figlie 0\/8 · ripiani 0\/2 · Fable può addebitare/ })).toBeDefined()
+  await ui.press({ key: `su-opus-${dir.id}` })
+  expect(amb.azione()[0]).toMatchObject({ modello: 'claude-opus-5-5', dirigenteSuOpus: true })
+  await ui.press({ key: `avvia-${dir.id}` })
+  expect(amb.processi.filter(p => p.argv[2] === 'lancia-cli').length).toBe(0)
+  expect(amb.chiamate.filter(c => c.tool === 'start_session').map(c => c.args.model)).toEqual(['claude-opus-5-5'])
   await ui.unmount()
 })

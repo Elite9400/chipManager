@@ -1219,6 +1219,26 @@ const de: Dizionario = {
   "doc.nonSpostati": "Daten nicht verschoben: nichts geändert",
   "doc.r.host.claudeCode": "Claude Code {versione} ist älter als 2.1.321",
   "doc.f.host.claudeCode": "Fable 5.2 braucht Claude Code 2.1.321 oder neuer: Claude Code vor der Nutzung aktualisieren.",
+  // F13.2: modo dirigente
+  "v.dirigenteFiglia": "ein Leitungs-Chip kann kein Kind eines anderen Leitungs-Chips sein (Tiefe 1)",
+  "v.dirigenteClaude": "ein Leitungs-Chip läuft auf Claude",
+  "v.fornitorePadre": "{fornitore} gehört nicht zu den für seinen Leitungs-Chip erlaubten Anbietern",
+  // F13.2: corsia CLI senza credenziali dell'abbonamento
+  "err.cliCredenziali": "die CLI-Spur würde das Abo nicht nutzen: {fonti} setzen Schlüssel, Token, Helper oder Gateway oder sind unlesbar. Korrigiere sie oder starte sie in der Desktop-App aus einer Sitzung mit {modello}",
+  "stato.attesaFiglie": "Wartet auf seine Kind-Chips",
+  // F13.2: modo dirigente nel pannello
+  "dir.riga": "Leitung · Kinder {n}/{max} · Neuplanungen {r}/{maxR}",
+  "dir.costo": "Kosten der Kinder ${osservato} beobachtet, {ignote} unbekannt",
+  "dir.fable": "Fable kann Zusatznutzung berechnen, wo dein Plan es vorsieht",
+  "dir.figlia": "Kind von {titolo}: behält dessen Vorgaben",
+  "az.dirigenteOpus": "Leitung auf Opus",
+  "modo.dirQuando": "Leitungs-Chip",
+  "modo.dirOff": "Aus",
+  "modo.dirR3": "Ab R3",
+  "modo.dirSempre": "Immer",
+  "modo.dirModello": "Modell der Leitung",
+  "modo.dirFigli": "Höchstens Kinder",
+  "modo.dirRipiani": "Höchstens Neuplanungen",
   // ‹fine›
 }
 

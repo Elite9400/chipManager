@@ -56,6 +56,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   follows Claude Code's advisor table (source and date in the code): `fable` means `claude-fable-5-2` in the mod's own
   table, a Fable 5.2 executor accepts only Fable 5.2, Fable 5.2 may advise every listed executor, and Mythos ids are
   recognised but not enabled. The doctor warns when Claude Code is older than 2.1.321, which Fable 5.2 needs.
+- **Director mode** (Settings › Work mode): from R3 by default, a suggested chip becomes a director on Fable 5.2 that
+  plans and splits the work into child chips with `suggerisci_azione` and `padre` (its id and attempt token). Depth is
+  one; at most 8 children and 2 re-plans by default, enforced by the helper and the panel. Children copy the director's
+  constraints from its record (sensitivity, R4/R5 floor, LAN data, allowed providers), get the lane's worker model
+  (Haiku, Sonnet or Opus) unless chosen, and each still needs the owner's start. A director waiting for its children
+  (`attesa-figli`) does not count against sessions started together. A director above the starting session's model
+  runs from the CLI lane on the subscription; a key, token, helper or gateway in any settings source (managed policy
+  included), in the environment, or an unreadable source, stops it with the reason and both ways to start it. Opus is
+  only the owner's explicit «Run director on Opus». Discarding a director discards its children that never started.
+  The card shows children, re-plans, the children's observed and unknown cost, and that Fable may bill extra usage.
 - **Work mode** (Settings, Account group): default effort per lane, the Codex sandbox when Codex executes, sessions
   started together (1–8, over the host option), a suggested auditor in the Recommended preset, and cross review on
   R0–R2. Set for all projects, with a per-project override field by field; presets Recommended, Economy and Quality.

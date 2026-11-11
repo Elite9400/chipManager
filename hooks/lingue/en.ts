@@ -1221,6 +1221,26 @@ const en = {
   "doc.nonSpostati": "Data not moved: nothing changed",
   "doc.r.host.claudeCode": "Claude Code {versione} is older than 2.1.321",
   "doc.f.host.claudeCode": "Fable 5.2 needs Claude Code 2.1.321 or later: update Claude Code before using it.",
+  // F13.2: modo dirigente
+  "v.dirigenteFiglia": "a director chip cannot be the child of another director (depth 1)",
+  "v.dirigenteClaude": "a director chip runs on Claude",
+  "v.fornitorePadre": "{fornitore} is not among the providers allowed to its director chip",
+  // F13.2: corsia CLI senza credenziali dell'abbonamento
+  "err.cliCredenziali": "the CLI lane would not use the subscription: {fonti} set a key, token, helper or gateway, or cannot be read. Fix them, or start it from the desktop app in a session on {modello}",
+  "stato.attesaFiglie": "Waiting for its child chips",
+  // F13.2: modo dirigente nel pannello
+  "dir.riga": "Director · children {n}/{max} · re-plans {r}/{maxR}",
+  "dir.costo": "children's cost ${osservato} observed, {ignote} unknown",
+  "dir.fable": "Fable may bill extra usage where your plan requires it",
+  "dir.figlia": "Child of {titolo}: keeps its constraints",
+  "az.dirigenteOpus": "Run director on Opus",
+  "modo.dirQuando": "Director chip",
+  "modo.dirOff": "Off",
+  "modo.dirR3": "From R3",
+  "modo.dirSempre": "Always",
+  "modo.dirModello": "Director model",
+  "modo.dirFigli": "Max children",
+  "modo.dirRipiani": "Max re-plans",
   // ‹fine›
 } satisfies Record<string, Voce>
 

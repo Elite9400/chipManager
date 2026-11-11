@@ -50,13 +50,69 @@ function apiDa(v, campo) {
 // --- F11.1: il modo di lavoro (gemello di modoDa, modoNonValido e modoEfficace in hooks/logica.ts) ---------------------
 const EFFORT_MODO = ['low', 'medium', 'high', 'xhigh']
 const CORSIE_MODO = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5']
-const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata', 'skillBase']
+const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata', 'skillBase', 'dirigente']
 const ID_SKILL = require('./skill-base.cjs').SKILL_BASE.map(v => v.id)
 const MODO_PREDEFINITO = { effortPredefinito: { R0: 'medium', R1: 'medium', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', auditorSuggerito: false, revisioneIncrociata: true }
 const sottoHigh = (c, x) => (c === 'R4' || c === 'R5') && EFFORT_MODO.indexOf(x) < 2
 const paralleloValido = v => Number.isInteger(v) && v >= 1 && v <= 8
 
 /** In lettura un campo che non vale si ignora (eredita); null = assente. Non lancia mai. */
+// F13.2: il modo dirigente (gemello di dirigenteDa, dirigenteNonValido, dirigenteEfficace in hooks/logica.ts).
+const QUANDO_DIRIGENTE = ['off', 'R3+', 'sempre']
+const ID_CLAUDE = /^claude-[a-z0-9]+(-[a-z0-9]+){1,4}$/
+const CAMPI_DIRIGENTE = ['modello', 'quando', 'lavoratori', 'maxFigli', 'maxRipiani']
+const DIRIGENTE_PREDEFINITO = {
+  modello: 'claude-fable-5-2', quando: 'R3+',
+  lavoratori: { R0: 'claude-haiku-5-5', R1: 'claude-sonnet-5-5', R2: 'claude-sonnet-5-5', R3: 'claude-opus-5-5', R4: 'claude-opus-5-5', R5: 'claude-opus-5-5' },
+  maxFigli: 8, maxRipiani: 2,
+}
+const interoIn = (v, min, max) => Number.isInteger(v) && v >= min && v <= max
+function dirigenteDa(v) {
+  if (!oggetto(v)) return undefined
+  const o = {}
+  if (typeof v.modello === 'string' && ID_CLAUDE.test(v.modello)) o.modello = v.modello
+  if (QUANDO_DIRIGENTE.includes(v.quando)) o.quando = v.quando
+  if (oggetto(v.lavoratori)) {
+    const l = {}
+    for (const c of CORSIE_MODO) {
+      const x = v.lavoratori[c]
+      if (typeof x === 'string' && ID_CLAUDE.test(x)) l[c] = x
+    }
+    if (Object.keys(l).length) o.lavoratori = l
+  }
+  if (interoIn(v.maxFigli, 1, 20)) o.maxFigli = v.maxFigli
+  if (interoIn(v.maxRipiani, 0, 5)) o.maxRipiani = v.maxRipiani
+  return Object.keys(o).length ? o : undefined
+}
+function dirigenteNonValido(v) {
+  if (v === undefined || v === null) return null
+  if (!oggetto(v)) return 'modoLavoro.dirigente'
+  const ignoto = Object.keys(v).find(k => !CAMPI_DIRIGENTE.includes(k))
+  if (ignoto) return `modoLavoro.dirigente.${ignoto.replace(/[^A-Za-z0-9_]/g, '?').slice(0, 40)}`
+  const presente = k => v[k] !== undefined && v[k] !== null
+  if (presente('modello') && !(typeof v.modello === 'string' && ID_CLAUDE.test(v.modello))) return 'modoLavoro.dirigente.modello'
+  if (presente('quando') && !QUANDO_DIRIGENTE.includes(v.quando)) return 'modoLavoro.dirigente.quando'
+  if (presente('lavoratori')) {
+    if (!oggetto(v.lavoratori)) return 'modoLavoro.dirigente.lavoratori'
+    for (const [c, x] of Object.entries(v.lavoratori))
+      if (!CORSIE_MODO.includes(c) || (x !== null && !(typeof x === 'string' && ID_CLAUDE.test(x))))
+        return `modoLavoro.dirigente.lavoratori.${c.replace(/[^A-Za-z0-9_]/g, '?').slice(0, 10)}`
+  }
+  if (presente('maxFigli') && !interoIn(v.maxFigli, 1, 20)) return 'modoLavoro.dirigente.maxFigli'
+  if (presente('maxRipiani') && !interoIn(v.maxRipiani, 0, 5)) return 'modoLavoro.dirigente.maxRipiani'
+  return null
+}
+function dirigenteEfficace(a, p) {
+  const d = DIRIGENTE_PREDEFINITO
+  return {
+    modello: p?.modello ?? a?.modello ?? d.modello,
+    quando: p?.quando ?? a?.quando ?? d.quando,
+    lavoratori: Object.fromEntries(CORSIE_MODO.map(c => [c, p?.lavoratori?.[c] ?? a?.lavoratori?.[c] ?? d.lavoratori[c]])),
+    maxFigli: p?.maxFigli ?? a?.maxFigli ?? d.maxFigli,
+    maxRipiani: p?.maxRipiani ?? a?.maxRipiani ?? d.maxRipiani,
+  }
+}
+
 function modoDa(v) {
   if (!oggetto(v)) return {}
   const out = {}
@@ -76,6 +132,8 @@ function modoDa(v) {
     const s = Object.fromEntries(Object.entries(v.skillBase).filter(([k, x]) => ID_SKILL.includes(k) && typeof x === 'boolean'))
     if (Object.keys(s).length) out.skillBase = s
   }
+  const dirigente = dirigenteDa(v.dirigente)
+  if (dirigente) out.dirigente = dirigente
   return out
 }
 
@@ -100,7 +158,7 @@ function modoNonValido(v) {
     if (!oggetto(sb)) return 'modoLavoro.skillBase'
     for (const [k, x] of Object.entries(sb)) if (!ID_SKILL.includes(k) || (x !== null && typeof x !== 'boolean')) return `modoLavoro.skillBase.${k.replace(/[^A-Za-z0-9_-]/g, '?').slice(0, 40)}`
   }
-  return null
+  return dirigenteNonValido(v.dirigente)
 }
 
 /** Per campo il progetto sostituisce l'account, poi i predefiniti. */
@@ -117,6 +175,7 @@ function modoEfficace(accountGrezzo, progettoGrezzo) {
     auditorSuggerito: p.auditorSuggerito ?? a.auditorSuggerito ?? d.auditorSuggerito,
     revisioneIncrociata: p.revisioneIncrociata ?? a.revisioneIncrociata ?? d.revisioneIncrociata,
     ...(Object.keys({ ...a.skillBase, ...p.skillBase }).length && { skillBase: { ...a.skillBase, ...p.skillBase } }),
+    dirigente: dirigenteEfficace(a.dirigente, p.dirigente),
   }
 }
 

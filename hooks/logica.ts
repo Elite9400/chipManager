@@ -1,5 +1,5 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
-import type { ModoLavoro, ModoLavoroEfficace } from '../types'
+import type { Dirigente, DirigenteEfficace, ModoLavoro, ModoLavoroEfficace } from '../types'
 import type { Azione, BoardProgetto, Chiamante, Consumo, ControlloEsecuzione, Corsia, Destinazione, Fornitore, Limite, PassoEsecuzione, Peso, Regole, Restrizioni, RisorseProgetto, SessioneProgetto, Soglia, SogliePerStrato, StratoAccount, StatoAzione, StratoProgetto, Traguardo, Vita } from '../types'
 import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
@@ -53,7 +53,8 @@ export const RISORSE_DEFAULT: RisorseProgetto = {
   board: { modo: 'spenta', generazione: 0 },
   account: { soglie: {}, limitiManuali: [] },
   strato: { soglie: {}, freellmapi: { livello: 'niente' }, restrizioni: {} },
-  modoLavoro: { effortPredefinito: { R0: 'medium', R1: 'medium', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', auditorSuggerito: false, revisioneIncrociata: true },
+  modoLavoro: { effortPredefinito: { R0: 'medium', R1: 'medium', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', auditorSuggerito: false, revisioneIncrociata: true,
+    dirigente: { modello: 'claude-fable-5-2', quando: 'R3+', lavoratori: { R0: 'claude-haiku-5-5', R1: 'claude-sonnet-5-5', R2: 'claude-sonnet-5-5', R3: 'claude-opus-5-5', R4: 'claude-opus-5-5', R5: 'claude-opus-5-5' }, maxFigli: 8, maxRipiani: 2 } },
 }
 export const REGOLE_DEFAULT: Regole = {
   lette: false,
@@ -224,9 +225,77 @@ function manualiDa(v: unknown, progetto: boolean): Limite[] | undefined {
 // --- F11.1: il modo di lavoro --------------------------------------------------------------------------------------
 const EFFORT_MODO = ['low', 'medium', 'high', 'xhigh'] as const
 const CORSIE_MODO: readonly Corsia[] = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5']
-const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata', 'skillBase']
+const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata', 'skillBase', 'dirigente']
 /** F13.7: the baseline skill ids the work mode may turn on or off (absent = the entry's default). */
 const ID_SKILL = SKILL_BASE.map(v => v.id)
+// --- F13.2: il modo dirigente ------------------------------------------------------------------------------------------
+const QUANDO_DIRIGENTE = ['off', 'R3+', 'sempre'] as const
+const ID_CLAUDE = /^claude-[a-z0-9]+(-[a-z0-9]+){1,4}$/
+const CAMPI_DIRIGENTE = ['modello', 'quando', 'lavoratori', 'maxFigli', 'maxRipiani']
+export const DIRIGENTE_PREDEFINITO: DirigenteEfficace = {
+  modello: 'claude-fable-5-2', quando: 'R3+',
+  // R0 Haiku finché il modello locale non è configurato (F13b); R4–R5 Opus con revisore Fable, come sempre.
+  lavoratori: { R0: 'claude-haiku-5-5', R1: 'claude-sonnet-5-5', R2: 'claude-sonnet-5-5', R3: 'claude-opus-5-5', R4: 'claude-opus-5-5', R5: 'claude-opus-5-5' },
+  maxFigli: 8, maxRipiani: 2,
+}
+const intero = (v: unknown, min: number, max: number) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max
+/** Il modo dirigente come si legge: un campo che non vale si ignora (eredita). */
+function dirigenteDa(v: unknown): Dirigente | undefined {
+  if (!oggettoRisorse(v)) return undefined
+  const o: Dirigente = {}
+  if (typeof v.modello === 'string' && ID_CLAUDE.test(v.modello)) o.modello = v.modello
+  if ((QUANDO_DIRIGENTE as readonly unknown[]).includes(v.quando)) o.quando = v.quando as Dirigente['quando']
+  if (oggettoRisorse(v.lavoratori)) {
+    const l: Partial<Record<Corsia, string>> = {}
+    for (const c of CORSIE_MODO) {
+      const x = v.lavoratori[c]
+      if (typeof x === 'string' && ID_CLAUDE.test(x)) l[c] = x
+    }
+    if (Object.keys(l).length) o.lavoratori = l
+  }
+  if (intero(v.maxFigli, 1, 20)) o.maxFigli = v.maxFigli as number
+  if (intero(v.maxRipiani, 0, 5)) o.maxRipiani = v.maxRipiani as number
+  return Object.keys(o).length ? o : undefined
+}
+/** In scrittura: il primo campo del modo dirigente che non vale (null = togli). */
+function dirigenteNonValido(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined
+  if (!oggettoRisorse(v)) return 'modoLavoro.dirigente'
+  const ignoto = Object.keys(v).find(k => !CAMPI_DIRIGENTE.includes(k))
+  if (ignoto) return `modoLavoro.dirigente.${ignoto.replace(/[^A-Za-z0-9_]/g, '?').slice(0, 40)}`
+  const presente = (k: string) => v[k] !== undefined && v[k] !== null
+  if (presente('modello') && !(typeof v.modello === 'string' && ID_CLAUDE.test(v.modello))) return 'modoLavoro.dirigente.modello'
+  if (presente('quando') && !(QUANDO_DIRIGENTE as readonly unknown[]).includes(v.quando)) return 'modoLavoro.dirigente.quando'
+  if (presente('lavoratori')) {
+    if (!oggettoRisorse(v.lavoratori)) return 'modoLavoro.dirigente.lavoratori'
+    for (const [c, x] of Object.entries(v.lavoratori))
+      if (!CORSIE_MODO.includes(c as Corsia) || (x !== null && !(typeof x === 'string' && ID_CLAUDE.test(x))))
+        return `modoLavoro.dirigente.lavoratori.${c.replace(/[^A-Za-z0-9_]/g, '?').slice(0, 10)}`
+  }
+  if (presente('maxFigli') && !intero(v.maxFigli, 1, 20)) return 'modoLavoro.dirigente.maxFigli'
+  if (presente('maxRipiani') && !intero(v.maxRipiani, 0, 5)) return 'modoLavoro.dirigente.maxRipiani'
+  return undefined
+}
+/** Per campo (e per corsia) il progetto sostituisce l'account, poi i predefiniti. */
+function dirigenteEfficace(a: Dirigente | undefined, p: Dirigente | undefined): DirigenteEfficace {
+  const d = DIRIGENTE_PREDEFINITO
+  return {
+    modello: p?.modello ?? a?.modello ?? d.modello,
+    quando: p?.quando ?? a?.quando ?? d.quando,
+    lavoratori: Object.fromEntries(CORSIE_MODO.map(c => [c, p?.lavoratori?.[c] ?? a?.lavoratori?.[c] ?? d.lavoratori[c]])) as Record<Corsia, string>,
+    maxFigli: p?.maxFigli ?? a?.maxFigli ?? d.maxFigli,
+    maxRipiani: p?.maxRipiani ?? a?.maxRipiani ?? d.maxRipiani,
+  }
+}
+/** F13.2: una chip nuova senza padre nasce dirigente se `quando` lo dice per la sua corsia; mai una figlia. */
+export function ruoloNuovo(corsia: Corsia | undefined, regole: Regole): 'dirigente' | undefined {
+  const q = (regole.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).dirigente.quando
+  return q === 'sempre' || (q === 'R3+' && !!corsia && corsia >= 'R3') ? 'dirigente' : undefined
+}
+const ordineCorsia = (c?: Corsia) => (c ? Number(c.slice(1)) : -1)
+/** La corsia più severa fra quella propria e il minimo ereditato dal padre. */
+const conMinimo = (c: Corsia | undefined, m: Corsia | undefined) => (ordineCorsia(m) > ordineCorsia(c) ? m : c)
+
 /** Le corsie dove l'effort non scende sotto high: un valore più basso viola la guardia e non vale. */
 const sottoHigh = (c: string, x: string) => (c === 'R4' || c === 'R5') && EFFORT_MODO.indexOf(x as never) < 2
 
@@ -253,6 +322,8 @@ export function modoDa(v: unknown): ModoLavoro {
     const s = Object.fromEntries(Object.entries(v.skillBase).filter(([k, x]) => ID_SKILL.includes(k) && typeof x === 'boolean')) as Record<string, boolean>
     if (Object.keys(s).length) out.skillBase = s
   }
+  const dirigente = dirigenteDa(v.dirigente)
+  if (dirigente) out.dirigente = dirigente
   return out
 }
 
@@ -278,7 +349,7 @@ export function modoNonValido(v: unknown): string | undefined {
     if (!oggettoRisorse(sb)) return 'modoLavoro.skillBase'
     for (const [k, x] of Object.entries(sb)) if (!ID_SKILL.includes(k) || (x !== null && typeof x !== 'boolean')) return `modoLavoro.skillBase.${k.replace(/[^A-Za-z0-9_-]/g, '?').slice(0, 40)}`
   }
-  return undefined
+  return dirigenteNonValido(v.dirigente)
 }
 
 /** Il modo efficace: per campo il progetto sostituisce l'account, poi i predefiniti (R0–R2 medium, R3–R5 high, Codex workspace-write). */
@@ -294,6 +365,7 @@ export function modoEfficace(account: ModoLavoro | undefined, progetto: ModoLavo
     revisioneIncrociata: progetto?.revisioneIncrociata ?? account?.revisioneIncrociata ?? d.revisioneIncrociata,
     // F13.7: per skill the project replaces the account; empty = absent, so payloads without the field stay as before.
     ...(Object.keys({ ...account?.skillBase, ...progetto?.skillBase }).length && { skillBase: { ...account?.skillBase, ...progetto?.skillBase } }),
+    dirigente: dirigenteEfficace(account?.dirigente, progetto?.dirigente),
   }
 }
 
@@ -541,6 +613,9 @@ export function bilancia(a: Azione, espliciti: Record<string, unknown>, r: Regol
   // R2 (decisione del committente): senza un modello indicato, a parità vince il Claude di rango più basso sulle corsie
   // leggere (R0–R1) con ogni profilo, e su tutte con Risparmio e Velocità. Codex non entra in questo spareggio.
   const perRango = espliciti.modello === undefined && (corsia === 'R0' || corsia === 'R1' || profilo === 'risparmio' || profilo === 'velocita')
+  // F13.2: i predefiniti di dirigente e lavoratori vengono prima dei pesi: senza un modello indicato, su Claude resta il
+  // loro; la dirigente lavora solo su Claude.
+  const predefinito = (a.ruolo === 'dirigente' || a.padre) && espliciti.modello === undefined ? modelloDi({ ...a, esecutore: 'claude', modello: undefined }, r) : undefined
   const meglio = (c: Azione, punti: number) => {
     if (migliore < 0 || punti > migliore * (1 + 1e-9)) return true
     if (punti < migliore * (1 - 1e-9)) return false
@@ -550,8 +625,10 @@ export function bilancia(a: Azione, espliciti: Record<string, unknown>, r: Regol
   }
   for (const esecutore of ['claude', 'codex', 'freellmapi'] as const) {
     if (espliciti.esecutore !== undefined && espliciti.esecutore !== esecutore) continue
+    if (a.ruolo === 'dirigente' && esecutore !== 'claude') continue
     for (const modello of r.modelli[esecutore]) {
       if (espliciti.modello !== undefined && espliciti.modello !== modello) continue
+      if (esecutore === 'claude' && predefinito && modello !== predefinito) continue
       const preferito = effortDi({ ...a, esecutore, modello }, r)
       // Prima il preferito. Solo dove agisce la corsia (Automatico, R0–R1) gli altri vanno dal più vicino (a pari distanza
       // il più basso): così il preferito penalizzato scende di un passo. Altrove l'ordine resta quello di sempre.
@@ -579,7 +656,15 @@ export const modelloDi = (a: Azione, regole: Regole = REGOLE_DEFAULT) => {
   // F13.3b: the model of a registry provider is always explicit (its catalogue is checked when it runs).
   if (a.esecutore === 'compatibile') return a.modello && MODELLO_COMPATIBILE.test(a.modello) ? a.modello : ''
   const ammessi = regole.modelli[a.esecutore]
-  return a.modello && ammessi.includes(a.modello) ? a.modello : (ammessi[0] ?? REGOLE_DEFAULT.modelli[a.esecutore][0] ?? '')
+  if (a.modello && ammessi.includes(a.modello)) return a.modello
+  // F13.2: dopo la scelta esplicita, il modello della dirigente (Opus solo per scelta del committente) o il lavoratore
+  // predefinito della corsia per una figlia; poi il primo ammesso.
+  if (a.esecutore === 'claude' && (a.ruolo === 'dirigente' || a.padre)) {
+    const d = (regole.risorse?.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).dirigente
+    const voluto = a.ruolo === 'dirigente' ? (a.dirigenteSuOpus ? 'claude-opus-5-5' : d.modello) : d.lavoratori[corsiaDi(a, regole) ?? 'R2']
+    if (voluto && ammessi.includes(voluto)) return voluto
+  }
+  return ammessi[0] ?? REGOLE_DEFAULT.modelli[a.esecutore][0] ?? ''
 }
 
 /** Gli effort offribili per un modello: quelli ammessi fino al suo tetto. */
@@ -636,8 +721,9 @@ function terminiRe(lista: readonly string[] | undefined) {
  * Sensibile se lo dice il testo (titolo, mandato E contesto: tutto ciò che arriva alla sessione), la corsia
  * o il proponente; un `false` esplicito non spegne l'evidenza.
  */
-export const sensibile = (a: Pick<Azione, 'sensibile' | 'titolo' | 'brief' | 'corsia' | 'background'>, regole: Pick<Regole, 'sensibili'> & Partial<Pick<Regole, 'background'>>) =>
-  causaSensibile(a, regole) !== undefined
+export const sensibile = (a: Pick<Azione, 'sensibile' | 'titolo' | 'brief' | 'corsia' | 'background'> & Pick<Partial<Azione>, 'vincoliPadre'>, regole: Pick<Regole, 'sensibili'> & Partial<Pick<Regole, 'background'>>) =>
+  // F13.2: il più severo fra il testo della figlia e i vincoli copiati dal padre: riscrivere non toglie R4.
+  causaSensibile(a, regole) !== undefined || a.vincoliPadre?.sensibile === true
 
 /** Perché un'azione è sensibile, una causa sola: per dirlo all'agente che la propone. */
 export type CausaSensibile =
@@ -688,7 +774,7 @@ export const CLOUD_MAX = 1500
 export const datiLocali = (testo: string) => DATI_LOCALI_RE.some(r => r.test(testo))
 
 export const corsiaDi = (a: Azione, regole: Pick<Regole, 'sensibili'>): Corsia | undefined =>
-  sensibile(a, regole) && (!a.corsia || a.corsia < 'R4') ? 'R4' : a.corsia
+  conMinimo(sensibile(a, regole) && (!a.corsia || a.corsia < 'R4') ? 'R4' : a.corsia, a.vincoliPadre?.corsiaMin)
 
 /** Modelli ammessi come autori sulle corsie sensibili: lì serve verifica avversariale, non risparmio. */
 const AUTORI_R4 = ['claude-opus-5-5', 'claude-fable-5-2', 'claude-fable-5-1']
@@ -762,6 +848,20 @@ export function chiaviApiVietate(s: unknown): string[] | null {
   const env = Object.keys((o.env as Record<string, unknown> | undefined) ?? {}).filter(k => /^ANTHROPIC_(.*_)?(BASE_URL|AUTH_TOKEN|API_KEY)$/.test(k) ||
     /^(CLAUDE_CODE_USE_|ANTHROPIC_(BEDROCK|VERTEX|FOUNDRY)_)/.test(k) || ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS'].includes(k))
   return [...env.map(k => `env.${k}`), ...Object.keys(o).filter(k => k.startsWith('forceLogin') || ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'].includes(k))]
+}
+
+/**
+ * F13 (N1): gemello di `chiaviVietateCli` (strumenti/api-claude.cjs): le chiavi che tolgono la corsia CLI dall'abbonamento
+ * (chiave, token, helper, gateway, login console). Il token OAuth dell'abbonamento e `forceLoginMethod: 'claudeai'` no.
+ */
+export function chiaviCliVietate(s: unknown): string[] | null {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return null
+  const o = s as Record<string, unknown>
+  if (o.env !== undefined && (!o.env || typeof o.env !== 'object' || Array.isArray(o.env))) return null
+  const env = Object.keys((o.env as Record<string, unknown> | undefined) ?? {}).filter(k => /^ANTHROPIC_(.*_)?(BASE_URL|AUTH_TOKEN|API_KEY)$/.test(k) ||
+    /^(CLAUDE_CODE_USE_|ANTHROPIC_(BEDROCK|VERTEX|FOUNDRY)_)/.test(k) || k === 'ANTHROPIC_CUSTOM_HEADERS')
+  return [...env.map(k => `env.${k}`), ...Object.keys(o).filter(k => ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'].includes(k)),
+    ...(o.forceLoginMethod === 'console' ? ['forceLoginMethod'] : [])]
 }
 
 /**
@@ -875,13 +975,17 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
     if (!modello) v.push(msg('cmp.modello'))
   } else if (!politica.fornitori.includes(a.esecutore)) v.push(msg('v.fornitoreNonAbilitato', { fornitore: a.esecutore }))
   else if (!connesso(regole, a.esecutore)) v.push(msg('v.nonConnesso', { fornitore: a.esecutore }))
+  // F13.2: profondità 1 (mai una dirigente figlia); la dirigente lavora su Claude; una figlia solo con i fornitori del padre.
+  if (a.ruolo === 'dirigente' && a.padre) v.push(msg('v.dirigenteFiglia'))
+  if (a.ruolo === 'dirigente' && a.esecutore !== 'claude') v.push(msg('v.dirigenteClaude'))
+  if (a.padre && a.vincoliPadre && !a.vincoliPadre.fornitori.includes(a.esecutore)) v.push(msg('v.fornitorePadre', { fornitore: a.esecutore }))
   if (a.revisore !== 'nessuno' && !politica.fornitori.includes(a.revisore)) v.push(msg('v.revisoreNonAbilitato', { revisore: a.revisore }))
   if (!compatibile && !regole.modelli[a.esecutore].length) v.push(msg('v.nessunModello', { esecutore: a.esecutore }))
   // Every non-Claude text executor: same lanes, LAN-data filter, text limit, isolation, Claude review and low effort (F13 r1.7).
   if (a.esecutore === 'freellmapi' || compatibile) {
     if (!corsia || !['R0', 'R1', ...(livelloEsterno === 'R2' ? ['R2'] : [])].includes(corsia) || livelloEsterno === 'niente')
       v.push(msg('v.freeCorsia'))
-    if (datiLocali(`${a.titolo}\n${a.brief}\n${a.background ?? ''}\n${regole.background}`)) v.push(msg('v.datiLan'))
+    if (a.vincoliPadre?.datiLan || datiLocali(`${a.titolo}\n${a.brief}\n${a.background ?? ''}\n${regole.background}`)) v.push(msg('v.datiLan'))
     if (a.contesto === 'fork' || (a.destinazione ?? 'local') !== 'local' || a.worktree === false) v.push(msg('v.freeIsolato'))
     if (a.titolo.length + a.brief.length > CLOUD_MAX) v.push(msg('v.freeTesto', { max: CLOUD_MAX }))
     if (a.revisore !== 'claude') v.push(msg('v.freeRevisione'))
@@ -924,7 +1028,7 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
     if (a.esecutore === 'codex' || a.revisore === 'codex')
       v.push(msg('v.cloudCodex'))
     // Al cloud va solo titolo + mandato (il contesto locale resta qui): niente dati che la policy tiene in LAN.
-    if (datiLocali(`${a.titolo}\n${a.brief}`)) v.push(msg('v.cloudDati'))
+    if (a.vincoliPadre?.datiLan || datiLocali(`${a.titolo}\n${a.brief}`)) v.push(msg('v.cloudDati'))
     if (a.titolo.length + a.brief.length > CLOUD_MAX)
       v.push(msg('v.cloudTesto', { max: CLOUD_MAX }))
   }
@@ -959,6 +1063,13 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
  * o un effort sopra quelli di chi avvia, il fork eredita modello ed effort, e «Fallo qui» gira con i
  * permessi di questa sessione. Senza progetto o di un altro progetto non si avvia.
  */
+/**
+ * F13.2: una dirigente che la sessione di chi avvia non può aprire (modello sopra il suo, o ignoto) parte dalla corsia CLI con
+ * l'abbonamento: mai un ripiego automatico su un modello più basso, su API o cloud.
+ */
+export const dirigenteSuCli = (a: Azione, regole: Regole, chi: Pick<Chiamante, 'modello'>) =>
+  a.ruolo === 'dirigente' && a.esecutore === 'claude' && (rangoModello(chi.modello ?? '') < 0 || sopra(modelloDi(a, regole), chi.modello ?? ''))
+
 export function violazioniAvvio(a: Azione, regole: Regole, lista: readonly Azione[], chi: Chiamante | null, qui = false): Msg[] {
   const v = violazioni(a, regole, lista)
   if (!chi) return [...v, msg('v.chiIgnoto')]
@@ -980,7 +1091,7 @@ export function violazioniAvvio(a: Azione, regole: Regole, lista: readonly Azion
     return v
   }
   if (!qui && chi.lanciatore === 'ignoto') v.push(msg('v.lanciatoreIgnoto'))
-  if (!qui && chi.lanciatore === 'cli') {
+  if (!qui && (chi.lanciatore === 'cli' || dirigenteSuCli(a, regole, chi))) {
     if (a.contesto === 'fork' || a.destinazione === 'cloud' || a.worktree === false) v.push(msg('v.cliWorktree'))
     if (a.permessi === 'bypassPermissions' || a.permessi === 'auto') v.push(msg('v.cliPermessi'))
     return v
@@ -1161,10 +1272,12 @@ export function sposta(lista: readonly Azione[], id: string, verso: -1 | 1): Azi
 export const TRANSIZIONI: Record<string, readonly StatoAzione[]> = {
   // «presa» non cambia stato: il ripiego manuale prende il gettone prima dell'effetto remoto.
   presa: ['in-avvio'],
-  avviata: ['in-avvio', 'fallita'],
+  avviata: ['in-avvio', 'fallita', 'attesa-figli'],
   fallita: ['in-avvio'],
-  consegnata: ['avviata'],
-  scartata: ['proposta', 'accodata', 'fallita'],
+  consegnata: ['avviata', 'attesa-figli'],
+  scartata: ['proposta', 'accodata', 'fallita', 'attesa-figli'],
+  // F13.2: la dirigente aspetta le figlie e torna a lavorare (un ripiano, entro maxRipiani).
+  'attesa-figli': ['avviata'],
 }
 
 /**
@@ -1207,7 +1320,14 @@ export const ID_RE = /^a-[a-z0-9]{6,20}$/
 export const RAMO_RE = /^[a-z0-9][a-z0-9-]{0,39}$/
 export const BASE_RE = /^[A-Za-z0-9._/-]{1,100}$/
 export const SESSIONE_RE = /^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-const STATI: readonly StatoAzione[] = ['proposta', 'accodata', 'in-avvio', 'avviata', 'consegnata', 'fallita', 'completata', 'scartata']
+const STATI: readonly StatoAzione[] = ['proposta', 'accodata', 'in-avvio', 'avviata', 'consegnata', 'fallita', 'completata', 'scartata', 'attesa-figli']
+/** F13.2: i vincoli di una dirigente (propri) o ereditati da una figlia, come si leggono dal record. */
+const vincoliValidi = (v: unknown) => {
+  const o = v as Record<string, unknown> | null
+  return !!o && typeof o === 'object' && !Array.isArray(o) && typeof o.sensibile === 'boolean' && typeof o.datiLan === 'boolean' &&
+    (o.corsiaMin === undefined || CORSIE.includes(o.corsiaMin as Corsia)) && Array.isArray(o.fornitori) && o.fornitori.length <= 10 &&
+    o.fornitori.every(f => typeof f === 'string' && /^[a-z0-9-]{1,40}$/.test(f))
+}
 
 /** Un record letto da disco → Azione, o il motivo per cui non lo è. Mai un cast cieco. */
 export function normalizza(x: unknown): Azione | Msg {
@@ -1240,6 +1360,11 @@ export function normalizza(x: unknown): Azione | Msg {
   for (const k of ['motivoParametri', 'erroreParametri'])
     if (a[k] !== undefined && (!a[k] || typeof a[k] !== 'object' || Array.isArray(a[k]) || JSON.stringify(a[k]).length > 20000)) return msg('rec.campo', { campo: k })
   if (a.piano !== undefined && pianoValido(a.piano)) return msg('rec.campo', { campo: 'piano' })
+  // F13.2: ruolo e legame con la dirigente; i vincoli si leggono solo nella forma che scrive l'helper.
+  if (!tra('ruolo', ['dirigente', 'lavoro']) || (a.padre !== undefined && !(typeof a.padre === 'string' && ID_RE.test(a.padre))) ||
+      (a.vincoliPadre !== undefined && !vincoliValidi(a.vincoliPadre)) || (a.vincoliPropri !== undefined && !vincoliValidi(a.vincoliPropri)) ||
+      (a.ripiani !== undefined && !(Number.isInteger(a.ripiani) && (a.ripiani as number) >= 0 && (a.ripiani as number) <= 100)) || !bool('dirigenteSuOpus'))
+    return msg('rec.campo', { campo: 'dirigente' })
   if (a.revisione !== undefined) {
     const r = a.revisione as Record<string, unknown>
     if (!r || typeof r !== 'object' || !['in-corso', 'approvata', 'da-correggere'].includes(r.esito as string) ||
@@ -1311,6 +1436,22 @@ function revisioneSenzaSkill(a: Azione, regole: Regole, s: Strumenti | undefined
 }
 
 /** Il prompt e i parametri con cui la sessione desktop viene avviata. */
+/**
+ * F13.2: le istruzioni della chip dirigente (inglese, ≤ 1.500 caratteri): analizza, pianifica, divide in figlie con
+ * `suggerisci_azione`, poi aspetta e segue le consegne. Non scrive codice se non per un compito minimo; non rivede il
+ * lavoro che ha pianificato. Limiti: figlie e ripiani dal modo dirigente; l'approvazione della dirigente non avvia le figlie.
+ */
+export function istruzioniDirigente(a: Pick<Azione, 'id' | 'tentativo'>, regole: Regole = REGOLE_DEFAULT) {
+  const d = (regole.risorse?.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).dirigente
+  return `**You are the director chip \`${a.id}\`.** 1) Analyse the goal. 2) Write a short plan. 3) Split it into worker chips with ` +
+    `\`mcp__chip-manager__suggerisci_azione\` (at most ${d.maxFigli}): each with \`corsia\`, \`dipende\`, a self-contained brief and ` +
+    `\`padre\` {"id": "${a.id}", "tentativo": "${a.tentativo ?? ''}"}; leave \`modello\` and \`effort\` empty unless the task needs them. ` +
+    'Children keep your constraints and every guard; each still needs ' +
+    `the owner's start. 4) Call \`mcp__chip-manager__aggiorna_azione\` with id "${a.id}" and stato "attesa-figli" and wait. When deliveries ` +
+    `arrive, check them against the plan; a further split back on stato "avviata" is a re-plan (at most ${d.maxRipiani}). ` +
+    'Write no code yourself unless the task is tiny, and never review work you planned: each worker has an independent reviewer.'
+}
+
 export function mandato(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strumenti) {
   const modello = modelloDi(a, regole)
   const effort = effortDi(a, regole)
@@ -1318,6 +1459,7 @@ export function mandato(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strument
   const parti: string[] = []
   if (corsia) parti.push(`**Lane ${corsia}.** Set by the panel: apply the skills and gates the project process requires for this lane.`)
   if (sensibile(a, regole)) parti.push('**Sensitive module.** Adversarial check and explicit human review before merging.')
+  if (a.ruolo === 'dirigente') parti.push(istruzioniDirigente(a, regole))
   if (a.esecutore === 'codex') {
     parti.push(
       `**Engine: Codex (\`${modello}\`, effort ${effort}).** You coordinate and do not write the code: pass the brief below to Codex, ` +

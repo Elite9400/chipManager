@@ -37,6 +37,11 @@ import {
   puoCambiare,
   passiMancanti,
   chiaviApiVietate,
+  chiaviCliVietate,
+  datiLocali,
+  dirigenteSuCli,
+  RISORSE_DEFAULT,
+  ruoloNuovo,
   consigliaDove,
   spesaDelMese,
   normalizza,
@@ -776,7 +781,9 @@ async function decidi(
       lanciataDa: chi.io,
       ...salvato('motivoCoda', 'motivo', undefined),
       ...salvato('errore', 'errore', undefined),
-      lanciatore: opz.qui || opz.manuale ? undefined : modalitaDi(a) === 'api-claude' ? 'api-claude' : a.esecutore === 'freellmapi' ? 'freellmapi' : a.esecutore === 'compatibile' ? 'compatibile' : chi.lanciatore === 'cli' ? 'cli' : undefined,
+      // F13.2: una dirigente che la sessione di chi avvia non può aprire (modello sopra il suo, o ignoto) va sulla corsia CLI.
+      lanciatore: opz.qui || opz.manuale ? undefined : modalitaDi(a) === 'api-claude' ? 'api-claude' : a.esecutore === 'freellmapi' ? 'freellmapi'
+        : a.esecutore === 'compatibile' ? 'compatibile' : chi.lanciatore === 'cli' || (chi.lanciatore === 'desktop' && dirigenteSuCli(a, r, chi)) ? 'cli' : undefined,
       risultato: undefined,
     })
     if (presa) return { avvia: presa }
@@ -885,7 +892,21 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
     const m = mandato(a, r, strumenti($))
     const root = (await $.session.repo())?.root
     if (!root) throw new Error('repository root not available')
-    const esito = await helper($, ['lancia-cli', await cartella($), a.id, a.tentativo!], JSON.stringify({ root, prompt: `${m.background}\n\n${m.prompt}`, modello: m.model, effort: m.effort, permessi: a.permessi ?? (sensibile(a, r) ? 'acceptEdits' : 'default'), base: a.base }))
+    // F13 (N1): le fonti dell'host lette subito prima; l'helper le unisce ai file e all'ambiente, e nel dubbio non parte.
+    const fontiHost = await fontiHostVietate($, chiaviCliVietate)
+    const esito = await helper($, ['lancia-cli', await cartella($), a.id, a.tentativo!], JSON.stringify({ root, prompt: `${m.background}\n\n${m.prompt}`, modello: m.model, effort: m.effort, permessi: a.permessi ?? (sensibile(a, r) ? 'acceptEdits' : 'default'), base: a.base, fontiHost }))
+    if (esito.codice === 5) {
+      // Nessun processo partito: il tentativo si chiude col motivo e con le due vie (mai un ripiego automatico su API o Opus).
+      const fonti = (() => {
+        try {
+          return ((JSON.parse(esito.testo) as { fonti?: { nome?: unknown }[] }).fonti ?? []).map(f => String(f.nome)).join(', ').slice(0, 120)
+        } catch {
+          return '?'
+        }
+      })()
+      return await aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo
+        ? { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', msg('err.cliCredenziali', { fonti, modello: nomeModello(m.model) })) } : null)
+    }
     if (esito.codice !== 0) throw new Error('CLI outcome to be checked')
     await aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo ? transizione(x, 'avviata', ora()) : null)
   } catch {
@@ -1196,6 +1217,10 @@ const SCHEMA_MODO = {
     parallelo: { type: 'integer', minimum: 1, maximum: 8 },
     auditorSuggerito: { type: 'boolean' },
     revisioneIncrociata: { type: 'boolean' },
+    dirigente: { type: 'object', additionalProperties: false, properties: {
+      modello: { type: 'string' }, quando: { type: 'string', enum: ['off', 'R3+', 'sempre'] }, maxFigli: { type: 'integer', minimum: 1, maximum: 20 },
+      maxRipiani: { type: 'integer', minimum: 0, maximum: 5 }, lavoratori: { type: 'object', additionalProperties: false,
+        properties: Object.fromEntries(['R0', 'R1', 'R2', 'R3', 'R4', 'R5'].map(c => [c, { type: ['string', 'null'] }])) } } },
   },
 } as const
 const SCHEMA_SOGLIE = {
@@ -1360,11 +1385,11 @@ let ultimoRicontrollo = 0
  * F6.2/F6.7: le fonti di impostazioni dell'host che bloccano l'API, con le chiavi responsabili (mai i valori). Una fonte
  * che non si legge o non è un oggetto blocca. È il controllo dell'avvio, e lo stesso mostra la sezione Esecuzione.
  */
-async function fontiHostVietate($: Eng) {
+async function fontiHostVietate($: Eng, controllo: (s: unknown) => string[] | null = chiaviApiVietate) {
   const vietate: { source: 'user' | 'project' | 'local' | 'flag' | 'policy'; chiavi: string[] | null }[] = []
   for (const source of ['user', 'project', 'local', 'flag', 'policy'] as const) {
     const s = await $.settings.read({ source }).catch(() => null)
-    const chiavi = s === null ? null : chiaviApiVietate(s)
+    const chiavi = s === null ? null : controllo(s)
     if (chiavi === null || chiavi.length) vietate.push({ source, chiavi })
   }
   return vietate
@@ -1929,6 +1954,7 @@ const schemaSuggerisci = (r: Regole) => ({
     base: { type: 'string', description: 'Local start branch; default: the starter\'s.' },
     sveglia: { type: 'boolean', description: 'Wake the starter even without a report.' },
     piano: { type: 'string', description: '.md or .txt relative to the repository; the board shows it.' },
+    padre: { type: 'object' },
   },
   required: ['titolo', 'brief'],
 })
@@ -2343,7 +2369,7 @@ export const register: Register = (on, options) => {
         type: 'object',
         properties: {
           id: { type: 'string' },
-          stato: { type: 'string', enum: ['presa', 'avviata', 'fallita', 'consegnata', 'scartata'] },
+          stato: { type: 'string', enum: ['presa', 'avviata', 'fallita', 'consegnata', 'scartata', 'attesa-figli'] },
           tentativo: { type: 'string', description: 'The az-… token of the brief (mandatory except for "scartata" and for a review reported by the proposer)' },
           sessione: { type: 'string', description: 'local_… of the started session (mandatory with "avviata")' },
           revisione: {
@@ -2398,26 +2424,58 @@ export const register: Register = (on, options) => {
 
   on('tool.call', { tool: 'mcp__chip-manager__suggerisci_azione' }, async ($, e) => {
     const [lista, r, chi] = await Promise.all([carica($), leggiRegole($), chiSonoIo($)])
-    const v = valida(e as unknown as Record<string, unknown>, r, lista)
+    const { padre: chiesto, ...resto } = e as unknown as Record<string, unknown>
+    const v = valida(resto, r, lista)
     if (typeof v === 'string') return { deny: `suggerisci_azione: ${v}` }
     if (!chi.repo) return { deny: 'suggerisci_azione: this session is not in a repository: the panel would not know which project to link it to' }
+    // F13.2: una figlia nomina la sua dirigente col gettone del tentativo corrente (la stessa prova di «consegnata").
+    const p = chiesto as { id?: unknown; tentativo?: unknown } | undefined
+    const padre = chiesto === undefined ? undefined : lista.find(x => x.id === p?.id)
+    if (chiesto !== undefined && (!padre || padre.ruolo !== 'dirigente' || padre.padre || padre.repo !== chi.repo || !['avviata', 'attesa-figli'].includes(padre.stato) ||
+        typeof p?.tentativo !== 'string' || p.tentativo !== padre.tentativo))
+      return { deny: 'suggerisci_azione: padre must be {id, tentativo} of a director chip of this project at work, with its current attempt' }
+    const d = (r.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).dirigente
     const ultimo = attive(delProgetto(lista, chi)).reduce((n, a) => Math.max(n, a.ordine), 0)
     const id = `a-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    const a = await salva(
-      $,
-      bilancia({
-        ...v,
-        id,
-        versione: 0,
-        repo: chi.repo,
-        ordine: v.ordine ?? ultimo + 1,
-        stato: 'proposta', // record nuovo, non una transizione
-        proponente: chi.io,
-        creata: ora(),
-        aggiornata: ora(),
-      }, e as unknown as Record<string, unknown>, r, (await read($, risorse)).limiti, lista, chi),
-      { nuova: true },
-    )
+    const base: Azione = {
+      ...v,
+      id,
+      versione: 0,
+      repo: chi.repo,
+      ordine: v.ordine ?? ultimo + 1,
+      stato: 'proposta', // record nuovo, non una transizione
+      proponente: chi.io,
+      creata: ora(),
+      aggiornata: ora(),
+      // Per il bilanciamento i vincoli del padre come li vede il pannello; l'helper li ricopia dal record sotto il lock.
+      ...(padre && { ruolo: 'lavoro', padre: padre.id, vincoliPadre: padre.vincoliPropri ?? { sensibile: false, datiLan: false, fornitori: [] } }),
+    }
+    const ruolo = padre ? 'lavoro' : ruoloNuovo(corsiaDi(base, r), r)
+    const scelta = bilancia({ ...base, ruolo }, resto, r, (await read($, risorse)).limiti, lista, chi)
+    let a: Azione
+    if (padre) {
+      const { ruolo: _ruolo, padre: _padre, vincoliPadre: _vincoli, ...figlio } = scelta
+      const esito = await helper($, ['figlio', await cartella($)], JSON.stringify({ padre: padre.id, figlio: { ...figlio, versione: 1, aggiornata: ora() }, maxFigli: d.maxFigli }))
+      if (esito.codice !== 0) {
+        const motivo = (() => {
+          try {
+            return (JSON.parse(esito.testo) as { motivo?: unknown }).motivo
+          } catch {
+            return undefined
+          }
+        })()
+        return { deny: `suggerisci_azione: ${motivo === 'maxFigli' ? `the director already has ${d.maxFigli} child chips (maxFigli): stop and report to the owner`
+          : motivo === 'padre' ? 'the director is not at work any more' : 'child chip not recorded'}` }
+      }
+      a = JSON.parse(esito.testo) as Azione
+      await update($, azioni, l => [...l.filter(x => x.id !== a.id), a])
+    } else {
+      // La dirigente fissa i suoi vincoli alla nascita: le figlie li ereditano dal record, mai dal testo.
+      const corsia = corsiaDi(scelta, r)
+      // La corsia minima che passa alle figlie è solo quella sensibile (R4/R5): sotto, ogni figlia ha la sua corsia.
+      a = await salva($, ruolo !== 'dirigente' ? scelta : { ...scelta, vincoliPropri: { sensibile: sensibile(scelta, r), ...((corsia === 'R4' || corsia === 'R5') && { corsiaMin: corsia }),
+        datiLan: datiLocali(`${scelta.titolo}\n${scelta.brief}\n${scelta.background ?? ''}`), fornitori: [...r.risorse.fornitori] } }, { nuova: true })
+    }
     void $.ui.open({ id: PANE, title: TITOLO })
     const blocchi = violazioni(a, r, [...lista, a])
     // I valori effettivi dopo il bilanciamento (la destinazione no: la sceglie il committente o il consigliere).
@@ -2428,7 +2486,7 @@ export const register: Register = (on, options) => {
     return {
       result:
         `Action ${a.id} in the panel (position ${a.ordine}, lane ${corsiaDi(a, r) ?? 'none'}, ${a.esecutore} ${modelloDi(a, r)} · ${effortDi(a, r)} → ` +
-        `review ${a.revisore}; runs: ${modalitaDi(a)}).` +
+        `review ${a.revisore}; runs: ${modalitaDi(a)}${a.ruolo === 'dirigente' ? '; director' : a.padre ? `; child of ${a.padre}` : ''}).` +
         (causa ? ` Sensitive (lane ${corsiaDi(a, r)}): ${perche}.` : '') +
         (blocchi.length ? ` Warning, as it is it cannot start: ${testo('en', msg('err.nonParte', { motivi: blocchi }))}.` : ''),
     }
@@ -2503,8 +2561,8 @@ export const register: Register = (on, options) => {
     // «completata» resta accettata come sinonimo per i mandati della versione precedente.
     const voluto = stato === undefined ? undefined : ((stato === 'completata' ? 'consegnata' : stato) as StatoAzione | 'presa')
     if (voluto !== undefined && !(voluto in TRANSIZIONI)) return { deny: 'aggiorna_azione: invalid stato' }
-    if (voluto === 'avviata' && (typeof sessione !== 'string' || !SESSIONE_RE.test(sessione)))
-      return { deny: 'aggiorna_azione: "avviata" needs sessione = the full local_… id' }
+    const sessioneOk = typeof sessione === 'string' && SESSIONE_RE.test(sessione)
+    const senzaSessione = '"avviata" needs sessione = the full local_… id'
     if (voluto !== undefined && voluto !== 'scartata' && typeof tentativo !== 'string') return { deny: 'aggiorna_azione: the tentativo (az-…) of the brief is missing' }
     const rev = revisione as { esito?: unknown; nota?: unknown } | undefined
     if (rev !== undefined) {
@@ -2515,12 +2573,31 @@ export const register: Register = (on, options) => {
     }
     // L'identità di chi scrive la dà la sessione, mai gli argomenti.
     const io = (await read($, contesto))?.io ?? (await $.session.id())
+    const r = await leggiRegole($)
     let rifiuto: string | undefined
     const perStato = (a: Azione): Partial<Azione> | null => {
       if (voluto === undefined) return {}
+      // Un avvio vuole la sessione (prima di ogni altro controllo); il ritorno dalla dirigente in attesa no.
+      if (voluto === 'avviata' && a.stato !== 'attesa-figli' && !sessioneOk) {
+        rifiuto = senzaSessione
+        return null
+      }
       if (!TRANSIZIONI[voluto]!.includes(a.stato)) {
         rifiuto = `"${a.stato}" cannot go to "${voluto}"`
         return null
+      }
+      // F13.2: la dirigente aspetta le figlie e torna a lavorare (un ripiano, entro maxRipiani), col gettone del suo mandato.
+      if (voluto === 'attesa-figli' || (voluto === 'avviata' && a.stato === 'attesa-figli')) {
+        if (a.ruolo !== 'dirigente') rifiuto = 'only a director chip waits for its children'
+        else if (tentativo !== a.tentativo) rifiuto = 'the tentativo is not the current one'
+        if (rifiuto) return null
+        if (voluto === 'attesa-figli') return transizione(a, 'attesa-figli', ora())
+        const max = (r.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).dirigente.maxRipiani
+        if ((a.ripiani ?? 0) >= max) {
+          rifiuto = `re-plan limit reached (maxRipiani ${max}): stop and report to the owner`
+          return null
+        }
+        return { ...transizione(a, 'avviata', ora()), ripiani: (a.ripiani ?? 0) + 1 }
       }
       if (a.lanciatore && ['presa', 'avviata', 'fallita'].includes(voluto)) { rifiuto = 'a CLI/proxy start is confirmed only by its launcher'; return null }
       // Ogni aggiornamento di avvio o consegna deve portare il gettone del tentativo CORRENTE: una
@@ -2697,7 +2774,12 @@ export const register: Register = (on, options) => {
       },
       scarta: async a => {
         await salva($, { ...a, ...transizione(a, 'scartata', ora()), statoPrima: a.stato })
-        await update($, annullabile, () => ({ id: a.id, titolo: a.titolo }))
+        // F13.2: con la dirigente se ne vanno le figlie mai partite (le altre restano: il loro lavoro è già in corso).
+        const altri: string[] = []
+        if (a.ruolo === 'dirigente')
+          for (const f of (await carica($)).filter(x => x.padre === a.id && ['proposta', 'accodata', 'fallita'].includes(x.stato)))
+            if ((await aggiorna($, f.id, x => (['proposta', 'accodata', 'fallita'].includes(x.stato) ? { ...transizione(x, 'scartata', ora()), statoPrima: x.stato } : null)))?.stato === 'scartata') altri.push(f.id)
+        await update($, annullabile, () => ({ id: a.id, titolo: a.titolo, ...(altri.length && { altri }) }))
       },
       annullaScarto: async id => {
         const altri = (await read($, annullabile))?.altri ?? []

@@ -458,8 +458,13 @@ export function campiDaProposta(p: PropostaImpostazioni, r: RisorseProgetto): Re
     campi.restrizioni = { ...ora, ...q.restrizioni, ...((ora.soglie || q.restrizioni.soglie) && { soglie: { ...ora.soglie, ...q.restrizioni.soglie } }) }
   }
   // F11.1: il modo di lavoro proposto si fonde con quello scritto dello stesso strato (effort per corsia compreso).
+  const sotto = (x: unknown, k: string) => (x as Record<string, unknown> | undefined)?.[k] as Record<string, unknown> | undefined
   const modo = (ora: Record<string, unknown> | undefined, nuovo: Record<string, unknown>) => ({ ...ora, ...nuovo,
-    ...(ora?.effortPredefinito || nuovo.effortPredefinito ? { effortPredefinito: { ...(ora?.effortPredefinito as object), ...(nuovo.effortPredefinito as object) } } : {}) })
+    ...(ora?.effortPredefinito || nuovo.effortPredefinito ? { effortPredefinito: { ...(ora?.effortPredefinito as object), ...(nuovo.effortPredefinito as object) } } : {}),
+    // F13.2: anche il modo dirigente (e i lavoratori per corsia) si fonde campo per campo.
+    ...(nuovo.dirigente ? { dirigente: { ...sotto(ora, 'dirigente'), ...sotto(nuovo, 'dirigente'),
+      ...(sotto(sotto(ora, 'dirigente'), 'lavoratori') || sotto(sotto(nuovo, 'dirigente'), 'lavoratori')
+        ? { lavoratori: { ...sotto(sotto(ora, 'dirigente'), 'lavoratori'), ...sotto(sotto(nuovo, 'dirigente'), 'lavoratori') } } : {}) } } : {}) })
   if (q.modoLavoro) campi.modoLavoro = modo(r.strato.modoLavoro, q.modoLavoro)
   const a = p.account ?? {}
   if (a.modoLavoro) campi['account.modoLavoro'] = modo(r.account.modoLavoro, a.modoLavoro)

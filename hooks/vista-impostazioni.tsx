@@ -837,11 +837,34 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           chiave: 'modo-incrociata', etichetta: T('modo.incrociata'), contesto: T('modo.incrociataBreve'), modo: 'scelta', valore: m.revisioneIncrociata ? 'si' : 'no', voci: SI_NO,
           onCambia: v => scrivi('modo-incrociata', { revisioneIncrociata: v === 'si' }),
         }),
+        // F13.2: il modo dirigente (quando nasce una dirigente, su che modello, con quante figlie e ripiani).
+        u.GruppoChip({
+          chiave: 'modo-dir-quando', etichetta: T('modo.dirQuando'), contesto: T('modo.dirQuando'), modo: 'scelta', valore: m.dirigente.quando,
+          voci: [{ valore: 'off', testo: T('modo.dirOff') }, { valore: 'R3+', testo: T('modo.dirR3') }, { valore: 'sempre', testo: T('modo.dirSempre') }],
+          onCambia: v => scrivi('modo-dir-quando', { dirigente: { ...strato.dirigente, quando: v } }),
+        }),
+        u.GruppoChip({
+          chiave: 'modo-dir-modello', etichetta: T('modo.dirModello'), modo: 'scelta', valore: m.dirigente.modello,
+          voci: regoleOra.modelli.claude.filter(x => /fable|opus/.test(x)).map(x => ({ valore: x, testo: nomeModello(x) })),
+          onCambia: v => scrivi('modo-dir-modello', { dirigente: { ...strato.dirigente, modello: v } }),
+        }),
+        u.GruppoChip({
+          chiave: 'modo-dir-figli', etichetta: T('modo.dirFigli'), contesto: T('modo.dirFigli'), modo: 'scelta', valore: String(m.dirigente.maxFigli),
+          voci: [2, 4, 8, 12, 20].map(n => ({ valore: String(n), testo: String(n) })),
+          onCambia: v => scrivi('modo-dir-figli', { dirigente: { ...strato.dirigente, maxFigli: Number(v) } }),
+        }),
+        u.GruppoChip({
+          chiave: 'modo-dir-ripiani', etichetta: T('modo.dirRipiani'), contesto: T('modo.dirRipiani'), modo: 'scelta', valore: String(m.dirigente.maxRipiani),
+          voci: [0, 1, 2, 3, 4, 5].map(n => ({ valore: String(n), testo: String(n) })),
+          onCambia: v => scrivi('modo-dir-ripiani', { dirigente: { ...strato.dirigente, maxRipiani: Number(v) } }),
+        }),
+        didascalia('modo-dir-fable', T('dir.fable')),
         Object.keys(strato).length ? (
           <Button key="modo-ripristina" plain label={progetto ? T('modo.eredita') : T('modo.predefiniti')}
             onPress={() => salva('modo-ripristina', () => ({ [campo]: null }))()} />
         ) : null,
-        ...['modo-ripristina', 'modo-codex', 'modo-parallelo', 'modo-auditor', 'modo-incrociata', ...['R0', 'R1', 'R2', 'R3', 'R4', 'R5'].map(c => `modo-effort-${c}`)].map(errore),
+        ...['modo-ripristina', 'modo-codex', 'modo-parallelo', 'modo-auditor', 'modo-incrociata', 'modo-dir-quando', 'modo-dir-modello', 'modo-dir-figli', 'modo-dir-ripiani',
+          ...['R0', 'R1', 'R2', 'R3', 'R4', 'R5'].map(c => `modo-effort-${c}`)].map(errore),
         ...skillUi((id, on) => scrivi(`skill-usa-${id}`, { skillBase: { ...strato.skillBase, [id]: on } }), m.skillBase),
       ],
     })

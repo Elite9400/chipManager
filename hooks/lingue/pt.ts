@@ -1219,6 +1219,26 @@ const pt: Dizionario = {
   "doc.nonSpostati": "Dados não movidos: nada mudou",
   "doc.r.host.claudeCode": "Claude Code {versione} é anterior a 2.1.321",
   "doc.f.host.claudeCode": "Fable 5.2 precisa do Claude Code 2.1.321 ou posterior: atualize o Claude Code antes de usá-lo.",
+  // F13.2: modo dirigente
+  "v.dirigenteFiglia": "uma chip diretora não pode ser filha de outra diretora (profundidade 1)",
+  "v.dirigenteClaude": "uma chip diretora roda no Claude",
+  "v.fornitorePadre": "{fornitore} não está entre os provedores permitidos à sua chip diretora",
+  // F13.2: corsia CLI senza credenziali dell'abbonamento
+  "err.cliCredenziali": "a faixa CLI não usaria a assinatura: {fonti} definem chave, token, helper ou gateway, ou não se leem. Corrija-as, ou inicie-a pelo app desktop numa sessão com {modello}",
+  "stato.attesaFiglie": "Aguarda as suas chips filhas",
+  // F13.2: modo dirigente nel pannello
+  "dir.riga": "Diretora · filhas {n}/{max} · replanos {r}/{maxR}",
+  "dir.costo": "custo das filhas ${osservato} observado, {ignote} desconhecidas",
+  "dir.fable": "Fable pode cobrar uso extra onde o seu plano o exige",
+  "dir.figlia": "Filha de {titolo}: mantém as suas restrições",
+  "az.dirigenteOpus": "Diretora no Opus",
+  "modo.dirQuando": "Chip diretora",
+  "modo.dirOff": "Desligada",
+  "modo.dirR3": "A partir de R3",
+  "modo.dirSempre": "Sempre",
+  "modo.dirModello": "Modelo da diretora",
+  "modo.dirFigli": "Máximo de filhas",
+  "modo.dirRipiani": "Máximo de replanos",
   // ‹fine›
 }
 

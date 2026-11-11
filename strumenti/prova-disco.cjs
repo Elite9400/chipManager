@@ -896,13 +896,13 @@ test('2.4 date: ogni cambio di stato di un\'azione passa da transizione()', () =
   for (const f of ['register.tsx', 'pannello.tsx', 'vista-lavoro.tsx', 'logica.ts']) assert.ok(file.includes(f), f)
   for (const f of file) {
     const righe = fs.readFileSync(path.join(cartella, f), 'utf8').split('\n')
-    // Fuori da transizione() restano solo: la sua firma, i commenti, lo stato delle sessioni (in-corso / ferma),
+    // Fuori da transizione() restano solo: la sua firma, i commenti, lo stato delle sessioni (in-corso / ferma / ignota),
     // schema dello strumento, larghezze di colonna e la creazione di un record nuovo.
     const scritte = righe
       .map((r, i) => ({ r: r.trim(), dove: `${f}:${i + 1}` }))
       .filter(({ r }) => !r.startsWith('//') && !r.startsWith('export function transizione('))
       .map(({ r, dove }) => `${dove}: ${r}`)
-      .filter(r => /\bstato: /.test(r) && !/\bstato: (s\.isRunning|'in-corso'|fermaOra|inCorso|s\.inCorso|\{ type:|string;|'\d+%')/.test(r) && !r.includes('// record nuovo'))
+      .filter(r => /\bstato: /.test(r) && !/\bstato: (s\.isRunning|'in-corso'|'ignota'|fermaOra|inCorso|s\.inCorso|\{ type:|string;|'\d+%')/.test(r) && !r.includes('// record nuovo'))
     assert.deepStrictEqual(scritte, [])
   }
 })
@@ -2377,6 +2377,8 @@ test('F11.1 parità: modo di lavoro efficace e controllo in scrittura uguali nel
 }))`, { coppie: coppie.map(([a, p]) => [a ?? null, p ?? null]), modi: [...MODI_VALIDI, ...MODI_NON_VALIDI] })
   coppie.forEach(([a, p], i) =>
     assert.deepStrictEqual(R.regoleEfficaci(a === undefined ? undefined : { modoLavoro: a }, p === undefined ? {} : { modoLavoro: p }).modoLavoro, ts.efficaci[i], JSON.stringify([a, p])))
+  // Il modo dirigente (F13.2) ha il suo test di parità: qui si confronta il resto.
+  ts.efficaci.forEach(e => delete e.dirigente)
   assert.deepStrictEqual(ts.efficaci[0], { effortPredefinito: { R0: 'medium', R1: 'medium', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', auditorSuggerito: false, revisioneIncrociata: true })
   // Il progetto sostituisce l'account campo per campo; null o assente eredita.
   assert.deepStrictEqual(ts.efficaci[2], { effortPredefinito: { R0: 'high', R1: 'medium', R2: 'low', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', parallelo: 2, auditorSuggerito: false, revisioneIncrociata: false })
@@ -3781,4 +3783,105 @@ test('F13b rilievo 7: il modello si verifica sull\'intero catalogo validato; sol
   await assert.rejects(C.completa({ ...input, modello: 'modello-999' }, {}, get), /catalogue/)
   const r = await C.rileva(async url => (url.startsWith('http://localhost:11434/') ? catalogo : Promise.reject(new Error('no'))))
   assert.strictEqual(r.trovati[0].modelli.length, 200)
+})
+
+// --- F13.2: modo dirigente (helper) -----------------------------------------------------------------------------------
+
+test('F13.2 parità: il modo dirigente si legge, si combina e si controlla allo stesso modo nel pannello e nell\'helper', () => {
+  const R = require('./regole.cjs')
+  const coppie = [
+    [null, null],
+    [{ dirigente: { quando: 'sempre', maxFigli: 4 } }, { dirigente: { lavoratori: { R1: 'claude-haiku-5-5' }, maxRipiani: 0 } }],
+    [{ dirigente: { modello: 'claude-opus-5-5', lavoratori: { R3: 'claude-sonnet-5-5' } } }, { dirigente: { quando: 'off', maxFigli: 99, modello: 'non-claude' } }],
+  ]
+  const modi = [{ dirigente: {} }, { dirigente: { quando: 'R3+', lavoratori: { R0: null } } }, { dirigente: { quando: 'mai' } }, { dirigente: { maxFigli: 0 } },
+    { dirigente: { maxRipiani: 6 } }, { dirigente: { lavoratori: { R9: 'claude-opus-5-5' } } }, { dirigente: { modello: 'gpt-6-astra' } }, { dirigente: { ignoto: 1 } }, { dirigente: [] }]
+  const ts = conLogica(`console.log(JSON.stringify({
+  e: ingresso.coppie.map(([a, p]) => nuova.risorseDa(p === null ? {} : { modoLavoro: p }, a === null ? undefined : { modoLavoro: a }).modoLavoro.dirigente),
+  n: ingresso.modi.map(m => nuova.modoNonValido(m) ?? null),
+}))`, { coppie, modi })
+  coppie.forEach(([a, p], i) => assert.deepStrictEqual(R.regoleEfficaci(a === null ? undefined : { modoLavoro: a }, p === null ? {} : { modoLavoro: p }).modoLavoro.dirigente, ts.e[i]))
+  modi.forEach((m, i) => assert.strictEqual(R.modoNonValido(m), ts.n[i], JSON.stringify(m)))
+  assert.deepStrictEqual(ts.e[0], { modello: 'claude-fable-5-2', quando: 'R3+', lavoratori: { R0: 'claude-haiku-5-5', R1: 'claude-sonnet-5-5', R2: 'claude-sonnet-5-5', R3: 'claude-opus-5-5', R4: 'claude-opus-5-5', R5: 'claude-opus-5-5' }, maxFigli: 8, maxRipiani: 2 })
+  assert.deepStrictEqual([ts.e[1].quando, ts.e[1].maxFigli, ts.e[1].maxRipiani, ts.e[1].lavoratori.R1], ['sempre', 4, 0, 'claude-haiku-5-5'])
+  // Un valore che non vale si ignora in lettura (eredita): maxFigli 99 e un modello non Claude non passano.
+  assert.deepStrictEqual([ts.e[2].quando, ts.e[2].maxFigli, ts.e[2].modello, ts.e[2].lavoratori.R3], ['off', 8, 'claude-opus-5-5', 'claude-sonnet-5-5'])
+  assert.deepStrictEqual(ts.n, [null, null, 'modoLavoro.dirigente.quando', 'modoLavoro.dirigente.maxFigli', 'modoLavoro.dirigente.maxRipiani',
+    'modoLavoro.dirigente.lavoratori.R9', 'modoLavoro.dirigente.modello', 'modoLavoro.dirigente.ignoto', 'modoLavoro.dirigente'])
+})
+
+const recDirigente = (id, extra = {}) => ({ id, versione: 1, titolo: 'Dirigente', brief: 'Pianifica.', ordine: 1, dipende: [], esecutore: 'claude', revisore: 'claude',
+  stato: 'avviata', ruolo: 'dirigente', vincoliPropri: { sensibile: true, corsiaMin: 'R4', datiLan: true, fornitori: ['claude'] }, ...extra })
+const recFiglia = id => ({ id, versione: 1, titolo: 'Figlia', brief: 'Rinomina un campo.', ordine: 2, dipende: [], esecutore: 'claude', revisore: 'claude', stato: 'proposta' })
+
+test('F13.2 figlio: i vincoli si copiano dal record del padre (mai dal testo); profondità 1; al più maxFigli figlie', async () => {
+  const dir = tmp()
+  fs.writeFileSync(path.join(dir, 'a-dir00001.json'), JSON.stringify(recDirigente('a-dir00001')))
+  const [c, u] = await D.figlio(dir, { padre: 'a-dir00001', figlio: recFiglia('a-fig00001'), maxFigli: 2 })
+  assert.strictEqual(c, 0, u)
+  const scritta = JSON.parse(fs.readFileSync(path.join(dir, 'a-fig00001.json'), 'utf8'))
+  assert.deepStrictEqual([scritta.ruolo, scritta.padre, scritta.vincoliPadre], ['lavoro', 'a-dir00001', { sensibile: true, corsiaMin: 'R4', datiLan: true, fornitori: ['claude'] }])
+  // Vincoli o ruolo portati dalla richiesta: rifiutata (si copiano solo dal padre).
+  for (const extra of [{ vincoliPadre: { sensibile: false } }, { ruolo: 'dirigente' }, { padre: 'a-altro0001' }])
+    assert.strictEqual((await D.figlio(dir, { padre: 'a-dir00001', figlio: { ...recFiglia('a-fig00009'), ...extra }, maxFigli: 2 }))[0], 2, JSON.stringify(extra))
+  assert.strictEqual((await D.figlio(dir, { padre: 'a-dir00001', figlio: recFiglia('a-fig00002'), maxFigli: 2 }))[0], 0)
+  const [c3, u3] = await D.figlio(dir, { padre: 'a-dir00001', figlio: recFiglia('a-fig00003'), maxFigli: 2 })
+  assert.deepStrictEqual([c3, JSON.parse(u3).motivo], [4, 'maxFigli'])
+  // Un padre che non è una dirigente al lavoro (o è una figlia): niente figlie.
+  fs.writeFileSync(path.join(dir, 'a-dir00002.json'), JSON.stringify(recDirigente('a-dir00002', { stato: 'proposta' })))
+  fs.writeFileSync(path.join(dir, 'a-dir00003.json'), JSON.stringify(recDirigente('a-dir00003', { padre: 'a-dir00001' })))
+  for (const padre of ['a-dir00002', 'a-dir00003', 'a-fig00001', 'a-manca0001'])
+    assert.strictEqual((await D.figlio(dir, { padre, figlio: recFiglia('a-fig00004'), maxFigli: 8 }))[0], 4, padre)
+})
+
+test('F13 N1: la corsia CLI parte solo con le credenziali dell\'abbonamento: ogni fonte che porta chiave, token, helper o gateway blocca, e una fonte illeggibile', async () => {
+  const API = require('./api-claude.cjs')
+  const root = tmp()
+  const casa = tmp()
+  const fonti = [{ nome: 'utente', file: path.join(casa, 'settings.json') }, { nome: 'progetto', file: path.join(root, '.claude', 'settings.json') },
+    { nome: 'locale', file: path.join(root, '.claude', 'settings.local.json') }, { nome: 'gestite', file: path.join(casa, 'managed-settings.json') }]
+  fs.mkdirSync(path.join(root, '.claude'))
+  assert.deepStrictEqual(API.blocchiCli(fonti, {}, []), [])
+  const casi = [
+    [0, { env: { ANTHROPIC_API_KEY: 'x' } }, 'env.ANTHROPIC_API_KEY'], [1, { apiKeyHelper: '/bin/chiave' }, 'apiKeyHelper'],
+    [2, { env: { CLAUDE_CODE_USE_BEDROCK: '1' } }, 'env.CLAUDE_CODE_USE_BEDROCK'], [3, { env: { ANTHROPIC_AUTH_TOKEN: 'x' } }, 'env.ANTHROPIC_AUTH_TOKEN'],
+    [0, { forceLoginMethod: 'console' }, 'forceLoginMethod'], [1, { env: { ANTHROPIC_BASE_URL: 'https://gw.example' } }, 'env.ANTHROPIC_BASE_URL']]
+  for (const [i, s, chiave] of casi) {
+    fs.writeFileSync(fonti[i].file, JSON.stringify(s))
+    assert.deepStrictEqual(API.blocchiCli(fonti, {}, []), [{ nome: fonti[i].nome, chiavi: [chiave] }], chiave)
+    fs.rmSync(fonti[i].file)
+  }
+  // Il token OAuth dell'abbonamento e un login claude.ai non bloccano la corsia CLI.
+  fs.writeFileSync(fonti[0].file, JSON.stringify({ env: { CLAUDE_CODE_OAUTH_TOKEN: 'x' }, forceLoginMethod: 'claudeai' }))
+  assert.deepStrictEqual(API.blocchiCli(fonti, {}, []), [])
+  fs.writeFileSync(fonti[2].file, '{ rotto')
+  assert.deepStrictEqual(API.blocchiCli(fonti, {}, []), [{ nome: 'locale', illeggibile: true }])
+  fs.rmSync(fonti[2].file)
+  // L'ambiente ereditato e le fonti dell'host (policy illeggibile, flag con un helper della chiave).
+  assert.deepStrictEqual(API.blocchiCli(fonti, { ANTHROPIC_API_KEY: 'x', PATH: 'p' }, []), [{ nome: 'ambiente', chiavi: ['ANTHROPIC_API_KEY'] }])
+  assert.deepStrictEqual(API.blocchiCli(fonti, {}, [{ source: 'policy', chiavi: null }, { source: 'flag', chiavi: ['apiKeyHelper'] }]),
+    [{ nome: 'host:policy', illeggibile: true }, { nome: 'host:flag', chiavi: ['apiKeyHelper'] }])
+  // Il figlio non riceve chiavi, token né gateway.
+  assert.deepStrictEqual(API.ambienteCli({ ANTHROPIC_API_KEY: 'x', ANTHROPIC_AUTH_TOKEN: 'y', CLAUDE_CODE_USE_VERTEX: '1', CLAUDECODE: '1', CLAUDE_CODE_OAUTH_TOKEN: 'o', PATH: 'p' }),
+    { CLAUDE_CODE_OAUTH_TOKEN: 'o', PATH: 'p' })
+  // lancia-cli: senza i fatti dell'host non parte; con una fonte che blocca esce con 5 e i nomi, niente esecuzione scritta.
+  const dir = tmp()
+  fs.writeFileSync(path.join(dir, 'a-cli00009.json'), JSON.stringify({ id: 'a-cli00009', stato: 'in-avvio', lanciatore: 'cli', tentativo: 'az-cli0009' }))
+  assert.strictEqual((await lanciaCli(dir, 'a-cli00009', 'az-cli0009', { root }))[0], 2)
+  fs.writeFileSync(path.join(root, '.claude', 'settings.json'), JSON.stringify({ apiKeyHelper: '/bin/chiave' }))
+  // Le impostazioni utente di prova (non quelle di questa macchina), e un ambiente senza chiavi ereditate.
+  const prima = { dir: process.env.CLAUDE_CONFIG_DIR, tolte: Object.entries(process.env).filter(([k]) => /^(ANTHROPIC_|CLAUDE_CODE_USE_)/.test(k)) }
+  process.env.CLAUDE_CONFIG_DIR = casa
+  for (const [k] of prima.tolte) delete process.env[k]
+  let c
+  let u
+  try {
+    ;[c, u] = await lanciaCli(dir, 'a-cli00009', 'az-cli0009', { root, fontiHost: [] })
+  } finally {
+    if (prima.dir === undefined) delete process.env.CLAUDE_CONFIG_DIR
+    else process.env.CLAUDE_CONFIG_DIR = prima.dir
+    for (const [k, v] of prima.tolte) process.env[k] = v
+  }
+  assert.deepStrictEqual([c, JSON.parse(u).fonti], [5, [{ nome: 'progetto', chiavi: ['apiKeyHelper'] }]])
+  assert.strictEqual(fs.existsSync(path.join(dir, 'esecuzioni', 'az-cli0009.json')), false)
 })
