@@ -546,7 +546,7 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
   if (segno.id !== id || segno.tentativo !== tentativo || segno.stato !== 'in-avvio') throw new Error('tentativo non valido')
   const lock = leggiLock(dm)
   if (!lock || lock === 'illeggibile' || lock.tentativo !== tentativo || lock.uscita) throw new Error('lock non di questo tentativo')
-  const r = await d.conMutex(`api:${path.resolve(file).toLowerCase()}`, 0, async () => {
+  const r = await d.conMutex(d.mutexEsecuzione('api', file), 0, async () => {
     const scrivi = campi => d.scriviDati(file, JSON.stringify({ id, tentativo, lanciatore: 'api-claude', ...campi }))
     let partito = false
     const fuori = {}

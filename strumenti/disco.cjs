@@ -20,7 +20,26 @@ const regole = require('./regole.cjs')
 
 // Il mutex identifica la cartella FISICA: due spellings della stessa cartella (C:/… e D:/… sullo stesso
 // volume, una junction, un link) devono dare la stessa porta. Si chiama dopo che la cartella esiste.
-const MUTEX_AZIONI = dir => `azioni:${fs.realpathSync.native(path.resolve(dir)).toLowerCase()}`
+const MUTEX_AZIONI = dir => `azioni:${percorsoCanonico(dir)}`
+/**
+ * L'identità di un percorso per mutex e lock: il percorso REALE della parte esistente più il resto, in minuscolo. Con le
+ * junction ammesse sopra la radice dati, l'alias e il percorso fisico devono prendere lo stesso lock (stesso record,
+ * stessa cartella), altrimenti due supervisori lavorerebbero insieme sullo stesso stato.
+ */
+function percorsoCanonico(p) {
+  const assoluto = path.resolve(p)
+  const resto = []
+  for (let x = assoluto; ; x = path.dirname(x)) {
+    try {
+      return path.join(fs.realpathSync.native(x), ...resto).toLowerCase()
+    } catch {
+      if (path.dirname(x) === x) return assoluto.toLowerCase()
+      resto.unshift(path.basename(x))
+    }
+  }
+}
+/** Il mutex del supervisore di un'esecuzione (`cli`, `api`): uno per record, qualunque percorso lo nomini. */
+const mutexEsecuzione = (tipo, file) => `${tipo}:${percorsoCanonico(file)}`
 // Uno solo per macchina e non configurabile: nessuna variabile d'ambiente lo cambia. Le prove, chiamando main()
 // dal proprio entrypoint, ne passano un altro come parametro.
 const MUTEX_CODEX = 'codex:corsia-della-macchina'
@@ -1018,7 +1037,7 @@ async function eseguiCli(dir, id, tentativo, input, deps = {}) {
   percorsoSicuro(file)
   const segno = JSON.parse(fs.readFileSync(file, 'utf8'))
   if (segno.id !== id || segno.tentativo !== tentativo || segno.stato !== 'in-avvio') throw new Error('tentativo non valido')
-  const r = await conMutex(`cli:${path.resolve(file).toLowerCase()}`, 0, async () => {
+  const r = await conMutex(mutexEsecuzione('cli', file), 0, async () => {
     const scrivi = campi => scriviDati(file, JSON.stringify({ id, tentativo, ...campi }))
     let partito = false
     const fuori = {}
@@ -1619,7 +1638,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, percorsoCanonico, mutexEsecuzione, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

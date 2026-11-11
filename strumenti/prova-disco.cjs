@@ -2760,3 +2760,55 @@ test('Percorsi, doctor: «Sposta i dati» copia e verifica, poi punta il config 
   assert.strictEqual(JSON.parse(fs.readFileSync(config, 'utf8')).progetti['owner/prova'].cartella, a.replace(/\\/g, '/'))
   assert.strictEqual(fs.readFileSync(path.join(da, 'azioni', 'a-uno.json'), 'utf8'), '{"versione":1}')
 })
+
+// --- Fix percorsi, N5: con le junction ammesse sopra la radice, un percorso alias e quello fisico sono lo stesso lock ---
+
+test('Percorsi, N5: due supervisori CLI sullo stesso record, uno da una junction sopra la radice e uno dal percorso fisico: ne parte uno solo', async () => {
+  const { eseguiCli } = require(DISCO)
+  const { EventEmitter } = require('node:events')
+  const base = fuori()
+  const fisico = path.join(base, 'dati')
+  const ponte = path.join(fuori(), 'ponte')
+  giunzione(base, ponte)
+  const alias = path.join(ponte, 'dati')
+  const id = 'a-alias001'
+  const tentativo = 'az-alias01'
+  const file = path.join(fisico, 'esecuzioni', `${tentativo}.json`)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ id, tentativo, stato: 'in-avvio' }))
+  let avvii = 0
+  const deps = () => ({
+    git: () => 'a'.repeat(40),
+    avvia: () => {
+      avvii++
+      const p = new EventEmitter()
+      p.stdin = new EventEmitter()
+      p.stdin.end = () => setTimeout(() => p.emit('exit', 0), 300)
+      queueMicrotask(() => p.emit('spawn'))
+      return p
+    },
+  })
+  const ingresso = { root: tmp(), prompt: 'testo', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits' }
+  const codici = await Promise.all([eseguiCli(fisico, id, tentativo, ingresso, deps()), eseguiCli(alias, id, tentativo, ingresso, deps())])
+  assert.deepStrictEqual([...codici].sort(), [0, 3])
+  assert.strictEqual(avvii, 1)
+})
+
+test('Percorsi, N5: identità canoniche (realpath) per mutex delle azioni, del config e delle esecuzioni CLI e API', async () => {
+  const base = fuori()
+  const fisico = path.join(base, 'dati')
+  fs.mkdirSync(path.join(fisico, 'esecuzioni'), { recursive: true })
+  const ponte = path.join(fuori(), 'ponte')
+  giunzione(base, ponte)
+  const alias = path.join(ponte, 'dati')
+  assert.strictEqual(D.MUTEX_AZIONI(alias), D.MUTEX_AZIONI(fisico))
+  for (const tipo of ['cli', 'api']) {
+    const f = n => path.join(n, 'esecuzioni', 'az-nuovo01.json')
+    assert.strictEqual(D.mutexEsecuzione(tipo, f(alias)), D.mutexEsecuzione(tipo, f(fisico)))
+    // Lo stesso lock: tenuto da un alias, l'altro lo trova occupato.
+    const r = await D.conMutex(D.mutexEsecuzione(tipo, f(alias)), 0, () => D.conMutex(D.mutexEsecuzione(tipo, f(fisico)), 0, () => 'preso'))
+    assert.deepStrictEqual(r.valore, { occupato: true }, tipo)
+  }
+  // Il config passa dallo stesso mutex della sua cartella, anche con un file che non esiste ancora.
+  assert.strictEqual(D.mutexEsecuzione('x', path.join(alias, 'manca', 'config.json')), D.mutexEsecuzione('x', path.join(fisico, 'manca', 'config.json')))
+})

@@ -194,7 +194,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   `.git`, folder or file, above it), and no link is allowed from the data folder down. The error now names the path and
   the cause (inside which repository, or which link) and what to do. `/chipmanager --doctor` can move a project's data
   out of a repository or away from inner links into the default folder: verified copy, one config write, the old folder
-  left as it was, only after you confirm.
+  left as it was, only after you confirm. Locks use the real path, so a path through a junction and the physical path
+  take the same lock: two runs of the same task can no longer start through different spellings.
 - Claude plan limits show again on the desktop app, from the current shape of `ccd_session_mgmt.get_usage`; when
   they do not apply or cannot be read, the panel says why.
 - Actions saved without a project by an earlier version no longer appear in every project: a one-time pop-up offers
