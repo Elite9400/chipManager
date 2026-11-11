@@ -47,7 +47,7 @@ const az = (id: string, ordine: number, extra: Partial<Azione> = {}): Azione => 
 })
 
 /** Engine finto ridotto: disco in memoria, prenotazione atomica dell'helper, avvio desktop che riesce. */
-function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexOccupato?: boolean; esecuzione?: string } = {}) {
+function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexOccupato?: boolean | { codice: number; testo: string }; esecuzione?: string } = {}) {
   const toast: string[] = []
   const disco = new DiscoIt()
   disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING))
@@ -100,7 +100,8 @@ function ambiente(on: On, azioni: Azione[], limiti: Limite[] = [], opz: { codexO
     if (e.argv[1]?.endsWith('/fornitori.cjs'))
       return fine(0, JSON.stringify(cmd === 'limiti' ? { limiti, proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } } : {}))
     // La corsia Codex della macchina: occupata da fuori (un'altra sessione, una revisione) quando il test lo chiede.
-    if (cmd === 'occupata') return fine(opz.codexOccupato ? 1 : 0)
+    // Come l'helper vero: 3 = occupata; un oggetto dà un altro esito (F13.5: 7, il lucchetto che non si crea).
+    if (cmd === 'occupata') return typeof opz.codexOccupato === 'object' ? fine(opz.codexOccupato.codice, opz.codexOccupato.testo) : fine(opz.codexOccupato ? 3 : 0)
     if (cmd === 'cas') {
       const f = p(a[0])
       if (versione(f) !== a[1]) return fine(4, versione(f))
@@ -401,6 +402,23 @@ test('C1: «Avvia la prossima» con la corsia Codex occupata da fuori avvia la p
   expect(amb.azione('a-codex001').stato).toBe('proposta')
   // Il pannello aveva annunciato la chip Codex: il toast dice quale è partita e perché l'altra aspetta.
   expect(amb.toast).toContain('Parte «Seconda, per Claude»; «Prima, per Codex» aspetta: corsia Codex occupata')
+  await ui.unmount()
+})
+
+test('F13.5: lucchetto della macchina non creabile (codice 7): la chip Codex non parte e il pannello dice perché, con canale e codice', async ($, on) => {
+  const canale = `\\\\.\\pipe\\chipmanager-${'a'.repeat(64)}`
+  const amb = ambiente(on, [az('a-codex001', 1, { titolo: 'Prima, per Codex', esecutore: 'codex', revisore: 'claude', modello: 'gpt-6-astra', corsia: 'R2' })], [],
+    { codexOccupato: { codice: 7, testo: `helper.mutexNonCreabile: ${canale} (EACCES)` } })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 90))
+  await ui.press({ key: 'avvia-a-codex001' })
+  expect(amb.avvii().length).toBe(0)
+  expect(amb.azione('a-codex001').stato).toBe('proposta')
+  // Il motivo arriva nell'avviso del pannello, con canale e codice; mai «corsia Codex occupata».
+  const avviso = await ui.find({ type: 'Text', text: /corsia Codex bloccata/ })
+  expect(avviso?.text).toContain(`corsia Codex bloccata: il lucchetto della macchina non si può creare (${canale}, EACCES)`)
+  expect(await ui.find({ type: 'Text', text: /corsia Codex occupata/ })).toBeUndefined()
   await ui.unmount()
 })
 

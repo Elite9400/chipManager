@@ -74,6 +74,8 @@ const it: Dizionario = {
   // Why a chip waits in the queue
   "coda.dipendenze": "aspetta che le dipendenze siano fuse",
   "coda.codex": "corsia Codex occupata",
+  "coda.codexLucchetto": "corsia Codex bloccata: il lucchetto della macchina non si può creare ({canale}, {codice})",
+  "coda.codexNonVerificata": "corsia Codex non verificabile (codice {codice})",
   "coda.paralleli": { one: "limite di 1 sessione in parallelo", other: "limite di {n} sessioni in parallelo" },
   // Start: confirmations and errors
   "v.freeConferma": "FreeLLMAPI: serve conferma del testo di questa versione",

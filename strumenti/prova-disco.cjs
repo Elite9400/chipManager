@@ -69,9 +69,38 @@ const leggiPid = file => {
   }
 }
 /** Un wrapper della corsia Codex in parallelo alla prova: il processo e la promessa del suo codice d'uscita. */
-const corsiaViva = args => {
-  const p = spawn(process.execPath, [ENTRATA, 'corsia-codex', ...args])
+const corsiaViva = (args, opzioniNode = []) => {
+  const p = spawn(process.execPath, [...opzioniNode, ENTRATA, 'corsia-codex', ...args])
   return { p, uscita: new Promise(r => p.on('exit', r)) }
+}
+const dorme = ms => new Promise(r => setTimeout(r, ms))
+/**
+ * F13.5: la chiusura dei processi tenuti da un file, nel `finally` di ogni prova: crea i segnali d'uscita, aspetta che
+ * escano i wrapper (`figli`) e i processi staccati (pid scritti in `filePid`); chi entro `ms` non esce viene ucciso. Così
+ * un'asserzione fallita non lascia vivo un processo che non ha più una scadenza sua.
+ */
+async function chiudi(segnali, { figli = [], filePid = [] } = {}, ms = 15_000) {
+  for (const s of [].concat(segnali)) fs.writeFileSync(s, '')
+  const scadenza = Date.now() + ms
+  for (const f of figli) {
+    const uscito = await Promise.race([f.uscita.then(() => true), dorme(Math.max(0, scadenza - Date.now())).then(() => false)])
+    if (!uscito) {
+      f.p.kill()
+      await f.uscita
+    }
+  }
+  for (const file of filePid) {
+    while (!leggiPid(file) && Date.now() < scadenza) await dorme(50)
+    const pid = leggiPid(file)
+    while (pid && pidVivo(pid) && Date.now() < scadenza) await dorme(50)
+    if (pid && pidVivo(pid)) {
+      try {
+        process.kill(pid)
+      } catch {
+        // uscito proprio adesso
+      }
+    }
+  }
 }
 const staccato = codice => `require('child_process').spawn(process.execPath,['-e',${JSON.stringify(codice)}],{detached:true,stdio:'ignore'}).unref();`
 
@@ -135,6 +164,19 @@ test('prenota: crea la cartella mancante; rifiuta se l\'insieme dei record è ca
   const r = esegui(['prenota', dir], JSON.stringify({ elenco: ['a-uno.json'], attese: { 'a-uno.json': 1 }, scrivi: { 'a-uno.json': { versione: 2 } } }))
   assert.strictEqual(r.status, 4)
   assert.match(r.stdout, /elenco cambiato/)
+})
+
+test('F13.5 chiudi: chi non esce al segnale viene ucciso entro il tempo dato (wrapper e processo staccato)', async () => {
+  const dir = tmp()
+  const filePid = path.join(dir, 'sordo.pid')
+  // Due processi che ignorano il segnale: uno staccato (solo il pid) e uno figlio diretto (processo e uscita).
+  spawn(process.execPath, ['-e', conPid(filePid, 'setInterval(() => {}, 1000)')], { detached: true, stdio: 'ignore' }).unref()
+  const p = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'])
+  const figlio = { p, uscita: new Promise(r => p.on('exit', r)) }
+  await aspetta(() => leggiPid(filePid), 'il processo staccato non è partito')
+  await chiudi(path.join(dir, 'via'), { figli: [figlio], filePid: [filePid] }, 2_000)
+  await aspetta(() => !pidVivo(leggiPid(filePid)), 'il processo staccato doveva essere ucciso', 10_000)
+  assert.ok(p.exitCode !== null || p.signalCode !== null, 'il figlio doveva essere ucciso')
 })
 
 test('corsia Codex: se il wrapper muore, il comando muore con lui o la corsia resta occupata finché vive', async () => {
@@ -242,9 +284,9 @@ test('corsia Codex: un discendente sopravvissuto al comando e al wrapper tiene l
     // Il comando è finito, il nipote vive: la corsia è ancora occupata.
     assert.strictEqual(esegui(['occupata', 'codex']).status, 3)
   } finally {
-    fs.writeFileSync(via, '')
+    await chiudi(via, { filePid: [filePidNipote] })
   }
-  await aspetta(() => leggiPid(filePidNipote) && !pidVivo(leggiPid(filePidNipote)), 'il nipote doveva uscire')
+  assert.ok(!pidVivo(leggiPid(filePidNipote)), 'il nipote doveva uscire')
   assert.strictEqual(esegui(['occupata', 'codex']).status, 0)
 })
 
@@ -263,7 +305,8 @@ test('corsia Codex: un nipote orfano di un intermedio già uscito tiene la corsi
       return undefined
     }
   }
-  const { uscita } = corsiaViva(['--', process.execPath, '-e', radice])
+  const wrapper = corsiaViva(['--', process.execPath, '-e', radice])
+  const { uscita } = wrapper
   try {
     await aspetta(() => leggiPid(f('nipote.pid')) && leggiPid(f('intermedio.pid')), 'intermedio e nipote non sono partiti')
     const intermedio = String(leggiPid(f('intermedio.pid')))
@@ -275,9 +318,10 @@ test('corsia Codex: un nipote orfano di un intermedio già uscito tiene la corsi
     // Radice e intermedio sono usciti; il nipote ha per padre un processo morto, ma è stato censito.
     assert.strictEqual(esegui(['occupata', 'codex']).status, 3)
   } finally {
-    for (const n of ['radice', 'intermedio', 'nipote']) fs.writeFileSync(f(`via-${n}`), '')
+    const tutti = ['radice', 'intermedio', 'nipote']
+    await chiudi(tutti.map(n => f(`via-${n}`)), { figli: [wrapper], filePid: tutti.map(n => f(`${n}.pid`)) })
   }
-  await aspetta(() => leggiPid(f('nipote.pid')) && !pidVivo(leggiPid(f('nipote.pid'))), 'il nipote doveva uscire')
+  assert.ok(!pidVivo(leggiPid(f('nipote.pid'))), 'il nipote doveva uscire')
   assert.strictEqual(esegui(['occupata', 'codex']).status, 0)
 })
 
@@ -291,20 +335,58 @@ test('corsia Codex: comandi mai sovrapposti; la revisione in attesa passa davant
   const passo = (etichetta, tieni) => `const fs=require('fs');${scrivi(`${etichetta}+`)};` + (tieni
     ? `setInterval(()=>{if(fs.existsSync(${JSON.stringify(libera)})){${scrivi(`${etichetta}-`)};process.exit(0)}},50)`
     : `setTimeout(()=>{${scrivi(`${etichetta}-`)}},300)`)
-  const via = (etichetta, revisione, tieni = false) => corsiaViva([...(revisione ? ['--revisione'] : []), '--', process.execPath, '-e', passo(etichetta, tieni)])
-  let uscite
+  // Segnali espliciti, da due preload dei wrapper (solo nelle prove; il codice della corsia è quello vero):
+  // - impl: `impl-in-attesa` quando il mutex della corsia gli risponde «già preso»; dopo `libera`, `impl-decide` quando
+  //   prende il mutex o legge la voce della revisione (cioè quando sceglie se partire o cedere);
+  // - rev: `rev-in-attesa` al primo «già preso»; poi non ritenta finché la prova non crea `rev-via`.
+  // Così, liberata la corsia, l'implementazione decide per prima: senza precedenza partirebbe sempre lei (mai a caso).
+  const segnale = n => path.join(dir, n)
+  const preloadImpl = segnale('impl.cjs')
+  fs.writeFileSync(preloadImpl, `const fs = require('fs'); const net = require('net'); const S = ${JSON.stringify(dir)}
+const p = n => require('path').join(S, n); const segna = n => fs.writeFileSync(p(n), '')
+const l = net.Server.prototype.listen
+net.Server.prototype.listen = function (...a) {
+  this.once('error', e => { if (e.code === 'EADDRINUSE') segna('impl-in-attesa') })
+  this.once('listening', () => { if (fs.existsSync(p('libera'))) segna('impl-decide') })
+  return l.apply(this, a)
+}
+const r = fs.readdirSync
+fs.readdirSync = function (d, ...x) {
+  const v = r.call(this, d, ...x)
+  if (String(d).endsWith('chipmanager-corsia-codex-revisioni') && v.length && fs.existsSync(p('libera'))) segna('impl-decide')
+  return v
+}`)
+  const preloadRev = segnale('rev.cjs')
+  fs.writeFileSync(preloadRev, `const fs = require('fs'); const net = require('net'); const S = ${JSON.stringify(dir)}
+const p = n => require('path').join(S, n)
+const l = net.Server.prototype.listen
+let respinta = false
+net.Server.prototype.listen = function (...a) {
+  this.once('error', e => { if (e.code === 'EADDRINUSE' && !respinta) { respinta = true; fs.writeFileSync(p('rev-in-attesa'), '') } })
+  if (!respinta || fs.existsSync(p('rev-via'))) return l.apply(this, a)
+  const t = setInterval(() => { if (fs.existsSync(p('rev-via'))) { clearInterval(t); l.apply(this, a) } }, 20)
+  return this
+}`)
+  const via = (etichetta, revisione, tieni = false, opzioniNode = []) =>
+    corsiaViva([...(revisione ? ['--revisione'] : []), '--', process.execPath, '-e', passo(etichetta, tieni)], opzioniNode)
+  const figli = []
   try {
-    const primo = via('primo', false, true)
+    figli.push(via('primo', false, true))
     await aspetta(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes('primo+'), 'il primo non è partito')
-    const impl = via('impl', false)
-    const rev = via('rev', true)
-    uscite = [primo, impl, rev].map(x => x.uscita)
-    // La revisione è in attesa (la sua voce c'è) prima che il primo lasci la corsia.
-    await aspetta(() => fs.existsSync(path.join(os.tmpdir(), 'chipmanager-corsia-codex-revisioni', String(rev.p.pid))), 'la revisione non è in attesa')
-  } finally {
+    figli.push(via('impl', false, false, ['-r', preloadImpl]))
+    await aspetta(() => fs.existsSync(segnale('impl-in-attesa')), "l'implementazione non è in attesa")
+    figli.push(via('rev', true, false, ['-r', preloadRev]))
+    // La revisione è in attesa (la sua voce c'è e il mutex l'ha respinta) prima che il primo lasci la corsia.
+    const voce = path.join(os.tmpdir(), 'chipmanager-corsia-codex-revisioni', String(figli[2].p.pid))
+    await aspetta(() => fs.existsSync(voce) && fs.existsSync(segnale('rev-in-attesa')), 'la revisione non è in attesa')
     fs.writeFileSync(libera, '')
+    await aspetta(() => fs.existsSync(segnale('impl-decide')), "l'implementazione non ha deciso")
+    fs.writeFileSync(segnale('rev-via'), '')
+  } finally {
+    // 60 s: dopo il primo, revisione e implementazione girano una dopo l'altra, ognuna con i suoi censimenti.
+    await chiudi([libera, segnale('rev-via')], { figli }, 60_000)
   }
-  assert.deepStrictEqual(await Promise.all(uscite), [0, 0, 0])
+  assert.deepStrictEqual(await Promise.all(figli.map(x => x.uscita)), [0, 0, 0])
   const righe = fs.readFileSync(log, 'utf8').trim().split('\n')
   for (let i = 0; i < righe.length; i += 2) assert.strictEqual(righe[i].slice(0, -1), righe[i + 1].slice(0, -1))
   assert.deepStrictEqual(righe.filter(x => x.endsWith('+')), ['primo+', 'rev+', 'impl+'])
@@ -359,20 +441,20 @@ test('corsia Codex: il battito ricrea la voce di una revisione viva tolta per er
   fs.rmSync(filePid, { force: true })
   const libera = path.join(tmp(), 'libera')
   // Una implementazione tiene la corsia finché la prova non crea `libera` (un evento, non 6 s); intanto una revisione aspetta.
-  const lungo = corsiaViva(['--', process.execPath, '-e', finoA(libera)])
+  const figli = [corsiaViva(['--', process.execPath, '-e', finoA(libera)])]
   try {
     await aspetta(() => fs.existsSync(filePid), "l'implementazione non ha preso la corsia")
-    const rev = corsiaViva(['--revisione', '--', process.execPath, '-e', 'process.exit(0)'])
-    const voce = path.join(dirAttesa, String(rev.p.pid))
+    figli.push(corsiaViva(['--revisione', '--', process.execPath, '-e', 'process.exit(0)']))
+    const voce = path.join(dirAttesa, String(figli[1].p.pid))
     await aspetta(() => fs.existsSync(voce), 'la revisione non si è messa in attesa')
     fs.rmSync(voce) // tolta per errore, come dopo una pausa lunga
     // La corsia resta dell'implementazione: solo il battito può riscrivere la voce.
     await aspetta(() => fs.existsSync(voce), 'il battito doveva ricrearla')
-    fs.writeFileSync(libera, '')
-    assert.deepStrictEqual(await Promise.all([lungo.uscita, rev.uscita]), [0, 0])
   } finally {
-    fs.writeFileSync(libera, '')
+    // 60 s: dopo l'implementazione parte la revisione, ognuna con i suoi censimenti.
+    await chiudi(libera, { figli }, 60_000)
   }
+  assert.deepStrictEqual(await Promise.all(figli.map(x => x.uscita)), [0, 0])
 })
 
 const fonti = require('./fornitori.cjs')
@@ -1744,8 +1826,9 @@ test('F6.7 accedi: di GitHub esce solo il codice; l\'output del login non tocca 
   // Il nome dell'account si compone a runtime: nel sorgente del finto non compare intero. Il login vive finché la prova
   // non crea `fine` (un evento, non 3 s): con la macchina carica il secondo clic deve trovarlo ancora vivo.
   const fine = path.join(tmp(), 'fine')
+  const pidGh = path.join(tmp(), 'gh.pid')
   const finti = eseguibiliFinti({
-    gh: `console.log('! First copy your one-time code: AB12-CD34'); console.log('Logged in as ' + 'account-' + 'nascosto-gh7'); ${finoA(fine)}`,
+    gh: `console.log('! First copy your one-time code: AB12-CD34'); console.log('Logged in as ' + 'account-' + 'nascosto-gh7'); ${conPid(pidGh, finoA(fine))}`,
   })
   const aperti = []
   const openSync = fs.openSync
@@ -1783,7 +1866,7 @@ test('F6.7 accedi: di GitHub esce solo il codice; l\'output del login non tocca 
     process.env.PATH = prima
     fs.openSync = openSync
     fs.writeFileSync = writeFileSync
-    writeFileSync(fine, '')
+    await chiudi(fine, { filePid: [pidGh] })
   }
 })
 

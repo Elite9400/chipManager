@@ -60,6 +60,7 @@ import {
   progettoDa,
   percentuale,
   pianifica,
+  motivoCorsiaCodex,
   REGOLE_DEFAULT,
   regoleDa,
   CORSIE,
@@ -1621,6 +1622,23 @@ test('2.0: il massivo cambia priorità senza saltare dipendenze o corsia Codex',
   // Senza pesi l'ordine dell'utente vale anche se il modello della prima è già occupato.
   const occupata = base('a-prio0004', 9, { stato: 'avviata' })
   expect(pianifica([a, b], [occupata, a, b], R, 2).avvia[0]!.id).toBe(a.id)
+})
+
+test('F13.5: solo il codice 3 è «corsia occupata»; il 7 blocca le chip Codex con il motivo, il canale e il codice', () => {
+  const a = base('a-luc00001', 1)
+  const b = base('a-luc00002', 2, { esecutore: 'codex', revisore: 'claude', corsia: 'R2' })
+  const canale = `\\\\.\\pipe\\chipmanager-${'a'.repeat(64)}`
+  const motivo = motivoCorsiaCodex(7, `helper.mutexNonCreabile: ${canale} (EACCES)`)
+  expect(motivo).toEqual({ k: 'coda.codexLucchetto', p: { canale, codice: 'EACCES' } })
+  // Un altro codice (o un 7 senza il motivo atteso) non si legge come «occupata»: resta non verificabile.
+  expect(motivoCorsiaCodex(1, 'errore')).toEqual({ k: 'coda.codexNonVerificata', p: { codice: '1' } })
+  expect(motivoCorsiaCodex(7, 'testo libero')).toEqual({ k: 'coda.codexNonVerificata', p: { codice: '7' } })
+  const piano = pianifica([a, b], [a, b], R, 2, motivo)
+  expect(piano.avvia.map(x => x.id)).toEqual([a.id])
+  expect(piano.coda).toEqual([])
+  expect(piano.bloccate).toEqual([{ a: b, motivi: [motivo] }])
+  // Occupata (vero): la chip Codex aspetta in coda, come prima.
+  expect(pianifica([a, b], [a, b], R, 2, true).coda.map(x => x.motivo.k)).toEqual(['coda.codex'])
 })
 
 test('2.0: fonti sconosciute, vecchie, future e manuali non fingono margini freschi', () => {

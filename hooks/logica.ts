@@ -1321,6 +1321,15 @@ export type Piano = {
 }
 
 /**
+ * F13.5: la risposta dell'helper a `occupata codex` quando non è né libera (0) né occupata (3). Il codice 7 porta il
+ * canale del lucchetto che non si crea e il motivo del sistema; ogni altro codice resta «non verificabile».
+ */
+export function motivoCorsiaCodex(codice: number, testo: string): Msg {
+  const m = /^helper\.mutexNonCreabile: (\S{1,300}) \(([^()\s]{1,40})\)$/.exec(testo.trim())
+  return codice === 7 && m ? msg('coda.codexLucchetto', { canale: m[1]!, codice: m[2]! }) : msg('coda.codexNonVerificata', { codice: String(codice) })
+}
+
+/**
  * Chi parte adesso, chi aspetta e perché, nell'ordine di avvio. Vincoli: le regole (bloccano), le
  * dipendenze, la corsia unica di Codex (due `codex exec` in parallelo si bloccano nella sandbox
  * Windows; `codexOccupato` dice se qualcuno, anche una revisione, tiene il lock della macchina) e il
@@ -1331,13 +1340,15 @@ export function pianifica(
   lista: readonly Azione[],
   regole: Regole,
   maxParalleli: number,
-  codexOccupato = false,
+  codexOccupato: boolean | Msg = false,
   extra: (a: Azione) => Msg[] = () => [],
   limiti: readonly Limite[] = [],
 ): Piano {
   const piano: Piano = { avvia: [], coda: [], bloccate: [] }
   let occupate = lista.filter(occupa).length
-  let codex = codexOccupato || lista.some(tieneCodex)
+  // F13.5: un motivo al posto di vero/falso = la corsia non si può verificare (lucchetto non creabile): Codex bloccata.
+  const guasto = typeof codexOccupato === 'object' ? codexOccupato : undefined
+  let codex = codexOccupato === true || lista.some(tieneCodex)
   const ids = new Set(candidate.map(a => a.id))
   // L'ordine scelto dall'utente vale finché non configura pesi o non opera la corsia (Automatico su una chip R0–R1 a
   // effort alto): solo allora il punteggio riordina il massivo. L'ordinamento è stabile: a pari punteggio resta il suo.
@@ -1345,7 +1356,7 @@ export function pianifica(
   if (regole.risorse.pesi.length || ordinate.some(a => corsiaPenalizza(a, regole)))
     ordinate.sort((a, b) => punteggio(b, regole, limiti, lista) - punteggio(a, regole, limiti, lista))
   for (const a of ordinate) {
-    const motivi = [...violazioni(a, regole, lista), ...extra(a)]
+    const motivi = [...violazioni(a, regole, lista), ...extra(a), ...(guasto && a.esecutore === 'codex' ? [guasto] : [])]
     if (motivi.length) piano.bloccate.push({ a, motivi })
     else if (!dipendenzeChiuse(a, lista)) piano.coda.push({ a, motivo: msg('coda.dipendenze') })
     else if (a.esecutore === 'codex' && codex) piano.coda.push({ a, motivo: msg('coda.codex') })

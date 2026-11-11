@@ -86,6 +86,7 @@ import {
   effortDi,
   nomeModello,
   violazioniAvvio,
+  motivoCorsiaCodex,
 } from './logica'
 import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
 import { MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
@@ -295,10 +296,13 @@ async function helper($: Eng, args: string[], stdin?: string) {
   return { codice: r.exitCode, testo: r.stdout.trim(), errore: r.stderr.trim() }
 }
 
-/** La corsia di Codex è occupata se un processo (esecuzione o revisione) tiene il mutex della macchina. */
-async function codexOccupato($: Eng) {
-  const r = await helper($, ['occupata', 'codex']).catch(() => ({ codice: 3 }))
-  return r.codice !== 0
+/**
+ * La corsia di Codex: libera (0), occupata se un processo (esecuzione o revisione) tiene il mutex della macchina (3, o
+ * helper non raggiunto), altrimenti non verificabile: il motivo (F13.5: il 7 porta canale e codice) blocca l'avvio.
+ */
+async function codexOccupato($: Eng): Promise<boolean | Msg> {
+  const r = await helper($, ['occupata', 'codex']).catch(() => ({ codice: 3, testo: '' }))
+  return r.codice === 0 ? false : r.codice === 3 ? true : motivoCorsiaCodex(r.codice, r.testo)
 }
 
 /**
@@ -306,9 +310,11 @@ async function codexOccupato($: Eng) {
  * solo se il piano avvierebbe davvero un'azione Codex (non bloccata da dipendenze, regole o posti). Se è occupata si
  * ripianifica. La guardia atomica resta quella della prenotazione e della corsia stessa.
  */
-async function conCorsia($: Eng, piano: (codexOccupato: boolean) => Piano) {
+async function conCorsia($: Eng, piano: (codexOccupato: boolean | Msg) => Piano) {
   const libero = piano(false)
-  return libero.avvia.some(a => a.esecutore === 'codex') && (await codexOccupato($)) ? piano(true) : libero
+  if (!libero.avvia.some(a => a.esecutore === 'codex')) return libero
+  const stato = await codexOccupato($)
+  return stato === false ? libero : piano(stato)
 }
 
 /**

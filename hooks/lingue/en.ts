@@ -76,6 +76,8 @@ const en = {
   // Why a chip waits in the queue
   "coda.dipendenze": "waiting for its dependencies to be merged",
   "coda.codex": "Codex lane busy",
+  "coda.codexLucchetto": "Codex lane blocked: the machine lock cannot be created ({canale}, {codice})",
+  "coda.codexNonVerificata": "Codex lane cannot be checked (exit code {codice})",
   "coda.paralleli": { one: "limit of 1 parallel session", other: "limit of {n} parallel sessions" },
   // Start: confirmations and errors
   "v.freeConferma": "FreeLLMAPI: confirm the text of this version first",

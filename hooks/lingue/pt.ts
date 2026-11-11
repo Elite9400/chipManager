@@ -74,6 +74,8 @@ const pt: Dizionario = {
   // Why a chip waits in the queue
   "coda.dipendenze": "aguardando o merge das dependências",
   "coda.codex": "faixa do Codex ocupada",
+  "coda.codexLucchetto": "faixa do Codex bloqueada: não é possível criar o bloqueio da máquina ({canale}, {codice})",
+  "coda.codexNonVerificata": "faixa do Codex não verificável (código {codice})",
   "coda.paralleli": { one: "limite de {n} sessão paralela", other: "limite de {n} sessões paralelas" },
   // Start: confirmations and errors
   "v.freeConferma": "FreeLLMAPI: confirme antes o texto desta versão",

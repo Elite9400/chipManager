@@ -74,6 +74,8 @@ const de: Dizionario = {
   // Why a chip waits in the queue
   "coda.dipendenze": "wartet, bis ihre Abhängigkeiten zusammengeführt sind",
   "coda.codex": "Codex-Spur belegt",
+  "coda.codexLucchetto": "Codex-Spur blockiert: Die Sperre des Rechners lässt sich nicht anlegen ({canale}, {codice})",
+  "coda.codexNonVerificata": "Codex-Spur nicht prüfbar (Code {codice})",
   "coda.paralleli": { one: "Limit: 1 parallele Sitzung", other: "Limit: {n} parallele Sitzungen" },
   // Start: confirmations and errors
   "v.freeConferma": "FreeLLMAPI: bestätige zuerst den Text dieser Version",

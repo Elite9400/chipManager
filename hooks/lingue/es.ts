@@ -74,6 +74,8 @@ const es: Dizionario = {
   // Why a chip waits in the queue
   "coda.dipendenze": "esperando a que se fusionen sus dependencias",
   "coda.codex": "Carril de Codex ocupado",
+  "coda.codexLucchetto": "Carril de Codex bloqueado: no se puede crear el bloqueo de la máquina ({canale}, {codice})",
+  "coda.codexNonVerificata": "Carril de Codex no verificable (código {codice})",
   "coda.paralleli": { one: "límite de 1 sesión en paralelo", other: "límite de {n} sesiones en paralelo" },
   // Start: confirmations and errors
   "v.freeConferma": "FreeLLMAPI: confirma antes el texto de esta versión",
