@@ -25,7 +25,7 @@ import {
 import { bilancia, progettoDa, regoleDa, REGOLE_DEFAULT, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
 import { campoRegoleMancante, regoleIniziali, testoRegoleIniziali } from '../hooks/regole-iniziali'
 import { LEGENDA, LINGUE, t } from '../hooks/lingua'
-import { PAGINE_AIUTO, urlAiuto } from '../hooks/aiuto'
+import { destinazioneKnowledgebase, PAGINE_AIUTO, urlAiuto } from '../hooks/aiuto'
 import { ACCENTO, ALFA_VELO, GRIGIO, VELO } from '../hooks/tema'
 import { MAX_URL, rapportoRedatto, urlRapporto } from '../hooks/rapporto'
 import { usoDesktop } from '../hooks/risorse'
@@ -747,10 +747,13 @@ test('F13.4 Aiuto: ultima sezione, chiusa all\'apertura; una riga per corsia, le
   expect(await ui.find({ key: 'pagina-legenda' })).toBeDefined()
   // Una voce per riga: ogni voce è un Text a sé con il testo intero del dizionario.
   for (const k of LEGENDA.corsie) expect([k, !!(await ui.find({ type: 'Text', text: t('it', k) }))]).toEqual([k, true])
-  // Prima di GitHub Pages nessun pulsante apre il sito: gli indirizzi esatti come testo, e «Copia gli indirizzi».
-  for (const p of PAGINE_AIUTO) expect([p, !!(await ui.find({ type: 'Text', text: `${t('it', `aiuto.p.${p}` as never)} · ${urlAiuto(p)}` }))]).toEqual([p, true])
-  expect(await ui.find({ key: 'aiuto-copia' })).toBeDefined()
-  expect(await ui.find({ type: 'Button', key: 'aiuto-index' })).toBeUndefined()
+  // RC 2.2.0: un solo tasto «Knowledgebase» (niente più «Copia gli indirizzi»); l'indirizzo resta scritto, per il terminale.
+  expect(await ui.find({ key: 'aiuto-copia' })).toBeUndefined()
+  const kb = await ui.find({ type: 'Button', key: 'aiuto-knowledgebase' })
+  expect([kb?.props.label, kb?.props.variant]).toEqual(['Documentazione', 'primary'])
+  expect(testi(await ui.drawn()).some(x => /^Indirizzo: .*\/docs\/site\/index\.html$/.test(x))).toBe(true)
+  // Il sito non è pubblicato: il tasto chiede all'helper la sola copia locale, col suo segnaposto.
+  expect([destinazioneKnowledgebase(false), destinazioneKnowledgebase(true)]).toEqual(['knowledgebase-locale', urlAiuto('index')])
   expect(LEGENDA.corsie).toEqual(['legenda.r0', 'legenda.r1', 'legenda.r2', 'legenda.r3', 'legenda.r4', 'legenda.r5'])
   expect(t('it', 'legenda.r5')).toContain('Claude')
   // Il rimando testuale sta solo nella sezione dei pesi.

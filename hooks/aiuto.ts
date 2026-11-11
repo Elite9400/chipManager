@@ -14,5 +14,13 @@ export const urlAiuto = (p: PaginaAiuto) => `${SITO_AIUTO}${p}.html`
  */
 export const SITO_PUBBLICATO = false
 
+/**
+ * RC 2.2.0: until the site is published, «Knowledgebase» opens the copy installed with the plugin. The panel sends only
+ * this token: the helper knows the one file it may open (`<plugin>/docs/site/index.html`, twin in strumenti/disco.cjs).
+ */
+export const KNOWLEDGEBASE_LOCALE = 'knowledgebase-locale'
+/** What «Knowledgebase» asks the helper to open: the published home page, or the local copy by its token. */
+export const destinazioneKnowledgebase = (pubblicato: boolean) => (pubblicato ? urlAiuto('index') : KNOWLEDGEBASE_LOCALE)
+
 /** The lane lines kept in the dictionaries (`legenda.r0`–`legenda.r5`). */
 export const RIGHE_CORSIE = ['legenda.r0', 'legenda.r1', 'legenda.r2', 'legenda.r3', 'legenda.r4', 'legenda.r5'] as const

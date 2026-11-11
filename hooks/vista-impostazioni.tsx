@@ -39,7 +39,7 @@ import type { Chiave, Lingua, T } from './lingua'
 import { INSTALLAZIONE, nomeLimiteIn, unitaIn } from './risorse'
 import { ACCENTO, ALFA_VELO, GRIGIO, LIVELLO, STATO } from './tema'
 import { urlRapporto } from './rapporto'
-import { PAGINE_AIUTO, SITO_PUBBLICATO, urlAiuto } from './aiuto'
+import { destinazioneKnowledgebase, SITO_PUBBLICATO, urlAiuto } from './aiuto'
 import { COMPATIBILI } from './compatibili'
 import type { VoceCompatibile } from './compatibili'
 import { eDellaVoce, SKILL_BASE } from './skill-base'
@@ -1495,19 +1495,15 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
             </Text>
           ))}
         </Box>,
-        <Box key="aiuto-sito" flexDirection="column" alignItems="flex-start" gap={terminale ? 0 : 'xs'}>
+        // RC 2.2.0 (richiesta del committente): un solo tasto, «Knowledgebase», ben visibile. Pubblicato il sito apre la sua
+        // pagina iniziale; prima, la copia installata con il plugin (il pannello manda solo il segnaposto, l'helper sa il
+        // file). L'indirizzo resta scritto sotto, per chi lavora nel terminale.
+        <Box key="aiuto-sito" flexDirection="column" alignItems="flex-start" gap={terminale ? 0 : 'xs'} marginTop={terminale ? 1 : 0}>
           <Text key="aiuto-sito-titolo" bold>{T('aiuto.pagine')}</Text>
-          {SITO_PUBBLICATO ? null : didascalia('aiuto-non-pubblicato', T('aiuto.nonPubblicato'))}
-          {PAGINE_AIUTO.map(p =>
-            SITO_PUBBLICATO ? (
-              <Button key={`aiuto-${p}`} plain label={T('aiuto.apri', { pagina: T(`aiuto.p.${p}` as Chiave) })} onPress={() => void c.fai(() => c.apriPagina(urlAiuto(p)))} />
-            ) : (
-              <Text key={`aiuto-${p}`} wrap="wrap">{`${T(`aiuto.p.${p}` as Chiave)} · ${urlAiuto(p)}`}</Text>
-            ))}
-          {SITO_PUBBLICATO ? null : (
-            <Button key="aiuto-copia" variant="secondary" label={T('aiuto.copia')}
-              onPress={() => void $.ui.copy({ text: PAGINE_AIUTO.map(p => `${T(`aiuto.p.${p}` as Chiave)}: ${urlAiuto(p)}`).join('\n') }).then(x => x.isCopied && $.ui.toast(T('ese.copiato')))} />
-          )}
+          <Button key="aiuto-knowledgebase" variant="primary" label={T('aiuto.knowledgebase')}
+            onPress={() => void c.fai(() => c.apriPagina(destinazioneKnowledgebase(SITO_PUBBLICATO)))} />
+          <Text key="aiuto-indirizzo" wrap="wrap">{T('aiuto.indirizzo', { indirizzo: SITO_PUBBLICATO ? urlAiuto('index') : `${$.plugin.root.replace(/\\/g, '/')}/docs/site/index.html` })}</Text>
+          {SITO_PUBBLICATO ? null : didascalia('aiuto-locale', T('aiuto.locale'))}
         </Box>,
       ],
     })

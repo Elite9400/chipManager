@@ -432,9 +432,9 @@ export const NUOVI_F13B: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
-   "chiave": "aiuto-copia",
-   "label": "Copy the addresses",
-   "variant": "secondary",
+   "chiave": "aiuto-knowledgebase",
+   "label": "Knowledgebase",
+   "variant": "primary",
    "gestori": [
     "press"
    ]
@@ -1421,9 +1421,9 @@ export const NUOVI_F13B: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
-   "chiave": "aiuto-copia",
-   "label": "Copy the addresses",
-   "variant": "secondary",
+   "chiave": "aiuto-knowledgebase",
+   "label": "Knowledgebase",
+   "variant": "primary",
    "gestori": [
     "press"
    ]
@@ -2410,9 +2410,9 @@ export const NUOVI_F13B: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
-   "chiave": "aiuto-copia",
-   "label": "Copy the addresses",
-   "variant": "secondary",
+   "chiave": "aiuto-knowledgebase",
+   "label": "Knowledgebase",
+   "variant": "primary",
    "gestori": [
     "press"
    ]
@@ -3399,9 +3399,9 @@ export const NUOVI_F13B: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
-   "chiave": "aiuto-copia",
-   "label": "Copy the addresses",
-   "variant": "secondary",
+   "chiave": "aiuto-knowledgebase",
+   "label": "Knowledgebase",
+   "variant": "primary",
    "gestori": [
     "press"
    ]

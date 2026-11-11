@@ -176,10 +176,42 @@ const SITO_AIUTO = 'https://elite9400.github.io/chipManager/site/'
 const paginePermesse = () => new Set([...PAGINE_AIUTO.map(p => `${SITO_AIUTO}${p}.html`),
   ...require('./compatibili.cjs').COMPATIBILI.map(v => v.paginaChiave).filter(Boolean)])
 
-/** Opens a help page or a provider's key page, separately from the report URL check: exact string match, fixed argv. */
+/** RC 2.2.0: the one token that opens the local copy of the documentation (never a path sent by the panel). */
+const KNOWLEDGEBASE_LOCALE = 'knowledgebase-locale'
+/**
+ * RC 2.2.0: the documentation installed with the plugin, `<plugin>/docs/site/index.html`, this exact file and nothing
+ * else: no link from the plugin root down, a regular file, its real path inside the plugin's real folder. Its `file:`
+ * address, with no parameters; null when it is not there or not safe. `radice` only for the tests.
+ */
+function knowledgebaseLocale(radice = path.resolve(__dirname, '..')) {
+  try {
+    let x = path.resolve(radice)
+    for (const parte of ['docs', 'site', 'index.html']) {
+      x = path.join(x, parte)
+      const s = fs.lstatSync(x, { throwIfNoEntry: false })
+      if (!s || s.isSymbolicLink()) return null
+    }
+    if (!fs.lstatSync(x).isFile()) return null
+    const reale = fs.realpathSync.native(x)
+    if (!reale.startsWith(fs.realpathSync.native(path.resolve(radice)) + path.sep)) return null
+    return require('node:url').pathToFileURL(reale).href
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Opens a help page or a provider's key page, separately from the report URL check: exact string match, fixed argv.
+ * RC 2.2.0: or, by its token alone, the local documentation (knowledgebaseLocale). `deps.radice` only for the tests.
+ */
 function apriPagina(url, deps = {}) {
-  if (typeof url !== 'string' || !paginePermesse().has(url)) return [2, '']
-  const argv = process.platform === 'win32' ? ['rundll32', 'url.dll,FileProtocolHandler', url] : process.platform === 'darwin' ? ['open', url] : ['xdg-open', url]
+  if (typeof url !== 'string') return [2, '']
+  let destinazione = url
+  if (url === KNOWLEDGEBASE_LOCALE) {
+    destinazione = knowledgebaseLocale(deps.radice)
+    if (!destinazione) return [4, '']
+  } else if (!paginePermesse().has(url)) return [2, '']
+  const argv = process.platform === 'win32' ? ['rundll32', 'url.dll,FileProtocolHandler', destinazione] : process.platform === 'darwin' ? ['open', destinazione] : ['xdg-open', destinazione]
   try {
     if (deps.avvia) deps.avvia(argv)
     else {
@@ -1971,7 +2003,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, percorsoCanonico, mutexEsecuzione, registraRadici, figlio, artefatto, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, apriPagina, PAGINE_AIUTO, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, canale, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, percorsoCanonico, mutexEsecuzione, registraRadici, figlio, artefatto, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, apriPagina, KNOWLEDGEBASE_LOCALE, knowledgebaseLocale, PAGINE_AIUTO, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, canale, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

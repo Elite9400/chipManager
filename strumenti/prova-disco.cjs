@@ -5255,3 +5255,27 @@ test('RC 2.2.0, bug del committente: con `.claude` collegata sopra le radici, la
   assert.deepStrictEqual([codice, /helper\.collegamento/.test(JSON.parse(testo).percorso)], [6, true])
   assert.deepStrictEqual(fs.readdirSync(altrove), [])
 })
+
+test('RC 2.2.0, Knowledgebase: pubblicato apre la pagina iniziale del sito; prima, solo il file esatto della copia locale, col segnaposto; nient\'altro', () => {
+  const D = require(DISCO)
+  const aperti = []
+  const avvia = argv => aperti.push(argv.at(-1))
+  // Pubblicato: la pagina iniziale, già nella lista esatta.
+  assert.deepStrictEqual(D.apriPagina('https://elite9400.github.io/chipManager/site/index.html', { avvia }), [0, ''])
+  // Non pubblicato: il segnaposto apre `<plugin>/docs/site/index.html` (il plugin di questa copia), come indirizzo file: senza parametri.
+  assert.deepStrictEqual(D.apriPagina(D.KNOWLEDGEBASE_LOCALE, { avvia }), [0, ''])
+  const atteso = require('node:url').pathToFileURL(fs.realpathSync.native(path.join(RADICE_REPO, 'docs', 'site', 'index.html'))).href
+  assert.deepStrictEqual(aperti, ['https://elite9400.github.io/chipManager/site/index.html', atteso])
+  // Nessun altro file o indirizzo: il percorso o l'URL del file stesso, altre pagine locali, varianti del segnaposto.
+  for (const no of [atteso, `${atteso}?x=1`, path.join(RADICE_REPO, 'docs', 'site', 'index.html'), 'docs/site/index.html', '../docs/site/index.html',
+    `${D.KNOWLEDGEBASE_LOCALE}?x`, `${D.KNOWLEDGEBASE_LOCALE}/../x`, 'KNOWLEDGEBASE-LOCALE', require('node:url').pathToFileURL(path.join(RADICE_REPO, 'README.md')).href])
+    assert.deepStrictEqual(D.apriPagina(no, { avvia }), [2, ''], no)
+  assert.strictEqual(aperti.length, 2)
+  // Una copia senza il sito, con un collegamento sulla strada o un index che è un link: non si apre (4), niente avviato.
+  const senza = tmp()
+  const conLink = tmp()
+  fs.mkdirSync(path.join(conLink, 'docs'))
+  fs.symlinkSync(path.join(RADICE_REPO, 'docs', 'site'), path.join(conLink, 'docs', 'site'), process.platform === 'win32' ? 'junction' : 'dir')
+  for (const radice of [senza, conLink]) assert.deepStrictEqual(D.apriPagina(D.KNOWLEDGEBASE_LOCALE, { avvia, radice }), [4, ''], radice)
+  assert.strictEqual(aperti.length, 2)
+})
