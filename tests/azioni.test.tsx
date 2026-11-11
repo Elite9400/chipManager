@@ -4107,7 +4107,7 @@ test('F13.2 pannello: una R3 nasce dirigente su Fable 5.2 coi suoi vincoli; la f
   expect(String((r as { result?: unknown }).result)).toContain('director')
   const dir = amb.azione()[0]!
   // La corsia minima passa alle figlie solo da R4: una R3 non porta tutte le figlie su Opus.
-  expect([dir.ruolo, dir.modello, dir.vincoliPropri]).toEqual(['dirigente', 'claude-fable-5-2', { sensibile: false, datiLan: false, fornitori: ['claude', 'codex'] }])
+  expect([dir.ruolo, dir.modello, dir.vincoliPropri]).toEqual(['dirigente', 'claude-fable-5-2', { sensibile: false, datiLan: false, fornitori: ['claude', 'codex'], destinazioni: ['local'] }])
   // Una R1 normale non è una dirigente.
   await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.', corsia: 'R1' } as never)
   expect(amb.azione().find(a => a.titolo === 'Docs')!.ruolo).toBe(undefined)
@@ -4278,5 +4278,51 @@ test('F13.6 «correggi il secondo paragrafo»: lo scrittore FreeLLMAPI riceve bo
     for (const x of ['Secondo paragrafo, con un errore.', 'Correggi il secondo paragrafo.', 'Write draft v2']) expect([x, t.includes(x)]).toEqual([x, true])
   expect(amb.azione().find(a => a.id === w2.id)).toMatchObject({ stato: 'consegnata', artefatto: '2-scrittore.md' })
   expect(amb.disco.get(`X:/orch/azioni/artefatti/${c}/2-scrittore.md`)).toBe(`<!-- chipManager artefatto catena=${c} giro=2 ruolo=scrittore rif=1-revisore.md -->\nPrimo paragrafo.\n\nSecondo paragrafo, corretto.`)
+  await ui.unmount()
+})
+
+// --- Revisione F13a (Codex) --------------------------------------------------------------------------------------------
+
+test('Revisione F13a, rilievo 2: la dirigente passata a R4 dopo una figlia: la figlia nuova nasce R4 e sensibile, quella vecchia non parte più in R1', async ($, on) => {
+  const amb = ambienteF13(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Motore', brief: 'Riscrivi il pianificatore.', corsia: 'R3' } as never)
+  const dir = amb.azione()[0]!
+  dirigenteAlLavoro(amb, dir.id)
+  const figlia = (titolo: string) => $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo, brief: 'Rinomina un campo.', corsia: 'R1', padre: { id: dir.id, tentativo: 'az-dir00001' } } as never)
+  await figlia('Prima')
+  const prima = amb.azione().find(a => a.titolo === 'Prima')!
+  expect([prima.vincoliPadre?.corsiaMin, prima.vincoliPadre?.sensibile]).toEqual([undefined, false])
+  // Il committente porta la dirigente a R4.
+  const d = JSON.parse(amb.disco.get(`X:/orch/azioni/${dir.id}.json`)!) as Azione
+  amb.disco.set(`X:/orch/azioni/${dir.id}.json`, JSON.stringify({ ...d, versione: d.versione + 1, corsia: 'R4' }))
+  await figlia('Seconda')
+  const seconda = amb.azione().find(a => a.titolo === 'Seconda')!
+  expect([seconda.vincoliPadre?.corsiaMin, seconda.vincoliPadre?.sensibile]).toEqual(['R4', true])
+  expect(amb.azione().find(a => a.id === dir.id)!.vincoliPropri).toMatchObject({ corsiaMin: 'R4', sensibile: true })
+  // La figlia nata prima non parte come una R1 qualunque: all'avvio prende i vincoli di adesso.
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `avvia-${prima.id}` }).catch(() => {})
+  expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(0)
+  expect(amb.azione().find(a => a.id === prima.id)!.stato).toBe('proposta')
+  await ui.unmount()
+})
+
+test('Revisione F13a, rilievo 7: la scheda della dirigente mostra il costo delle figlie per tipo; quella di un passo, la catena per ruolo', async ($, on) => {
+  const amb = ambienteF13(on)
+  const clock = mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Motore', brief: 'Riscrivi il pianificatore.', corsia: 'R3' } as never)
+  const dir = amb.azione()[0]!
+  const figlia = (id: string, extra: Partial<Azione>) => amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...dir, id, titolo: id, ruolo: 'lavoro', padre: dir.id, ordine: 9,
+    vincoliPropri: undefined, vincoliPadre: { sensibile: false, datiLan: false, fornitori: ['claude'] }, stato: 'consegnata', ...extra }))
+  figlia('a-figapi001', { destinazione: 'api-claude', costoApi: 0.7 })
+  figlia('a-figoss001', { costo: { tipo: 'osservato', usd: 0.4 } })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await clock.advance(20_000)
+  await ui.press({ key: `mod-${dir.id}` })
+  const t = String((await ui.find({ type: 'Text', text: /costo delle figlie/ }))?.text)
+  expect([/stimato \$0,70/.test(t), /osservato \$0,40/.test(t), t.includes('1,10')]).toEqual([true, true, false])
   await ui.unmount()
 })

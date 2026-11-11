@@ -1,5 +1,5 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
-import type { Catena, Costo, Dirigente, DirigenteEfficace, ModoLavoro, ModoLavoroEfficace, Pipeline, PipelineEfficace, Scrittore } from '../types'
+import type { Catena, Costo, Dirigente, DirigenteEfficace, ModoLavoro, ModoLavoroEfficace, Pipeline, PipelineEfficace, Scrittore, VincoliPadre } from '../types'
 import type { Azione, BoardProgetto, Chiamante, Consumo, ControlloEsecuzione, Corsia, Destinazione, Fornitore, Limite, PassoEsecuzione, Peso, Regole, Restrizioni, RisorseProgetto, SessioneProgetto, Soglia, SogliePerStrato, StratoAccount, StatoAzione, StratoProgetto, Traguardo, Vita } from '../types'
 import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
@@ -232,7 +232,7 @@ const ID_SKILL = SKILL_BASE.map(v => v.id)
 // --- F13.2: il modo dirigente ------------------------------------------------------------------------------------------
 const QUANDO_DIRIGENTE = ['off', 'R3+', 'sempre'] as const
 const ID_CLAUDE = /^claude-[a-z0-9]+(-[a-z0-9]+){1,4}$/
-const CAMPI_DIRIGENTE = ['modello', 'quando', 'lavoratori', 'maxFigli', 'maxRipiani']
+const CAMPI_DIRIGENTE = ['modello', 'quando', 'lavoratori', 'maxFigli', 'maxRipiani', 'tettoUsd']
 export const DIRIGENTE_PREDEFINITO: DirigenteEfficace = {
   modello: 'claude-fable-5-2', quando: 'R3+',
   // R0 Haiku finché il modello locale non è configurato (F13b); R4–R5 Opus con revisore Fable, come sempre.
@@ -256,6 +256,7 @@ function dirigenteDa(v: unknown): Dirigente | undefined {
   }
   if (intero(v.maxFigli, 1, 20)) o.maxFigli = v.maxFigli as number
   if (intero(v.maxRipiani, 0, 5)) o.maxRipiani = v.maxRipiani as number
+  if (tettoValido(v.tettoUsd)) o.tettoUsd = v.tettoUsd
   return Object.keys(o).length ? o : undefined
 }
 /** In scrittura: il primo campo del modo dirigente che non vale (null = togli). */
@@ -275,6 +276,7 @@ function dirigenteNonValido(v: unknown): string | undefined {
   }
   if (presente('maxFigli') && !intero(v.maxFigli, 1, 20)) return 'modoLavoro.dirigente.maxFigli'
   if (presente('maxRipiani') && !intero(v.maxRipiani, 0, 5)) return 'modoLavoro.dirigente.maxRipiani'
+  if (presente('tettoUsd') && !tettoValido(v.tettoUsd)) return 'modoLavoro.dirigente.tettoUsd'
   return undefined
 }
 /** Per campo (e per corsia) il progetto sostituisce l'account, poi i predefiniti. */
@@ -286,6 +288,7 @@ function dirigenteEfficace(a: Dirigente | undefined, p: Dirigente | undefined): 
     lavoratori: Object.fromEntries(CORSIE_MODO.map(c => [c, p?.lavoratori?.[c] ?? a?.lavoratori?.[c] ?? d.lavoratori[c]])) as Record<Corsia, string>,
     maxFigli: p?.maxFigli ?? a?.maxFigli ?? d.maxFigli,
     maxRipiani: p?.maxRipiani ?? a?.maxRipiani ?? d.maxRipiani,
+    ...((p?.tettoUsd ?? a?.tettoUsd) !== undefined && { tettoUsd: (p?.tettoUsd ?? a?.tettoUsd) as number }),
   }
 }
 // --- F13.6: le catene di lavoro (pipeline) ------------------------------------------------------------------------------
@@ -335,6 +338,34 @@ function pipelineEfficace(a: Pipeline | undefined, p: Pipeline | undefined): Pip
   return { scrittore: p?.scrittore ?? a?.scrittore ?? d.scrittore, revisore: p?.revisore ?? a?.revisore ?? d.revisore, giri: p?.giri ?? a?.giri ?? d.giri,
     ...(tetto !== undefined && { tettoUsd: tetto }) }
 }
+/**
+ * Revisione F13a, rilievo 2: i vincoli che la dirigente impone ADESSO, dal suo record e dalle regole di adesso: sensibilità,
+ * corsia minima R4/R5, dati di rete locale nel testo, fornitori ammessi e la sola destinazione dove gira lei. Si fondono
+ * con quelli già fissati solo verso l'alto (`piuStretti`): una modifica del padre non attenua mai una figlia.
+ */
+export function vincoliDirigente(padre: Azione, regole: Regole): VincoliPadre {
+  const corsia = corsiaDi(padre, regole)
+  const adesso: VincoliPadre = {
+    sensibile: sensibile(padre, regole), ...((corsia === 'R4' || corsia === 'R5') && { corsiaMin: corsia }),
+    datiLan: datiLocali(`${padre.titolo}\n${padre.brief}\n${padre.background ?? ''}`), fornitori: [...regole.risorse.fornitori],
+    destinazioni: [padre.destinazione ?? 'local'],
+  }
+  return piuStretti(padre.vincoliPropri, adesso)
+}
+/** Il più severo dei due insiemi di vincoli (assenti = nessun limite da quella parte). */
+export function piuStretti(a: VincoliPadre | undefined, b: VincoliPadre): VincoliPadre {
+  if (!a) return b
+  const corsiaMin = conMinimo(a.corsiaMin, b.corsiaMin)
+  const destinazioni = a.destinazioni && b.destinazioni ? a.destinazioni.filter(d => b.destinazioni!.includes(d)) : (a.destinazioni ?? b.destinazioni)
+  return { sensibile: a.sensibile || b.sensibile, ...(corsiaMin && { corsiaMin }), datiLan: a.datiLan || b.datiLan,
+    fornitori: a.fornitori.filter(f => b.fornitori.includes(f)), ...(destinazioni && { destinazioni }) }
+}
+/** All'avvio di una figlia: i vincoli della sua dirigente come sono adesso, fusi verso l'alto con quelli che ha. */
+export function conVincoliPadre(a: Azione, lista: readonly Azione[], regole: Regole): Azione {
+  const padre = a.padre ? lista.find(x => x.id === a.padre) : undefined
+  return padre ? { ...a, vincoliPadre: piuStretti(a.vincoliPadre, vincoliDirigente(padre, regole)) } : a
+}
+
 /** F13.2: una chip nuova senza padre nasce dirigente se `quando` lo dice per la sua corsia; mai una figlia. */
 export function ruoloNuovo(corsia: Corsia | undefined, regole: Regole): 'dirigente' | undefined {
   const q = (regole.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).dirigente.quando
@@ -1037,6 +1068,17 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
   if (a.ruolo === 'dirigente' && a.padre) v.push(msg('v.dirigenteFiglia'))
   if (a.ruolo === 'dirigente' && a.esecutore !== 'claude') v.push(msg('v.dirigenteClaude'))
   if (a.padre && a.vincoliPadre && !a.vincoliPadre.fornitori.includes(a.esecutore)) v.push(msg('v.fornitorePadre', { fornitore: a.esecutore }))
+  // Revisione F13a, rilievi 4 e 6: un passo di catena gira solo in locale. Sulla corsia API il mandato API sostituisce le
+  // istruzioni della catena (riferimenti e consegna dell'artefatto); nel cloud i percorsi degli artefatti non esistono.
+  if (a.catena && modo === 'api-claude') v.push(msg('v.catenaApi'))
+  if (a.catena && a.destinazione === 'cloud') v.push(msg('v.catenaCloud'))
+  // Revisione F13a, rilievo 5: la dirigente gira sul suo modello; se non è fra gli ammessi si ferma, e Opus è solo la
+  // scelta esplicita del committente («Dirigente su Opus»), mai un ripiego da sé.
+  if (a.ruolo === 'dirigente' && !a.dirigenteSuOpus && modelloDi(a, regole) !== (politica.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).dirigente.modello)
+    v.push(msg('v.dirigenteModello', { modello: nomeModello((politica.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).dirigente.modello) }))
+  // Revisione F13a, rilievo 2: una figlia gira solo dove può girare la sua dirigente (mai un'API o il cloud da una locale).
+  if (a.padre && a.vincoliPadre?.destinazioni && !a.vincoliPadre.destinazioni.includes(a.destinazione ?? 'local'))
+    v.push(msg('v.destinazionePadre', { destinazione: a.destinazione ?? 'local' }))
   // F13.6: il tetto in dollari della catena (dove la spesa si misura): raggiunto, nessun altro passo parte.
   const tettoCatena = (politica.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).pipeline.tettoUsd
   if (a.catena && tettoCatena !== undefined && spesaCatena(a.catena.id, lista) >= tettoCatena)
@@ -1388,7 +1430,8 @@ const vincoliValidi = (v: unknown) => {
   const o = v as Record<string, unknown> | null
   return !!o && typeof o === 'object' && !Array.isArray(o) && typeof o.sensibile === 'boolean' && typeof o.datiLan === 'boolean' &&
     (o.corsiaMin === undefined || CORSIE.includes(o.corsiaMin as Corsia)) && Array.isArray(o.fornitori) && o.fornitori.length <= 10 &&
-    o.fornitori.every(f => typeof f === 'string' && /^[a-z0-9-]{1,40}$/.test(f))
+    o.fornitori.every(f => typeof f === 'string' && /^[a-z0-9-]{1,40}$/.test(f)) &&
+    (o.destinazioni === undefined || (Array.isArray(o.destinazioni) && o.destinazioni.every(d => ['local', 'cloud', 'api-claude'].includes(d as string))))
 }
 
 /** Un record letto da disco → Azione, o il motivo per cui non lo è. Mai un cast cieco. */
@@ -1564,6 +1607,21 @@ export function costoDi(a: Azione): { tipo: 'piano' | Costo['tipo']; usd?: numbe
   if (modalitaDi(a) === 'api-claude') return typeof a.costoApi === 'number' ? { tipo: 'stimato', usd: a.costoApi } : { tipo: 'ignoto' }
   return a.esecutore === 'claude' || a.esecutore === 'codex' ? { tipo: 'piano' } : { tipo: 'ignoto' }
 }
+/**
+ * Revisione F13a, rilievo 7: i costi di un insieme di chip per tipo (piano, stimato, osservato, ignoto, gratuito), mai
+ * mescolati: per i tipi con un importo la somma, per gli altri quante chip.
+ */
+export function costiPerTipo(lista: readonly Azione[]) {
+  const out: Partial<Record<'piano' | Costo['tipo'], { n: number; usd: number }>> = {}
+  for (const x of lista) {
+    const k = costoDi(x)
+    const t = (out[k.tipo] ??= { n: 0, usd: 0 })
+    t.n += 1
+    t.usd += k.usd ?? 0
+  }
+  return out
+}
+
 /** La spesa misurata (stimata o osservata) di una catena: è quella che il tetto in dollari ferma. */
 export const spesaCatena = (id: string, lista: readonly Azione[]) =>
   lista.filter(x => x.catena?.id === id).reduce((s, x) => s + (costoDi(x).usd ?? 0), 0)

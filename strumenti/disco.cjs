@@ -1210,6 +1210,8 @@ async function figlio(dir, richiesta) {
       ...(typeof v.corsiaMin === 'string' && /^R[0-5]$/.test(v.corsiaMin) && { corsiaMin: v.corsiaMin }),
       datiLan: v.datiLan === true,
       fornitori: Array.isArray(v.fornitori) ? v.fornitori.filter(x => typeof x === 'string' && /^[a-z0-9-]{1,40}$/.test(x)) : [],
+      // Revisione F13a, rilievo 2: anche le destinazioni dove gira la dirigente (assenti = solo locale: nel dubbio si blocca).
+      destinazioni: Array.isArray(v.destinazioni) ? v.destinazioni.filter(x => ['local', 'cloud', 'api-claude'].includes(x)) : ['local'],
     }
     if (tutte.some(f => fs.existsSync(path.join(dir, `${f.id}.json`)))) return [4, JSON.stringify({ motivo: 'esiste' })]
     const scritte = tutte.map(f => ({ ...f, ruolo: 'lavoro', padre: richiesta.padre, vincoliPadre }))
@@ -1297,8 +1299,20 @@ async function eseguiCli(dir, id, tentativo, input, deps = {}) {
       percorsoSicuro(file)
       const { cwd } = preparaWorktree(input, tentativo, deps, fuori)
       ramo = fuori.ramo
+      // F13 (revisione F13a, rilievo 1): il processo parte nel worktree, che con un'altra `base` può avere impostazioni sue.
+      // Subito prima dello spawn si ricontrollano TUTTE le fonti del cwd effettivo, coi fatti dell'host (policy comprese);
+      // senza quei fatti, o con una fonte illeggibile o che porta chiave, token, helper o gateway, non parte.
+      const API = require('./api-claude.cjs')
+      const ambiente = deps.env ?? process.env
+      const blocchi = Array.isArray(input.fontiHost)
+        ? API.blocchiCli(deps.fontiCwd?.(cwd) ?? API.fontiImpostazioni(cwd, ambiente), ambiente, input.fontiHost)
+        : [{ nome: 'host', illeggibile: true }]
+      if (blocchi.length) {
+        scrivi({ stato: 'fallita', ramo, errore: `CLI non avviata: le impostazioni del worktree non usano solo l'abbonamento (${blocchi.map(b => b.nome).join(', ').slice(0, 120)})` })
+        return
+      }
       // F13 (N1): il figlio gira solo con le credenziali dell'abbonamento: chiavi, token e gateway tolti dall'ambiente.
-      const env = require('./api-claude.cjs').ambienteCli(process.env)
+      const env = API.ambienteCli(ambiente)
       // Ancora subito prima dello spawn: una junction comparsa durante il worktree ferma tutto prima del processo.
       percorsoSicuro(file)
       const p = (deps.avvia ?? avviaComando)(['claude', '-p', '--model', input.modello, '--effort', input.effort, '--permission-mode', input.permessi, '--output-format', 'json'],

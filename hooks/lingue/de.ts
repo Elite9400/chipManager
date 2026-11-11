@@ -1228,7 +1228,7 @@ const de: Dizionario = {
   "stato.attesaFiglie": "Wartet auf seine Kind-Chips",
   // F13.2: modo dirigente nel pannello
   "dir.riga": "Leitung · Kinder {n}/{max} · Neuplanungen {r}/{maxR}",
-  "dir.costo": "Kosten der Kinder ${osservato} beobachtet, {ignote} unbekannt",
+  "dir.costo": "Kosten der Kinder: {costi}",
   "dir.fable": "Fable kann Zusatznutzung berechnen, wo dein Plan es vorsieht",
   "dir.figlia": "Kind von {titolo}: behält dessen Vorgaben",
   "az.dirigenteOpus": "Leitung auf Opus",
@@ -1262,6 +1262,12 @@ const de: Dizionario = {
   "modo.catenaGiri": "Prüfrunden",
   "modo.catenaRuoli": "Schreiber {scrittore}: {cs} · Prüfer {revisore}: {cr} · Anwender Claude: Abo",
   "cat.scrittoreAssente": "der Schreiber {provider} ist in dieser Version nicht verfügbar",
+  "v.destinazionePadre": "{destinazione} ist nicht, wo sein Leitungs-Chip läuft: ein Kind läuft nur dort",
+  "v.dirigenteTetto": "der Baum des Leitungs-Chips hat seine Grenze von ${tetto} erreicht (ausgegeben ${speso}): kein weiterer Chip davon startet",
+  "v.catenaApi": "ein Kettenschritt läuft nicht auf der API-Spur: der Auftrag verlöre die Verweise der Kette und die Abgabe des Artefakts",
+  "v.catenaCloud": "ein Kettenschritt läuft nicht in der Cloud: die Artefakte sind lokale Dateien, die die Cloud nicht liest",
+  "v.dirigenteModello": "der Leitungs-Chip läuft auf {modello}, das dieses Projekt nicht erlaubt: wähle «Leitung auf Opus» oder erlaube es",
+  "cat.costiCatena": "Kosten der Kette: {costi}",
   // ‹fine›
 }
 

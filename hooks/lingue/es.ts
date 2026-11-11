@@ -1228,7 +1228,7 @@ const es: Dizionario = {
   "stato.attesaFiglie": "Espera a sus chips hijas",
   // F13.2: modo dirigente nel pannello
   "dir.riga": "Directora · hijas {n}/{max} · replanes {r}/{maxR}",
-  "dir.costo": "coste de las hijas ${osservato} observado, {ignote} desconocidas",
+  "dir.costo": "coste de las hijas: {costi}",
   "dir.fable": "Fable puede facturar uso extra donde tu plan lo exige",
   "dir.figlia": "Hija de {titolo}: mantiene sus restricciones",
   "az.dirigenteOpus": "Directora en Opus",
@@ -1262,6 +1262,12 @@ const es: Dizionario = {
   "modo.catenaGiri": "Rondas de revisión",
   "modo.catenaRuoli": "Escritor {scrittore}: {cs} · revisor {revisore}: {cr} · aplicador Claude: plan",
   "cat.scrittoreAssente": "el escritor {provider} no está disponible en esta versión",
+  "v.destinazionePadre": "{destinazione} no es donde trabaja su chip directora: una hija solo trabaja allí",
+  "v.dirigenteTetto": "el árbol de la chip directora alcanzó su tope de ${tetto} (gastado ${speso}): no arranca ninguna otra chip suya",
+  "v.catenaApi": "un paso de cadena no corre en el carril API: el mandato perdería las referencias de la cadena y la entrega del artefacto",
+  "v.catenaCloud": "un paso de cadena no corre en la nube: los artefactos son archivos locales que la nube no lee",
+  "v.dirigenteModello": "la chip directora trabaja con {modello}, que este proyecto no permite: elige «Directora en Opus» o permítelo",
+  "cat.costiCatena": "coste de la cadena: {costi}",
   // ‹fine›
 }
 

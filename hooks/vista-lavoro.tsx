@@ -40,6 +40,7 @@ import {
   velo,
   violazioniAvvio,
   costoDi,
+  costiPerTipo,
 } from './logica'
 import { letto, msg, msgDi, salvato } from './lingua'
 import type { Msg } from './lingua'
@@ -551,19 +552,25 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
    * F13.2: la riga della dirigente (figlie e ripiani coi limiti; costo delle figlie osservato o ignoto, mai stimato a caso;
    * Fable può addebitare uso extra) e quella di una figlia (la sua dirigente).
    */
+  /** I costi per tipo, mai sommati fra tipi diversi: «stimato $0,70 + osservato $0,40 + piano». */
+  const testoCosti = (lista: readonly Azione[]) =>
+    Object.entries(costiPerTipo(lista)).map(([tipo, c]) => T(COSTO[tipo as keyof typeof COSTO], { usd: T.numero(c!.usd, 2) })).join(' + ')
   const rigaDirigente = (a: Azione) => {
     const d = regoleOra.risorse.modoLavoro.dirigente
     // F13.6: il passo di catena (giro, ruolo, che tipo di costo, l'artefatto consegnato) e, se c'è, la sua dirigente.
     const k = costoDi(a)
     const catena = a.catena && [T('cat.riga', { catena: a.catena.id, giro: a.catena.giro, ruolo: T(RUOLO_CATENA[a.catena.ruolo]),
       costo: T(COSTO[k.tipo], { usd: T.numero(k.usd ?? 0, 2) }) }), a.artefatto && T('cat.artefatto', { file: a.artefatto })].filter(Boolean).join(' · ')
+    // Revisione F13a, rilievo 7: il costo della catena per ruolo, coi tipi separati (costoDi).
+    const passi = a.catena ? tutte.filter(x => x.catena?.id === a.catena!.id) : []
+    const perRuolo = a.catena && T('cat.costiCatena', { costi: (['scrittore', 'revisore', 'applicatore'] as const)
+      .flatMap(r => (passi.some(x => x.catena!.ruolo === r) ? [`${T(RUOLO_CATENA[r])} ${testoCosti(passi.filter(x => x.catena!.ruolo === r))}`] : [])).join(' · ') })
     const figlia = a.padre && T('dir.figlia', { titolo: tutte.find(x => x.id === a.padre)?.titolo ?? a.padre })
-    if (catena || figlia) return <Text key={`figlia-${a.id}`} size="caption" dimColor wrap="wrap">{[catena, figlia].filter(Boolean).join(' · ')}</Text>
+    if (catena || figlia) return <Text key={`figlia-${a.id}`} size="caption" dimColor wrap="wrap">{[catena, perRuolo, figlia].filter(Boolean).join(' · ')}</Text>
     if (a.ruolo !== 'dirigente') return null
     const figlie = tutte.filter(x => x.padre === a.id)
-    const osservate = figlie.filter(x => typeof x.costoApi === 'number')
     const parti = [T('dir.riga', { n: figlie.length, max: d.maxFigli, r: a.ripiani ?? 0, maxR: d.maxRipiani })]
-    if (figlie.length) parti.push(T('dir.costo', { osservato: T.numero(osservate.reduce((s, x) => s + (x.costoApi as number), 0), 2), ignote: figlie.length - osservate.length }))
+    if (figlie.length) parti.push(T('dir.costo', { costi: testoCosti(figlie) }))
     if (/fable/.test(modelloDi(a, regoleOra))) parti.push(T('dir.fable'))
     return <Text key={`dirigente-${a.id}`} size="caption" dimColor wrap="wrap">{parti.join(' · ')}</Text>
   }

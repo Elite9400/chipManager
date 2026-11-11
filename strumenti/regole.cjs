@@ -60,7 +60,7 @@ const paralleloValido = v => Number.isInteger(v) && v >= 1 && v <= 8
 // F13.2: il modo dirigente (gemello di dirigenteDa, dirigenteNonValido, dirigenteEfficace in hooks/logica.ts).
 const QUANDO_DIRIGENTE = ['off', 'R3+', 'sempre']
 const ID_CLAUDE = /^claude-[a-z0-9]+(-[a-z0-9]+){1,4}$/
-const CAMPI_DIRIGENTE = ['modello', 'quando', 'lavoratori', 'maxFigli', 'maxRipiani']
+const CAMPI_DIRIGENTE = ['modello', 'quando', 'lavoratori', 'maxFigli', 'maxRipiani', 'tettoUsd']
 const DIRIGENTE_PREDEFINITO = {
   modello: 'claude-fable-5-2', quando: 'R3+',
   lavoratori: { R0: 'claude-haiku-5-5', R1: 'claude-sonnet-5-5', R2: 'claude-sonnet-5-5', R3: 'claude-opus-5-5', R4: 'claude-opus-5-5', R5: 'claude-opus-5-5' },
@@ -82,6 +82,7 @@ function dirigenteDa(v) {
   }
   if (interoIn(v.maxFigli, 1, 20)) o.maxFigli = v.maxFigli
   if (interoIn(v.maxRipiani, 0, 5)) o.maxRipiani = v.maxRipiani
+  if (tettoValido(v.tettoUsd)) o.tettoUsd = v.tettoUsd
   return Object.keys(o).length ? o : undefined
 }
 function dirigenteNonValido(v) {
@@ -100,6 +101,7 @@ function dirigenteNonValido(v) {
   }
   if (presente('maxFigli') && !interoIn(v.maxFigli, 1, 20)) return 'modoLavoro.dirigente.maxFigli'
   if (presente('maxRipiani') && !interoIn(v.maxRipiani, 0, 5)) return 'modoLavoro.dirigente.maxRipiani'
+  if (presente('tettoUsd') && !tettoValido(v.tettoUsd)) return 'modoLavoro.dirigente.tettoUsd'
   return null
 }
 // F13.6: la pipeline delle catene (gemello di pipelineDa, pipelineNonValido, pipelineEfficace in hooks/logica.ts).
@@ -146,6 +148,7 @@ function dirigenteEfficace(a, p) {
     lavoratori: Object.fromEntries(CORSIE_MODO.map(c => [c, p?.lavoratori?.[c] ?? a?.lavoratori?.[c] ?? d.lavoratori[c]])),
     maxFigli: p?.maxFigli ?? a?.maxFigli ?? d.maxFigli,
     maxRipiani: p?.maxRipiani ?? a?.maxRipiani ?? d.maxRipiani,
+    ...((p?.tettoUsd ?? a?.tettoUsd) !== undefined && { tettoUsd: p?.tettoUsd ?? a?.tettoUsd }),
   }
 }
 

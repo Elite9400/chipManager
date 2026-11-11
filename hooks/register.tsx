@@ -40,6 +40,8 @@ import {
   chiaviCliVietate,
   datiLocali,
   dirigenteSuCli,
+  conVincoliPadre,
+  vincoliDirigente,
   ARTEFATTO_MAX,
   fileArtefatto,
   passiCatena,
@@ -743,7 +745,10 @@ async function decidi(
 ): Promise<Decisione> {
   for (let prova = 0; prova < 3; prova++) {
     const [tutte, r, chi] = await Promise.all([carica($, { completa: true, fresca: prova > 0 }), leggiRegole($), chiSonoIo($)])
-    const a = tutte.find(x => x.id === id)
+    // Revisione F13a, rilievo 2: una figlia parte coi vincoli della sua dirigente di ADESSO (solo più severi), e la
+    // prenotazione li scrive nel suo record insieme all'avvio.
+    const trovata = tutte.find(x => x.id === id)
+    const a = trovata && conVincoliPadre(trovata, tutte, r)
     const ammessi = opz.qui ? ['proposta'] : ['proposta', 'accodata', 'fallita']
     if (!a || !ammessi.includes(a.stato)) return { nulla: a }
     if (opz.approvata !== undefined && a.versione !== opz.approvata) throw errore('err.cambiataDopoConferma', { titolo: a.titolo })
@@ -978,7 +983,8 @@ async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: 
   const dettaglio = (() => {
     try {
       return JSON.parse(esito.testo || '{}') as { motivo?: string; fonti?: string[]; speso?: number; budget?: number; tetto?: number; registro?: string
-        registroSviluppo?: string; spenta?: boolean; config?: string; spesoProgetto?: number; limiteProgetto?: number; percorso?: string }
+        registroSviluppo?: string; spenta?: boolean; config?: string; spesoProgetto?: number; limiteProgetto?: number; percorso?: string
+        gruppo?: string; tettoGruppo?: number }
     } catch {
       return {}
     }
@@ -987,6 +993,8 @@ async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: 
   if (esito.codice === 5 && dettaglio.registro) return fallisce(msg('err.apiRegistro'))
   if (esito.codice === 5 && dettaglio.registroSviluppo) return fallisce(msg('err.apiRegistroSviluppo', { cartella: String(dettaglio.registroSviluppo).slice(0, 300) }))
   if (esito.codice === 5 && dettaglio.spenta) return fallisce(msg('v.apiBudget'))
+  if (esito.codice === 5 && dettaglio.gruppo)
+    return fallisce(msg(dettaglio.gruppo === 'catena' ? 'v.catenaTetto' : 'v.dirigenteTetto', { tetto: Number(dettaglio.tettoGruppo ?? 0), speso: Number(dettaglio.speso ?? 0) }))
   if (esito.codice === 5 && dettaglio.config) return fallisce(msg('cfg.illeggibile'))
   if (esito.codice === 5 && dettaglio.limiteProgetto !== undefined)
     return fallisce(msg('err.apiLimiteProgetto', { speso: Number(dettaglio.spesoProgetto ?? 0), limite: Number(dettaglio.limiteProgetto), tetto: Number(dettaglio.tetto ?? api.tetto) }))
@@ -1256,7 +1264,7 @@ const SCHEMA_MODO = {
       revisore: { type: 'string' }, giri: { type: 'integer', minimum: 1, maximum: 3 }, tettoUsd: { type: ['number', 'null'] } } },
     dirigente: { type: 'object', additionalProperties: false, properties: {
       modello: { type: 'string' }, quando: { type: 'string', enum: ['off', 'R3+', 'sempre'] }, maxFigli: { type: 'integer', minimum: 1, maximum: 20 },
-      maxRipiani: { type: 'integer', minimum: 0, maximum: 5 }, lavoratori: { type: 'object', additionalProperties: false,
+      maxRipiani: { type: 'integer', minimum: 0, maximum: 5 }, tettoUsd: { type: ['number', 'null'] }, lavoratori: { type: 'object', additionalProperties: false,
         properties: Object.fromEntries(['R0', 'R1', 'R2', 'R3', 'R4', 'R5'].map(c => [c, { type: ['string', 'null'] }])) } } },
   },
 } as const
@@ -2474,6 +2482,13 @@ export const register: Register = (on, options) => {
         typeof p?.tentativo !== 'string' || p.tentativo !== padre.tentativo))
       return { deny: 'suggerisci_azione: padre must be {id, tentativo} of a director chip of this project at work, with its current attempt' }
     const d = (r.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).dirigente
+    // Revisione F13a, rilievo 2: prima di ogni figlia i vincoli della dirigente si ricalcolano dal suo stato di adesso e si
+    // fissano sul suo record, solo verso l'alto; l'helper poi li copia da lì (mai dal testo della figlia).
+    if (padre && !uguale(padre.vincoliPropri, vincoliDirigente(padre, r))) {
+      const agg = await aggiorna($, padre.id, x => (uguale(x.vincoliPropri, vincoliDirigente(x, r)) ? null : { vincoliPropri: vincoliDirigente(x, r) })).catch(() => undefined)
+      if (!agg) return { deny: 'suggerisci_azione: the director\'s constraints could not be updated: try again' }
+      padre.vincoliPropri = agg.vincoliPropri
+    }
     const ultimo = attive(delProgetto(lista, chi)).reduce((n, a) => Math.max(n, a.ordine), 0)
     const id = `a-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
     const base: Azione = {
@@ -2531,11 +2546,8 @@ export const register: Register = (on, options) => {
       a = JSON.parse(esito.testo) as Azione
       await update($, azioni, l => [...l.filter(x => x.id !== a.id), a])
     } else {
-      // La dirigente fissa i suoi vincoli alla nascita: le figlie li ereditano dal record, mai dal testo.
-      const corsia = corsiaDi(scelta, r)
-      // La corsia minima che passa alle figlie è solo quella sensibile (R4/R5): sotto, ogni figlia ha la sua corsia.
-      a = await salva($, ruolo !== 'dirigente' ? scelta : { ...scelta, vincoliPropri: { sensibile: sensibile(scelta, r), ...((corsia === 'R4' || corsia === 'R5') && { corsiaMin: corsia }),
-        datiLan: datiLocali(`${scelta.titolo}\n${scelta.brief}\n${scelta.background ?? ''}`), fornitori: [...r.risorse.fornitori] } }, { nuova: true })
+      // La dirigente fissa i suoi vincoli alla nascita (vincoliDirigente); si rialzano a ogni figlia e a ogni suo avvio.
+      a = await salva($, ruolo !== 'dirigente' ? scelta : { ...scelta, vincoliPropri: vincoliDirigente(scelta, r) }, { nuova: true })
     }
     void $.ui.open({ id: PANE, title: TITOLO })
     const blocchi = violazioni(a, r, [...lista, a])

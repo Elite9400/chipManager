@@ -620,7 +620,8 @@ test('2.0 CLI: worktree distinto, argv senza shell, prompt su stdin e uscita sol
   fs.writeFileSync(file, JSON.stringify({ id, tentativo, stato: 'in-avvio' }))
   const chiamate = []
   const prompt = 'Testo con "virgolette" e $(non_eseguire) & %PATH%'
-  const codice = await eseguiCli(dir, id, tentativo, { root, prompt, modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', base: 'main' }, {
+  const codice = await eseguiCli(dir, id, tentativo, { root, prompt, modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', base: 'main', fontiHost: [] }, {
+    env: { CLAUDE_CONFIG_DIR: tmp() },
     git: args => { chiamate.push(args); return 'a'.repeat(40) },
     avvia: (argv, opzioni) => {
       assert.deepStrictEqual(argv, ['claude', '-p', '--model', 'claude-opus-5-5', '--effort', 'high', '--permission-mode', 'acceptEdits', '--output-format', 'json'])
@@ -661,7 +662,8 @@ test('2.0 CLI: un errore di preparazione conserva il worktree e non avvia nulla'
   const fuori = tmp()
   fs.symlinkSync(fuori, path.join(root, '.claude'), process.platform === 'win32' ? 'junction' : 'dir')
   fs.writeFileSync(file, JSON.stringify({ id, tentativo, stato: 'in-avvio' }))
-  await eseguiCli(dir, id, tentativo, { root, prompt: 'testo', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits' }, {
+  await eseguiCli(dir, id, tentativo, { root, prompt: 'testo', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', fontiHost: [] }, {
+    env: { CLAUDE_CONFIG_DIR: tmp() },
     git: args => { assert.strictEqual(args[0], 'rev-parse'); return 'a'.repeat(40) },
     avvia: () => { avvii++ },
   })
@@ -2791,6 +2793,7 @@ test('Percorsi, N5: due supervisori CLI sullo stesso record, uno da una junction
   fs.writeFileSync(file, JSON.stringify({ id, tentativo, stato: 'in-avvio' }))
   let avvii = 0
   const deps = () => ({
+    env: { CLAUDE_CONFIG_DIR: tmp() },
     git: () => 'a'.repeat(40),
     avvia: () => {
       avvii++
@@ -2801,7 +2804,7 @@ test('Percorsi, N5: due supervisori CLI sullo stesso record, uno da una junction
       return p
     },
   })
-  const ingresso = { root: tmp(), prompt: 'testo', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits' }
+  const ingresso = { root: tmp(), prompt: 'testo', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', fontiHost: [] }
   const codici = await Promise.all([eseguiCli(fisico, id, tentativo, ingresso, deps()), eseguiCli(alias, id, tentativo, ingresso, deps())])
   assert.deepStrictEqual([...codici].sort(), [0, 3])
   assert.strictEqual(avvii, 1)
@@ -3820,7 +3823,7 @@ test('F13.2 figlio: i vincoli si copiano dal record del padre (mai dal testo); p
   const [c, u] = await D.figlio(dir, { padre: 'a-dir00001', figlio: recFiglia('a-fig00001'), maxFigli: 2 })
   assert.strictEqual(c, 0, u)
   const scritta = JSON.parse(fs.readFileSync(path.join(dir, 'a-fig00001.json'), 'utf8'))
-  assert.deepStrictEqual([scritta.ruolo, scritta.padre, scritta.vincoliPadre], ['lavoro', 'a-dir00001', { sensibile: true, corsiaMin: 'R4', datiLan: true, fornitori: ['claude'] }])
+  assert.deepStrictEqual([scritta.ruolo, scritta.padre, scritta.vincoliPadre], ['lavoro', 'a-dir00001', { sensibile: true, corsiaMin: 'R4', datiLan: true, fornitori: ['claude'], destinazioni: ['local'] }])
   // Vincoli o ruolo portati dalla richiesta: rifiutata (si copiano solo dal padre).
   for (const extra of [{ vincoliPadre: { sensibile: false } }, { ruolo: 'dirigente' }, { padre: 'a-altro0001' }])
     assert.strictEqual((await D.figlio(dir, { padre: 'a-dir00001', figlio: { ...recFiglia('a-fig00009'), ...extra }, maxFigli: 2 }))[0], 2, JSON.stringify(extra))
@@ -3949,4 +3952,101 @@ test('F13.6 figli: i passi di una catena si scrivono tutti o nessuno, entro maxF
   // Id ripetuti o un passo che porta già i vincoli: rifiutata.
   assert.strictEqual((await D.figlio(dir, { padre: 'a-dir00001', figli: [recFiglia('a-pas00009'), recFiglia('a-pas00009')], maxFigli: 8 }))[0], 2)
   assert.strictEqual((await D.figlio(dir, { padre: 'a-dir00001', figli: [{ ...recFiglia('a-pas00009'), vincoliPadre: {} }], maxFigli: 8 }))[0], 2)
+})
+
+// --- Revisione F13a (Codex) --------------------------------------------------------------------------------------------
+
+test('Revisione F13a, rilievo 1: la corsia CLI ricontrolla le impostazioni del worktree vero subito prima dello spawn', async () => {
+  const { eseguiCli } = require(DISCO)
+  const dir = tmp()
+  const root = tmp()
+  const tentativo = 'az-wtcli001'
+  const file = path.join(dir, 'esecuzioni', `${tentativo}.json`)
+  fs.mkdirSync(path.dirname(file))
+  const prova = async (impostazioni, fontiHost, opz = {}) => {
+    fs.writeFileSync(file, JSON.stringify({ id: 'a-wtcli0001', tentativo, stato: 'in-avvio' }))
+    let avvii = 0
+    await eseguiCli(dir, 'a-wtcli0001', tentativo, { root, prompt: 'x', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', base: 'altra', ...(fontiHost && { fontiHost }) }, {
+      env: { CLAUDE_CONFIG_DIR: tmp(), ...opz.env },
+      // La `base` porta nel worktree un .claude/settings.json che il checkout non ha.
+      git: args => {
+        if (args[0] === 'worktree' && impostazioni !== undefined) {
+          fs.mkdirSync(path.join(args[4], '.claude'), { recursive: true })
+          fs.writeFileSync(path.join(args[4], '.claude', 'settings.json'), impostazioni)
+        }
+        return 'a'.repeat(40)
+      },
+      avvia: () => {
+        avvii++
+        const { EventEmitter } = require('node:events')
+        const p = new EventEmitter()
+        p.stdin = new EventEmitter()
+        p.stdin.end = () => setImmediate(() => p.emit('exit', 0))
+        queueMicrotask(() => p.emit('spawn'))
+        return p
+      },
+    })
+    fs.rmSync(path.join(root, '.claude'), { recursive: true, force: true })
+    return [avvii, JSON.parse(fs.readFileSync(file, 'utf8'))]
+  }
+  // Checkout pulito, worktree con apiKeyHelper: nessuno spawn, fallita col nome della fonte.
+  const [a1, r1] = await prova(JSON.stringify({ apiKeyHelper: '/bin/chiave' }), [])
+  assert.deepStrictEqual([a1, r1.stato], [0, 'fallita'])
+  assert.match(r1.errore, /progetto/)
+  // Illeggibile, una policy dell'host che blocca, fatti dell'host assenti: nemmeno.
+  for (const [imp, host] of [['{ rotto', []], [undefined, [{ source: 'policy', chiavi: null }]], [undefined, undefined]]) {
+    const [a, r] = await prova(imp, host)
+    assert.deepStrictEqual([a, r.stato], [0, 'fallita'], JSON.stringify([imp, host]))
+  }
+  // Una chiave ereditata nell'ambiente del supervisore: nemmeno.
+  assert.deepStrictEqual((await prova(undefined, [], { env: { ANTHROPIC_API_KEY: 'x' } }))[0], 0)
+  // Tutto pulito: parte.
+  const [a2, r2] = await prova(undefined, [])
+  assert.deepStrictEqual([a2, r2.stato], [1, 'consegnata'])
+})
+
+test('Revisione F13a, rilievo 3: sulla corsia API una chip di catena o di una dirigente impegna al più il residuo del gruppo, sotto mutex', async () => {
+  const dir = tmp()
+  const root = tmp()
+  const stdin = []
+  const config = configApi({ apiClaude: { budgetUsd: 50, tetto: 5 }, modoLavoro: { pipeline: { tettoUsd: 1 }, dirigente: { tettoUsd: 2 } } })
+  const registro = (dm, voci) => fs.writeFileSync(API.fileSpesa(dm), JSON.stringify({ v: 1, voci }))
+  const voce = (gruppi, costo) => ({ progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 5, stato: 'contato', costo, gruppi })
+  const passo = (id, t, extra) => fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ stato: 'in-avvio', lanciatore: 'api-claude', tentativo: t, ...extra }))
+  const avvia = (dm, id, t) => API.lanciaApi(dir, id, t, ingressoApi(root, config), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto(stdin) })
+  // Catena con tetto 1 $ e 0,90 $ già contati: il passo parte col limite 0,10 $ (non coi 5 $ del tetto API).
+  const dm1 = tmp()
+  registro(dm1, { 'az-prima001': voce(['catena:c-catena001'], 0.9) })
+  passo('a-cat00001', 'az-cat00001', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  assert.deepStrictEqual(await avvia(dm1, 'a-cat00001', 'az-cat00001'), [0, ''])
+  assert.strictEqual(JSON.parse(stdin.at(-1)).tetto, 0.1)
+  assert.deepStrictEqual(API.leggiSpesa(dm1).voci['az-cat00001'], { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'prenotato', gruppi: ['catena:c-catena001'] })
+  // Con il tetto già tutto impegnato (anche solo prenotato) il passo non parte.
+  const dm2 = tmp()
+  registro(dm2, { 'az-prima001': { ...voce(['catena:c-catena001']), stato: 'prenotato', tetto: 1, costo: undefined } })
+  passo('a-cat00002', 'az-cat00002', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  const [c2, u2] = await avvia(dm2, 'a-cat00002', 'az-cat00002')
+  assert.deepStrictEqual([c2, JSON.parse(u2)], [5, { gruppo: 'catena', speso: 1, tettoGruppo: 1 }])
+  // Albero della dirigente (tetto 2 $): la figlia vede anche la spesa della dirigente e delle sorelle; il consuntivo libera la differenza.
+  const dm3 = tmp()
+  registro(dm3, { 'az-dirig001': voce(['dirigente:a-dir00001'], 0.5), 'az-sorel001': { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 1.2, stato: 'prenotato', gruppi: ['dirigente:a-dir00001'] } })
+  passo('a-fig00001', 'az-fig00001', { padre: 'a-dir00001' })
+  assert.deepStrictEqual(await avvia(dm3, 'a-fig00001', 'az-fig00001'), [0, ''])
+  assert.strictEqual(JSON.parse(stdin.at(-1)).tetto, 0.3)
+  await API.contaSpesa(dm3, 'az-sorel001', 0.2)
+  fs.rmSync(API.fileLock(dm3))
+  passo('a-fig00002', 'az-fig00002', { padre: 'a-dir00001' })
+  assert.deepStrictEqual(await avvia(dm3, 'a-fig00002', 'az-fig00002'), [0, ''])
+  assert.strictEqual(JSON.parse(stdin.at(-1)).tetto, 1)
+  // Una chip qualunque resta col tetto API ordinario.
+  const dm4 = tmp()
+  recordApi(dir, 'a-api00009', 'az-api0009')
+  assert.deepStrictEqual(await avvia(dm4, 'a-api00009', 'az-api0009'), [0, ''])
+  assert.strictEqual(JSON.parse(stdin.at(-1)).tetto, 5)
+  // Il tetto della dirigente vale uguale nel pannello e nell'helper.
+  const R = require('./regole.cjs')
+  assert.strictEqual(R.regoleEfficaci(undefined, { modoLavoro: { dirigente: { tettoUsd: 2 } } }).modoLavoro.dirigente.tettoUsd, 2)
+  assert.strictEqual(R.modoNonValido({ dirigente: { tettoUsd: 0 } }), 'modoLavoro.dirigente.tettoUsd')
+  const ts = conLogica(`console.log(JSON.stringify([nuova.risorseDa({ modoLavoro: { dirigente: { tettoUsd: 2 } } }).modoLavoro.dirigente.tettoUsd, nuova.modoNonValido({ dirigente: { tettoUsd: 0 } })]))`, {})
+  assert.deepStrictEqual(ts, [2, 'modoLavoro.dirigente.tettoUsd'])
 })

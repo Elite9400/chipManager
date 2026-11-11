@@ -39,8 +39,10 @@ export type Dirigente = {
   lavoratori?: Partial<Record<Corsia, string>>
   maxFigli?: number
   maxRipiani?: number
+  /** Revisione F13a, rilievo 3: il tetto in dollari dell'albero della dirigente (lei e le figlie), dove la spesa si misura. */
+  tettoUsd?: number | null
 }
-export type DirigenteEfficace = { modello: string; quando: 'off' | 'R3+' | 'sempre'; lavoratori: Record<Corsia, string>; maxFigli: number; maxRipiani: number }
+export type DirigenteEfficace = { modello: string; quando: 'off' | 'R3+' | 'sempre'; lavoratori: Record<Corsia, string>; maxFigli: number; maxRipiani: number; tettoUsd?: number }
 /** F13.6: lo scrittore astratto di una catena (interfaccia F13a↔F13b): 'claude' o un esecutore di testo di F13b. */
 export type Scrittore = { provider: string; modello: string }
 export type Pipeline = { scrittore?: Scrittore; revisore?: string; giri?: number; tettoUsd?: number | null }
@@ -181,7 +183,7 @@ export type Destinazione = 'local' | 'cloud' | 'api-claude'
 
 /** Una riga del pannello: un file JSON in `<dir azioni>/<id>.json`, scritto solo con CAS atomico. */
 /** F13.2: i vincoli della chip dirigente, copiati dall'helper dal record del padre (mai dal testo). */
-export type VincoliPadre = { sensibile: boolean; corsiaMin?: Corsia; datiLan: boolean; fornitori: string[] }
+export type VincoliPadre = { sensibile: boolean; corsiaMin?: Corsia; datiLan: boolean; fornitori: string[]; destinazioni?: Destinazione[] }
 /** F13.6: il passo di una catena (scrittore, revisore o applicatore) e il suo giro. */
 export type Catena = { id: string; giro: number; ruolo: 'scrittore' | 'revisore' | 'applicatore' }
 /** F13a↔F13b: il costo di un record, coi tipi tenuti distinti. */

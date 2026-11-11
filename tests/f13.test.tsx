@@ -5,7 +5,7 @@ import { ADVISOR, CLOUD_MAX, corsiaDi, dipendenze, effortDi, idAuditor, istruzio
   passiCatena, PIPELINE_PREDEFINITA, pianifica,
   rangoModello, REGOLE_DEFAULT, revisoreConcreto, RISORSE_DEFAULT, ruoloNuovo, sensibile, TRANSIZIONI, violazioni } from '../hooks/logica'
 import { campiDaProposta } from '../hooks/bilanciamento'
-import { costoDi, testoScrittore } from '../hooks/logica'
+import { conVincoliPadre, costiPerTipo, costoDi, piuStretti, testoScrittore, vincoliDirigente } from '../hooks/logica'
 import { famigliaDi } from '../hooks/tema'
 import type { Azione, Regole } from '../types'
 
@@ -234,4 +234,48 @@ test('F13 violazioni: «non connesso» solo per un fornitore abilitato, anche su
   const speso = az({ id: 'a-speso0001', costo: { tipo: 'osservato', usd: 2 }, catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' } })
   const passo = { ...free, catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' as const } }
   expect(k(passo, abilitato, [speso, passo])).toEqual(expect.arrayContaining(['v.catenaTetto', 'v.nonConnesso']))
+})
+
+// --- Revisione F13a (Codex) ----------------------------------------------------------------------------------------------
+
+test('Revisione F13a, rilievo 2: i vincoli della dirigente si ricalcolano solo verso l\'alto, destinazioni comprese', () => {
+  const v = { sensibile: false, datiLan: false, fornitori: ['claude', 'codex'], destinazioni: ['local' as const, 'api-claude' as const] }
+  expect(piuStretti(v, { sensibile: true, corsiaMin: 'R4', datiLan: false, fornitori: ['claude'], destinazioni: ['local'] }))
+    .toEqual({ sensibile: true, corsiaMin: 'R4', datiLan: false, fornitori: ['claude'], destinazioni: ['local'] })
+  // Mai un'attenuazione: un padre tornato «pulito» non toglie quello che era già fissato.
+  expect(piuStretti({ sensibile: true, corsiaMin: 'R5', datiLan: true, fornitori: ['claude'] }, { ...v, corsiaMin: 'R4' }))
+    .toEqual({ sensibile: true, corsiaMin: 'R5', datiLan: true, fornitori: ['claude'], destinazioni: ['local', 'api-claude'] })
+  const padre = az({ id: 'a-dir00001', ruolo: 'dirigente', corsia: 'R4', brief: 'Rivedi i permessi.' })
+  expect(vincoliDirigente(padre, REGOLE_DEFAULT)).toMatchObject({ sensibile: true, corsiaMin: 'R4', destinazioni: ['local'] })
+  const figlia = az({ id: 'a-fig00001', ruolo: 'lavoro', padre: 'a-dir00001', corsia: 'R1', vincoliPadre: { sensibile: false, datiLan: false, fornitori: ['claude'] } })
+  const ora = conVincoliPadre(figlia, [padre, figlia], REGOLE_DEFAULT)
+  expect([corsiaDi(ora, REGOLE_DEFAULT), sensibile(ora, REGOLE_DEFAULT)]).toEqual(['R4', true])
+  // Una figlia API di una dirigente locale non passa.
+  expect(violazioni({ ...ora, destinazione: 'api-claude' }, REGOLE_DEFAULT).map(x => x.k)).toContain('v.destinazionePadre')
+})
+
+test('Revisione F13a, rilievi 4 e 6: un passo di catena gira solo in locale (né corsia API né cloud), con il motivo', () => {
+  const passo = az({ catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' }, corsia: 'R1' })
+  expect(violazioni({ ...passo, destinazione: 'api-claude' }, REGOLE_DEFAULT).map(x => x.k)).toContain('v.catenaApi')
+  expect(violazioni({ ...passo, destinazione: 'cloud' }, REGOLE_DEFAULT).map(x => x.k)).toContain('v.catenaCloud')
+  const locale = violazioni(passo, REGOLE_DEFAULT).map(x => x.k)
+  expect([locale.includes('v.catenaApi'), locale.includes('v.catenaCloud')]).toEqual([false, false])
+})
+
+test('Revisione F13a, rilievo 5: senza Fable 5.2 fra gli ammessi la dirigente si ferma; Opus solo con «Dirigente su Opus»', () => {
+  const senzaFable = { ...REGOLE_DEFAULT, modelli: { ...REGOLE_DEFAULT.modelli, claude: ['claude-opus-5-5', 'claude-sonnet-5-5'] } } as Regole
+  const dir = az({ ruolo: 'dirigente', corsia: 'R3' })
+  expect(violazioni(dir, senzaFable).find(x => x.k === 'v.dirigenteModello')).toEqual({ k: 'v.dirigenteModello', p: { modello: 'Fable 5.2' } })
+  // Anche con Opus scritto nel record (il bilanciamento lo aveva scelto da sé): serve la scelta esplicita.
+  expect(violazioni({ ...dir, modello: 'claude-opus-5-5' }, senzaFable).map(x => x.k)).toContain('v.dirigenteModello')
+  expect(violazioni({ ...dir, modello: 'claude-opus-5-5', dirigenteSuOpus: true }, senzaFable).map(x => x.k)).not.toContain('v.dirigenteModello')
+  expect(violazioni(dir, REGOLE_DEFAULT).map(x => x.k)).not.toContain('v.dirigenteModello')
+})
+
+test('Revisione F13a, rilievo 7: i costi si raggruppano per tipo con costoDi, mai sommati fra tipi diversi', () => {
+  const lista = [az({ destinazione: 'api-claude', costoApi: 0.7 }), az({ costo: { tipo: 'osservato', usd: 0.4 } }), az({ costo: { tipo: 'osservato', usd: 0.1 } }), az({}),
+    az({ destinazione: 'api-claude' }), az({ costo: { tipo: 'gratuito' } })]
+  const c = costiPerTipo(lista)
+  expect([c.stimato, c.piano, c.ignoto, c.gratuito]).toEqual([{ n: 1, usd: 0.7 }, { n: 1, usd: 0 }, { n: 1, usd: 0 }, { n: 1, usd: 0 }])
+  expect([c.osservato!.n, Math.round(c.osservato!.usd * 100) / 100]).toEqual([2, 0.5])
 })

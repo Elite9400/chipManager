@@ -193,7 +193,13 @@ function leggiSpesa(dm) {
 const voceValida = v => !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.mese === 'string' && /^\d{4}-\d{2}$/.test(v.mese) &&
   typeof v.progetto === 'string' && v.progetto.length > 0 && v.progetto.length <= 400 &&
   typeof v.tetto === 'number' && Number.isFinite(v.tetto) && v.tetto > 0 &&
-  (v.stato === 'prenotato' ? v.costo === undefined : v.stato === 'contato' && (v.costo === null || (Number.isFinite(v.costo) && v.costo >= 0)))
+  (v.stato === 'prenotato' ? v.costo === undefined : v.stato === 'contato' && (v.costo === null || (Number.isFinite(v.costo) && v.costo >= 0))) &&
+  // Revisione F13a, rilievo 3: i gruppi (catena, albero della dirigente) a cui la voce conta.
+  (v.gruppi === undefined || (Array.isArray(v.gruppi) && v.gruppi.length <= 2 && v.gruppi.every(g => typeof g === 'string' && GRUPPO_RE.test(g))))
+const GRUPPO_RE = /^(catena:c-[a-z0-9]{6,20}|dirigente:a-[a-z0-9]{6,20})$/
+/** Quanto un gruppo ha già impegnato in tutti i mesi: contato = costo stimato (ignoto = tetto intero), prenotato = tetto. */
+const spesoNelGruppo = (voci, chiave) =>
+  Object.values(voci).filter(v => v.gruppi?.includes(chiave)).reduce((n, v) => n + (v.stato === 'contato' ? (v.costo ?? v.tetto) : v.tetto), 0)
 
 /** Spesa del mese (di un progetto, se dato): contato = costo stimato (ignoto = tetto intero), prenotato = tetto intero. */
 const spesoNelMese = (voci, mese, progetto) =>
@@ -204,13 +210,13 @@ const spesoNelMese = (voci, mese, progetto) =>
  * Prenota il tetto del tentativo (idempotente): deve stare nel residuo del mese dell'account e, se c'è, in quello del
  * progetto. Falso se uno dei due non basta. Da chiamare sotto il mutex del lock.
  */
-function prenotaSpesa(dm, tentativo, mese, tetto, budget, progetto, limiteProgetto) {
+function prenotaSpesa(dm, tentativo, mese, tetto, budget, progetto, limiteProgetto, gruppi = []) {
   if (typeof progetto !== 'string' || !progetto) throw new Error('progetto mancante')
   const s = leggiSpesa(dm)
   if (s.voci[tentativo]) return true
   if (spesoNelMese(s.voci, mese) + tetto > budget + 1e-9) return false
   if (limiteProgetto !== undefined && spesoNelMese(s.voci, mese, progetto) + tetto > limiteProgetto + 1e-9) return false
-  s.voci[tentativo] = { progetto, mese, tetto, stato: 'prenotato' }
+  s.voci[tentativo] = { progetto, mese, tetto, stato: 'prenotato', ...(gruppi.length && { gruppi }) }
   fs.mkdirSync(dm, { recursive: true })
   d.scriviDati(fileSpesa(dm), JSON.stringify(s))
   return true
@@ -258,7 +264,8 @@ function regoleApi(dir, dm, input) {
     return [5, JSON.stringify({ config: 'non valido' })]
   }
   if (!efficaci.apiClaude) return [5, JSON.stringify({ spenta: true })]
-  return efficaci.apiClaude
+  // Revisione F13a, rilievo 3: i tetti della catena e della dirigente, anche questi riletti dal config.
+  return { ...efficaci.apiClaude, tettoCatena: efficaci.modoLavoro.pipeline.tettoUsd, tettoDirigente: efficaci.modoLavoro.dirigente.tettoUsd }
 }
 
 // --- lock della macchina (§5, §8, §10-13) --------------------------------------------------------------------
@@ -521,11 +528,32 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
       if (blocchi.length) return [6, JSON.stringify({ fonti: blocchi })]
       const api = regoleApi(dir, dm, input)
       if (Array.isArray(api)) return api
+      // Revisione F13a, rilievo 3: una chip di catena o dell'albero di una dirigente impegna al più il residuo del suo
+      // gruppo (tetto del config meno quanto già prenotato o contato), sotto questo mutex: il processo riceve quel limite
+      // come `--max-budget-usd` e il consuntivo libera la differenza. I gruppi vengono dal record, i tetti dal config.
+      const gruppi = [
+        ...(a.catena && typeof a.catena.id === 'string' && api.tettoCatena !== undefined ? [{ chiave: `catena:${a.catena.id}`, tetto: api.tettoCatena }] : []),
+        ...((a.padre || a.ruolo === 'dirigente') && api.tettoDirigente !== undefined ? [{ chiave: `dirigente:${a.padre ?? id}`, tetto: api.tettoDirigente }] : []),
+      ]
+      if (gruppi.some(g => !GRUPPO_RE.test(g.chiave))) return [2, '']
+      let tetto = api.tetto
+      try {
+        const voci = leggiSpesa(dm).voci
+        for (const g of gruppi) {
+          const speso = spesoNelGruppo(voci, g.chiave)
+          // Al centesimo per difetto, con margine per la virgola mobile (1 - 0,9 non è 0,1 esatto).
+          const residuo = Math.floor((g.tetto - speso) * 100 + 1e-6) / 100
+          if (residuo < 0.01) return [5, JSON.stringify({ gruppo: g.chiave.split(':')[0], speso: Math.round(speso * 100) / 100, tettoGruppo: g.tetto })]
+          tetto = Math.min(tetto, residuo)
+        }
+      } catch {
+        return [5, JSON.stringify({ registro: 'non valido' })]
+      }
       // Il tetto che conta è quello efficace: anche `--max-budget-usd` del supervisore lo riceve da qui.
-      input = { ...input, tetto: api.tetto, budget: api.budgetUsd }
+      input = { ...input, tetto, budget: api.budgetUsd }
       let prenotata
       try {
-        prenotata = prenotaSpesa(dm, tentativo, input.mese, api.tetto, api.budgetUsd, input.repo, api.limiteProgettoUsd)
+        prenotata = prenotaSpesa(dm, tentativo, input.mese, tetto, api.budgetUsd, input.repo, api.limiteProgettoUsd, gruppi.map(g => g.chiave))
       } catch {
         return [5, JSON.stringify({ registro: 'non valido' })]
       }

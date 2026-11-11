@@ -1228,7 +1228,7 @@ const fr: Dizionario = {
   "stato.attesaFiglie": "Attend ses chips enfants",
   // F13.2: modo dirigente nel pannello
   "dir.riga": "Directrice · enfants {n}/{max} · replans {r}/{maxR}",
-  "dir.costo": "coût des enfants ${osservato} observé, {ignote} inconnus",
+  "dir.costo": "coût des enfants : {costi}",
   "dir.fable": "Fable peut facturer un usage supplémentaire si votre forfait le prévoit",
   "dir.figlia": "Enfant de {titolo} : en garde les contraintes",
   "az.dirigenteOpus": "Directrice sur Opus",
@@ -1262,6 +1262,12 @@ const fr: Dizionario = {
   "modo.catenaGiri": "Rondes de relecture",
   "modo.catenaRuoli": "Rédacteur {scrittore} : {cs} · relecteur {revisore} : {cr} · applicateur Claude : forfait",
   "cat.scrittoreAssente": "le rédacteur {provider} n'est pas disponible dans cette version",
+  "v.destinazionePadre": "{destinazione} n'est pas là où tourne sa chip directrice : un enfant ne tourne que là",
+  "v.dirigenteTetto": "l'arbre de la chip directrice a atteint son plafond de ${tetto} (dépensé ${speso}) : aucune autre de ses chips ne démarre",
+  "v.catenaApi": "une étape de chaîne ne tourne pas sur la voie API : le mandat perdrait les références de la chaîne et la remise de l'artefact",
+  "v.catenaCloud": "une étape de chaîne ne tourne pas dans le cloud : les artefacts sont des fichiers locaux que le cloud ne lit pas",
+  "v.dirigenteModello": "la chip directrice tourne sur {modello}, que ce projet n'admet pas : choisissez «Directrice sur Opus» ou admettez-le",
+  "cat.costiCatena": "coût de la chaîne : {costi}",
   // ‹fine›
 }
 

@@ -1228,7 +1228,7 @@ const it: Dizionario = {
   "stato.attesaFiglie": "Aspetta le sue figlie",
   // F13.2: modo dirigente nel pannello
   "dir.riga": "Dirigente · figlie {n}/{max} · ripiani {r}/{maxR}",
-  "dir.costo": "costo delle figlie ${osservato} osservato, {ignote} ignote",
+  "dir.costo": "costo delle figlie: {costi}",
   "dir.fable": "Fable può addebitare uso extra dove il piano lo prevede",
   "dir.figlia": "Figlia di {titolo}: ne tiene i vincoli",
   "az.dirigenteOpus": "Dirigente su Opus",
@@ -1262,6 +1262,12 @@ const it: Dizionario = {
   "modo.catenaGiri": "Giri di revisione",
   "modo.catenaRuoli": "Scrittore {scrittore}: {cs} · revisore {revisore}: {cr} · applicatore Claude: piano",
   "cat.scrittoreAssente": "lo scrittore {provider} non è disponibile in questa versione",
+  "v.destinazionePadre": "{destinazione} non è dove gira la sua chip dirigente: una figlia gira solo lì",
+  "v.dirigenteTetto": "l'albero della chip dirigente ha raggiunto il tetto di ${tetto} (spesi ${speso}): nessun'altra sua chip parte",
+  "v.catenaApi": "un passo di catena non gira sulla corsia API: il mandato perderebbe i riferimenti della catena e la consegna dell'artefatto",
+  "v.catenaCloud": "un passo di catena non gira nel cloud: gli artefatti sono file locali che il cloud non legge",
+  "v.dirigenteModello": "la chip dirigente gira su {modello}, che questo progetto non ammette: scegli «Dirigente su Opus» o ammettilo",
+  "cat.costiCatena": "costo della catena: {costi}",
   // ‹fine›
 }
 

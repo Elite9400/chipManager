@@ -1230,7 +1230,7 @@ const en = {
   "stato.attesaFiglie": "Waiting for its child chips",
   // F13.2: modo dirigente nel pannello
   "dir.riga": "Director · children {n}/{max} · re-plans {r}/{maxR}",
-  "dir.costo": "children's cost ${osservato} observed, {ignote} unknown",
+  "dir.costo": "children's cost: {costi}",
   "dir.fable": "Fable may bill extra usage where your plan requires it",
   "dir.figlia": "Child of {titolo}: keeps its constraints",
   "az.dirigenteOpus": "Run director on Opus",
@@ -1264,6 +1264,12 @@ const en = {
   "modo.catenaGiri": "Review rounds",
   "modo.catenaRuoli": "Writer {scrittore}: {cs} · reviewer {revisore}: {cr} · applier Claude: plan",
   "cat.scrittoreAssente": "the writer {provider} is not available in this version",
+  "v.destinazionePadre": "{destinazione} is not where its director chip runs: a child runs only there",
+  "v.dirigenteTetto": "the director chip's tree reached its ${tetto} cap (spent ${speso}): no further chip of it starts",
+  "v.catenaApi": "a chain step does not run on the API lane: its mandate would lose the chain's references and the artefact delivery",
+  "v.catenaCloud": "a chain step does not run in the cloud: the artefacts are local files the cloud cannot read",
+  "v.dirigenteModello": "the director chip runs on {modello}, which this project does not allow: choose «Run director on Opus» or allow it",
+  "cat.costiCatena": "chain cost: {costi}",
   // ‹fine›
 } satisfies Record<string, Voce>
 

@@ -58,14 +58,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   recognised but not enabled. The doctor warns when Claude Code is older than 2.1.321, which Fable 5.2 needs.
 - **Director mode** (Settings › Work mode): from R3 by default, a suggested chip becomes a director on Fable 5.2 that
   plans and splits the work into child chips with `suggerisci_azione` and `padre` (its id and attempt token). Depth is
-  one; at most 8 children and 2 re-plans by default, enforced by the helper and the panel. Children copy the director's
-  constraints from its record (sensitivity, R4/R5 floor, LAN data, allowed providers), get the lane's worker model
-  (Haiku, Sonnet or Opus) unless chosen, and each still needs the owner's start. A director waiting for its children
+  one; at most 8 children and 2 re-plans by default, enforced by the helper and the panel. Children take the
+  director's constraints as they are at each child's creation and start, only ever stricter (sensitivity, R4/R5 floor,
+  LAN data, allowed providers, the destination it runs in), get the lane's worker model (Haiku, Sonnet or Opus) unless
+  chosen, and each still needs the owner's start. A director waiting for its children
   (`attesa-figli`) does not count against sessions started together. A director above the starting session's model
   runs from the CLI lane on the subscription; a key, token, helper or gateway in any settings source (managed policy
-  included), in the environment, or an unreadable source, stops it with the reason and both ways to start it. Opus is
-  only the owner's explicit «Run director on Opus». Discarding a director discards its children that never started.
-  The card shows children, re-plans, the children's observed and unknown cost, and that Fable may bill extra usage.
+  included), in the environment, or an unreadable source, stops it with the reason and both ways to start it; the
+  sources are checked again in the actual worktree right before the process starts. Opus is only the owner's explicit
+  «Run director on Opus»: a director whose model the project does not allow waits for that choice. An optional money
+  cap per director tree (`dirigente.tettoUsd`) reserves on the API lane at most what is left. Discarding a director
+  discards its children that never started. The card shows children, re-plans, the children's cost by kind, and that
+  Fable may bill extra usage.
 - **Work chains** (Settings › Work mode): `suggerisci_azione` with `catena: true` turns a goal into ordinary chips:
   writer → reviewer → rewrite, for 1–3 review rounds, then an applier. Each step starts with the owner's approval once
   the previous one has delivered an artefact (`dopoConsegna`); the helper writes artefacts as versioned files under
@@ -73,8 +77,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   feedback on vN; for a writer outside Claude the whole text passes the LAN-data filter and the text limit, and the
   step stops with the reason when it does not. Only the applier, always Claude, changes the repository; a Codex reviewer
   works read-only. Presets Director + local writer, Economy and Quality; the cost of each role (plan, estimated,
-  observed, unknown, free) and an optional money cap per chain. Writers from the new provider registry plug in at one
-  point; until then the chain refuses them with the reason. Sensitive work never goes into a chain.
+  observed, unknown, free) and an optional money cap per chain, reserved at most as what is left. Chain steps run
+  locally only, not on the API lane or in the cloud. Writers from the new provider registry plug in at one point;
+  until then the chain refuses them with the reason. Sensitive work never goes into a chain.
 - **Work mode** (Settings, Account group): default effort per lane, the Codex sandbox when Codex executes, sessions
   started together (1–8, over the host option), a suggested auditor in the Recommended preset, and cross review on
   R0–R2. Set for all projects, with a per-project override field by field; presets Recommended, Economy and Quality.
