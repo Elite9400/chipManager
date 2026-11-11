@@ -1482,7 +1482,8 @@ test('R11: il comando sessioni scrive l\'istantanea versionata e atomica accanto
 // --- F6.2: corsia «API Claude» (nessuna chiamata a pagamento: processi finti) -------------------------------------
 // Ogni chiamata della corsia API prende mutex propri di questo processo (lock della macchina e accesso): nessuna contesa
 // con un pannello vero o con un'altra prova sulla stessa macchina. Solo qui; la produzione usa i nomi di sempre.
-const ISOLA = { mutexApi: `prova:api-${process.pid}`, mutexAccesso: `prova:accesso-${process.pid}` }
+// `mese`: le prove del registro hanno il mese fisso (l'helper lo calcola da sé fuori dalle prove, audit 2.2.0, punto 4).
+const ISOLA = { mutexApi: `prova:api-${process.pid}`, mutexAccesso: `prova:accesso-${process.pid}`, mese: '2026-11' }
 const API_VERA = require('./api-claude.cjs')
 const API = new Proxy(API_VERA, {
   get(m, k) {
@@ -1533,7 +1534,7 @@ const configApi = (account = { apiClaude: { budgetUsd: 5, tetto: 2 } }, progetto
 // Budget e tetto che manda il pannello non contano (li decide il config): qui volutamente diversi.
 const ingressoApi = (root, config = configApi(), repo = PROGETTO_PROVA) =>
   ({ root, prompt: 'Lavoro di prova.', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', tetto: 9, budget: 999, mese: '2026-11', chiave: CHIAVE_PROVA, config, repo })
-const recordApi = (dir, id, tentativo) => fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ stato: 'in-avvio', lanciatore: 'api-claude', tentativo }))
+const recordApi = (dir, id, tentativo, repo = PROGETTO_PROVA) => fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ stato: 'in-avvio', lanciatore: 'api-claude', tentativo, repo }))
 const fontiPulite = dir => ['utente', 'progetto', 'locale', 'gestite'].map(nome => ({ nome, file: path.join(dir, `${nome}.json`) }))
 const supervisoreFinto = stdin => () => {
   const p = new Emettitore()
@@ -2395,7 +2396,7 @@ test('F10 registro unico: due progetti sommano la spesa contro un solo budget; i
   const deps = { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }
   const lancia = async (repo, n) => {
     const dir = tmp()
-    recordApi(dir, `a-due0000${n}`, `az-due000${n}`)
+    recordApi(dir, `a-due0000${n}`, `az-due000${n}`, repo)
     const r = await API.lanciaApi(dir, `a-due0000${n}`, `az-due000${n}`, ingressoApi(root, config, repo), deps)
     fs.rmSync(API.fileLock(dm), { force: true })
     return [r[0], r[1] ? JSON.parse(r[1]) : '']
@@ -3981,10 +3982,8 @@ test('F13.7 TokenEconomizer: prerequisiti, clone allo sha approvato, manifest co
   assert.deepStrictEqual(m.plugins, [{ name: 'tokeneconomizer', source: './plugin', defaultEnabled: false }])
   assert.deepStrictEqual(b.comandi.filter(c => c.startsWith('claude')).slice(0, 3), ['claude plugin marketplace add <dati>/skill/tokeneconomizer --scope user',
     'claude plugin install tokeneconomizer@tokeneconomizer --scope user', 'claude plugin disable tokeneconomizer@tokeneconomizer --scope user'])
-  const te = b.comandi.filter(c => c.includes('te_bootstrap.py')).map(c => c.replace(/^\S+ \S+te_bootstrap\.py cli /, ''))
-  assert.deepStrictEqual(te, ['config set toolprune=propose --global', 'config set loopguard=off --global', 'config', '--host claude status'])
-  // La verifica (marketplace, commit del clone, copia caricata dal clone, impronta) viene prima di ogni comando di te.
-  assert.ok(b.comandi.indexOf('claude plugin list --json') < b.comandi.findIndex(c => c.includes('te_bootstrap.py')))
+  // Audit 2.2.0, punto 2: al primo consenso nessun codice di te (config e status passano ad abilita).
+  assert.deepStrictEqual(b.comandi.filter(c => c.includes('te_bootstrap.py')), [])
   const rec = JSON.parse(fs.readFileSync(S.fileRecord(b.dir), 'utf8')).voci.tokeneconomizer
   assert.deepStrictEqual([rec.sha, rec.impronta, rec.abilitato], [SHA_A, ap.impronta, false])
 })
@@ -3992,9 +3991,8 @@ test('F13.7 TokenEconomizer: prerequisiti, clone allo sha approvato, manifest co
 test('F13.7 TokenEconomizer: ogni passo che fallisce lascia spento con il motivo; nessun codice di te gira se la copia installata non è la nostra', () => {
   const S = require('./skill-installa.cjs')
   const altrove = { tokeneconomizer: { source: { source: 'directory', path: '/altrove/TokenEconomizer' } } }
+  // Config e status falliti si provano in abilita (audit 2.2.0, punto 2).
   for (const [opz, motivo, installato] of [
-    [{ te: a => (a.length === 1 && a[0] === 'config' ? { status: 0, stdout: 'toolprune = auto\nloopguard = off\n' } : { status: 0, stdout: '' }) }, 'skill.err.config', true],
-    [{ te: a => (a.includes('status') ? { status: 1, stdout: '' } : a.length === 1 ? { status: 0, stdout: 'toolprune = propose\nloopguard = off' } : { status: 0, stdout: '' }) }, 'skill.err.status', true],
     [{ percorsoInstallato: '/altrove/TokenEconomizer/plugin' }, 'skill.err.percorso', true],
     [{ marketplace: altrove }, 'skill.err.marketplace', false],
     [{ addFallisce: true }, 'skill.err.marketplace', false],
@@ -4430,7 +4428,7 @@ test('Revisione F13a, rilievo 3: sulla corsia API una chip di catena o di una di
   const config = configApi({ apiClaude: { budgetUsd: 50, tetto: 5 }, modoLavoro: { pipeline: { tettoUsd: 1 }, dirigente: { tettoUsd: 2 } } })
   const registro = (dm, voci) => fs.writeFileSync(API.fileSpesa(dm), JSON.stringify({ v: 1, voci }))
   const voce = (gruppi, costo) => ({ progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.5, stato: 'contato', costo, gruppi })
-  const passo = (id, t, extra) => fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ stato: 'in-avvio', lanciatore: 'api-claude', tentativo: t, ...extra }))
+  const passo = (id, t, extra) => fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ stato: 'in-avvio', lanciatore: 'api-claude', tentativo: t, repo: PROGETTO_PROVA, ...extra }))
   const avvia = (dm, id, t) => API.lanciaApi(dir, id, t, ingressoApi(root, config), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto(stdin) })
   // Catena con tetto 1 $ e 0,90 $ già contati: il passo parte col limite 0,10 $ (non coi 5 $ del tetto API).
   const dm1 = tmp()
@@ -4476,7 +4474,7 @@ const spesaGiro2 = () => {
   const dir = tmp()
   const root = tmp()
   const stdin = []
-  const passo = (id, t, extra) => fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ stato: 'in-avvio', lanciatore: 'api-claude', tentativo: t, ...extra }))
+  const passo = (id, t, extra) => fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ stato: 'in-avvio', lanciatore: 'api-claude', tentativo: t, repo: PROGETTO_PROVA, ...extra }))
   const avvia = (dm, id, t, config) => API.lanciaApi(dir, id, t, ingressoApi(root, config), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto(stdin) })
   const registro = (dm, voci) => fs.writeFileSync(API.fileSpesa(dm), JSON.stringify({ v: 1, voci }))
   return { dir, stdin, passo, avvia, registro }
@@ -4663,4 +4661,107 @@ test('Revisione F13a, giro 4, punto 1: dopo un recupero il consuntivo vero alza 
   const v = API.leggiSpesa(dm).voci
   assert.deepStrictEqual([v['az-rec00001'].riportato, v['az-rec00001'].costo, v['az-chi00001'].costo, v['az-chi00001'].riportato], [0.4, null, 0.1, undefined])
   assert.strictEqual(Math.round(API.spesoNelMese(v, '2026-11') * 100) / 100, 0.5)
+})
+
+// --- Audit di sicurezza 2.2.0, punti 1 e 2 -----------------------------------------------------------------------------
+
+test('Audit 2.2.0, punto 1: anteprima e impronta coprono server MCP e LSP, monitor e moduli; un campo o un componente che non si legge blocca', () => {
+  const S = require('./skill-installa.cjs')
+  const MCP = JSON.stringify({ calc: { command: 'calc.exe', args: ['/x'] } })
+  const prep = file => { const b = banco({ file }); return S.prepara('ponytail', b.dir, b.deps) }
+  const base = prep(FILE_PONY)
+  // Il caso dell'audit: un .mcp.json che avvia calc.exe compare nell'anteprima e cambia l'impronta.
+  const conMcp = prep({ ...FILE_PONY, '.mcp.json': MCP })
+  assert.deepStrictEqual(conMcp.hook, [...base.hook, '.mcp.json · MCP calc: calc.exe /x'])
+  assert.notStrictEqual(conMcp.impronta, base.impronta)
+  // Dichiarati nel manifest: in linea, da file, LSP, monitor, e un MCP remoto (indirizzo).
+  const manifest = x => ({ ...FILE_PONY, '.claude-plugin/plugin.json': JSON.stringify({ name: 'ponytail', hooks: './hooks/hooks.json', ...x }) })
+  assert.deepStrictEqual(prep({ ...manifest({ mcpServers: { web: { type: 'http', url: 'https://esempio.test/mcp' } }, lspServers: './lsp.json', monitors: [{ name: 'log', command: 'tail -f x' }] }),
+    'lsp.json': JSON.stringify({ ts: { command: 'tsserver', args: ['--stdio'] } }) }).hook,
+  [...base.hook, 'plugin.json · MCP web: https://esempio.test/mcp', 'lsp.json · LSP ts: tsserver --stdio', 'plugin.json · monitor log: tail -f x'])
+  assert.deepStrictEqual(prep({ ...manifest({ mcpServers: './server.json' }), 'server.json': JSON.stringify({ mcpServers: { s: { command: 'node', args: ['s.js'] } } }) }).hook,
+    [...base.hook, 'server.json · MCP s: node s.js'])
+  // Un modulo di mod dichiarato in un file di hook: in anteprima, e il suo contenuto è nell'impronta.
+  const mod = t => ({ ...FILE_PONY, 'hooks/hooks.json': JSON.stringify({ hooks: {}, modules: ['./band/register.tsx'] }), 'hooks/band/register.tsx': t })
+  const m1 = prep(mod('export default () => {}'))
+  assert.deepStrictEqual(m1.hook, ['hooks/hooks.json · module: hooks/band/register.tsx'])
+  assert.notStrictEqual(m1.impronta, prep(mod('export default () => { require("child_process") }')).impronta)
+  // Fail closed: campo sconosciuto, server senza comando, argomenti non testo, modulo assente o fuori, chiave ignota nel file di hook.
+  for (const file of [manifest({ qualcosa: './x.json' }), { ...FILE_PONY, '.mcp.json': JSON.stringify({ s: { env: {} } }) },
+    { ...FILE_PONY, '.lsp.json': JSON.stringify({ s: { command: 'x', args: [1] } }) }, { ...FILE_PONY, '.mcp.json': '{rotto' },
+    { ...FILE_PONY, 'hooks/hooks.json': JSON.stringify({ modules: ['./manca.tsx'] }) }, { ...FILE_PONY, 'hooks/hooks.json': JSON.stringify({ modules: ['../../fuori.tsx'] }) },
+    { ...FILE_PONY, 'hooks/hooks.json': JSON.stringify({ hooks: {}, altro: 1 }) }, manifest({ monitors: [{ name: 'x' }] })]) {
+    const b = banco({ file })
+    assert.throws(() => S.prepara('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.hook', JSON.stringify(file).slice(0, 120))
+  }
+  // Un .mcp.json aggiunto alla copia installata dopo l'approvazione: l'installazione si ferma e resta spento.
+  const x = banco({ copia: { ...FILE_PONY, '.mcp.json': MCP } })
+  assert.throws(() => S.installa('ponytail', approvato(S, x, 'ponytail'), x.dir, x.deps), e => e.motivo === 'skill.err.hookCambiati')
+  assert.strictEqual(x.stato['ponytail@chipmanager-base'].enabled, false)
+})
+
+test('Audit 2.2.0, punto 2: TokenEconomizer non esegue codice al primo consenso; config e status girano in abilita, dopo le verifiche e prima dell\'enable', () => {
+  const S = require('./skill-installa.cjs')
+  const b = banco()
+  S.installa('tokeneconomizer', approvato(S, b, 'tokeneconomizer'), b.dir, b.deps)
+  assert.deepStrictEqual(b.comandi.filter(c => c.includes('te_bootstrap.py')), [])
+  b.comandi.length = 0
+  S.abilita('tokeneconomizer', b.dir, b.deps)
+  const te = b.comandi.filter(c => c.includes('te_bootstrap.py')).map(c => c.replace(/^\S+ \S+te_bootstrap\.py cli /, ''))
+  assert.deepStrictEqual(te, ['config set toolprune=propose --global', 'config set loopguard=off --global', 'config', '--host claude status'])
+  const primo = b.comandi.findIndex(c => c.includes('te_bootstrap.py'))
+  assert.ok(b.comandi.indexOf('claude plugin list --json') < primo)
+  assert.ok(primo < b.comandi.indexOf('claude plugin enable tokeneconomizer@tokeneconomizer --scope user'))
+  assert.strictEqual(b.stato['tokeneconomizer@tokeneconomizer'].enabled, true)
+  // Configurazione non riletta o status fallito: resta spento, consenso non registrato.
+  for (const [te, motivo] of [
+    [a => (a.length === 1 && a[0] === 'config' ? { status: 0, stdout: 'toolprune = auto\nloopguard = off\n' } : { status: 0, stdout: '' }), 'skill.err.config'],
+    [a => (a.includes('status') ? { status: 1, stdout: '' } : a.length === 1 ? { status: 0, stdout: 'toolprune = propose\nloopguard = off' } : { status: 0, stdout: '' }), 'skill.err.status'],
+  ]) {
+    const x = banco({ te })
+    S.installa('tokeneconomizer', approvato(S, x, 'tokeneconomizer'), x.dir, x.deps)
+    assert.throws(() => S.abilita('tokeneconomizer', x.dir, x.deps), e => e.motivo === motivo, motivo)
+    assert.strictEqual(x.stato['tokeneconomizer@tokeneconomizer'].enabled, false, motivo)
+    assert.strictEqual(JSON.parse(fs.readFileSync(S.fileRecord(x.dir), 'utf8')).voci.tokeneconomizer.abilitato, false, motivo)
+  }
+})
+
+test('Audit 2.2.0, punto 4: il mese del budget lo calcola l\'helper in ora locale; il progetto deve essere quello del record', async () => {
+  const dm = tmp()
+  const root = tmp()
+  const config = configApi({ apiClaude: { budgetUsd: 5, tetto: 2 } }, {}, { 'owner/b': { restrizioni: { apiLimiteMeseUsd: 50 } } })
+  // 1 febbraio 2027, 00:30 ora locale: in UTC (fuso dell'Europa centrale) è ancora gennaio.
+  const adesso = () => new Date(2027, 1, 1, 0, 30).getTime()
+  const deps = { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]), mese: undefined, adesso }
+  const dir = tmp()
+  recordApi(dir, 'a-mese0001', 'az-mese001')
+  assert.deepStrictEqual(await API.lanciaApi(dir, 'a-mese0001', 'az-mese001', { ...ingressoApi(root, config), mese: '1999-01' }, deps), [0, ''])
+  assert.strictEqual(API.leggiSpesa(dm).voci['az-mese001'].mese, '2027-02')
+  fs.rmSync(API.fileLock(dm), { force: true })
+  // Un repo diverso dal record (per scegliere un limite di progetto più largo) o un record senza repo: niente prenotazione.
+  for (const [n, registrato] of [[2, PROGETTO_PROVA], [3, null]]) {
+    recordApi(dir, `a-mese000${n}`, `az-mese00${n}`, registrato)
+    assert.deepStrictEqual(await API.lanciaApi(dir, `a-mese000${n}`, `az-mese00${n}`, ingressoApi(root, config, 'owner/b'), deps), [2, ''])
+    assert.strictEqual(API.leggiSpesa(dm).voci[`az-mese00${n}`], undefined)
+    assert.ok(!fs.existsSync(API.fileLock(dm)))
+  }
+})
+
+test('Audit 2.2.0, punto 6: il progetto può solo abbassare i tetti di dirigente e catena dell\'account (minimo), uguale nel pannello e nell\'helper', () => {
+  const R = require('./regole.cjs')
+  const tetti = (catena, dirigente) => ({ pipeline: { tettoUsd: catena }, dirigente: { tettoUsd: dirigente } })
+  // [account, progetto] → [catena, dirigente] attesi.
+  const casi = [
+    [tetti(2, 3), tetti(50, 90), [2, 3]],
+    [tetti(2, 3), tetti(1, 0.5), [1, 0.5]],
+    [tetti(2, 3), undefined, [2, 3]],
+    [undefined, tetti(4, 5), [4, 5]],
+    [undefined, undefined, [undefined, undefined]],
+  ]
+  const ts = conLogica(`console.log(JSON.stringify(ingresso.map(([a, p]) => nuova.risorseDa(p === null ? {} : { modoLavoro: p }, a === null ? undefined : { modoLavoro: a }).modoLavoro)))`,
+    casi.map(([a, p]) => [a ?? null, p ?? null]))
+  casi.forEach(([a, p, atteso], i) => {
+    const cjs = R.regoleEfficaci(a === undefined ? undefined : { modoLavoro: a }, p === undefined ? {} : { modoLavoro: p }).modoLavoro
+    for (const m of [cjs, ts[i]]) assert.deepStrictEqual([m.pipeline.tettoUsd, m.dirigente.tettoUsd], atteso, JSON.stringify([a, p]))
+  })
 })

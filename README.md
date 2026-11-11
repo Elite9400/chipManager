@@ -309,7 +309,8 @@ Settings come in two layers.
   choices, and a chip that names it does not start.
 - **A project can only be stricter.** It may have lower thresholds, a lower API month limit or a lower cap per run;
   it can never loosen the account, and a looser value is refused with the reason. Settings shows a project value as
-  «Stricter in owner/repo», with **Remove restriction**.
+  «Stricter in owner/repo», with **Remove restriction**. The dollar caps of chains and director trees follow the same
+  rule: a project value above the account's has no effect (the lower one counts).
 - **One API spend log for the account.** Every run is recorded with its project. A run starts only if its cap fits
   both in what is left of the account's monthly budget and in the project's month limit, if it has one. The **Load**
   view shows both: "3.20 USD this project · 7.80 USD of 20 USD account".

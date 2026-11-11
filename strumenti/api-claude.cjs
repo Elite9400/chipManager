@@ -489,7 +489,7 @@ async function terminaApi(dm, deps = {}) {
 
 const ingressoValido = input =>
   d.parametriValidi(input) && typeof input.tetto === 'number' && input.tetto >= 0.01 && input.tetto <= 1000 &&
-  typeof input.budget === 'number' && input.budget > 0 && /^\d{4}-\d{2}$/.test(input.mese ?? '') &&
+  typeof input.budget === 'number' && input.budget > 0 &&
   // F10: il config da rileggere e il progetto della voce di spesa.
   typeof input.config === 'string' && path.isAbsolute(input.config) && /\.json$/i.test(input.config) && input.config.length <= 1000 &&
   typeof input.repo === 'string' && input.repo.length > 0 && input.repo.length <= 400 &&
@@ -573,6 +573,12 @@ function worktreeInvariato(cwd, base, deps = {}) {
 const advisorNonDisponibile = stderr =>
   /\/model fable|consent/i.test(stderr) ? 'consenso' : /availableModels/i.test(stderr) ? 'escluso' : /advisor/i.test(stderr) ? 'rifiutato' : undefined
 
+/** Il mese (AAAA-MM) di un istante, in ora locale. */
+const meseLocale = t => {
+  const x = new Date(t)
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`
+}
+
 /** Prenota (lock della macchina e spesa) PRIMA del processo; poi avvia il supervisore staccato, con la chiave su stdin. */
 async function lanciaApi(dir, id, tentativo, input, deps = {}) {
   if (!d.idValido(id) || !d.tentativoValido(tentativo) || !ingressoValido(input)) return [2, '']
@@ -586,6 +592,8 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
   const r = await d.conMutex(d.MUTEX_AZIONI(dir), 8000, async () => {
     const a = JSON.parse(fs.readFileSync(path.join(dir, `${id}.json`), 'utf8'))
     if (a.stato !== 'in-avvio' || a.lanciatore !== 'api-claude' || a.tentativo !== tentativo) return [4, '']
+    // Audit 2.2.0, punto 4: il progetto della voce di spesa (e del suo limite) è quello del record, non un valore libero.
+    if (typeof a.repo !== 'string' || a.repo !== input.repo) return [2, '']
     const file = d.fileEsecuzione(dir, tentativo)
     if (fs.existsSync(file)) return [4, '']
     const m = await d.conMutex(mutexApi(deps), 8000, async () => {
@@ -628,8 +636,9 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
       } catch {
         return [5, JSON.stringify({ registro: 'non valido' })]
       }
-      // Il tetto che conta è quello efficace: anche `--max-budget-usd` del supervisore lo riceve da qui.
-      input = { ...input, tetto, budget: api.budgetUsd }
+      // Il tetto che conta è quello efficace: anche `--max-budget-usd` del supervisore lo riceve da qui. Audit 2.2.0,
+      // punto 4: il mese del budget lo calcola l'helper (ora locale), mai chi chiama.
+      input = { ...input, tetto, budget: api.budgetUsd, mese: deps.mese ?? meseLocale((deps.adesso ?? Date.now)()) }
       let prenotata
       try {
         prenotata = prenotaSpesa(dm, tentativo, input.mese, tetto, api.budgetUsd, input.repo, api.limiteProgettoUsd, gruppi.map(g => g.chiave), path.resolve(dir))

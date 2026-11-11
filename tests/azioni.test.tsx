@@ -4560,3 +4560,72 @@ test('Revisione F13a, giro 6: termine aggiunto dopo la conferma e ultima lettura
     }
   await ui.unmount()
 })
+
+// --- Audit di sicurezza 2.2.0 ------------------------------------------------------------------------------------------
+
+test('Audit 2.2.0, punto 2: per TokenEconomizer la conferma d\'installazione e il consenso all\'attivazione dicono che il suo codice gira solo all\'attivazione', async ($, on) => {
+  let elenco: object[] = []
+  const amb = ambiente(on, {
+    fonte: (cmd, input) => {
+      if (cmd === 'claude plugin list --json') return elenco
+      if (cmd === 'skill-prepara') return { id: input.id, url: 'https://github.com/microsoft/TokenEconomizer.git', sha: 'c'.repeat(40), impronta: 'e'.repeat(64), hook: [] }
+      if (cmd === 'skill-pulisci') return { tolte: 1 }
+      return undefined
+    },
+  })
+  mock.clock(on)
+  const domande: string[] = []
+  conferme(on, testo => (domande.push(testo), 'Annulla'))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
+  await ui.press({ key: 'skill-installa-tokeneconomizer' })
+  await finche(() => domande.length === 1)
+  elenco = [{ id: 'tokeneconomizer@tokeneconomizer', scope: 'user', enabled: false }]
+  await ui.press({ key: 'skill-rileggi' })
+  await ui.press({ key: 'skill-cambia-tokeneconomizer' })
+  await finche(() => domande.length === 2)
+  for (const d of domande) for (const parte of ["All'installazione non gira nessun suo codice", 'toolprune=propose']) expect([parte, d.includes(parte)]).toEqual([parte, true])
+  expect(amb.processi.filter(p => p.argv[0] === 'claude' && p.argv[2] !== 'list')).toEqual([])
+  await ui.unmount()
+})
+
+test('Audit 2.2.0, punto 3: modelli ed effort di routing.json fuori forma non si leggono (lette false con il campo) e nessun valore arriva ai mandati', () => {
+  // Gli id reali passano: quelli dell'esempio e del README (Fable 5.2, Codex, `motore:codex`).
+  expect(regoleDa(ROUTING, 'routing.json').lette).toBe(true)
+  const readme = { ...ROUTING, modelli_ammessi: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-2', 'gpt-6.1-sol', 'gpt-6-astra'],
+    revisione: { revisori_ammessi_per_autore: { 'claude-opus-5-5': ['claude-fable-5-2', 'motore:codex'], 'claude-fable-5-2': ['claude-opus-5-5'] } },
+    corsia_codex: { ...ROUTING.corsia_codex, effort: { R1: 'high', R2: 'xhigh', R3: 'xhigh', revisione: 'xhigh' } } }
+  expect(regoleDa(readme, 'routing.json').lette).toBe(true)
+  const cc = ROUTING.corsia_codex
+  for (const [json, campo] of [
+    [{ ...ROUTING, modelli_ammessi: [...ROUTING.modelli_ammessi, 'gpt-6 -c x=1'] }, 'modelli_ammessi'],
+    [{ ...ROUTING, corsia_codex: { ...cc, modelli: ['gpt-6.1-sol', 'gpt;calc'] } }, 'corsia_codex.modelli'],
+    [{ ...ROUTING, revisione: { revisori_ammessi_per_autore: { 'claude-opus-5-5': ['$(calc)'] } } }, 'revisione.revisori_ammessi_per_autore'],
+    [{ ...ROUTING, corsia_codex: { ...cc, rivisto_da: { ...cc.rivisto_da, R1: 'claude`x`' } } }, 'corsia_codex.rivisto_da'],
+    [{ ...ROUTING, tetto_per_modello: { 'claude-fable-5-1': 'high" && calc && "' } }, 'tetto_per_modello'],
+    [{ ...ROUTING, effort_ammessi: ['low', 'extreme'] }, 'effort_ammessi'],
+    [{ ...ROUTING, corsia_codex: { ...cc, effort: { ...cc.effort, revisione: 'xhigh" -s danger-full-access -c x="' } } }, 'corsia_codex.effort'],
+    [{ ...ROUTING, modelli_ammessi: [...ROUTING.modelli_ammessi, 'x'.repeat(81)] }, 'modelli_ammessi'],
+  ] as const) {
+    const r = regoleDa(json, 'routing.json')
+    expect([campo, r.lette, r.motivo]).toEqual([campo, false, { k: 'regole.valoreNonValido', p: { campo } }])
+    expect(JSON.stringify([r.modelli, r.effort, r.tetto, r.corsiaCodex, r.revisori])).toBe(JSON.stringify([REGOLE_DEFAULT.modelli, REGOLE_DEFAULT.effort, REGOLE_DEFAULT.tetto, REGOLE_DEFAULT.corsiaCodex, REGOLE_DEFAULT.revisori]))
+  }
+})
+
+test('Audit 2.2.0, punto 5: sotto un tetto in dollari di catena o di dirigente un fornitore compatibile remoto (costo ignoto) non parte; uno locale sì', () => {
+  const modo = RC.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro
+  const con = (catena?: number, dirigente?: number): Regole => ({ ...RC, risorse: { ...RC.risorse, modoLavoro: { ...modo,
+    pipeline: { ...modo.pipeline, ...(catena !== undefined && { tettoUsd: catena }) }, dirigente: { ...modo.dirigente, ...(dirigente !== undefined && { tettoUsd: dirigente }) } } } })
+  const passo = { catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' as const } }
+  const remoto = (extra: Partial<Azione> = {}) => CMP({ provider: 'mistral', modello: 'mistral-small-latest', ...extra })
+  const blocca = (a: Azione, r: Regole) => violazioni(a, r, [a]).find(m => m.k === 'v.costoIgnotoTetto')
+  expect(blocca(remoto(passo), con(1))).toEqual({ k: 'v.costoIgnotoTetto', p: { provider: 'mistral' } })
+  expect(blocca(remoto({ padre: 'a-dir00001' }), con(undefined, 2))).toEqual({ k: 'v.costoIgnotoTetto', p: { provider: 'mistral' } })
+  // Senza tetto, fuori dal gruppo del tetto, o con un server locale (gratuito): nessun blocco.
+  for (const [a, r] of [[remoto(passo), con()], [remoto(passo), con(undefined, 2)], [remoto({ padre: 'a-dir00001' }), con(1)], [remoto(), con(1, 2)], [CMP(passo), con(1, 2)], [CMP({ padre: 'a-dir00001' }), con(1, 2)]] as const)
+    expect([a.provider, a.catena?.id, a.padre, blocca(a, r)]).toEqual([a.provider, a.catena?.id, a.padre, undefined])
+})

@@ -79,6 +79,10 @@ export const EFFORT = REGOLE_DEFAULT.effort
 export const CORSIE: readonly Corsia[] = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5']
 const COORDINATORE_PREDEFINITO = 'claude-sonnet-5-5'
 
+/** Un id di modello di routing.json: lettere, cifre e `._:-` (anche `motore:codex`), niente che un comando interpreti. */
+const MODELLO_ROUTING = /^[A-Za-z0-9._:-]{1,80}$/
+const EFFORT_ROUTING = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
 /** routing.json → regole. Un campo assente o fuori forma ricade sul predefinito, mai su «tutto ammesso». */
 export function regoleDa(json: unknown, fonte: string): Regole {
   const r = (json ?? {}) as Record<string, unknown>
@@ -99,6 +103,22 @@ export function regoleDa(json: unknown, fonte: string): Regole {
   }
   const cc = (r.corsia_codex ?? {}) as Record<string, unknown>
   const esegue = (cc.esegue ?? {}) as Record<string, unknown>
+  // Audit 2.2.0, punto 3: modelli ed effort finiscono nei comandi dei mandati; routing.json è un file del repository.
+  // Un valore fuori forma (o fuori dall'elenco chiuso) non si legge: lette false con il campo, mai il valore nel testo.
+  const modelloOk = (m: string) => MODELLO_ROUTING.test(m)
+  const effortOk = (e: string) => (EFFORT_ROUTING as readonly string[]).includes(e)
+  const rivisti = mappa(cc.rivisto_da)
+  const tetto = mappa(r.tetto_per_modello)
+  const campo = ([
+    ['modelli_ammessi', !(ammessi ?? []).every(modelloOk)],
+    ['corsia_codex.modelli', !(lista(cc.modelli) ?? []).every(modelloOk)],
+    ['revisione.revisori_ammessi_per_autore', !Object.entries(revisori).every(([k, l]) => modelloOk(k) && l.every(modelloOk))],
+    ['corsia_codex.rivisto_da', !Object.values(rivisti).every(modelloOk)],
+    ['tetto_per_modello', !Object.entries(tetto).every(([k, e]) => modelloOk(k) && effortOk(e))],
+    ['effort_ammessi', !(lista(r.effort_ammessi) ?? []).every(effortOk)],
+    ['corsia_codex.effort', !Object.values(mappa(cc.effort)).every(effortOk)],
+  ] as const).find(([, no]) => no)?.[0]
+  if (campo) return { ...REGOLE_DEFAULT, fonte, motivo: msg('regole.valoreNonValido', { campo }) }
   return {
     // «Lette» solo se ci sono tutte le sezioni che il pannello applica: una parziale non allenta i vincoli.
     lette:
@@ -302,7 +322,9 @@ function dirigenteNonValido(v: unknown): string | undefined {
   if (presente('tettoUsd') && !tettoValido(v.tettoUsd)) return 'modoLavoro.dirigente.tettoUsd'
   return undefined
 }
-/** Per campo (e per corsia) il progetto sostituisce l'account, poi i predefiniti. */
+/** Audit 2.2.0, punto 6: un tetto di progetto può solo abbassare quello dell'account (come apiTetto), mai alzarlo. */
+const tettoMinimo = (a: number | null | undefined, p: number | null | undefined) => (a == null ? p ?? undefined : p == null ? a : Math.min(a, p))
+/** Per campo (e per corsia) il progetto sostituisce l'account (il tetto in dollari solo verso il basso), poi i predefiniti. */
 function dirigenteEfficace(a: Dirigente | undefined, p: Dirigente | undefined): DirigenteEfficace {
   const d = DIRIGENTE_PREDEFINITO
   return {
@@ -311,7 +333,7 @@ function dirigenteEfficace(a: Dirigente | undefined, p: Dirigente | undefined): 
     lavoratori: Object.fromEntries(CORSIE_MODO.map(c => [c, p?.lavoratori?.[c] ?? a?.lavoratori?.[c] ?? d.lavoratori[c]])) as Record<Corsia, string>,
     maxFigli: p?.maxFigli ?? a?.maxFigli ?? d.maxFigli,
     maxRipiani: p?.maxRipiani ?? a?.maxRipiani ?? d.maxRipiani,
-    ...((p?.tettoUsd ?? a?.tettoUsd) !== undefined && { tettoUsd: (p?.tettoUsd ?? a?.tettoUsd) as number }),
+    ...(tettoMinimo(a?.tettoUsd, p?.tettoUsd) !== undefined && { tettoUsd: tettoMinimo(a?.tettoUsd, p?.tettoUsd) as number }),
   }
 }
 // --- F13.6: le catene di lavoro (pipeline) ------------------------------------------------------------------------------
@@ -357,7 +379,7 @@ function pipelineNonValido(v: unknown): string | undefined {
 /** Per campo il progetto sostituisce l'account, poi i predefiniti; lo scrittore vale intero (fornitore e modello insieme). */
 function pipelineEfficace(a: Pipeline | undefined, p: Pipeline | undefined): PipelineEfficace {
   const d = PIPELINE_PREDEFINITA
-  const tetto = p?.tettoUsd ?? a?.tettoUsd ?? undefined
+  const tetto = tettoMinimo(a?.tettoUsd, p?.tettoUsd)
   return { scrittore: p?.scrittore ?? a?.scrittore ?? d.scrittore, revisore: p?.revisore ?? a?.revisore ?? d.revisore, giri: p?.giri ?? a?.giri ?? d.giri,
     ...(tetto !== undefined && { tettoUsd: tetto }) }
 }
@@ -1106,6 +1128,11 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
   const tettoCatena = (politica.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).pipeline.tettoUsd
   if (a.catena && tettoCatena !== undefined && spesaCatena(a.catena.id, lista) >= tettoCatena)
     v.push(msg('v.catenaTetto', { tetto: tettoCatena, speso: Math.round(spesaCatena(a.catena.id, lista) * 100) / 100 }))
+  // Audit 2.2.0, punto 5: un fornitore compatibile remoto non dice quanto costa (costo ignoto, che il tetto conterebbe 0):
+  // sotto un tetto in dollari di catena o di dirigente il passo non parte; un server locale è gratuito e passa.
+  const tettoDirigente = (politica.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).dirigente.tettoUsd
+  const sottoTetto = (!!a.catena && tettoCatena !== undefined) || ((!!a.padre || a.ruolo === 'dirigente') && tettoDirigente !== undefined)
+  if (sottoTetto && compatibile && !voceCompatibile(a.provider)?.locale) v.push(msg('v.costoIgnotoTetto', { provider: String(a.provider ?? '—') }))
   if (a.revisore !== 'nessuno' && !politica.fornitori.includes(a.revisore)) v.push(msg('v.revisoreNonAbilitato', { revisore: a.revisore }))
   if (!compatibile && !regole.modelli[a.esecutore].length) v.push(msg('v.nessunModello', { esecutore: a.esecutore }))
   // Every non-Claude text executor: same lanes, LAN-data filter, text limit, isolation, Claude review and low effort (F13 r1.7).

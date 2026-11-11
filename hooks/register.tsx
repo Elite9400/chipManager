@@ -1042,7 +1042,7 @@ async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: 
   const repo = (await chiSonoIo($)).repo
   if (!repo) return fallisce(msg('err.progettoIgnoto'))
   const ingresso = { root, prompt: `${m.background}\n\n${m.prompt}`, modello: m.model, effort: m.effort, permessi: a.permessi ?? 'default', base: a.base,
-    tetto: api.tetto, budget: api.budgetUsd, mese: ora().slice(0, 7), chiave, config: await fileConfig($), repo, ...(advisor && { advisor }), ...(a.senzaAuditor && { senzaAdvisor: true }) }
+    tetto: api.tetto, budget: api.budgetUsd, chiave, config: await fileConfig($), repo, ...(advisor && { advisor }), ...(a.senzaAuditor && { senzaAdvisor: true }) }
   const esito = await helper($, ['lancia-api', await cartella($), a.id, a.tentativo!], JSON.stringify(ingresso))
   const dettaglio = (() => {
     try {
@@ -2858,8 +2858,10 @@ export const register: Register = (on, options) => {
           return !r.lette || r.risorse.soloLocale
         }
         try {
+          // Audit 2.2.0, point 2: the second consent is where TokenEconomizer's setup runs; the question says so.
+          const setup = voceSkill(id)?.pin === 'clone' ? `\n\n${T('skill.setupClone')}` : ''
           await cambiaPlugin($, id, attiva, soloLocale, async nota =>
-            (await $.ui.ask(T('skill.consenso', { nome: id, nota }), { options: [T('skill.abilita', { nome: id }), T('comune.annulla')], header: 'chipManager' })
+            (await $.ui.ask(`${T('skill.consenso', { nome: id, nota })}${setup}`, { options: [T('skill.abilita', { nome: id }), T('comune.annulla')], header: 'chipManager' })
               .catch(() => '')) === T('skill.abilita', { nome: id }))
         } catch (e) {
           if ((e as Error)?.message === 'local-only project') throw errore('skill.bloccatoLocale', { nome: id })
@@ -2876,6 +2878,7 @@ export const register: Register = (on, options) => {
         try {
           const fatto = await installaSkill($, id, async ({ url, sha, hook }) => {
             const domanda = T('skill.conferma', { nome: id, url, sha, nota: v?.nota ?? '', hook: hook.length ? hook.map(h => `· ${h}`).join('\n') : T('skill.nessunHook') })
+              + (v?.pin === 'clone' ? `\n\n${T('skill.setupClone')}` : '')
             return (await $.ui.ask(domanda, { options: [T('skill.installa', { nome: id }), T('comune.annulla')], header: 'chipManager' }).catch(() => '')) === T('skill.installa', { nome: id })
           }, async () => {
             // The policy may have changed while the confirmation was open: read and validate it again, fail closed.

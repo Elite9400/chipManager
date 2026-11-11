@@ -62,48 +62,126 @@ function revisione(v, deps) {
   return sha
 }
 
-/** One hooks configuration ({ hooks: { Event: [...] } } or the event map itself) as short readable lines. */
+/**
+ * One hooks configuration ({ hooks: { Event: [...] }, modules } or the event map itself) as short readable lines, and the
+ * mod modules it loads (paths relative to the file's folder). Another key, or a shape it does not know, is a refusal.
+ */
 function righeHook(conf, fonte) {
-  const eventi = conf && typeof conf === 'object' && conf.hooks && typeof conf.hooks === 'object' && !Array.isArray(conf.hooks) ? conf.hooks : conf
-  if (!eventi || typeof eventi !== 'object' || Array.isArray(eventi)) throw new Rifiuto('skill.err.hook')
+  if (!conf || typeof conf !== 'object' || Array.isArray(conf)) throw new Rifiuto('skill.err.hook')
+  // Audit 2.2.0, point 1: the `modules` of a hooks file are mod code loaded at every session; any other key is unknown.
+  const involucro = Object.hasOwn(conf, 'hooks') || Object.hasOwn(conf, 'modules')
+  if (involucro && !Object.keys(conf).every(k => CHIAVI_HOOK.has(k))) throw new Rifiuto('skill.err.hook')
+  const eventi = involucro ? conf.hooks ?? {} : conf
+  const moduli = involucro ? conf.modules ?? [] : []
+  if (!eventi || typeof eventi !== 'object' || Array.isArray(eventi) || !Array.isArray(moduli) || !moduli.every(m => typeof m === 'string')) throw new Rifiuto('skill.err.hook')
   const righe = []
   for (const [evento, gruppi] of Object.entries(eventi)) {
     if (!Array.isArray(gruppi)) throw new Rifiuto('skill.err.hook')
     for (const g of gruppi)
       for (const h of Array.isArray(g?.hooks) ? g.hooks : [g]) {
         const cosa = h?.type === 'command' && typeof h.command === 'string' ? h.command : String(h?.type ?? '?')
-        righe.push(`${fonte} · ${evento}${typeof g?.matcher === 'string' && g.matcher ? ` [${g.matcher}]` : ''}: ${cosa}`.replace(/[\x00-\x1f]/g, ' ').slice(0, 200))
+        righe.push(riga(`${fonte} · ${evento}${typeof g?.matcher === 'string' && g.matcher ? ` [${g.matcher}]` : ''}: ${cosa}`))
       }
   }
-  return righe
+  return { righe, moduli }
+}
+const riga = t => t.replace(/[\x00-\x1f]/g, ' ').slice(0, 200)
+/** Keys a hooks file may carry next to its events. */
+const CHIAVI_HOOK = new Set(['hooks', 'modules', 'description', '_comment', 'version'])
+
+/**
+ * Servers a plugin starts by itself (MCP: `{ mcpServers: {...} }` or the map itself; LSP: the map itself), one line each
+ * with the command and its arguments, or the address of a remote MCP server. A server it cannot read is a refusal.
+ */
+function righeServer(conf, fonte, tipo) {
+  const mappa = tipo === 'MCP' && conf && typeof conf === 'object' && Object.hasOwn(conf, 'mcpServers') ? conf.mcpServers : conf
+  if (!mappa || typeof mappa !== 'object' || Array.isArray(mappa)) throw new Rifiuto('skill.err.hook')
+  return Object.entries(mappa).map(([nome, s]) => {
+    if (!s || typeof s !== 'object' || Array.isArray(s)) throw new Rifiuto('skill.err.hook')
+    const argomenti = s.args ?? []
+    if (!Array.isArray(argomenti) || !argomenti.every(a => typeof a === 'string')) throw new Rifiuto('skill.err.hook')
+    const cosa = typeof s.command === 'string' ? [s.command, ...argomenti].join(' ') : tipo === 'MCP' && typeof s.url === 'string' ? s.url : null
+    if (cosa === null) throw new Rifiuto('skill.err.hook')
+    return riga(`${fonte} · ${tipo} ${nome}: ${cosa}`)
+  })
+}
+
+/** Background monitors: a list or a map of entries, each with its command. Anything else is a refusal. */
+function righeMonitor(conf, fonte) {
+  const elenco = Array.isArray(conf) ? conf.map((m, i) => [m?.name ?? String(i), m])
+    : conf && typeof conf === 'object' ? Object.entries(Object.hasOwn(conf, 'monitors') ? conf.monitors ?? {} : conf) : null
+  if (!elenco) throw new Rifiuto('skill.err.hook')
+  return elenco.map(([nome, m]) => {
+    if (!m || typeof m !== 'object' || typeof m.command !== 'string') throw new Rifiuto('skill.err.hook')
+    return riga(`${fonte} · monitor ${nome}: ${m.command}`)
+  })
 }
 
 /**
- * Every hook a plugin declares, from any source of its files (`esiste`/`testo` on paths relative to the plugin root): the
- * manifest's `hooks` (inline or file paths) and the conventional `hooks/hooks.json`. A declared file that cannot be read
- * is a refusal. Used on the approved revision before install and on the installed copy before enabling.
+ * Manifest fields that describe the plugin or point to content that runs only when asked (commands, agents, skills,
+ * styles, the settings it offers). Any other field is a component read and shown below, or a refusal.
+ */
+const CAMPI_INERTI = new Set(['$schema', 'name', 'displayName', 'version', 'description', 'author', 'homepage', 'repository', 'license', 'keywords',
+  'commands', 'agents', 'skills', 'outputStyles', 'types', 'userConfig'])
+/** What runs on its own: the manifest field, the conventional file, and how one configuration reads. */
+const COMPONENTI = [
+  { campo: 'hooks', file: 'hooks/hooks.json', righe: righeHook },
+  { campo: 'mcpServers', file: '.mcp.json', righe: (c, f) => ({ righe: righeServer(c, f, 'MCP'), moduli: [] }) },
+  { campo: 'lspServers', file: '.lsp.json', righe: (c, f) => ({ righe: righeServer(c, f, 'LSP'), moduli: [] }) },
+  { campo: 'monitors', file: 'monitors/monitors.json', righe: (c, f) => ({ righe: righeMonitor(c, f), moduli: [] }) },
+]
+
+/**
+ * Everything a plugin runs on its own, from any source of its files (`esiste`/`testo` on paths relative to the plugin
+ * root): hooks and the mod modules they load, MCP and LSP servers, monitors; from the manifest (inline or file paths) and
+ * from the conventional files. A manifest field it does not know, or a declared file it cannot read, is a refusal. Used
+ * on the approved revision before install and on the installed copy before enabling.
  */
 function hookDa(v, esiste, testo) {
-  // The approval covers the full content (manifest and every hook file, line endings normalised), never the preview.
+  // The approval covers the full content (manifest, every component file and module, line endings normalised), never the preview.
   const impronta = require('node:crypto').createHash('sha256')
-  const leggi = p => {
+  const grezzo = p => {
     const t = testo(p)
     if (t === null) throw new Rifiuto('skill.err.hook')
     impronta.update(`${p}\0${t.replace(/\r\n/g, '\n')}\0`)
+    return t
+  }
+  const leggi = p => {
+    const t = grezzo(p)
     try { return JSON.parse(t) } catch { throw new Rifiuto('skill.err.hook') }
+  }
+  const dentro = (base, p) => {
+    const r = path.posix.normalize(path.posix.join(base, p.replace(/^\.\//, '')))
+    if (path.posix.isAbsolute(p) || r.startsWith('..') || !esiste(r)) throw new Rifiuto('skill.err.hook')
+    return r
   }
   const righe = []
   const manifest = esiste('.claude-plugin/plugin.json') ? leggi('.claude-plugin/plugin.json') : (impronta.update('no-manifest\0'), null)
+  if (manifest !== null && (typeof manifest !== 'object' || Array.isArray(manifest))) throw new Rifiuto('skill.err.hook')
   if (manifest && typeof manifest.name === 'string' && manifest.name !== K.nomePlugin(v)) throw new Rifiuto('skill.err.nome')
-  const dichiarati = manifest?.hooks === undefined ? [] : Array.isArray(manifest.hooks) ? manifest.hooks : [manifest.hooks]
-  for (const h of dichiarati) {
-    if (typeof h === 'string') {
-      const p = path.posix.normalize(h.replace(/^\.\//, ''))
-      if (p.startsWith('..') || path.posix.isAbsolute(p) || !esiste(p)) throw new Rifiuto('skill.err.hook')
-      righe.push(...righeHook(leggi(p), p))
-    } else righe.push(...righeHook(h, 'plugin.json'))
+  if (manifest && !Object.keys(manifest).every(k => CAMPI_INERTI.has(k) || COMPONENTI.some(c => c.campo === k))) throw new Rifiuto('skill.err.hook')
+  for (const c of COMPONENTI) {
+    const valore = manifest?.[c.campo]
+    const elenco = Array.isArray(valore) && (c.campo !== 'monitors' || valore.every(x => typeof x === 'string'))
+    const dichiarati = valore === undefined ? [] : elenco ? valore : [valore]
+    const letti = new Set()
+    const una = (conf, fonte, base) => {
+      const r = c.righe(conf, fonte)
+      righe.push(...r.righe)
+      for (const m of r.moduli) {
+        const p = dentro(base, m)
+        grezzo(p)
+        righe.push(riga(`${fonte} · module: ${p}`))
+      }
+    }
+    for (const d of dichiarati) {
+      if (typeof d !== 'string') { una(d, 'plugin.json', ''); continue }
+      const p = dentro('', d)
+      letti.add(p)
+      una(leggi(p), p, path.posix.dirname(p))
+    }
+    if (esiste(c.file) && !letti.has(c.file)) una(leggi(c.file), c.file, path.posix.dirname(c.file))
   }
-  if (esiste('hooks/hooks.json') && !dichiarati.includes('./hooks/hooks.json') && !dichiarati.includes('hooks/hooks.json')) righe.push(...righeHook(leggi('hooks/hooks.json'), 'hooks/hooks.json'))
   // `righe` is the preview for the confirmation only (cut); `impronta` is what the record keeps and compares.
   return { righe: righe.slice(0, 60), impronta: impronta.digest('hex') }
 }
@@ -365,11 +443,11 @@ function preparaClone(v, dm, deps) {
 /**
  * The guarded sequence, after the owner's first consent (the confirmation): prerequisites, the approved clone, the
  * manifest edit to `defaultEnabled: false` with the diff check, our marketplace, install (arrives disabled) and an
- * immediate disable, then, only after verifying what is installed, the safe configuration read back and `status`. Any
- * failure leaves it disabled with the reason; the second consent enables it later (`abilita`).
+ * immediate disable, then the check of what is installed and the disabled record. None of its code runs here: its
+ * setup (configuration and `status`) comes with the second consent (`abilita`). Any failure leaves it disabled.
  */
 function installaClone(v, input, dm, deps) {
-  const py = prerequisiti(deps)
+  prerequisiti(deps)
   const { dir, git } = cloneA(dm, input.url, input.sha, deps)
   // The clone's own manifest, read and written with no link anywhere between the clone and the file.
   let m
@@ -387,16 +465,8 @@ function installaClone(v, input, dm, deps) {
   comando(deps, ['claude', 'plugin', 'install', v.plugin, '--scope', 'user'], 'skill.err.installa')
   spegniPlugin(deps, v.plugin)
   try {
-    // Before running any of its code: our marketplace, the clone at the approved commit, the installed copy loading in
-    // place from that clone, and its content still the approved one.
+    // Audit 2.2.0, point 2: no code of it runs at the first consent; the installed copy is only checked here.
     verificaInstallato(v, { sha: input.sha, impronta: input.impronta }, dm, deps)
-    const te = (...a) => deps.esegui([...py, path.join(dir, 'plugin', 'scripts', 'te_bootstrap.py'), 'cli', ...a], { timeoutMs: 60_000 })
-    if (te('config', 'set', 'toolprune=propose', '--global').status !== 0 || te('config', 'set', 'loopguard=off', '--global').status !== 0)
-      throw new Rifiuto('skill.err.config')
-    // The settings file format is not documented: read the values back and require both, or stay off.
-    const letto = te('config')
-    if (letto.status !== 0 || !/toolprune\W+propose\b/i.test(letto.stdout) || !/loopguard\W+off\b/i.test(letto.stdout)) throw new Rifiuto('skill.err.config')
-    if (te('--host', 'claude', 'status').status !== 0) throw new Rifiuto('skill.err.status')
   } catch (err) {
     spegniPlugin(deps, v.plugin)
     throw err
@@ -464,6 +534,22 @@ function installa(id, input, dm, deps) {
   return { id, plugin, sha: input.sha }
 }
 
+/**
+ * TokenEconomizer's own setup, after the owner's second consent and the checks on the installed copy, before it is
+ * enabled: its safe global configuration, read back, then `status`. The first upstream code that runs; a failure leaves
+ * it disabled with the reason.
+ */
+function configuraClone(dm, deps) {
+  const py = prerequisiti(deps)
+  const te = (...a) => deps.esegui([...py, path.join(dirClone(dm), 'plugin', 'scripts', 'te_bootstrap.py'), 'cli', ...a], { timeoutMs: 60_000 })
+  if (te('config', 'set', 'toolprune=propose', '--global').status !== 0 || te('config', 'set', 'loopguard=off', '--global').status !== 0)
+    throw new Rifiuto('skill.err.config')
+  // The settings file format is not documented: read the values back and require both, or stay off.
+  const letto = te('config')
+  if (letto.status !== 0 || !/toolprune\W+propose\b/i.test(letto.stdout) || !/loopguard\W+off\b/i.test(letto.stdout)) throw new Rifiuto('skill.err.config')
+  if (te('--host', 'claude', 'status').status !== 0) throw new Rifiuto('skill.err.status')
+}
+
 /** Enables a mod-installed plugin only if it is still exactly the approved one; records the consent. */
 function abilita(id, dm, deps) {
   const v = voce(id)
@@ -472,6 +558,7 @@ function abilita(id, dm, deps) {
   const rec = r.voci[id]
   if (!rec || rec.plugin !== plugin || !SHA.test(String(rec.sha)) || !IMPRONTA.test(String(rec.impronta))) throw new Rifiuto('skill.err.nonApprovato')
   verificaInstallato(v, rec, dm, deps)
+  if (v.pin === 'clone') configuraClone(dm, deps)
   comando(deps, ['claude', 'plugin', 'enable', plugin, '--scope', 'user'], 'skill.err.abilita', /already enabled/i)
   r.voci[id] = { ...rec, abilitato: true, abilitatoIl: new Date().toISOString() }
   scriviRecord(dm, r)

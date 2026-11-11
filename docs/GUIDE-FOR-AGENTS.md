@@ -252,7 +252,8 @@ characters; when trimmed, `nota` says what was cut.
   re-plan. Limits: at most `maxFigli` children (default 8) and `maxRipiani` re-plans (default 2). Over a limit the call
   is refused: stop and report to the owner. An optional money cap per director tree or chain applies on the API lane;
   it is soft (the last chip can go over it by what it spends in its turn), and once it is used up no other chip of the
-  group starts.
+  group starts. Under such a cap a chip on a remote OpenAI-compatible provider does not start: its cost is not reported,
+  so the cap could not count it (a local server is free and runs). A project can only lower the account's caps.
 - **Work chain.** For a text deliverable, `catena: true` on `suggerisci_azione` creates writer → reviewer → rewrite
   (1–3 rounds) → applier from the project's pipeline. Each step starts after the previous one delivers its artefact.
   Writer and reviewer steps change no files: they deliver the whole text in `artefatto` (up to 60,000 characters). Only

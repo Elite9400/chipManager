@@ -147,9 +147,11 @@ function pipelineNonValido(v) {
   if (presente('tettoUsd') && !tettoValido(v.tettoUsd)) return 'modoLavoro.pipeline.tettoUsd'
   return null
 }
+/** Audit 2.2.0, punto 6: un tetto di progetto può solo abbassare quello dell'account (come apiTetto), mai alzarlo. */
+const tettoMinimo = (a, p) => (a == null ? p ?? undefined : p == null ? a : Math.min(a, p))
 function pipelineEfficace(a, p) {
   const d = PIPELINE_PREDEFINITA
-  const tetto = p?.tettoUsd ?? a?.tettoUsd ?? undefined
+  const tetto = tettoMinimo(a?.tettoUsd, p?.tettoUsd)
   return { scrittore: p?.scrittore ?? a?.scrittore ?? d.scrittore, revisore: p?.revisore ?? a?.revisore ?? d.revisore, giri: p?.giri ?? a?.giri ?? d.giri,
     ...(tetto !== undefined && { tettoUsd: tetto }) }
 }
@@ -161,7 +163,7 @@ function dirigenteEfficace(a, p) {
     lavoratori: Object.fromEntries(CORSIE_MODO.map(c => [c, p?.lavoratori?.[c] ?? a?.lavoratori?.[c] ?? d.lavoratori[c]])),
     maxFigli: p?.maxFigli ?? a?.maxFigli ?? d.maxFigli,
     maxRipiani: p?.maxRipiani ?? a?.maxRipiani ?? d.maxRipiani,
-    ...((p?.tettoUsd ?? a?.tettoUsd) !== undefined && { tettoUsd: p?.tettoUsd ?? a?.tettoUsd }),
+    ...(tettoMinimo(a?.tettoUsd, p?.tettoUsd) !== undefined && { tettoUsd: tettoMinimo(a?.tettoUsd, p?.tettoUsd) }),
   }
 }
 

@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Security
+
+- **Baseline skills: the approval covers everything that runs on its own.** The install preview and the content digest
+  now include MCP and LSP servers (`.mcp.json`, `.lsp.json` or the manifest's `mcpServers`/`lspServers`), monitors and
+  the mod modules a hooks file loads, besides hooks. A manifest field the mod does not know, or a component it cannot
+  read, stops the install.
+- **TokenEconomizer runs none of its code at the first consent.** Install only clones, checks the commit and records it
+  disabled; its global configuration and status check run when you enable it, after the second consent. Both questions
+  say so, in six languages.
+- **`routing.json` values cannot reach a command.** Model ids must match `[A-Za-z0-9._:-]{1,80}` and effort values the
+  closed list (low to max); otherwise the rules count as not read, with the field named.
+- **API lane: the helper owns the month and the project.** The budget month is computed by the helper in local time,
+  and the project that picks the month limit must be the chip's own.
+- **Dollar caps of chains and director trees.** A project can only lower the account's caps (minimum, as for the cap
+  per run). Under such a cap a step on a remote OpenAI-compatible provider does not start, since its cost is unknown; a
+  local server is free and runs.
+
 ## [2.2.0] - 2026-11-07
 
 ### Added

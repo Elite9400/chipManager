@@ -322,6 +322,8 @@ Le impostazioni stanno in due strati.
 - **Un progetto può solo essere più severo.** Può avere soglie più basse, un limite del mese o un tetto per
   esecuzione API più bassi; non può mai allargare l'account, e un valore più largo è rifiutato con il motivo. Le
   Impostazioni mostrano un valore del progetto come «Più severa in owner/repo», con **Rimuovi restrizione**.
+  I tetti in dollari di catene e dirigenti seguono la stessa regola: un valore del progetto sopra quello dell'account
+  non ha effetto (conta il più basso).
 - **Un solo registro della spesa API, dell'account.** Ogni esecuzione è registrata con il suo progetto. Parte solo se
   il suo tetto sta sia in ciò che resta del budget mensile dell'account sia nel limite del mese del progetto, se ne ha
   uno. La vista **Carico** li mostra entrambi: «3,20 USD questo progetto · 7,80 USD di 20 USD account».
