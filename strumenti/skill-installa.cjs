@@ -80,7 +80,9 @@ function righeHook(conf, fonte) {
     if (!Array.isArray(gruppi)) throw new Rifiuto('skill.err.hook')
     for (const g of gruppi)
       for (const h of Array.isArray(g?.hooks) ? g.hooks : [g]) {
-        const cosa = h?.type === 'command' && typeof h.command === 'string' ? h.command : String(h?.type ?? '?')
+        // RC 2.2.0, point 1: a `command` hook shows its command; any other type (http, prompt, agent…) shows every field,
+        // its whole serialization: an `http` hook's address or a `prompt` hook's text is what the owner must see.
+        const cosa = h?.type === 'command' && typeof h.command === 'string' ? h.command : JSON.stringify(h) ?? String(h)
         righe.push(riga(`${fonte} · ${evento}${typeof g?.matcher === 'string' && g.matcher ? ` [${g.matcher}]` : ''}: ${cosa}`))
       }
   }
@@ -92,7 +94,9 @@ function righeHook(conf, fonte) {
  * a refusal, never a shortened line.
  */
 const riga = t => {
-  const r = t.replace(/[\x00-\x1f]/g, ' ')
+  // RC 2.2.0, point 1: C0 controls become spaces; C1 controls, DEL, zero-width and bidirectional marks and the BOM are
+  // shown as `\u{..}`, so nothing in a line can hide or reorder what the owner reads.
+  const r = t.replace(/[\x00-\x1f]/g, ' ').replace(/[\x7f-\x9f​-‏‪-‮⁦-⁩﻿]/g, c => `\\u{${c.codePointAt(0).toString(16)}}`)
   if (r.length > MAX_RIGA) throw new Rifiuto('skill.err.troppi')
   return r
 }
@@ -133,7 +137,25 @@ function righeMonitor(conf, fonte) {
  * styles, the settings it offers). Any other field is a component read and shown below, or a refusal.
  */
 const CAMPI_INERTI = new Set(['$schema', 'name', 'displayName', 'version', 'description', 'author', 'homepage', 'repository', 'license', 'keywords',
-  'commands', 'agents', 'skills', 'outputStyles', 'types', 'userConfig'])
+  'metadata', 'icon', 'documentationUrl', 'supportUrl', 'privacyPolicyUrl', 'termsOfServiceUrl', 'defaultEnabled',
+  'commands', 'agents', 'skills', 'outputStyles', 'types', 'userConfig', 'settings'])
+/**
+ * RC 2.2.0, point 5: the frontmatter `hooks` block of a skill or command file, as its own lines (key line and indented
+ * lines, trimmed); [] when the file has no frontmatter or no `hooks` key. YAML is not parsed: the raw lines are shown.
+ */
+function hookFrontmatter(t) {
+  const m = /^﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/.exec(t)
+  if (!m) return []
+  const righe = m[1].split(/\r?\n/)
+  const i = righe.findIndex(r => /^["']?hooks["']?\s*:/.test(r))
+  if (i < 0) return []
+  const out = [righe[i].trim()]
+  for (const r of righe.slice(i + 1)) {
+    if (/^\S/.test(r)) break
+    if (r.trim()) out.push(r.trim())
+  }
+  return out
+}
 /** What runs on its own: the manifest field, the conventional file, and how one configuration reads. */
 const COMPONENTI = [
   { campo: 'hooks', file: 'hooks/hooks.json', righe: righeHook },
@@ -152,7 +174,7 @@ const COMPONENTI = [
  * like the manifest's (paths relative to the plugin root); `defaultEnabled`, the mod's only edit, is left out of the
  * fingerprint. Every line is returned (the panel shows them all, a page at a time); over MAX_RIGHE it is a refusal.
  */
-function hookDa(v, esiste, testo, voce) {
+function hookDa(v, esiste, testo, voce, elenca = () => null) {
   // The approval covers the full content (manifest, every component file and module, line endings normalised), never the preview.
   const impronta = require('node:crypto').createHash('sha256')
   const grezzo = p => {
@@ -208,6 +230,39 @@ function hookDa(v, esiste, testo, voce) {
     }
     if (esiste(c.file) && !letti.has(c.file)) una(leggi(c.file), c.file, path.posix.dirname(c.file))
   }
+  // RC 2.2.0, point 5 (code.claude.com/docs/en/plugins-reference and /plugins/components): what else acts once the
+  // plugin is enabled. Settings (`agent` replaces the main agent, `subagentStatusLine`), `bin/` on the Bash tool's PATH,
+  // and hooks in the frontmatter of skills and commands (Claude may invoke a skill by itself; its hooks then stay for the
+  // session). All read, shown and fingerprinted; a folder that cannot be listed or a shape it does not know is a refusal.
+  const tutti = dir => {
+    const l = elenca(dir)
+    if (!Array.isArray(l) || !l.every(x => typeof x === 'string' && !x.includes('\\'))) throw new Rifiuto('skill.err.hook')
+    return [...l].sort()
+  }
+  for (const [conf, fonte] of [[manifest?.settings, 'plugin.json'], [voce?.settings, 'marketplace.json'], ...(esiste('settings.json') ? [[leggi('settings.json'), 'settings.json']] : [])]) {
+    if (conf === undefined) continue
+    if (!oggettoPuro(conf)) throw new Rifiuto('skill.err.hook')
+    for (const [k, x] of Object.entries(conf)) righe.push(riga(`${fonte} · settings ${k}: ${JSON.stringify(x)}`))
+  }
+  for (const f of tutti('bin')) {
+    grezzo(f)
+    righe.push(riga(`${f} · on the Bash PATH`))
+  }
+  const cartelle = (valori, predefinita, aggiunge) => {
+    const dichiarate = valori.filter(x => x !== undefined).flatMap(x => (Array.isArray(x) ? x : [x]))
+    if (!dichiarate.every(x => typeof x === 'string')) throw new Rifiuto('skill.err.hook')
+    const percorsi = dichiarate.map(x => dentro('', x))
+    return aggiunge || !percorsi.length ? [predefinita, ...percorsi] : percorsi
+  }
+  const visti = new Set()
+  for (const [dir, nome] of [...cartelle([manifest?.skills, voce?.skills], 'skills', true).map(d => [d, /(^|\/)SKILL\.md$/]),
+    ...cartelle([manifest?.commands, voce?.commands], 'commands', false).map(d => [d, /\.md$/])]) {
+    for (const f of tutti(dir)) {
+      if (!nome.test(f) || visti.has(f)) continue
+      visti.add(f)
+      for (const r of hookFrontmatter(grezzo(f))) righe.push(riga(`${f} · ${r}`))
+    }
+  }
   // `righe` is the whole preview for the confirmation; `impronta` (full content) is what the record keeps and compares.
   if (righe.length > MAX_RIGHE) throw new Rifiuto('skill.err.troppi')
   return { righe, impronta: impronta.digest('hex') }
@@ -232,6 +287,10 @@ function hookDellaRevisione(v, sha, dm, deps) {
   return hookDa(v, p => git('cat-file', '-e', `${sha}:${p}`).status === 0, p => {
     const r = git('show', `${sha}:${p}`)
     return r.status === 0 ? r.stdout : null
+  }, undefined, p => {
+    // The files under `p` at the approved revision (none when it is absent); null = cannot be listed.
+    const r = git('ls-tree', '-r', '--name-only', sha, '--', p)
+    return r.status === 0 ? r.stdout.split(/\r?\n/).filter(Boolean) : null
   })
 }
 
@@ -268,10 +327,31 @@ function hookInstallati(v, installPath, voce) {
     const f = path.resolve(installPath, p)
     return f.startsWith(path.resolve(installPath) + path.sep) ? f : null
   }
+  // The files under `rel` (none when it is absent), with no link anywhere from the plugin root down; null = refused.
+  const elenca = rel => {
+    const base = dentro(rel)
+    if (!base) return null
+    try {
+      fileSenzaLink(installPath, rel)
+      if (!fs.lstatSync(base, { throwIfNoEntry: false })) return []
+      const out = []
+      const giro = (abs, r) => {
+        const s = fs.lstatSync(abs)
+        if (s.isSymbolicLink()) throw new Rifiuto('skill.err.percorso')
+        if (s.isDirectory()) for (const n of fs.readdirSync(abs)) giro(path.join(abs, n), `${r}/${n}`)
+        else if (s.isFile()) out.push(r)
+        else throw new Rifiuto('skill.err.percorso')
+      }
+      giro(base, rel)
+      return out
+    } catch {
+      return null
+    }
+  }
   try {
     return hookDa(v, p => !!dentro(p) && fs.existsSync(dentro(p)), p => {
       try { return dentro(p) ? fs.readFileSync(fileSenzaLink(installPath, p), 'utf8') : null } catch { return null }
-    }, voce)
+    }, voce, elenca)
   } catch (e) {
     // Too much to show is its own refusal; anything else is «cannot be read» (counts as different).
     if (e instanceof Rifiuto && e.motivo === 'skill.err.troppi') throw e

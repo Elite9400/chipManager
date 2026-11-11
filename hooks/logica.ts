@@ -51,6 +51,15 @@ export function spesaDelMese(s: unknown, mese: string, progetto?: string): numbe
   return Math.round(tot * 100) / 100
 }
 
+/**
+ * RC 2.2.0, punto 4: il mese (AAAA-MM) di un istante in ora locale, la stessa regola dell'helper che prenota
+ * (`meseLocale` di api-claude.cjs, prova di parità): pannello e registro contano lo stesso mese anche a mezzanotte.
+ */
+export const meseLocale = (t: number | string | Date) => {
+  const x = new Date(t)
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`
+}
+
 /** F6.2: il tetto predefinito di spesa per tentativo (`--max-budget-usd`), in USD; può essere superato. */
 export const TETTO_API_PREDEFINITO = 2
 export const RISORSE_DEFAULT: RisorseProgetto = {
@@ -175,7 +184,9 @@ export function normalizzaRouting(v: unknown, windows = false): string | undefin
   const s = windows ? v.replace(/\\/g, '/') : v
   if (s.startsWith('/')) return undefined
   const pezzi = s.split('/').filter(x => x !== '' && x !== '.')
-  return pezzi.length && !pezzi.some(x => x === '..' || x.includes(':')) ? pezzi.join('/') : undefined
+  // RC 2.2.0, point 2: no `~` (a Windows 8.3 short name such as GIT~1 is another name for `.git`) and no segment ending in
+  // a dot or a space (Windows drops them, so `.git.` is `.git`): the same rule as the helper that creates the file.
+  return pezzi.length && !pezzi.some(x => x === '..' || x.includes(':') || x.includes('~') || /[. ]$/.test(x)) ? pezzi.join('/') : undefined
 }
 
 /**

@@ -937,5 +937,5 @@ async function comando(cmd, a, stdin, opz = {}) {
 
 module.exports = {
   comando, dirPredefinita, MUTEX_API, chiaviVietateCli, blocchiCli, ambienteCli, lanciaApi, eseguiApi, booleano, worktreeInvariato, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
-  leggiSpesa, spesoNelMese, fileSpesa, regoleApi, percorsiAccount, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
+  leggiSpesa, spesoNelMese, meseLocale, fileSpesa, regoleApi, percorsiAccount, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
 }

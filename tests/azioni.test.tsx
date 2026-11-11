@@ -12,6 +12,7 @@ import {
   rigaConsumo,
   modalitaDi,
   spesaDelMese,
+  meseLocale,
   consigliaDove,
   impostazioniApiVietate,
   classeProcesso,
@@ -1109,7 +1110,7 @@ test('F6.2 lock: tenuto dopo un\'esecuzione, il pannello dice perché; «Termina
 })
 
 test('F6.4 Carico: la spesa API del mese (stimata) contro il budget in USD; senza API configurata nessuna riga; nota sul cloud', async ($, on) => {
-  const mese = new Date().toISOString().slice(0, 7)
+  const mese = meseLocale(Date.now())
   // F10: ogni voce porta il progetto (senza, il registro non si legge); la parte del progetto si somma a parte.
   const progetto = 'acme/progetto'
   const voci = { a: { progetto, mese, tetto: 2, stato: 'contato', costo: 3.2 }, b: { progetto: 'altro/repo', mese, tetto: 2, stato: 'prenotato' }, c: { progetto, mese: '2000-01', tetto: 9, stato: 'prenotato' }, d: { progetto, mese, tetto: 2, stato: 'contato', costo: null } }
@@ -1188,7 +1189,7 @@ test('F6.5 consigliere: «Suggerisci» mostra dove e perché sulla proposta; «A
 test('F6 risorse_agenti: destinazioni configurate e margini in inglese, dentro il tetto; della chiave solo la presenza', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
   const amb = ambiente(on)
   amb.disco.set(CONFIG, JSON.stringify({ account: { apiClaude: { budgetUsd: 20 } }, progetti: { 'acme/progetto': { consigliere: 'suggerisci' } } }))
-  const mese = new Date().toISOString().slice(0, 7)
+  const mese = meseLocale(Date.now())
   amb.disco.set(SPESA_API, JSON.stringify({ v: 1, voci: { 'az-spesa009': { progetto: 'acme/progetto', mese, tetto: 2, stato: 'contato', costo: 1.5 },
     'az-spesa010': { progetto: 'altro/repo', mese, tetto: 2, stato: 'contato', costo: 1 } } }))
   mock.clock(on)
@@ -4807,4 +4808,10 @@ test('Seconda revisione audit 2.2.0, punto 1: nella conferma ogni riga dell\'ant
   const solitarie = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
   expect([b2.every(r => colonne(r) <= 60), b2.some(r => solitarie.test(r)), domande[1]!.includes('😀')]).toEqual([true, false, true])
   await ui2.unmount()
+})
+
+test('RC 2.2.0, punto 4: il mese della spesa nel pannello è in ora locale, come nell\'helper, anche intorno alla mezzanotte di fine mese', () => {
+  // 31 gennaio 23:59 e 1 febbraio 00:30, ora locale: gennaio e febbraio (in UTC, a est di Greenwich, sarebbero tutti e due gennaio).
+  expect([meseLocale(new Date(2027, 0, 31, 23, 59).getTime()), meseLocale(new Date(2027, 1, 1, 0, 30).getTime()), meseLocale(new Date(2026, 11, 31, 23, 59, 59).getTime()),
+    meseLocale(new Date(2027, 0, 1, 0, 0, 1).getTime())]).toEqual(['2027-01', '2027-02', '2026-12', '2027-01'])
 })

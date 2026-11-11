@@ -54,6 +54,7 @@ import {
   ruoloNuovo,
   consigliaDove,
   spesaDelMese,
+  meseLocale,
   normalizza,
   parametriAvvio,
   PERMESSI,
@@ -1700,7 +1701,7 @@ async function aggiornaSpesaApi($: Eng) {
   const r = await read($, regole)
   let nuova: { mese: string; speso: number | null; progetto?: number | null } | null = null
   if (r?.risorse.apiClaude) {
-    const mese = ora().slice(0, 7)
+    const mese = meseLocale(Date.now())
     // F10: un solo registro, dell'account, accanto al lock della macchina; ogni voce porta il progetto.
     const f = `${await casa($)}/.claude/chipmanager/spesa-api.json`
     // Un percorso non sicuro o un file illeggibile: spesa ignota (null), mai un registro vuoto inventato.

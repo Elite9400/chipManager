@@ -15,7 +15,9 @@ function percorso(root, relativo) {
   if (typeof root !== 'string' || !path.isAbsolute(root) || typeof relativo !== 'string' || !relativo || relativo.length > 400) return null
   if (relativo.includes('\\') || relativo.startsWith('/')) return null
   const pezzi = relativo.split('/')
-  if (pezzi.some(p => p === '' || p === '.' || p === '..' || p.includes(':'))) return null
+  // RC 2.2.0, point 2: no `~` (Windows 8.3 short names: GIT~1 is `.git`) and no segment ending in a dot or a space
+  // (Windows drops them): the same rule as normalizzaRouting.
+  if (pezzi.some(p => p === '' || p === '.' || p === '..' || p.includes(':') || p.includes('~') || /[. ]$/.test(p))) return null
   if ([...path.resolve(root).split(/[\\/]+/), ...pezzi].some(p => p.toLowerCase() === '.git')) return null
   return pezzi
 }
@@ -34,9 +36,13 @@ function crea(input, fsx = fs) {
     return 2
   }
   const base = path.resolve(root)
+  // RC 2.2.0, point 2: a folder's real name (8.3 short names and trailing dots resolved by the system) is never `.git`.
+  const reale = d => (fsx.realpathSync ?? fs.realpathSync).native(d)
+  const eGit = d => path.basename(reale(d)).toLowerCase() === '.git'
   // Links above the root are allowed (a repository reached through a junction): the file lands where the reader looks.
   const st = fsx.lstatSync(base)
   if (st.isSymbolicLink() || !st.isDirectory()) return 6
+  if (reale(base).split(/[\\/]+/).some(p => p.toLowerCase() === '.git')) return 6
   let dir = base
   for (const p of pezzi.slice(0, -1)) {
     dir = path.join(dir, p)
@@ -48,7 +54,7 @@ function crea(input, fsx = fs) {
       fsx.mkdirSync(dir)
       s = fsx.lstatSync(dir)
     }
-    if (s.isSymbolicLink() || !s.isDirectory()) return 6
+    if (s.isSymbolicLink() || !s.isDirectory() || eGit(dir)) return 6
   }
   const file = fileDi(root, pezzi)
   // An existing name, link included, is never replaced: lstat sees a dangling link that `wx` alone would report as EEXIST too.
@@ -64,6 +70,27 @@ function crea(input, fsx = fs) {
   } catch (e) {
     if (e.code === 'EEXIST') return 4
     throw e
+  }
+  // RC 2.2.0, point 3: between the checks above and the open a folder may have been swapped. The open file must be the
+  // one at the name (same dev+ino) and really under the root; otherwise close it, remove it only if it is ours, refuse.
+  let mio
+  let ok = false
+  try {
+    mio = fsx.fstatSync(fd)
+    const qui = fsx.lstatSync(file)
+    ok = qui.dev === mio.dev && qui.ino === mio.ino && reale(file).startsWith(reale(base) + path.sep)
+  } catch {
+    /* the name is gone or unreadable: refused below */
+  }
+  if (!ok) {
+    fsx.closeSync(fd)
+    try {
+      const qui = fsx.lstatSync(file)
+      if (mio && qui.dev === mio.dev && qui.ino === mio.ino) fsx.unlinkSync(file)
+    } catch {
+      /* nothing of ours left at the name */
+    }
+    return 6
   }
   // writeFileSync on the descriptor writes every byte (writeSync may stop short); a failed write removes the file this
   // call created, and only that one (same dev+ino), so the next attempt does not find a truncated file «already there».

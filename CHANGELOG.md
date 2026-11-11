@@ -13,14 +13,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   the mod modules a hooks file loads, besides hooks. A manifest field the mod does not know, or a component it cannot
   read, stops the install. For TokenEconomizer the components its marketplace entry declares count too, and its
   marketplace manifest may differ from the approved commit only by `defaultEnabled: false` (structural comparison).
-  Every line is shown, 20 to a page, each page confirmed; a preview too long to show stops the install.
+  Every line is shown, 20 to a page, each page confirmed; a preview too long to show stops the install. A hook that is
+  not a `command` (http, prompt, agent) shows every field; C1 controls, DEL, zero-width and bidirectional marks and the
+  BOM show as `\u{..}`. The plugin's `settings.json` and manifest `settings`, the files in `bin/` (on the Bash PATH)
+  and hooks in the frontmatter of skills and commands are shown and fingerprinted too; a folder it cannot list is a
+  refusal.
+- **Default rules: no write into `.git` by another name.** The rules path refuses `~` (Windows short names such as
+  `GIT~1`) and segments ending in a dot or a space, for the reader and the helper alike; a folder whose real name is
+  `.git` stops the creation, and after opening the new file the helper checks it is the one at the name (dev+ino) and
+  under the real root, or removes its own file and refuses.
 - **TokenEconomizer runs none of its code at the first consent.** Install only clones, checks the commit and records it
   disabled; its global configuration and status check run when you enable it, after the second consent. Both questions
   say so, in six languages.
 - **`routing.json` values cannot reach a command.** Model ids must match `[A-Za-z0-9._:-]{1,80}` and effort values the
   closed list (low to max); otherwise the rules count as not read, with the field named.
 - **API lane: the helper owns the month and the project.** The budget month is computed by the helper in local time,
-  and the project that picks the month limit must be the chip's own.
+  and the project that picks the month limit must be the chip's own. The Load view uses the same local month.
 - **Dollar caps of chains and director trees.** A project can only lower the account's caps (minimum, as for the cap
   per run). Under such a cap a step on a remote OpenAI-compatible provider does not start, since its cost is unknown; a
   local server is free and runs.
