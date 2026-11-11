@@ -1040,6 +1040,7 @@ const de: Dizionario = {
   "skill.err.shaNonVerificabile": "die installierte Revision lässt sich nicht prüfen: bleibt deaktiviert",
   "skill.err.nonApprovato": "nicht von der Mod in einer freigegebenen Revision installiert",
   "skill.err.cambiato": "seit deiner Freigabe geändert: nicht aktiviert",
+  "skill.err.hookCambiati": "seine Hooks weichen von den freigegebenen ab: nicht aktiviert",
   "skill.err.abilita": "claude plugin enable ist fehlgeschlagen",
   "skill.err.comando": "ungültiger Helper-Befehl",
   "skill.err.inatteso": "unerwarteter Fehler: nichts geändert",

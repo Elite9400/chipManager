@@ -3875,6 +3875,7 @@ test('F13.7 installa dal pannello: conferma con fonte, commit e hook; senza sì 
       if (cmd === 'claude plugin list --json') return []
       if (cmd === 'skill-prepara') return (chiamate.push({ cmd }), { id: input.id, url: 'https://github.com/DietrichGebert/ponytail.git', sha: SHA, hook: ['hooks/hooks.json · SessionStart: node inizio.js'] })
       if (cmd === 'skill-installa') return (chiamate.push({ cmd, stdin: input.stdin as string }), { id: 'ponytail', plugin: 'ponytail@chipmanager-base', sha: SHA })
+      if (cmd === 'skill-pulisci') return (chiamate.push({ cmd }), { tolte: 1 })
       return undefined
     },
   })
@@ -3892,11 +3893,14 @@ test('F13.7 installa dal pannello: conferma con fonte, commit e hook; senza sì 
   await ui.press({ key: 'skill-installa-ponytail' })
   await finche(() => domande.length === 1)
   for (const parte of ['https://github.com/DietrichGebert/ponytail.git', SHA, 'SessionStart: node inizio.js', 'privilegi']) expect(domande[0]).toContain(parte)
-  expect(chiamate.map(c => c.cmd)).toEqual(['skill-prepara'])
+  // Refused: the downloaded revision is removed, nothing installed.
+  await finche(() => chiamate.some(c => c.cmd === 'skill-pulisci'))
+  expect(chiamate.map(c => c.cmd)).toEqual(['skill-prepara', 'skill-pulisci'])
   risposta = 'Installa · ponytail'
   await ui.press({ key: 'skill-installa-ponytail' })
   await finche(() => chiamate.some(c => c.cmd === 'skill-installa'))
-  expect(JSON.parse(chiamate.find(c => c.cmd === 'skill-installa')!.stdin!)).toEqual({ url: 'https://github.com/DietrichGebert/ponytail.git', sha: SHA })
+  expect(JSON.parse(chiamate.find(c => c.cmd === 'skill-installa')!.stdin!)).toEqual({ url: 'https://github.com/DietrichGebert/ponytail.git', sha: SHA, hook: ['hooks/hooks.json · SessionStart: node inizio.js'] })
+  await finche(() => chiamate.filter(c => c.cmd === 'skill-pulisci').length === 2)
   await ui.unmount()
 })
 

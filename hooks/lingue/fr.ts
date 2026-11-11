@@ -1040,6 +1040,7 @@ const fr: Dizionario = {
   "skill.err.shaNonVerificabile": "la révision installée ne peut pas être vérifiée : reste désactivé",
   "skill.err.nonApprovato": "non installé par le mod à une révision approuvée",
   "skill.err.cambiato": "modifié depuis votre approbation : non activé",
+  "skill.err.hookCambiati": "ses hooks diffèrent de ceux que vous avez approuvés : non activé",
   "skill.err.abilita": "claude plugin enable a échoué",
   "skill.err.comando": "commande du helper invalide",
   "skill.err.inatteso": "erreur inattendue : rien n'a changé",

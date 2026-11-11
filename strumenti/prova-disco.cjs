@@ -3301,6 +3301,7 @@ console.log(JSON.stringify({ registro: k.SKILL_BASE, letti: elenchi.map(e => k.p
 
 const SHA_A = 'a'.repeat(40)
 const SHA_B = 'b'.repeat(40)
+const HOOK_A = ['hooks/hooks.json · SessionStart: node ${CLAUDE_PLUGIN_ROOT}/inizio.js']
 function bancoSkill(opz = {}) {
   const dir = tmp()
   const comandi = []
@@ -3365,7 +3366,7 @@ test('F13.7 installa: marketplace locale con source.sha e defaultEnabled false, 
   const S = require('./skill-installa.cjs')
   const b = bancoSkill()
   const url = 'https://github.com/DietrichGebert/ponytail.git'
-  assert.deepStrictEqual(S.installa('ponytail', { url, sha: SHA_A }, b.dir, b.deps), { id: 'ponytail', plugin: 'ponytail@chipmanager-base', sha: SHA_A })
+  assert.deepStrictEqual(S.installa('ponytail', { url, sha: SHA_A, hook: HOOK_A }, b.dir, b.deps), { id: 'ponytail', plugin: 'ponytail@chipmanager-base', sha: SHA_A })
   const m = JSON.parse(fs.readFileSync(path.join(S.dirMarketplace(b.dir), '.claude-plugin', 'marketplace.json'), 'utf8'))
   assert.deepStrictEqual(m.plugins.map(p => [p.name, p.source, p.defaultEnabled]), [['ponytail', { source: 'url', url, sha: SHA_A }, false]])
   assert.strictEqual(m.name, 'chipmanager-base')
@@ -3373,11 +3374,11 @@ test('F13.7 installa: marketplace locale con source.sha e defaultEnabled false, 
     'claude plugin install ponytail@chipmanager-base --scope user'])
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(S.fileRecord(b.dir), 'utf8')).voci.ponytail.abilitato, false)
   // Solo ciò che il committente ha approvato: un altro url o uno sha non valido non partono.
-  for (const no of [{ url: 'https://github.com/altro/ponytail.git', sha: SHA_A }, { url, sha: 'main' }])
+  for (const no of [{ url: 'https://github.com/altro/ponytail.git', sha: SHA_A, hook: HOOK_A }, { url, sha: 'main', hook: HOOK_A }, { url, sha: SHA_A }, { url, sha: SHA_A, hook: [1] }])
     assert.throws(() => S.installa('ponytail', no, b.dir, b.deps), e => e.motivo === 'skill.err.fonte')
   for (const [installato, motivo] of [[SHA_B, 'skill.err.shaDiverso'], [null, 'skill.err.shaNonVerificabile']]) {
     const x = bancoSkill({ installato })
-    assert.throws(() => S.installa('ponytail', { url, sha: SHA_A }, x.dir, x.deps), e => e.motivo === motivo)
+    assert.throws(() => S.installa('ponytail', { url, sha: SHA_A, hook: HOOK_A }, x.dir, x.deps), e => e.motivo === motivo)
     assert.strictEqual(x.comandi.at(-1), 'claude plugin disable ponytail@chipmanager-base --scope user')
     assert.ok(!fs.existsSync(S.fileRecord(x.dir)))
   }
@@ -3386,19 +3387,33 @@ test('F13.7 installa: marketplace locale con source.sha e defaultEnabled false, 
 test('F13.7 abilita e controllo all\'avvio: solo con il record d\'approvazione e lo sha installato uguale; i plugin dell\'utente non si toccano', () => {
   const S = require('./skill-installa.cjs')
   const url = 'https://github.com/DietrichGebert/ponytail.git'
-  const b = bancoSkill({ elenco: [{ id: 'ponytail@chipmanager-base', scope: 'user', enabled: true }, { id: 'superpowers@claude-plugins-official', scope: 'user', enabled: true }] })
+  // The installed copy, with the same files as the approved revision (its hooks are compared with the record).
+  const copia = tmp()
+  fs.mkdirSync(path.join(copia, '.claude-plugin'))
+  fs.mkdirSync(path.join(copia, 'hooks'))
+  fs.writeFileSync(path.join(copia, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'ponytail', hooks: './hooks/hooks.json' }))
+  const hooks = JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'node ${CLAUDE_PLUGIN_ROOT}/inizio.js' }] }] } })
+  fs.writeFileSync(path.join(copia, 'hooks', 'hooks.json'), hooks)
+  const b = bancoSkill({ elenco: [{ id: 'ponytail@chipmanager-base', scope: 'user', enabled: true, installPath: copia }, { id: 'superpowers@claude-plugins-official', scope: 'user', enabled: true }] })
   assert.throws(() => S.abilita('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.nonApprovato')
-  S.installa('ponytail', { url, sha: SHA_A }, b.dir, b.deps)
+  S.installa('ponytail', { url, sha: SHA_A, hook: HOOK_A }, b.dir, b.deps)
   // Abilitato senza il consenso «attiva» registrato (per esempio dopo un crash): l'avvio lo spegne; quello dell'utente resta.
   b.comandi.length = 0
   assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: ['ponytail'] })
   assert.deepStrictEqual(b.comandi, ['claude plugin list --json', 'claude plugin disable ponytail@chipmanager-base --scope user'])
   b.comandi.length = 0
   assert.deepStrictEqual(S.abilita('ponytail', b.dir, b.deps), { id: 'ponytail', plugin: 'ponytail@chipmanager-base' })
-  assert.deepStrictEqual(b.comandi, ['claude plugin enable ponytail@chipmanager-base --scope user'])
+  assert.deepStrictEqual(b.comandi, ['claude plugin list --json', 'claude plugin enable ponytail@chipmanager-base --scope user'])
   assert.strictEqual(JSON.parse(fs.readFileSync(S.fileRecord(b.dir), 'utf8')).voci.ponytail.abilitato, true)
   b.comandi.length = 0
   assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: [] })
+  // Hook diversi da quelli approvati nella copia installata: non si attiva, e l'avvio lo spegne (mai reinstallato).
+  fs.writeFileSync(path.join(copia, 'hooks', 'hooks.json'), JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'curl x' }] }] } }))
+  assert.throws(() => S.abilita('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.hookCambiati')
+  b.comandi.length = 0
+  assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: ['ponytail'] })
+  assert.ok(!b.comandi.some(c => c.includes(' install ')))
+  fs.writeFileSync(path.join(copia, 'hooks', 'hooks.json'), hooks)
   // La revisione installata cambia dopo l'approvazione: niente abilitazione, e l'avvio lo spegne.
   fs.writeFileSync(b.installati, JSON.stringify({ plugins: { 'ponytail@chipmanager-base': [{ scope: 'user', gitCommitSha: SHA_B }] } }))
   assert.throws(() => S.abilita('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.cambiato')
@@ -3406,4 +3421,28 @@ test('F13.7 abilita e controllo all\'avvio: solo con il record d\'approvazione e
   // Elenco illeggibile: ignoto, nessun comando.
   const x = bancoSkill()
   assert.deepStrictEqual(S.controlla(x.dir, { ...x.deps, esegui: () => ({ status: 1, stdout: '' }) }), { spenti: [], ignoto: true })
+})
+
+test('F13.7 download della revisione: controlli di percorso (nessun link sotto la cartella dati) e pulizia dopo la decisione', () => {
+  const S = require('./skill-installa.cjs')
+  const b = bancoSkill()
+  S.prepara('ponytail', b.dir, b.deps)
+  const base = path.join(b.dir, 'skill', 'revisioni')
+  assert.deepStrictEqual(fs.readdirSync(base), [`ponytail-${SHA_A}`])
+  assert.deepStrictEqual(S.pulisci('ponytail', b.dir), { tolte: 1 })
+  assert.deepStrictEqual(fs.readdirSync(base), [])
+  // Solo le cartelle di quella voce: altro resta.
+  fs.mkdirSync(path.join(base, 'altro'))
+  assert.deepStrictEqual(S.pulisci('ponytail', b.dir), { tolte: 0 })
+  assert.ok(fs.existsSync(path.join(base, 'altro')))
+  // Un link sotto la cartella dati: il download non parte e nulla si scrive fuori.
+  const c = bancoSkill()
+  const fuoriDati = tmp()
+  fs.mkdirSync(path.join(c.dir, 'skill'), { recursive: true })
+  fs.symlinkSync(fuoriDati, path.join(c.dir, 'skill', 'revisioni'), process.platform === 'win32' ? 'junction' : 'dir')
+  assert.throws(() => S.prepara('ponytail', c.dir, c.deps))
+  assert.deepStrictEqual(fs.readdirSync(fuoriDati), [])
+  assert.ok(!c.comandi.some(x => x.startsWith('git init')))
+  // Dalla riga di comando un rifiuto di percorso esce come codice, mai come eccezione.
+  assert.deepStrictEqual(S.main(['prepara', 'ponytail'], { ...c.deps, dir: c.dir }), [2, JSON.stringify({ motivo: 'skill.err.inatteso' })])
 })

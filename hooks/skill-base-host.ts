@@ -38,12 +38,22 @@ export async function installaSkill($: EngineInterface, id: string, conferma: (d
   const v = voceSkill(id)
   if (!v || v.pin === 'clone') throw new Error('skill.err.nonInstallabile')
   const p = await helperSkill($, ['prepara', id])
-  if (!p.ok) throw new Error(p.motivo)
+  // The downloaded revision is only for reading its hooks: it goes once the owner has decided (or the preparation failed).
+  const pulisci = () => helperSkill($, ['pulisci', id]).catch(() => undefined)
+  if (!p.ok) {
+    await pulisci()
+    throw new Error(p.motivo)
+  }
   const url = String(p.dati.url ?? '')
   const sha = String(p.dati.sha ?? '')
   const hook = Array.isArray(p.dati.hook) ? p.dati.hook.filter((x): x is string => typeof x === 'string').slice(0, 60) : []
-  if (!(await conferma({ url, sha, hook }))) return false
-  const i = await helperSkill($, ['installa', id], JSON.stringify({ url, sha }))
+  if (!(await conferma({ url, sha, hook }))) {
+    await pulisci()
+    return false
+  }
+  // Exactly what the owner approved: url, sha and the hooks shown; the record keeps them and is never re-derived.
+  const i = await helperSkill($, ['installa', id], JSON.stringify({ url, sha, hook }))
+  await pulisci()
   await leggiPlugin($)
   if (!i.ok) throw new Error(i.motivo)
   return true

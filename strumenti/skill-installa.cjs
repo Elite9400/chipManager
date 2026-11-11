@@ -3,9 +3,10 @@
 // source comes from the registry (skill-base.cjs), never from settings or an agent.
 //
 //   node skill-installa.cjs prepara <id>     approved revision (sha) + the hooks it declares, read from that revision
-//   node skill-installa.cjs installa <id>    stdin { url, sha } = what the owner approved: local marketplace, install, sha check
+//   node skill-installa.cjs installa <id>    stdin { url, sha, hook } = what the owner saw and approved: local marketplace, install, sha check
 //   node skill-installa.cjs abilita <id>     enable a plugin the mod installed, only if the installed revision is the approved one
 //   node skill-installa.cjs controlla        disable any mod-installed plugin enabled without a matching approval record
+//   node skill-installa.cjs pulisci <id>     remove the downloaded revision once the owner has decided
 //
 // Exit 0 with JSON on stdout; exit 2 with { motivo: <code> } for a refusal (codes are the panel's dictionary keys).
 const fs = require('node:fs')
@@ -69,20 +70,15 @@ function righeHook(conf, fonte) {
 }
 
 /**
- * Fetches the approved revision read-only into the data folder and lists every hook it declares: the manifest's `hooks`
- * (inline or file paths), the conventional `hooks/hooks.json`. A declared file that cannot be read blocks the install.
+ * Every hook a plugin declares, from any source of its files (`esiste`/`testo` on paths relative to the plugin root): the
+ * manifest's `hooks` (inline or file paths) and the conventional `hooks/hooks.json`. A declared file that cannot be read
+ * is a refusal. Used on the approved revision before install and on the installed copy before enabling.
  */
-function hookDellaRevisione(v, sha, dm, deps) {
-  const dir = dirRevisione(dm, v.id, sha)
-  fs.mkdirSync(dir, { recursive: true })
-  const git = (...a) => deps.esegui(['git', '-C', dir, ...a], { timeoutMs: 120_000 })
-  if (!fs.existsSync(path.join(dir, '.git')) && deps.esegui(['git', 'init', '-q', dir]).status !== 0) throw new Rifiuto('skill.err.git')
-  if (git('fetch', '-q', '--depth', '1', '--no-tags', urlDi(v), sha).status !== 0) throw new Rifiuto('skill.err.git')
-  const esiste = p => git('cat-file', '-e', `${sha}:${p}`).status === 0
+function hookDa(v, esiste, testo) {
   const leggi = p => {
-    const r = git('show', `${sha}:${p}`)
-    if (r.status !== 0) throw new Rifiuto('skill.err.hook')
-    try { return JSON.parse(r.stdout) } catch { throw new Rifiuto('skill.err.hook') }
+    const t = testo(p)
+    if (t === null) throw new Rifiuto('skill.err.hook')
+    try { return JSON.parse(t) } catch { throw new Rifiuto('skill.err.hook') }
   }
   const righe = []
   const manifest = esiste('.claude-plugin/plugin.json') ? leggi('.claude-plugin/plugin.json') : null
@@ -98,6 +94,65 @@ function hookDellaRevisione(v, sha, dm, deps) {
   if (esiste('hooks/hooks.json') && !dichiarati.includes('./hooks/hooks.json') && !dichiarati.includes('hooks/hooks.json')) righe.push(...righeHook(leggi('hooks/hooks.json'), 'hooks/hooks.json'))
   return righe.slice(0, 60)
 }
+
+/**
+ * Fetches the approved revision read-only into the data folder (through the path checks: no link at or below the data
+ * root) and lists its hooks. The folder is removed by `pulisci` once the owner has decided.
+ */
+function hookDellaRevisione(v, sha, dm, deps) {
+  const dir = dirRevisione(dm, v.id, sha)
+  require('./disco.cjs').percorsoSicuro(dir, [dm])
+  fs.mkdirSync(dir, { recursive: true })
+  const git = (...a) => deps.esegui(['git', '-C', dir, ...a], { timeoutMs: 120_000 })
+  if (!fs.existsSync(path.join(dir, '.git')) && deps.esegui(['git', 'init', '-q', dir]).status !== 0) throw new Rifiuto('skill.err.git')
+  if (git('fetch', '-q', '--depth', '1', '--no-tags', urlDi(v), sha).status !== 0) throw new Rifiuto('skill.err.git')
+  return hookDa(v, p => git('cat-file', '-e', `${sha}:${p}`).status === 0, p => {
+    const r = git('show', `${sha}:${p}`)
+    return r.status === 0 ? r.stdout : null
+  })
+}
+
+/** The hooks of the installed copy (its `installPath`, read from disk); undefined = cannot be read (counts as different). */
+function hookInstallati(v, installPath) {
+  if (typeof installPath !== 'string' || !path.isAbsolute(installPath)) return undefined
+  const dentro = p => {
+    const f = path.resolve(installPath, p)
+    return f.startsWith(path.resolve(installPath) + path.sep) ? f : null
+  }
+  try {
+    return hookDa(v, p => !!dentro(p) && fs.existsSync(dentro(p)), p => {
+      try { return dentro(p) ? fs.readFileSync(dentro(p), 'utf8') : null } catch { return null }
+    })
+  } catch { return undefined }
+}
+
+/** Removes the downloaded revision of `id` (only folders this helper creates, after the same path checks). */
+function pulisci(id, dm) {
+  const v = K.voceSkill(id)
+  if (!v) throw new Rifiuto('skill.err.nonInstallabile')
+  const base = path.join(dm, 'skill', 'revisioni')
+  if (!fs.existsSync(base)) return { tolte: 0 }
+  require('./disco.cjs').percorsoSicuro(base, [dm])
+  let tolte = 0
+  for (const n of fs.readdirSync(base)) {
+    if (!new RegExp(`^${v.id}-[0-9a-f]{40}$`).test(n)) continue
+    const f = path.join(base, n)
+    if (fs.lstatSync(f).isSymbolicLink()) continue
+    fs.rmSync(f, { recursive: true, force: true })
+    tolte++
+  }
+  return { tolte }
+}
+
+/** The installed copy's path from `claude plugin list --json` (raw entry, read only here). */
+function percorsoInstallato(plugin, deps) {
+  const l = deps.esegui(['claude', 'plugin', 'list', '--json'], { timeoutMs: 30_000 })
+  try {
+    const e = l.status === 0 ? JSON.parse(l.stdout).find(x => x?.id === plugin && x?.scope === 'user') : undefined
+    return typeof e?.installPath === 'string' ? e.installPath : undefined
+  } catch { return undefined }
+}
+const stessiHook = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i])
 
 function leggiRecord(dm) {
   try {
@@ -141,6 +196,9 @@ function prepara(id, dm, deps) {
 function installa(id, input, dm, deps) {
   const v = voce(id)
   if (input?.url !== urlDi(v) || !SHA.test(String(input?.sha))) throw new Rifiuto('skill.err.fonte')
+  // The hooks the owner saw and approved, kept in the record: the installed copy must declare exactly these.
+  const hook = input.hook
+  if (!Array.isArray(hook) || hook.length > 60 || !hook.every(x => typeof x === 'string' && x.length <= 200)) throw new Rifiuto('skill.err.fonte')
   const dir = dirMarketplace(dm)
   const f = path.join(dir, '.claude-plugin', 'marketplace.json')
   const d = require('./disco.cjs')
@@ -163,7 +221,7 @@ function installa(id, input, dm, deps) {
     throw new Rifiuto(inst ? 'skill.err.shaDiverso' : 'skill.err.shaNonVerificabile')
   }
   const r = leggiRecord(dm)
-  r.voci[id] = { plugin, url: input.url, sha: input.sha, quando: new Date().toISOString(), abilitato: false }
+  r.voci[id] = { plugin, url: input.url, sha: input.sha, hook, quando: new Date().toISOString(), abilitato: false }
   scriviRecord(dm, r)
   return { id, plugin, sha: input.sha }
 }
@@ -176,6 +234,7 @@ function abilita(id, dm, deps) {
   const rec = r.voci[id]
   if (!rec || rec.plugin !== plugin || !SHA.test(String(rec.sha))) throw new Rifiuto('skill.err.nonApprovato')
   if (!coincide(shaInstallato(plugin, deps), rec.sha)) throw new Rifiuto('skill.err.cambiato')
+  if (!stessiHook(hookInstallati(v, percorsoInstallato(plugin, deps)), rec.hook)) throw new Rifiuto('skill.err.hookCambiati')
   const e = deps.esegui(['claude', 'plugin', 'enable', plugin, '--scope', 'user'], { timeoutMs: 60_000 })
   if (e.status !== 0 && !/already enabled/i.test(e.stdout)) throw new Rifiuto('skill.err.abilita')
   r.voci[id] = { ...rec, abilitato: true, abilitatoIl: new Date().toISOString() }
@@ -183,11 +242,18 @@ function abilita(id, dm, deps) {
   return { id, plugin }
 }
 
-/** Session start: a mod-installed plugin enabled without a matching approval (sha + «enable» consent) is disabled. */
+/**
+ * Session start: a mod-installed plugin enabled without a matching approval (approved sha and hooks, «enable» consent) is
+ * disabled and reported; nothing is ever reinstalled.
+ */
 function controlla(dm, deps) {
   const l = deps.esegui(['claude', 'plugin', 'list', '--json'], { timeoutMs: 30_000 })
   let elenco
-  try { elenco = l.status === 0 ? K.pluginDa(JSON.parse(l.stdout)) : null } catch { elenco = null }
+  let grezzo = []
+  try {
+    grezzo = l.status === 0 ? JSON.parse(l.stdout) : null
+    elenco = K.pluginDa(grezzo)
+  } catch { elenco = null }
   if (!elenco) return { spenti: [], ignoto: true }
   const r = leggiRecord(dm)
   const spenti = []
@@ -196,7 +262,8 @@ function controlla(dm, deps) {
     const p = elenco.find(x => x.id === plugin)
     if (!p?.attivo) continue
     const rec = r.voci[v.id]
-    if (rec?.abilitato && rec.plugin === plugin && coincide(shaInstallato(plugin, deps), rec.sha)) continue
+    const percorso = grezzo.find(x => x?.id === plugin && x?.scope === 'user')?.installPath
+    if (rec?.abilitato && rec.plugin === plugin && coincide(shaInstallato(plugin, deps), rec.sha) && stessiHook(hookInstallati(v, percorso), rec.hook)) continue
     deps.esegui(['claude', 'plugin', 'disable', plugin, '--scope', 'user'], { timeoutMs: 60_000 })
     spenti.push(v.id)
   }
@@ -209,7 +276,7 @@ function main(argv = process.argv.slice(2), deps = {}) {
   const [cmd, id] = argv
   try {
     const input = cmd === 'installa' ? JSON.parse(fs.readFileSync(0, 'utf8')) : undefined
-    const out = cmd === 'prepara' ? prepara(id, dm, d) : cmd === 'installa' ? installa(id, input, dm, d) : cmd === 'abilita' ? abilita(id, dm, d) : cmd === 'controlla' ? controlla(dm, d) : null
+    const out = cmd === 'prepara' ? prepara(id, dm, d) : cmd === 'installa' ? installa(id, input, dm, d) : cmd === 'abilita' ? abilita(id, dm, d) : cmd === 'controlla' ? controlla(dm, d) : cmd === 'pulisci' ? pulisci(id, dm) : null
     if (!out) return [2, JSON.stringify({ motivo: 'skill.err.comando' })]
     return [0, JSON.stringify(out)]
   } catch (e) {
@@ -222,4 +289,4 @@ if (require.main === module) {
   process.exitCode = codice
 }
 
-module.exports = { main, prepara, installa, abilita, controlla, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }
+module.exports = { main, prepara, installa, abilita, controlla, pulisci, hookInstallati, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }

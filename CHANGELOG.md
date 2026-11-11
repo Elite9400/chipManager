@@ -33,13 +33,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   per-skill switch (`modoLavoro.skillBase`, account with project override) and **Enable**/**Disable** on click with
   `--scope user` (managed plugins locked). **Install on click** for ponytail, superpowers and mattpocock-skills: the
   approved revision is the official marketplace entry's `source.sha` (superpowers, mattpocock-skills) or the head of the
-  registry repository (ponytail); it is fetched read-only into the data folder to list every hook it declares (manifest
-  and `hooks/hooks.json`; an unreadable hook file blocks the install), and the confirmation shows source, commit, data
-  flow and hooks. The mod then installs it from its own local marketplace (`chipmanager-base`, `source.sha` pinned,
+  registry repository (ponytail); it is fetched read-only into the data folder, through the path checks, to list every
+  hook it declares (manifest and `hooks/hooks.json`; an unreadable hook file blocks the install), and removed once you
+  decide. The confirmation shows source, commit, data flow and hooks; the approval record keeps that commit and those
+  hooks and is never re-derived (a newer upstream revision needs a new approval). The mod then installs it from its own local marketplace (`chipmanager-base`, `source.sha` pinned,
   `defaultEnabled: false`) with `--scope user`, so it arrives disabled; a revision that differs from the approved one or
-  cannot be verified leaves it disabled. **Enable** on a mod-installed plugin checks the installed revision again and
-  records the approval; at session start a mod-installed plugin found enabled without that record is disabled and the
-  owner is told. A local-only project does not install or enable anything that sends data off the computer. Not in this
+  cannot be verified leaves it disabled. **Enable** on a mod-installed plugin checks the installed revision and its hooks
+  against the record and records the approval; at session start a mod-installed plugin found enabled without that
+  approval, or with a different revision or different hooks, is disabled and the owner is told. Nothing is ever
+  installed or reinstalled without the owner's click. A local-only project does not install or enable anything that sends data off the computer. Not in this
   build: TokenEconomizer's guarded install sequence (it stays experimental and off) and the plugin-overhead measure.
 
 - **Work mode** (Settings, Account group): default effort per lane, the Codex sandbox when Codex executes, sessions

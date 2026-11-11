@@ -1042,6 +1042,7 @@ const en = {
   "skill.err.shaNonVerificabile": "the installed revision cannot be verified: left disabled",
   "skill.err.nonApprovato": "not installed by the mod at an approved revision",
   "skill.err.cambiato": "changed since you approved it: not enabled",
+  "skill.err.hookCambiati": "its hooks differ from the ones you approved: not enabled",
   "skill.err.abilita": "claude plugin enable failed",
   "skill.err.comando": "invalid helper command",
   "skill.err.inatteso": "unexpected error: nothing changed",

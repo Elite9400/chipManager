@@ -1040,6 +1040,7 @@ const it: Dizionario = {
   "skill.err.shaNonVerificabile": "la revisione installata non si può verificare: resta disattivato",
   "skill.err.nonApprovato": "non installato dalla mod a una revisione approvata",
   "skill.err.cambiato": "cambiato da quando l'hai approvato: non attivato",
+  "skill.err.hookCambiati": "i suoi hook sono diversi da quelli che hai approvato: non attivato",
   "skill.err.abilita": "claude plugin enable non è riuscito",
   "skill.err.comando": "comando dell'helper non valido",
   "skill.err.inatteso": "errore inatteso: niente è cambiato",
