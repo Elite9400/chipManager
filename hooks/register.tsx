@@ -390,17 +390,48 @@ async function leggiTutte($: Eng, fresca = false): Promise<Letti> {
 type Letti = Azione[] & { nomi?: string[]; rotte?: { nome: string; motivo: Msg | string }[] }
 
 /** Scrittura singola con compare-and-swap atomico. `nuova` = il file non deve esistere. */
-async function salva($: Eng, a: Azione, opz: { nuova?: boolean } = {}) {
-  // F13.3b: the last guard before writing: `provider` only with `compatibile` (a record with both would be refused on read).
+/** Il record come si scrive: versione e data nuove; F13.3b: `provider` solo con `compatibile` (con tutti e due si rifiuterebbe in lettura). */
+function daScrivere(a: Azione): Azione {
   const { provider, ...resto } = a
-  const nuova = { ...(a.esecutore === 'compatibile' ? a : resto), versione: a.versione + 1, aggiornata: ora() }
   void provider
+  return { ...(a.esecutore === 'compatibile' ? a : resto), versione: a.versione + 1, aggiornata: ora() }
+}
+
+async function salva($: Eng, a: Azione, opz: { nuova?: boolean } = {}) {
+  const nuova = daScrivere(a)
   const r = await helper($, ['cas', `${await cartella($)}/${a.id}.json`, opz.nuova ? 'nuovo' : String(a.versione)], JSON.stringify(nuova))
   if (r.codice === 4) throw new Conflitto(msg('err.cambiataAltrove', { titolo: a.titolo }))
   if (r.codice === 3) throw errore('err.altraScrive')
   if (r.codice !== 0) throw errore('err.scrittura', { dettaglio: chiaveOTesto('en', r.errore || r.testo).slice(0, 160) })
   await update($, azioni, l => (l.some(x => x.id === a.id) ? l.map(x => (x.id === a.id ? nuova : x)) : [...l, nuova]))
   return nuova
+}
+
+/** Un artefatto di catena non scritto: il riferimento non è ancora consegnato, o quella versione è già accettata. */
+class ArtefattoRifiutato extends Error {}
+/**
+ * Correttezza 2.2.0, rilievo 1: la consegna di un passo di catena (stato già calcolato in `a`, tentativo e stato già
+ * controllati sul record letto) scrive artefatto e record in UNA operazione dell'helper, con il CAS sulla versione letta:
+ * una consegna in ritardo o concorrente non scrive nulla e non sovrascrive mai la versione già accettata.
+ */
+function salvaConArtefatto($: Eng, testo: string) {
+  return async (a: Azione) => {
+    const nuova = daScrivere(a)
+    const r = await helper($, ['artefatto', await cartella($)], JSON.stringify({ catena: a.catena, rif: rifConsegna(a.catena!), testo, record: { versione: a.versione, scrivi: nuova } }))
+    const motivo = (() => {
+      try {
+        return (JSON.parse(r.testo || '{}') as { motivo?: string }).motivo
+      } catch {
+        return undefined
+      }
+    })()
+    if (r.codice === 4 && motivo === 'cambiata') throw new Conflitto(msg('err.cambiataAltrove', { titolo: a.titolo }))
+    if (r.codice === 4) throw new ArtefattoRifiutato(motivo === 'accettata' ? 'this version of the artefact was already delivered and accepted' : 'the step it refers to has not delivered its artefact')
+    if (r.codice === 3) throw errore('err.altraScrive')
+    if (r.codice !== 0) throw new ArtefattoRifiutato('invalid request')
+    await update($, azioni, l => l.map(x => (x.id === a.id ? nuova : x)))
+    return nuova
+  }
 }
 
 /**
@@ -431,7 +462,7 @@ async function rileggiUna($: Eng, id: string): Promise<Azione | undefined> {
   }
 }
 
-async function aggiorna($: Eng, id: string, fn: (a: Azione) => Partial<Azione> | null) {
+async function aggiorna($: Eng, id: string, fn: (a: Azione) => Partial<Azione> | null, scrivi: (a: Azione) => Promise<Azione> = x => salva($, x)) {
   for (let i = 0; i < 3; i++) {
     // Dopo un conflitto si rilegge dal disco solo il proprio file, mai dalla cache (né tutta la cartella).
     const a = i === 0 ? (await carica($)).find(x => x.id === id) : await rileggiUna($, id)
@@ -439,7 +470,7 @@ async function aggiorna($: Eng, id: string, fn: (a: Azione) => Partial<Azione> |
     const campi = fn(a)
     if (!campi) return a
     try {
-      return await salva($, { ...a, ...campi })
+      return await scrivi({ ...a, ...campi })
     } catch (err) {
       if (!(err instanceof Conflitto)) throw err
     }
@@ -773,7 +804,7 @@ async function chiediSenzaProgetto($: Eng) {
 
 // --- avvio --------------------------------------------------------------------------------------------
 
-type Decisione = { avvia?: Azione; coda?: Msg; blocchi?: Msg[]; nulla?: Azione }
+type Decisione = { avvia?: Azione; coda?: Msg; blocchi?: Msg[]; nulla?: Azione; pronta?: boolean }
 
 /**
  * Decide e prenota. Rilegge record, regole e configurazione di chi avvia; decide con `pianifica` e le
@@ -784,7 +815,7 @@ async function decidi(
   $: Eng,
   options: Record<string, unknown>,
   id: string,
-  opz: { approvata?: number; qui?: boolean; cloudApprovato?: number; terzoApprovato?: number; manuale?: boolean } = {},
+  opz: { approvata?: number; qui?: boolean; cloudApprovato?: number; terzoApprovato?: number; manuale?: boolean; soloCoda?: boolean } = {},
 ): Promise<Decisione> {
   for (let prova = 0; prova < 3; prova++) {
     const [tutte, r, chi] = await Promise.all([carica($, { completa: true, fresca: prova > 0 }), leggiRegole($), chiSonoIo($)])
@@ -795,7 +826,7 @@ async function decidi(
     const ammessi = opz.qui ? ['proposta'] : ['proposta', 'accodata', 'fallita']
     if (!a || !ammessi.includes(a.stato)) return { nulla: a }
     if (opz.approvata !== undefined && a.versione !== opz.approvata) throw errore('err.cambiataDopoConferma', { titolo: a.titolo })
-    if (modalitaDi(a) === 'esterno' && opz.terzoApprovato !== a.versione) return { blocchi: [msg('v.freeConferma')] }
+    if (modalitaDi(a) === 'esterno' && opz.terzoApprovato !== a.versione && !opz.soloCoda) return { blocchi: [msg('v.freeConferma')] }
     // Il cloud parte solo con il consenso dato al testo di QUESTA versione (letto per intero nella
     // conferma); un'azione diventata cloud dopo la conferma, o chiesta a mano, non parte.
     if (a.destinazione === 'cloud' && !opz.qui) {
@@ -819,6 +850,8 @@ async function decidi(
       if (await prenota($, tutte, { ...a, ...transizione(a, 'accodata', ora()), ...salvato('motivoCoda', 'motivo', motivo), origineFork, origineNome })) return { coda: motivo }
       continue
     }
+    // Correttezza 2.2.0, rilievo 3: `soloCoda` accoda soltanto; partirebbe adesso → lo dice, e chi chiama conferma il testo.
+    if (opz.soloCoda) return { pronta: true }
     const presa = await prenota($, tutte, {
       ...a,
       // Ogni nuovo avvio azzera date successive ed esito di revisione nello stesso CAS.
@@ -872,6 +905,11 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
     const v = violazioni(prima, await leggiRegole($), tutte)
     if (v.length) throw errore('err.nonParte', { motivi: v })
     if (approvata !== undefined && prima.versione !== approvata) throw errore('err.cambiataPrimaInvio')
+    // Correttezza 2.2.0, rilievo 3: prima si accoda (un passo di catena aspetta la consegna del precedente); il testo si
+    // compone e si conferma solo quando la chip partirebbe adesso, cioè con le dipendenze soddisfatte.
+    const prova = await decidi($, options, id, { approvata: prima.versione, soloCoda: true })
+    if (prova.blocchi) throw errore('err.nonParte', { motivi: prova.blocchi })
+    if (!prova.pronta) return
     // F13.6: un passo di catena manda il testo intero (bozza e feedback compresi): si conferma quello.
     const composto = await testoCatena($, prima)
     if ('motivo' in composto) throw errore('err.nonParte', { motivi: [composto.motivo] })
@@ -963,16 +1001,15 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
       const risultato = await chiamaCompatibile($, options, 'completa', { provider: a.provider, imp: r.risorse.account.compatibili?.[a.provider ?? ''],
         livello: r.risorse.compatibili[a.provider ?? ''] ?? 'niente', soloLocale: r.risorse.soloLocale, modello: a.modello, testo: composto.testo }) as { risultato?: unknown }
       if (typeof risultato.risultato !== 'string' || risultato.risultato.length > 30000) throw new Error('invalid answer')
-      // F13.6: l'uscita di uno scrittore di catena diventa il suo artefatto (helper, sotto il lock); senza, il passo non consegna.
-      if (a.catena) {
-        const esito = await helper($, ['artefatto', await cartella($)], JSON.stringify({ catena: a.catena, rif: rifConsegna(a.catena), testo: risultato.risultato }))
-        if (esito.codice !== 0) return fallisce(msg('cat.artefattoMancante'))
-      }
+      // F13.6: l'uscita di uno scrittore di catena diventa il suo artefatto; senza, il passo non consegna. Correttezza 2.2.0,
+      // rilievo 1: artefatto e consegna in una sola scrittura dell'helper (CAS sotto il lock), solo per il tentativo corrente.
+      const scrivi = a.catena ? salvaConArtefatto($, risultato.risultato) : undefined
       return aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo
         ? { ...transizione(x, 'consegnata', ora()), risultato: risultato.risultato as string, avviataIl: ora(), ...(a.catena && { artefatto: fileArtefatto(a.catena) }),
             ...salvato('errore', 'errore', msg('rec.bozzaFree')),
             // F13a↔F13b: a local server is free; a remote provider's price is not read, so its cost is unknown.
-            costo: { tipo: voceCompatibile(a.provider)?.locale ? 'gratuito' : 'ignoto' } } : null)
+            costo: { tipo: voceCompatibile(a.provider)?.locale ? 'gratuito' : 'ignoto' } } : null, scrivi)
+        .catch(e => (e instanceof ArtefattoRifiutato ? fallisce(msg('cat.artefattoMancante')) : Promise.reject(e)))
     }
     if (a.lanciatore === 'freellmapi') {
       const fallisce = (m: Msg) => aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo ? { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', m) } : null)
@@ -982,14 +1019,13 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
       if (confermato !== undefined && composto.testo !== confermato) return fallisce(msg('err.cambiataPrimaInvio'))
       const risultato = await fonte($, options, 'completa', { politica: r.risorse, testo: composto.testo, modello: a.modello }) as { risultato?: unknown }
       if (typeof risultato.risultato !== 'string' || risultato.risultato.length > 30000) throw new Error('invalid answer')
-      // F13.6: l'uscita di uno scrittore di catena diventa il suo artefatto (helper, sotto il lock); senza, il passo non consegna.
-      if (a.catena) {
-        const esito = await helper($, ['artefatto', await cartella($)], JSON.stringify({ catena: a.catena, rif: rifConsegna(a.catena), testo: risultato.risultato }))
-        if (esito.codice !== 0) return fallisce(msg('cat.artefattoMancante'))
-      }
+      // F13.6: l'uscita di uno scrittore di catena diventa il suo artefatto; senza, il passo non consegna. Correttezza 2.2.0,
+      // rilievo 1: artefatto e consegna in una sola scrittura dell'helper (CAS sotto il lock), solo per il tentativo corrente.
+      const scrivi = a.catena ? salvaConArtefatto($, risultato.risultato) : undefined
       return aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo
         ? { ...transizione(x, 'consegnata', ora()), risultato: risultato.risultato as string, avviataIl: ora(), ...(a.catena && { artefatto: fileArtefatto(a.catena) }),
-            ...salvato('errore', 'errore', msg('rec.bozzaFree')) } : null)
+            ...salvato('errore', 'errore', msg('rec.bozzaFree')) } : null, scrivi)
+        .catch(e => (e instanceof ArtefattoRifiutato ? fallisce(msg('cat.artefattoMancante')) : Promise.reject(e)))
     }
     if (a.lanciatore === 'api-claude') return await avviaApi($, options, a, r)
     const m = mandato(a, r, await strumentiDati($))
@@ -2712,15 +2748,14 @@ export const register: Register = (on, options) => {
     // L'identità di chi scrive la dà la sessione, mai gli argomenti.
     const io = (await read($, contesto))?.io ?? (await $.session.id())
     const r = await leggiRegole($)
-    // F13.6: un passo di catena consegna il suo testo; l'helper lo scrive come artefatto PRIMA del cambio di stato.
+    // F13.6: un passo di catena consegna il suo testo. Correttezza 2.2.0, rilievo 1: tentativo e stato si controllano sul
+    // record, poi artefatto e consegna si scrivono insieme (helper, CAS sotto il lock): mai l'artefatto prima del cambio di stato.
     if (artefatto !== undefined) {
       if (voluto !== 'consegnata' || typeof artefatto !== 'string' || !artefatto.trim() || artefatto.length > ARTEFATTO_MAX)
         return { deny: `aggiorna_azione: artefatto is the whole text (up to ${ARTEFATTO_MAX} characters), only with stato "consegnata"` }
       const a = (await carica($)).find(x => x.id === id)
       if (!a?.catena || a.catena.ruolo === 'applicatore') return { deny: 'aggiorna_azione: artefatto only for a writer or review step of a chain' }
       if (tentativo !== a.tentativo || !TRANSIZIONI.consegnata!.includes(a.stato)) return { deny: 'aggiorna_azione: the tentativo is not the current one' }
-      const esito = await helper($, ['artefatto', await cartella($)], JSON.stringify({ catena: a.catena, rif: rifConsegna(a.catena), testo: artefatto }))
-      if (esito.codice !== 0) return { deny: `aggiorna_azione: artefact not written (${esito.codice === 4 ? 'the step it refers to has not delivered its artefact' : 'invalid request'})` }
     }
     let rifiuto: string | undefined
     const perStato = (a: Azione): Partial<Azione> | null => {
@@ -2797,8 +2832,8 @@ export const register: Register = (on, options) => {
       const r: Revisione = { esito: rev.esito as Revisione['esito'], riferitaDa: io, quando: ora(), tentativo: a.tentativo }
       if (typeof rev.nota === 'string' && rev.nota.trim()) r.nota = rev.nota.trim()
       return { ...campi, revisione: r }
-    }).catch(err => {
-      rifiuto = String((err as Error)?.message ?? err)
+    }, typeof artefatto === 'string' ? salvaConArtefatto($, artefatto) : undefined).catch(err => {
+      rifiuto = err instanceof ArtefattoRifiutato ? `artefact not written (${err.message})` : String((err as Error)?.message ?? err)
       return undefined
     })
     if (rifiuto || !fatta) return { deny: `aggiorna_azione: ${rifiuto ?? `no action ${id}`}` }

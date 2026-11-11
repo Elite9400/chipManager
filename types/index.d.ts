@@ -223,7 +223,11 @@ export type Destinazione = 'local' | 'cloud' | 'api-claude'
 
 /** Una riga del pannello: un file JSON in `<dir azioni>/<id>.json`, scritto solo con CAS atomico. */
 /** F13.2: i vincoli della chip dirigente, copiati dall'helper dal record del padre (mai dal testo). */
-export type VincoliPadre = { sensibile: boolean; corsiaMin?: Corsia; datiLan: boolean; fornitori: string[]; destinazioni?: Destinazione[] }
+export type VincoliPadre = {
+  sensibile: boolean; corsiaMin?: Corsia; datiLan: boolean; fornitori: string[]; destinazioni?: Destinazione[]
+  /** Correttezza 2.2.0, rilievo 2: i provider compatibili che il progetto della dirigente ammette (assente = nessun limite da quella parte). */
+  compatibili?: string[]
+}
 /** F13.6: il passo di una catena (scrittore, revisore o applicatore) e il suo giro. */
 export type Catena = { id: string; giro: number; ruolo: 'scrittore' | 'revisore' | 'applicatore' }
 /** F13a↔F13b: il costo di un record, coi tipi tenuti distinti. */

@@ -1244,7 +1244,12 @@ const ARTEFATTO_MAX = 60000
  * F13.6: l'artefatto di un passo di catena, sotto il lock delle azioni: `artefatti/<catena>/<giro>-<ruolo>.md`, con
  * un'intestazione (catena, giro, ruolo, riferimento) e il testo, al più ARTEFATTO_MAX caratteri, con le regole dei
  * percorsi. Il riferimento è quello atteso (la bozza per il feedback, il feedback per la riscrittura) e deve esistere.
- * stdin `{ catena: { id, giro, ruolo }, rif?, testo }`: 0 e il nome; 2 richiesta non valida; 4 riferimento assente.
+ * Correttezza 2.2.0, rilievo 1: artefatto e consegna sono UNA operazione sotto il lock: il record del passo si scrive
+ * con un CAS sulla versione letta dal pannello (che ha già controllato tentativo e stato), nello stesso lock dell'artefatto.
+ * Una consegna in ritardo o concorrente perde il CAS e non scrive nulla; un artefatto che il record ha già consegnato
+ * (la versione accettata) non si sovrascrive mai. Un file senza consegna (rimasto da un errore) sì.
+ * stdin `{ catena: { id, giro, ruolo }, rif?, testo, record: { versione, scrivi } }`: 0 e il nome; 2 richiesta non
+ * valida; 4 riferimento assente (`rif`), record cambiato (`cambiata`) o versione già accettata (`accettata`).
  */
 async function artefatto(dir, r) {
   registraRadici(dir)
@@ -1255,11 +1260,30 @@ async function artefatto(dir, r) {
   if (r.rif !== atteso) return [2, JSON.stringify({ motivo: 'rif' })]
   const cartella = path.join(dir, 'artefatti', c.id)
   const nome = `${c.giro}-${c.ruolo}.md`
+  // Il record nuovo del passo: lo stesso passo di catena, consegnato con questo artefatto, alla versione dopo quella letta.
+  const rec = r.record
+  const stessa = x => oggetto(x) && x.id === c.id && x.giro === c.giro && x.ruolo === c.ruolo
+  const s = oggetto(rec) ? rec.scrivi : undefined
+  if (!oggetto(rec) || !Number.isInteger(rec.versione) || !oggetto(s) || !idValido(s.id) || s.versione !== rec.versione + 1 || s.stato !== 'consegnata' ||
+      s.artefatto !== nome || !stessa(s.catena)) return [2, '']
+  const fileRecord = path.join(dir, `${s.id}.json`)
   const v = await conMutex(MUTEX_AZIONI(dir), 8000, () => {
+    if (String(leggiVersione(fileRecord)) !== String(rec.versione)) return [4, JSON.stringify({ motivo: 'cambiata' })]
+    const attuale = JSON.parse(fs.readFileSync(fileRecord, 'utf8'))
+    if (!stessa(attuale.catena)) return [2, '']
     if (atteso !== undefined && !fs.existsSync(path.join(cartella, atteso))) return [4, JSON.stringify({ motivo: 'rif' })]
+    const file = path.join(cartella, nome)
+    if (attuale.artefatto === nome && fs.existsSync(file)) return [4, JSON.stringify({ motivo: 'accettata' })]
     percorsoSicuro(path.resolve(cartella))
     fs.mkdirSync(cartella, { recursive: true })
-    scriviDati(path.join(cartella, nome), `<!-- chipManager artefatto catena=${c.id} giro=${c.giro} ruolo=${c.ruolo} rif=${atteso ?? '-'} -->\n${r.testo}`)
+    scriviDati(file, `<!-- chipManager artefatto catena=${c.id} giro=${c.giro} ruolo=${c.ruolo} rif=${atteso ?? '-'} -->\n${r.testo}`)
+    try {
+      scriviDati(fileRecord, JSON.stringify(s, null, 2))
+    } catch (e) {
+      // Senza la consegna l'artefatto non resta: nessun file che nessun record abbia accettato.
+      fs.rmSync(file, { force: true })
+      throw e
+    }
     return [0, nome]
   })
   return v.occupato ? [3, ''] : v.valore

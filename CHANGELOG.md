@@ -23,6 +23,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   per run). Under such a cap a step on a remote OpenAI-compatible provider does not start, since its cost is unknown; a
   local server is free and runs.
 
+### Fixed
+
+- **Chain deliveries are one write.** A step's artefact and its `consegnata` record are written together by the helper,
+  with a compare-and-swap on the record version read by the panel: a late or concurrent delivery writes nothing, and an
+  artefact a record has already delivered is never overwritten.
+- **Director children on OpenAI-compatible providers can start.** The director's constraints now carry the compatible
+  providers its project allows (only ever narrowed), and a child is checked against its own provider.
+- **«Start all» queues a chain step before composing its text.** A rewrite whose review has not been delivered goes to
+  the queue; the text is composed and confirmed when its dependencies are met.
+- **API lane: a run stopped before any process started releases its reservation**, month and group together, so
+  «Retry» under a director cap is not blocked.
+- **Monthly API spend in the Load view and the destination advisor** counts the reported cost like the helper (an
+  unknown cost counts the cap or the reported cost, whichever is higher), with the same register validation; a parity
+  test checks both.
+
 ## [2.2.0] - 2026-11-07
 
 ### Added

@@ -22,8 +22,10 @@ export const BACKGROUND_GENERICO =
 export const SOGLIA_PREDEFINITA: Soglia = { attenzione: 70, critica: 90 }
 /**
  * F6.4: la spesa a crediti API del mese, dal registro dell'helper (`spesa-api.json`): contato = costo stimato (ignoto =
- * tetto), prenotato = tetto. null se il registro non ha la forma attesa. Stessa somma dell'helper che prenota.
+ * il tetto, o il costo riportato se più alto), prenotato = tetto. null se il registro non ha la forma attesa. Stessa
+ * convalida e stessa somma dell'helper che prenota (`voceValida` e `spesoNelMese` di api-claude.cjs, prova di parità).
  */
+const GRUPPO_SPESA = /^(catena:c-[a-z0-9]{6,20}|dirigente:a-[a-z0-9]{6,20})$/
 export function spesaDelMese(s: unknown, mese: string, progetto?: string): number | null {
   if (!s || typeof s !== 'object' || (s as { v?: unknown }).v !== 1) return null
   const voci = (s as { voci?: unknown }).voci
@@ -31,14 +33,20 @@ export function spesaDelMese(s: unknown, mese: string, progetto?: string): numbe
   let tot = 0
   for (const v of Object.values(voci as Record<string, unknown>)) {
     if (!v || typeof v !== 'object') return null
-    const x = v as { mese?: unknown; tetto?: unknown; costo?: unknown; stato?: unknown; progetto?: unknown }
+    const x = v as { mese?: unknown; tetto?: unknown; costo?: unknown; stato?: unknown; progetto?: unknown; gruppi?: unknown; dati?: unknown; riportato?: unknown; recuperato?: unknown }
     // F10: il registro dell'account; ogni voce porta il progetto (come la convalida l'helper).
     if (typeof x.progetto !== 'string' || !x.progetto || x.progetto.length > 400) return null
     // Una voce non valida rende illeggibile tutto il registro (l'helper, per lo stesso motivo, non prenota più).
     if (typeof x.mese !== 'string' || !/^\d{4}-\d{2}$/.test(x.mese) || typeof x.tetto !== 'number' || !Number.isFinite(x.tetto) || x.tetto <= 0) return null
     if (x.stato === 'prenotato' ? x.costo !== undefined : x.stato !== 'contato' || !(x.costo === null || (typeof x.costo === 'number' && Number.isFinite(x.costo) && x.costo >= 0))) return null
+    // Correttezza 2.2.0, rilievo 6: i campi che l'helper aggiunge (gruppi, cartella, costo riportato, recupero), con la sua forma.
+    if ((x.gruppi !== undefined && !(Array.isArray(x.gruppi) && x.gruppi.length <= 2 && x.gruppi.every(g => typeof g === 'string' && GRUPPO_SPESA.test(g)))) ||
+        (x.dati !== undefined && !(typeof x.dati === 'string' && x.dati.length <= 1000 && /^([A-Za-z]:[\\/]|[\\/])/.test(x.dati))) ||
+        (x.riportato !== undefined && !(typeof x.riportato === 'number' && Number.isFinite(x.riportato) && x.riportato >= 0)) ||
+        (x.recuperato !== undefined && x.recuperato !== true))
+      return null
     if (x.mese !== mese || (progetto !== undefined && x.progetto !== progetto)) continue
-    tot += x.stato === 'contato' && typeof x.costo === 'number' ? x.costo : x.tetto
+    tot += x.stato === 'contato' ? (typeof x.costo === 'number' ? x.costo : Math.max(x.tetto, (x.riportato as number | undefined) ?? 0)) : x.tetto
   }
   return Math.round(tot * 100) / 100
 }
@@ -393,7 +401,7 @@ export function vincoliDirigente(padre: Azione, regole: Regole): VincoliPadre {
   const adesso: VincoliPadre = {
     sensibile: sensibile(padre, regole), ...((corsia === 'R4' || corsia === 'R5') && { corsiaMin: corsia }),
     datiLan: datiLocali(`${padre.titolo}\n${padre.brief}\n${padre.background ?? ''}`), fornitori: [...regole.risorse.fornitori],
-    destinazioni: [padre.destinazione ?? 'local'],
+    destinazioni: [padre.destinazione ?? 'local'], compatibili: Object.keys(regole.risorse.compatibili ?? {}),
   }
   return piuStretti(padre.vincoliPropri, adesso)
 }
@@ -402,8 +410,9 @@ export function piuStretti(a: VincoliPadre | undefined, b: VincoliPadre): Vincol
   if (!a) return b
   const corsiaMin = conMinimo(a.corsiaMin, b.corsiaMin)
   const destinazioni = a.destinazioni && b.destinazioni ? a.destinazioni.filter(d => b.destinazioni!.includes(d)) : (a.destinazioni ?? b.destinazioni)
+  const compatibili = a.compatibili && b.compatibili ? a.compatibili.filter(p => b.compatibili!.includes(p)) : (a.compatibili ?? b.compatibili)
   return { sensibile: a.sensibile || b.sensibile, ...(corsiaMin && { corsiaMin }), datiLan: a.datiLan || b.datiLan,
-    fornitori: a.fornitori.filter(f => b.fornitori.includes(f)), ...(destinazioni && { destinazioni }) }
+    fornitori: a.fornitori.filter(f => b.fornitori.includes(f)), ...(destinazioni && { destinazioni }), ...(compatibili && { compatibili }) }
 }
 /** All'avvio di una figlia: i vincoli della sua dirigente come sono adesso, fusi verso l'alto con quelli che ha. */
 export function conVincoliPadre(a: Azione, lista: readonly Azione[], regole: Regole): Azione {
@@ -1112,7 +1121,9 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
   // F13.2: profondità 1 (mai una dirigente figlia); la dirigente lavora su Claude; una figlia solo con i fornitori del padre.
   if (a.ruolo === 'dirigente' && a.padre) v.push(msg('v.dirigenteFiglia'))
   if (a.ruolo === 'dirigente' && a.esecutore !== 'claude') v.push(msg('v.dirigenteClaude'))
-  if (a.padre && a.vincoliPadre && !a.vincoliPadre.fornitori.includes(a.esecutore)) v.push(msg('v.fornitorePadre', { fornitore: a.esecutore }))
+  // Correttezza 2.2.0, rilievo 2: per un compatibile vale il suo provider fra quelli che il padre ammette (assente = nessuno).
+  if (a.padre && a.vincoliPadre && (compatibile ? !(a.vincoliPadre.compatibili ?? []).includes(a.provider ?? '') : !a.vincoliPadre.fornitori.includes(a.esecutore)))
+    v.push(msg('v.fornitorePadre', { fornitore: compatibile ? String(a.provider ?? '—') : a.esecutore }))
   // Revisione F13a, rilievi 4 e 6: un passo di catena gira solo in locale. Sulla corsia API il mandato API sostituisce le
   // istruzioni della catena (riferimenti e consegna dell'artefatto); nel cloud i percorsi degli artefatti non esistono.
   if (a.catena && modo === 'api-claude') v.push(msg('v.catenaApi'))
@@ -1492,7 +1503,8 @@ const vincoliValidi = (v: unknown) => {
   return !!o && typeof o === 'object' && !Array.isArray(o) && typeof o.sensibile === 'boolean' && typeof o.datiLan === 'boolean' &&
     (o.corsiaMin === undefined || CORSIE.includes(o.corsiaMin as Corsia)) && Array.isArray(o.fornitori) && o.fornitori.length <= 10 &&
     o.fornitori.every(f => typeof f === 'string' && /^[a-z0-9-]{1,40}$/.test(f)) &&
-    (o.destinazioni === undefined || (Array.isArray(o.destinazioni) && o.destinazioni.every(d => ['local', 'cloud', 'api-claude'].includes(d as string))))
+    (o.destinazioni === undefined || (Array.isArray(o.destinazioni) && o.destinazioni.every(d => ['local', 'cloud', 'api-claude'].includes(d as string)))) &&
+    (o.compatibili === undefined || (Array.isArray(o.compatibili) && o.compatibili.length <= 20 && o.compatibili.every(p => typeof p === 'string' && /^[a-z0-9-]{1,40}$/.test(p))))
 }
 
 /** Un record letto da disco → Azione, o il motivo per cui non lo è. Mai un cast cieco. */

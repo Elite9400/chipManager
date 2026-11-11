@@ -289,3 +289,23 @@ test('Revisione F13a, giro 5, punto 1: una bozza o un feedback sensibile (termin
   expect(testoScrittore(w2, progetto, bozza('Testo.'), feedback('Aggiungi la fatturazione interna.'))).toEqual({ motivo: { k: 'cat.sensibile', p: { termine: 'fatturazione interna' } } })
   expect('testo' in testoScrittore(w2, progetto, bozza('Testo.'), feedback('Va bene.'))).toBe(true)
 })
+
+// --- Audit di correttezza 2.2.0 (Codex) --------------------------------------------------------------------------------
+
+test('Correttezza 2.2.0, rilievo 2: una figlia con provider compatibile parte se il progetto della dirigente lo ammette; i vincoli restringono solo', () => {
+  const con = (compatibili: Record<string, 'R1' | 'R2'>): Regole => ({ ...REGOLE_DEFAULT, risorse: { ...REGOLE_DEFAULT.risorse, compatibili } })
+  const padre = az({ id: 'a-padre0001', ruolo: 'dirigente', corsia: 'R3' })
+  // Il record che scrive l'helper per una figlia non porta i provider: arrivano dalla fusione all'avvio.
+  const figlia = (provider: string, vincoli = { sensibile: false, datiLan: false, fornitori: ['claude', 'codex'] }) =>
+    az({ id: 'a-figlia001', padre: padre.id, ruolo: 'lavoro', esecutore: 'compatibile', provider, modello: 'qwen3:8b', corsia: 'R1', effort: 'low', vincoliPadre: vincoli })
+  const padreDice = (a: Azione, r: Regole) => violazioni(conVincoliPadre(a, [padre, a], r), r, [padre, a]).find(m => m.k === 'v.fornitorePadre')
+  expect(padreDice(figlia('ollama'), con({ ollama: 'R1' }))).toBeUndefined()
+  expect(padreDice(figlia('mistral'), con({ ollama: 'R1' }))).toEqual({ k: 'v.fornitorePadre', p: { fornitore: 'mistral' } })
+  // Fissati a ['ollama'], un'aggiunta successiva del progetto non allarga la figlia; senza elenco nessun provider passa.
+  const fissata = figlia('mistral', { sensibile: false, datiLan: false, fornitori: ['claude', 'codex'], compatibili: ['ollama'] } as never)
+  expect(padreDice(fissata, con({ ollama: 'R1', mistral: 'R2' }))?.k).toBe('v.fornitorePadre')
+  const senza = figlia('ollama')
+  expect(violazioni(senza, con({ ollama: 'R1' }), [padre, senza]).find(m => m.k === 'v.fornitorePadre')).toEqual({ k: 'v.fornitorePadre', p: { fornitore: 'ollama' } })
+  expect(vincoliDirigente(padre, con({ ollama: 'R1', mistral: 'R2' })).compatibili).toEqual(['ollama', 'mistral'])
+  expect('k' in normalizza({ ...senza, vincoliPadre: { ...senza.vincoliPadre, compatibili: ['../x'] } })).toBe(true)
+})

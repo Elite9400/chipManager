@@ -585,16 +585,25 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
       disco.set(f, JSON.stringify({ id, tentativo, stato: 'avviata', ramo: `chipmanager/${tentativo}` }))
       return fine(0)
     }
-    // F13.6: come l'helper, l'artefatto di un passo di catena col riferimento atteso, che deve esistere.
+    // F13.6: come l'helper, l'artefatto di un passo di catena col riferimento atteso, che deve esistere. Correttezza 2.2.0,
+    // rilievo 1: insieme alla consegna del record (CAS sulla versione letta), mai sopra una versione già accettata.
     if (cmd === 'artefatto') {
-      const req = JSON.parse(String(e.init?.stdin)) as { catena: { id: string; giro: number; ruolo: string }; rif?: string; testo: string }
+      const req = JSON.parse(String(e.init?.stdin)) as { catena: { id: string; giro: number; ruolo: string }; rif?: string; testo: string
+        record?: { versione: number; scrivi: Azione } }
       const { id, giro, ruolo } = req.catena
       const atteso = ruolo === 'revisore' ? `${giro}-scrittore.md` : giro > 1 ? `${giro - 1}-revisore.md` : undefined
       if (req.rif !== atteso || !['scrittore', 'revisore'].includes(ruolo)) return fine(2)
+      const nome = `${giro}-${ruolo}.md`
+      const s = req.record?.scrivi
+      if (!s || s.versione !== req.record!.versione + 1 || s.stato !== 'consegnata' || s.artefatto !== nome) return fine(2)
+      const fr = `${p(a[0])}/${s.id}.json`
+      if (versione(fr) !== String(req.record!.versione)) return fine(4, '{"motivo":"cambiata"}')
       const cart = `${p(a[0])}/artefatti/${id}`
       if (atteso && !disco.has(`${cart}/${atteso}`)) return fine(4, '{"motivo":"rif"}')
-      disco.set(`${cart}/${giro}-${ruolo}.md`, `<!-- chipManager artefatto catena=${id} giro=${giro} ruolo=${ruolo} rif=${atteso ?? '-'} -->\n${req.testo}`)
-      return fine(0, `${giro}-${ruolo}.md`)
+      if ((JSON.parse(disco.get(fr)!) as Azione).artefatto === nome && disco.has(`${cart}/${nome}`)) return fine(4, '{"motivo":"accettata"}')
+      disco.set(`${cart}/${nome}`, `<!-- chipManager artefatto catena=${id} giro=${giro} ruolo=${ruolo} rif=${atteso ?? '-'} -->\n${req.testo}`)
+      disco.set(fr, JSON.stringify(s))
+      return fine(0, nome)
     }
     // F13.2: come l'helper, la figlia sotto il lock: vincoli copiati dal record del padre, al più maxFigli.
     if (cmd === 'figlio') {
@@ -4178,7 +4187,7 @@ test('F13.2 pannello: una R3 nasce dirigente su Fable 5.2 coi suoi vincoli; la f
   expect(String((r as { result?: unknown }).result)).toContain('director')
   const dir = amb.azione()[0]!
   // La corsia minima passa alle figlie solo da R4: una R3 non porta tutte le figlie su Opus.
-  expect([dir.ruolo, dir.modello, dir.vincoliPropri]).toEqual(['dirigente', 'claude-fable-5-2', { sensibile: false, datiLan: false, fornitori: ['claude', 'codex'], destinazioni: ['local'] }])
+  expect([dir.ruolo, dir.modello, dir.vincoliPropri]).toEqual(['dirigente', 'claude-fable-5-2', { sensibile: false, datiLan: false, fornitori: ['claude', 'codex'], destinazioni: ['local'], compatibili: [] }])
   // Una R1 normale non è una dirigente.
   await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Docs', brief: 'Aggiorna il README.', corsia: 'R1' } as never)
   expect(amb.azione().find(a => a.titolo === 'Docs')!.ruolo).toBe(undefined)
@@ -4628,4 +4637,58 @@ test('Audit 2.2.0, punto 5: sotto un tetto in dollari di catena o di dirigente u
   // Senza tetto, fuori dal gruppo del tetto, o con un server locale (gratuito): nessun blocco.
   for (const [a, r] of [[remoto(passo), con()], [remoto(passo), con(undefined, 2)], [remoto({ padre: 'a-dir00001' }), con(1)], [remoto(), con(1, 2)], [CMP(passo), con(1, 2)], [CMP({ padre: 'a-dir00001' }), con(1, 2)]] as const)
     expect([a.provider, a.catena?.id, a.padre, blocca(a, r)]).toEqual([a.provider, a.catena?.id, a.padre, undefined])
+})
+
+test('Correttezza 2.2.0, rilievo 3: una riscrittura esterna senza revisione v1 si accoda senza comporre; il testo si conferma quando le dipendenze sono soddisfatte', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { compatibili: { ollama: 'R1' },
+    modoLavoro: { pipeline: { scrittore: { provider: 'ollama', modello: 'qwen3:8b' } } } } } }))
+  const clock = mock.clock(on)
+  const viste: string[] = []
+  conferme(on, testo => ((viste.push(testo)), 'Invia testo'))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Guida', brief: 'Scrivi la guida.', corsia: 'R1', catena: true } as never)
+  const [w1, r1, w2] = amb.azione().sort((x, y) => x.ordine - y.ordine) as [Azione, Azione, Azione]
+  const inviati = () => amb.processi.filter(p => p.argv[1]?.endsWith('/compatibili.cjs') && p.argv[2] === 'completa').length
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  let errore: unknown
+  await ui.press({ key: `avvia-${w2.id}` }).catch(e => { errore = e })
+  expect([errore, viste.length, inviati(), amb.azione().find(a => a.id === w2.id)!.stato]).toEqual([undefined, 0, 0, 'accodata'])
+  // Consegnati bozza v1 e revisione v1: ora il testo intero si compone, si conferma e parte.
+  const c = w1.catena!.id
+  amb.disco.set(`X:/orch/azioni/artefatti/${c}/1-scrittore.md`, `<!-- chipManager artefatto catena=${c} giro=1 ruolo=scrittore rif=- -->\nPrima bozza.`)
+  amb.disco.set(`X:/orch/azioni/artefatti/${c}/1-revisore.md`, `<!-- chipManager artefatto catena=${c} giro=1 ruolo=revisore rif=1-scrittore.md -->\nAccorcia.`)
+  for (const [x, f] of [[w1, '1-scrittore.md'], [r1, '1-revisore.md']] as const)
+    amb.disco.set(`X:/orch/azioni/${x.id}.json`, JSON.stringify({ ...x, versione: x.versione + 1, stato: 'consegnata', artefatto: f }))
+  await clock.advance(20_000)
+  // Accodata, riparte dal giro delle code quando le dipendenze sono soddisfatte: lì si compone e si conferma.
+  await clock.advance(20_000)
+  await finche(() => inviati() === 1)
+  expect([viste.length, viste[0]?.includes('Prima bozza.'), viste[0]?.includes('Accorcia.'), inviati()]).toEqual([1, true, true, 1])
+  await ui.unmount()
+})
+
+test('Correttezza 2.2.0, rilievo 1: due consegne concorrenti dello stesso passo: ne vince una, con artefatto e record in una scrittura; la versione accettata resta', async ($, on) => {
+  const amb = ambienteF13(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Guida', brief: 'Scrivi la guida.', corsia: 'R1', catena: true } as never)
+  const [w1] = amb.azione().sort((x, y) => x.ordine - y.ordine) as [Azione]
+  amb.disco.set(`X:/orch/azioni/${w1.id}.json`, JSON.stringify({ ...w1, versione: w1.versione + 1, stato: 'avviata', tentativo: 'az-scr00001', sessione: SID }))
+  const consegna = (testo: string) =>
+    $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id: w1.id, stato: 'consegnata', tentativo: 'az-scr00001', artefatto: testo } as never) as Promise<{ deny?: string }>
+  const c = w1.catena!.id
+  const file = `X:/orch/azioni/artefatti/${c}/1-scrittore.md`
+  const testoDi = (t: string) => `<!-- chipManager artefatto catena=${c} giro=1 ruolo=scrittore rif=- -->\n${t}`
+  const prima = amb.processi.length
+  const esiti = await Promise.all([consegna('Versione A.'), consegna('Versione B.')])
+  expect(esiti.filter(e => e.deny === undefined).length).toBe(1)
+  const vinta = ['Versione A.', 'Versione B.'][esiti.findIndex(e => e.deny === undefined)]!
+  expect(amb.disco.get(file)).toBe(testoDi(vinta))
+  expect(amb.azione().find(a => a.id === w1.id)).toMatchObject({ stato: 'consegnata', artefatto: '1-scrittore.md' })
+  // Una sola operazione: nessun CAS separato del record durante la consegna.
+  expect(amb.processi.slice(prima).filter(x => x.argv[2] === 'cas' && String(x.argv[3]).endsWith(`${w1.id}.json`)).length).toBe(0)
+  // Una consegna tardiva col gettone di allora: rifiutata, e il testo accettato non cambia.
+  expect((await consegna('Versione C.')).deny).toBeDefined()
+  expect(amb.disco.get(file)).toBe(testoDi(vinta))
 })

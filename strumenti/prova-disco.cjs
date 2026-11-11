@@ -1792,7 +1792,8 @@ test('F6.2 rilievo 5: impostazioni vietate solo nel worktree: niente chiave né 
   const esec = JSON.parse(fs.readFileSync(path.join(dir, 'esecuzioni', 'az-api0015.json'), 'utf8'))
   assert.deepStrictEqual([esec.stato, /progetto/.test(esec.errore)], ['fallita', true])
   assert.strictEqual(fs.existsSync(API.fileLock(dm)), false)
-  assert.strictEqual(API.leggiSpesa(dm).voci['az-api0015'].costo, 0)
+  // Correttezza 2.2.0, rilievo 5: nessun processo partito, nessuna voce (prima: costo 0, ma il tetto restava nel gruppo).
+  assert.strictEqual(API.leggiSpesa(dm).voci['az-api0015'], undefined)
 })
 
 test('F6.2 rilievo 6: il JSON finale arrivato dopo l\'uscita si legge alla chiusura degli stream; la chiave va via subito all\'uscita', async () => {
@@ -4334,23 +4335,33 @@ test('F13.6 artefatto: file versionati della catena con intestazione, riferiment
   const dir = tmp()
   const c = (giro, ruolo) => ({ id: 'c-catena001', giro, ruolo })
   const leggiA = n => fs.readFileSync(path.join(dir, 'artefatti', 'c-catena001', n), 'utf8')
+  // Correttezza 2.2.0, rilievo 1: ogni consegna porta il record del suo passo (CAS sulla versione letta).
+  const conRecord = (r, d = dir) => {
+    const k = r.catena ?? {}
+    const id = `a-${String(k.ruolo).replace(/[^a-z]/g, '')}0${k.giro}`
+    const f = path.join(d, `${id}.json`)
+    if (/^a-[a-z0-9]{6,20}$/.test(id) && !fs.existsSync(f)) fs.writeFileSync(f, JSON.stringify({ id, versione: 1, stato: 'avviata', catena: k }))
+    const versione = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')).versione : 1
+    return { ...r, record: { versione, scrivi: { id, versione: versione + 1, stato: 'consegnata', artefatto: `${k.giro}-${k.ruolo}.md`, catena: k } } }
+  }
+  const consegna = (r, d = dir) => D.artefatto(d, conRecord(r, d))
   // Il feedback prima della bozza: il riferimento non esiste ancora.
-  assert.strictEqual((await D.artefatto(dir, { catena: c(1, 'revisore'), rif: '1-scrittore.md', testo: 'Feedback.' }))[0], 4)
-  assert.deepStrictEqual(await D.artefatto(dir, { catena: c(1, 'scrittore'), testo: 'Primo paragrafo.\n\nSecondo paragrafo.' }), [0, '1-scrittore.md'])
+  assert.strictEqual((await consegna({ catena: c(1, 'revisore'), rif: '1-scrittore.md', testo: 'Feedback.' }))[0], 4)
+  assert.deepStrictEqual(await consegna({ catena: c(1, 'scrittore'), testo: 'Primo paragrafo.\n\nSecondo paragrafo.' }), [0, '1-scrittore.md'])
   assert.strictEqual(leggiA('1-scrittore.md'), '<!-- chipManager artefatto catena=c-catena001 giro=1 ruolo=scrittore rif=- -->\nPrimo paragrafo.\n\nSecondo paragrafo.')
-  assert.deepStrictEqual(await D.artefatto(dir, { catena: c(1, 'revisore'), rif: '1-scrittore.md', testo: 'Correggi il secondo paragrafo.' }), [0, '1-revisore.md'])
+  assert.deepStrictEqual(await consegna({ catena: c(1, 'revisore'), rif: '1-scrittore.md', testo: 'Correggi il secondo paragrafo.' }), [0, '1-revisore.md'])
   assert.match(leggiA('1-revisore.md'), /^<!-- chipManager artefatto catena=c-catena001 giro=1 ruolo=revisore rif=1-scrittore\.md -->\n/)
-  assert.deepStrictEqual(await D.artefatto(dir, { catena: c(2, 'scrittore'), rif: '1-revisore.md', testo: 'v2' }), [0, '2-scrittore.md'])
+  assert.deepStrictEqual(await consegna({ catena: c(2, 'scrittore'), rif: '1-revisore.md', testo: 'v2' }), [0, '2-scrittore.md'])
   // Riferimento diverso da quello atteso, ruolo applicatore, id, giro o testo fuori forma, oltre il tetto: richiesta non valida.
   for (const r of [{ catena: c(2, 'revisore'), rif: '1-scrittore.md', testo: 'x' }, { catena: c(2, 'scrittore'), testo: 'x' }, { catena: c(3, 'applicatore'), testo: 'x' },
     { catena: { ...c(1, 'scrittore'), id: '../fuori' }, testo: 'x' }, { catena: c(5, 'scrittore'), testo: 'x' }, { catena: c(1, 'scrittore'), testo: '  ' },
     { catena: c(1, 'scrittore'), testo: 'x'.repeat(60001) }])
-    assert.strictEqual((await D.artefatto(dir, r))[0], 2, JSON.stringify(r).slice(0, 80))
+    assert.strictEqual((await consegna(r))[0], 2, JSON.stringify(r).slice(0, 80))
   // Una junction al posto della cartella degli artefatti non porta la scrittura altrove.
   const d2 = tmp()
   const vero = fuori()
   fs.symlinkSync(vero, path.join(d2, 'artefatti'), process.platform === 'win32' ? 'junction' : 'dir')
-  await assert.rejects(D.artefatto(d2, { catena: c(1, 'scrittore'), testo: 'x' }), /helper\.collegamento/)
+  await assert.rejects(consegna({ catena: c(1, 'scrittore'), testo: 'x' }, d2), /helper\.collegamento/)
   assert.deepStrictEqual(fs.readdirSync(vero), [])
 })
 
@@ -4764,4 +4775,107 @@ test('Audit 2.2.0, punto 6: il progetto può solo abbassare i tetti di dirigente
     const cjs = R.regoleEfficaci(a === undefined ? undefined : { modoLavoro: a }, p === undefined ? {} : { modoLavoro: p }).modoLavoro
     for (const m of [cjs, ts[i]]) assert.deepStrictEqual([m.pipeline.tettoUsd, m.dirigente.tettoUsd], atteso, JSON.stringify([a, p]))
   })
+})
+
+test('Correttezza 2.2.0, rilievo 5: un errore prima dello spawn toglie la prenotazione (mese e gruppo); «Riprova» nel tetto del dirigente riparte', async () => {
+  const { dir, passo, avvia } = spesaGiro2()
+  const root = tmp()
+  const config = configApi({ apiClaude: { budgetUsd: 50, tetto: 2 }, modoLavoro: { dirigente: { tettoUsd: 2 } } })
+  // 1. Il supervisore non parte (errore allo spawn): nessuna voce, il lock è libero.
+  const dm = tmp()
+  passo('a-fig00001', 'az-fig00001', { padre: 'a-dir00001' })
+  const rotto = () => {
+    const p = new Emettitore()
+    p.stdin = new Emettitore()
+    queueMicrotask(() => p.emit('error', new Error('ENOENT')))
+    return p
+  }
+  assert.deepStrictEqual(await API.lanciaApi(dir, 'a-fig00001', 'az-fig00001', ingressoApi(root, config), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: rotto }), [1, ''])
+  assert.strictEqual(API.leggiSpesa(dm).voci['az-fig00001'], undefined)
+  passo('a-fig00001', 'az-fig00002', { padre: 'a-dir00001' })
+  assert.deepStrictEqual(await avvia(dm, 'a-fig00001', 'az-fig00002', config), [0, ''])
+  // 2. Il supervisore si ferma prima di `claude -p` (impostazioni vietate nel worktree): idem, e il nuovo tentativo parte.
+  const dm2 = tmp()
+  passo('a-fig00002', 'az-fig00003', { padre: 'a-dir00001' })
+  assert.deepStrictEqual(await avvia(dm2, 'a-fig00002', 'az-fig00003', config), [0, ''])
+  let avvii = 0
+  await API.eseguiApi(dir, 'a-fig00002', 'az-fig00003', ingressoApi(root, config), {
+    dirMacchina: dm2, git: () => 'a'.repeat(40), elenco: () => [], env: {},
+    fontiCwd: cwd => {
+      fs.mkdirSync(path.join(cwd, '.claude'), { recursive: true })
+      fs.writeFileSync(path.join(cwd, '.claude', 'settings.json'), JSON.stringify({ apiKeyHelper: '/bin/chiave' }))
+      return [{ nome: 'progetto', file: path.join(cwd, '.claude', 'settings.json') }]
+    },
+    avvia: () => { avvii++ },
+  })
+  assert.deepStrictEqual([avvii, API.leggiSpesa(dm2).voci['az-fig00003'], fs.existsSync(API.fileLock(dm2))], [0, undefined, false])
+  passo('a-fig00002', 'az-fig00004', { padre: 'a-dir00001' })
+  assert.deepStrictEqual(await avvia(dm2, 'a-fig00002', 'az-fig00004', config), [0, ''])
+})
+
+test('Correttezza 2.2.0, rilievo 6: parità della spesa del mese fra pannello (e consigliere) e helper, costo riportato e campi del registro compresi', () => {
+  const P = { progetto: PROGETTO_PROVA, mese: '2026-11' }
+  const dati = tmp()
+  const registri = [
+    // Il caso del rilievo: tetto 0,10, costo ignoto, riportato 0,40 → 0,40 per tutti e due.
+    { 'az-rip00001': { ...P, tetto: 0.1, stato: 'contato', costo: null, riportato: 0.4 } },
+    { 'az-rip00002': { ...P, tetto: 0.3, stato: 'contato', costo: 0.2, riportato: 0.5 }, 'az-rip00003': { ...P, tetto: 0.3, stato: 'contato', costo: null, recuperato: true } },
+    { 'az-rip00004': { ...P, tetto: 1, stato: 'prenotato', gruppi: ['dirigente:a-dir00001', 'catena:c-catena001'], dati }, 'az-rip00005': { ...P, mese: '2026-10', tetto: 5, stato: 'prenotato' },
+      'az-rip00006': { ...P, progetto: 'altro/repo', tetto: 2, stato: 'contato', costo: 1.5 } },
+    // Forme che l'helper rifiuta: anche il pannello (registro illeggibile, mai una cifra inventata).
+    { 'az-rip00007': { ...P, tetto: 0.1, stato: 'contato', costo: null, riportato: '0.4' } },
+    { 'az-rip00008': { ...P, tetto: 0.1, stato: 'prenotato', gruppi: ['tutti'] } },
+    { 'az-rip00009': { ...P, tetto: 0.1, stato: 'contato', costo: null, recuperato: false } },
+    { 'az-rip00010': { ...P, tetto: 0.1, stato: 'prenotato', dati: 'relativa/azioni' } },
+  ]
+  const ts = conLogica(`console.log(JSON.stringify(ingresso.map(voci => [nuova.spesaDelMese({ v: 1, voci }, '2026-11'), nuova.spesaDelMese({ v: 1, voci }, '2026-11', ${JSON.stringify(PROGETTO_PROVA)})])))`, registri)
+  registri.forEach((voci, i) => {
+    const dm = tmp()
+    fs.writeFileSync(API.fileSpesa(dm), JSON.stringify({ v: 1, voci }))
+    let cjs
+    try {
+      const v = API.leggiSpesa(dm).voci
+      cjs = [API.spesoNelMese(v, '2026-11'), API.spesoNelMese(v, '2026-11', PROGETTO_PROVA)].map(n => Math.round(n * 100) / 100)
+    } catch {
+      cjs = [null, null]
+    }
+    assert.deepStrictEqual(ts[i], cjs, JSON.stringify(voci))
+  })
+  assert.deepStrictEqual(ts.map(x => x[0]), [0.4, 0.5, 2.5, null, null, null, null])
+})
+
+test('Correttezza 2.2.0, rilievo 1: artefatto e consegna in una sola operazione; due consegne concorrenti della stessa versione: ne vince una, la versione accettata non si sovrascrive', async () => {
+  const D = require(DISCO)
+  const dir = tmp()
+  const catena = { id: 'c-catena001', giro: 1, ruolo: 'scrittore' }
+  const base = { id: 'a-scr000001', versione: 3, stato: 'avviata', tentativo: 'az-scr00001', catena }
+  fs.writeFileSync(path.join(dir, 'a-scr000001.json'), JSON.stringify(base))
+  const file = path.join(dir, 'artefatti', 'c-catena001', '1-scrittore.md')
+  const consegna = (testo, versione = 3, extra = {}) =>
+    D.artefatto(dir, { catena, testo, record: { versione, scrivi: { ...base, versione: versione + 1, stato: 'consegnata', artefatto: '1-scrittore.md', ...extra } } })
+  const corpo = () => fs.readFileSync(file, 'utf8').split('\n').slice(1).join('\n')
+  // La gara: tutte e due sulla versione 3, una sola vince; il file è il suo, il record è consegnato con il suo artefatto.
+  const esiti = await Promise.all([consegna('Versione A.'), consegna('Versione B.')])
+  const vinte = esiti.filter(([c]) => c === 0)
+  assert.strictEqual(vinte.length, 1, JSON.stringify(esiti))
+  assert.deepStrictEqual(esiti.find(([c]) => c !== 0), [4, JSON.stringify({ motivo: 'cambiata' })])
+  const vinta = esiti[0][0] === 0 ? 'Versione A.' : 'Versione B.'
+  assert.strictEqual(corpo(), vinta)
+  const rec = JSON.parse(fs.readFileSync(path.join(dir, 'a-scr000001.json'), 'utf8'))
+  assert.deepStrictEqual([rec.versione, rec.stato, rec.artefatto], [4, 'consegnata', '1-scrittore.md'])
+  // In ritardo sulla versione vecchia, o sulla nuova (versione già accettata): niente scritto.
+  assert.deepStrictEqual(await consegna('Versione C.'), [4, JSON.stringify({ motivo: 'cambiata' })])
+  assert.deepStrictEqual(await consegna('Versione D.', 4), [4, JSON.stringify({ motivo: 'accettata' })])
+  assert.strictEqual(corpo(), vinta)
+  // Un file rimasto senza consegna (un errore fra le due scritture di una versione vecchia) si può riscrivere.
+  const dir2 = tmp()
+  fs.writeFileSync(path.join(dir2, 'a-scr000001.json'), JSON.stringify(base))
+  fs.mkdirSync(path.join(dir2, 'artefatti', 'c-catena001'), { recursive: true })
+  fs.writeFileSync(path.join(dir2, 'artefatti', 'c-catena001', '1-scrittore.md'), 'orfano')
+  assert.deepStrictEqual(await D.artefatto(dir2, { catena, testo: 'Nuovo.', record: { versione: 3, scrivi: { ...base, versione: 4, stato: 'consegnata', artefatto: '1-scrittore.md' } } }), [0, '1-scrittore.md'])
+  // Richieste che non valgono: senza record, record di un altro passo o non consegnato, versione non successiva.
+  for (const r of [{ catena, testo: 'x' }, { catena, testo: 'x', record: { versione: 4, scrivi: { ...base, versione: 5, stato: 'avviata', artefatto: '1-scrittore.md' } } }])
+    assert.deepStrictEqual(await D.artefatto(dir, r), [2, ''])
+  assert.deepStrictEqual(await consegna('x', 4, { catena: { ...catena, giro: 2 } }), [2, ''])
+  assert.deepStrictEqual(await consegna('x', 4, { versione: 9 }), [2, ''])
 })

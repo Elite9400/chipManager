@@ -296,6 +296,22 @@ function segnaRecuperata(dm, tentativo) {
   d.scriviDati(fileSpesa(dm), JSON.stringify(s))
 }
 
+/**
+ * Correttezza 2.2.0, rilievo 5: quando è certo che nessun processo è partito (spawn fallito, o fermato prima dello spawn)
+ * la prenotazione si toglie, mese e gruppo insieme: un «Riprova» passa di nuovo da tutti i limiti. Solo una voce ancora
+ * `prenotato`; senza prendere il mutex (chi chiama lo tiene).
+ */
+function annullaPrenotazioneQui(dm, tentativo) {
+  const s = leggiSpesa(dm)
+  if (s.voci[tentativo]?.stato !== 'prenotato') return
+  delete s.voci[tentativo]
+  d.scriviDati(fileSpesa(dm), JSON.stringify(s))
+}
+async function annullaPrenotazione(dm, tentativo, deps = {}) {
+  const r = await d.conMutex(mutexApi(deps), 30_000, () => annullaPrenotazioneQui(dm, tentativo))
+  if (r.occupato) throw new Error('mutex della spesa occupato')
+}
+
 /** Come `contaSpesaQui`, sotto lo stesso mutex del lock che prenota. Una seconda contabilizzazione non cambia nulla. */
 async function contaSpesa(dm, tentativo, costo, riportato, deps = {}) {
   const r = await d.conMutex(mutexApi(deps), 30_000, () => contaSpesaQui(dm, tentativo, costo, riportato))
@@ -613,7 +629,9 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
       if (Array.isArray(api)) return api
       // Revisione F13a, rilievo 3: una chip di catena o dell'albero di una dirigente impegna al più il residuo del suo
       // gruppo (tetto del config meno quanto già prenotato o contato), sotto questo mutex: il processo riceve quel limite
-      // come `--max-budget-usd` e il consuntivo libera la differenza. I gruppi vengono dal record, i tetti dal config.
+      // come `--max-budget-usd`. A consuntivo il gruppo conta il più alto fra prenotazione, costo e costo riportato
+      // (`spesoNelGruppo`): la differenza non si libera mai. Il mese invece conta il costo stimato. I gruppi vengono dal
+      // record, i tetti dal config.
       // Revisione F13a, giro 2, punto 2: l'appartenenza al gruppo si registra SEMPRE, tetto o no: un tetto messo dopo conta
       // tutta la spesa già fatta. Punto 1: un tetto scritto male nel config ferma la chip del gruppo, col campo.
       const gruppi = [
@@ -665,7 +683,7 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
         d.scriviDati(file, JSON.stringify({ id, tentativo, stato: 'fallita', lanciatore: 'api-claude', errore: 'processo non avviato' }))
         fs.rmSync(fileLock(dm), { force: true })
         try {
-          contaSpesaQui(dm, tentativo, 0)
+          annullaPrenotazioneQui(dm, tentativo)
         } catch {
           // il registro illeggibile resta com'è: la prossima prenotazione lo rifiuta
         }
@@ -810,7 +828,7 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
         // prossima verifica ritenta la cancellazione prima di liberarlo.
         if (cancellaChiave(dm, tentativo, deps)) fs.rmSync(fileLock(dm), { force: true })
         else scriviLock(dm, { ...rec, uscita: { codice: null, fine: new Date().toISOString() }, chiaveCancellata: false })
-        await contaSpesa(dm, tentativo, 0, undefined, deps).catch(() => {})
+        await annullaPrenotazione(dm, tentativo, deps).catch(() => {})
       } else scrivi({ stato: 'avviata', ramo: fuori.ramo, incerto: true, costo: null, errore: 'esito API incerto: controlla il processo e il worktree' })
     }
   })
