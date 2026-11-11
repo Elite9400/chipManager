@@ -719,7 +719,8 @@ test('lingue: in Carico una percentuale decimale si scrive con il separatore del
   await ui.unmount()
 })
 
-test('F7.4 lingue: «Chi lavora» con preset in anteprima, Dettagli aperti e id lunghi sta in 60 colonne, nel terminale e sul desktop, in ogni lingua', async ($, on) => {
+// Six sessions, one per language, each rendered in both surfaces: under the full suite this can pass the 5 s default.
+test('F7.4 lingue: «Chi lavora» con preset in anteprima, Dettagli aperti e id lunghi sta in 60 colonne, nel terminale e sul desktop, in ogni lingua', { timeoutMs: 15_000 }, async ($, on) => {
   const a = az('a-chi60001', 1, { revisore: 'claude', corsia: 'R3', auditor: 'fable', titolo: 'Chip con auditor' })
   const lungo = az('a-chi60002', 2, { revisore: 'codex', corsia: 'R2', modello: 'claude-opus-4-8-anteprima-lunghissima-0001', auditor: 'claude-opus-4-8-anteprima-lunghissima-0001' })
   const amb = ambiente(on, [a, lungo])
