@@ -1021,6 +1021,8 @@ const fr: Dizionario = {
   "skill.disabilita": "Désactiver · {nome}",
   "skill.soloLocale": "Ce projet est local uniquement : les skills qui envoient des données hors de cet ordinateur ne sont pas nommées.",
   "skill.rileggi": "Relire la liste des plugins",
+  "skill.consenso": "{nome} a des effets hors de cet ordinateur : {nota}\n\nL'activer ?",
+  "skill.bloccatoLocale": "{nome} envoie des données hors de cet ordinateur : un projet local uniquement ne peut pas l'activer depuis le mod.",
   "err.paginaNonAperta": "Cette page ne peut pas s'ouvrir : seules les adresses fixes du registre des fournisseurs et du site d'aide sont autorisées.",
   "con.nonConnesso": "Non connecté",
   // F11.1: modo di lavoro

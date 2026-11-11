@@ -24,9 +24,14 @@ export async function leggiPlugin($: EngineInterface) {
  * Enable or disable one baseline plugin, only after the owner's click. A plugin installed in a managed scope is locked:
  * it is shown as such and nothing runs. Then the listing is read again.
  */
-export async function cambiaPlugin($: EngineInterface, id: string, attiva: boolean) {
+export async function cambiaPlugin($: EngineInterface, id: string, attiva: boolean, soloLocale: boolean, consenso: (nota: string) => Promise<boolean>) {
   const v = voceSkill(id)
   if (!v) throw new Error('not a baseline skill')
+  // F13.7 r1.3: a plugin that is not local-only is never turned on from a local-only project, and needs its own consent.
+  if (attiva && v.flusso !== 'locale') {
+    if (soloLocale) throw new Error('local-only project')
+    if (!(await consenso(v.nota))) return
+  }
   const ora = await leggiPlugin($)
   const p = ora?.find(x => x.id === v.plugin)
   if (!p) throw new Error('not installed')

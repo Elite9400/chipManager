@@ -2597,7 +2597,18 @@ export const register: Register = (on, options) => {
       verificaCompatibile: async id => verificaCompatibile($, opz, id, (await leggiRegole($)).risorse.account.compatibili?.[id]),
       rilevaLocali: () => rilevaLocali($, opz),
       leggiPlugin: () => leggiPlugin($),
-      cambiaPlugin: (id, attiva) => cambiaPlugin($, id, attiva),
+      cambiaPlugin: async (id, attiva) => {
+        const T = await lingue($)
+        const soloLocale = (await leggiRegole($)).risorse.soloLocale
+        try {
+          await cambiaPlugin($, id, attiva, soloLocale, async nota =>
+            (await $.ui.ask(T('skill.consenso', { nome: id, nota }), { options: [T('skill.abilita', { nome: id }), T('comune.annulla')], header: 'chipManager' })
+              .catch(() => '')) === T('skill.abilita', { nome: id }))
+        } catch (e) {
+          if ((e as Error)?.message === 'local-only project') throw errore('skill.bloccatoLocale', { nome: id })
+          throw e
+        }
+      },
       installa: async passo => {
         let r = await leggiRegole($)
         if (!r.lette || r.risorse.soloLocale || !r.risorse.fornitori.includes('freellmapi')) throw errore('err.abilitaFree')

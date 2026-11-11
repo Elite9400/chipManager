@@ -1023,6 +1023,8 @@ const en = {
   "skill.disabilita": "Disable · {nome}",
   "skill.soloLocale": "This project is local-only: skills that send data off this computer are not named.",
   "skill.rileggi": "Read the plugin list again",
+  "skill.consenso": "{nome} has effects outside this computer: {nota}\n\nEnable it?",
+  "skill.bloccatoLocale": "{nome} sends data off this computer: a local-only project cannot enable it from the mod.",
   "err.paginaNonAperta": "This page cannot be opened: only the fixed addresses of the provider registry and of the help site are allowed.",
   "con.nonConnesso": "Not connected",
   // F11.1: modo di lavoro

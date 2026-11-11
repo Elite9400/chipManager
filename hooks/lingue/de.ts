@@ -1021,6 +1021,8 @@ const de: Dizionario = {
   "skill.disabilita": "Deaktivieren · {nome}",
   "skill.soloLocale": "Dieses Projekt ist nur lokal: Skills, die Daten von diesem Computer senden, werden nicht genannt.",
   "skill.rileggi": "Pluginliste neu lesen",
+  "skill.consenso": "{nome} wirkt außerhalb dieses Computers: {nota}\n\nAktivieren?",
+  "skill.bloccatoLocale": "{nome} sendet Daten von diesem Computer weg: Ein reines Lokalprojekt kann es nicht über die Mod aktivieren.",
   "err.paginaNonAperta": "Diese Seite lässt sich nicht öffnen: Erlaubt sind nur die festen Adressen des Anbieterregisters und der Hilfeseite.",
   "con.nonConnesso": "Nicht verbunden",
   // F11.1: modo di lavoro

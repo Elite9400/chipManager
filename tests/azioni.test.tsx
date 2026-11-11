@@ -3751,3 +3751,38 @@ test('F13.7 pannello: rileva i plugin con argv esatto; abilita e disabilita solo
   expect(plugin().filter(x => !x.startsWith('claude plugin list'))).toEqual(['claude plugin enable ponytail@ponytail --scope user'])
   await ui.unmount()
 })
+
+test('F13.7 consenso: attivare un plugin con effetti esterni chiede un consenso suo; un progetto solo locale lo rifiuta senza chiedere', async ($, on) => {
+  const elenco = [{ id: 'superpowers@claude-plugins-official', scope: 'user', enabled: false }]
+  const amb = ambiente(on, { fonte: cmd => (cmd === 'claude plugin list --json' ? elenco : cmd.startsWith('claude plugin ') ? {} : undefined) })
+  mock.clock(on)
+  const domande: string[] = []
+  let risposta = 'Annulla'
+  conferme(on, testo => (domande.push(testo), risposta))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const comandi = () => amb.processi.filter(p => p.argv[0] === 'claude' && p.argv[2] !== 'list').map(p => p.argv.join(' '))
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
+  await ui.press({ key: 'skill-cambia-superpowers' })
+  await finche(() => domande.length === 1)
+  expect(domande[0]).toContain('telemetry')
+  expect(comandi()).toEqual([])
+  risposta = 'Attiva · superpowers'
+  await ui.press({ key: 'skill-cambia-superpowers' })
+  await finche(() => comandi().length === 1)
+  expect(comandi()).toEqual(['claude plugin enable superpowers@claude-plugins-official --scope user'])
+  await ui.unmount()
+  // Progetto solo locale: nessuna domanda, nessun comando, il motivo in linea.
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { soloLocale: true } } }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui2 = await $.ui.mount({ ...PANE('desktop') })
+  await ui2.press({ key: 'impostazioni' })
+  await ui2.press({ key: 'sezione-modo-premi' })
+  await ui2.press({ key: 'skill-cambia-superpowers' })
+  await finche(() => !!amb.disco)
+  expect(domande.length).toBe(2)
+  expect(comandi().length).toBe(1)
+  await ui2.unmount()
+})
