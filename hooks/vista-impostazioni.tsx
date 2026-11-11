@@ -456,7 +456,11 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           {/* F13.3b: the US region needs a workspace host; it is validated like the config (documented pattern only). */}
           {v.id === 'qwen' && Input && (impAccount.qwen?.regione === 'us' || impAccount.qwen?.workspace) ? (
             <Input key="cmp-workspace-qwen" label={T('cmp.workspace')} value={impAccount.qwen?.workspace ?? ''}
-              onSubmit={x => salva('cmp-qwen', () => ({ 'account.compatibili': { ...impAccount, qwen: { ...impAccount.qwen, ...(x.trim() ? { workspace: x.trim() } : { workspace: undefined }) } } }))()} />
+              onSubmit={x => salva('cmp-qwen', () => {
+                // An empty host removes the key (an undefined value is not a valid config value): the write then drops it.
+                const { workspace: _, ...resto } = impAccount.qwen ?? {}
+                return { 'account.compatibili': { ...impAccount, qwen: { ...resto, ...(x.trim() && { workspace: x.trim() }) } } }
+              })()} />
           ) : null}
           {v.id === 'qwen' && impAccount.qwen?.regione === 'us' && !impAccount.qwen?.workspace ? didascalia('cmp-workspace-nota', T('cmp.workspaceNota')) : null}
           {/* The models a local server lists: the ids to use in `modello` (first ones; the full catalogue is checked at run time). */}
@@ -642,6 +646,25 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       </Box>
     ) : null
 
+  // Rules missing or incomplete block every start, and setup does not write them: setup and doctor say what the file is
+  // and where the guide is. A config problem (`cfg.*`) has its own doctor finding; rules not read yet say nothing.
+  const motivoRegole = regoleOra.motivo
+  const regoleDaSistemare = !regoleOra.lette && (motivoRegole === undefined ? !!regoleOra.fonte : typeof motivoRegole === 'string' || !motivoRegole.k.startsWith('cfg.'))
+  const regoleUi = () => {
+    if (!regoleDaSistemare) return []
+    const motivo = motivoRegole === undefined ? T('rot.incompleto') : T.m(motivoRegole)
+    return [
+      <Box key="regole-guida" flexDirection="column" alignItems="flex-start" gap={terminale ? 0 : 'xs'}>
+        {nota1('regole-guida-titolo', STATO.errore, '✗', T('rot.titolo', { motivo }))}
+        {didascalia('regole-guida-spiega', T('rot.spiega'))}
+        {/* The helper opens exact help addresses only (no anchor): the published button opens the page, the text names the section. */}
+        {SITO_PUBBLICATO
+          ? <Button key="regole-guida-apri" variant="secondary" label={T('rot.apri')} onPress={() => void c.fai(() => c.apriPagina(urlAiuto('quick-start')))} />
+          : <Text key="regole-guida-url" wrap="wrap">{T('rot.guida', { url: `${urlAiuto('quick-start')}#rules` })}</Text>}
+      </Box>,
+    ]
+  }
+
   // --- Setup (F11.2) ----------------------------------------------------------------------------------
   // Una vista della bozza F5.9: ogni passo riusa i controlli della sua sezione; «Applica» (in basso) scrive tutto in un CAS.
   const setup = async () => {
@@ -691,6 +714,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       return [
         p ? nota1('setup-riepilogo', STATO.attesa, '●', T('set.modifiche', { n: pendenti, sezioni: sezioni.join(', ') })) : nota1('setup-riepilogo', GRIGIO, '—', T('set.niente')),
         didascalia('setup-riepilogo-nota', T('set.applicaSotto')),
+        ...regoleUi(),
       ]
     }
     const corpo = passo === 'lingua' ? [lingua()] : passo === 'fornitori' ? [connessioni()] : passo === 'accessi' ? accessi() : passo === 'chiavi' ? chiavi()
@@ -726,12 +750,15 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const dv = doctorVista
     const trovati = dv.trovati ?? []
     const righe = trovati.map(x => ({ r: x, ...testoRilievo(T, x) }))
-    const rapporto = righe.map(x => `${x.avviso ? '!' : '✗'} ${x.titolo} — ${x.rimedio}`).join('\n') || T('doc.tuttoBene')
+    // The rules guide counts as a finding: a doctor that says «all passed» while every start is blocked misleads.
+    const n = trovati.length + (regoleDaSistemare ? 1 : 0)
+    const rapporto = [...(regoleDaSistemare ? [`✗ ${T('rot.titolo', { motivo: motivoRegole === undefined ? T('rot.incompleto') : T.m(motivoRegole) })}`] : []),
+      ...righe.map(x => `${x.avviso ? '!' : '✗'} ${x.titolo} — ${x.rimedio}`)].join('\n') || T('doc.tuttoBene')
     const verificato = !!dv.quando && !!dv.trovati
-    const esito = dv.inCorso ? T('doc.inCorso') : dv.fallita ? T('doc.fallita') : !verificato ? T('proxy.nonVerificato') : T(trovati.length ? 'doc.attenzione' : 'doc.superati')
-    const segno = dv.inCorso ? '…' : dv.fallita ? '✗' : !verificato ? '—' : trovati.length ? '!' : '✓'
-    const colore = dv.inCorso ? GRIGIO : dv.fallita ? STATO.errore : !verificato ? GRIGIO : trovati.length ? STATO.attesa : STATO.inCorso
-    const stato = [verificato ? T('doc.stato', { n: trovati.length }) : '', dv.quando ? T('tr.aggiornato', { ora: T.ora(dv.quando) }) : ''].filter(Boolean).join(' · ')
+    const esito = dv.inCorso ? T('doc.inCorso') : dv.fallita ? T('doc.fallita') : !verificato ? T('proxy.nonVerificato') : T(n ? 'doc.attenzione' : 'doc.superati')
+    const segno = dv.inCorso ? '…' : dv.fallita ? '✗' : !verificato ? '—' : n ? '!' : '✓'
+    const colore = dv.inCorso ? GRIGIO : dv.fallita ? STATO.errore : !verificato ? GRIGIO : n ? STATO.attesa : STATO.inCorso
+    const stato = [verificato ? T('doc.stato', { n }) : '', dv.quando ? T('tr.aggiornato', { ora: T.ora(dv.quando) }) : ''].filter(Boolean).join(' · ')
     return u.Sezione({
       chiave: 'pagina-doctor',
       titolo: T('doc.titolo'),
@@ -739,7 +766,8 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       stato,
       figli: [
         u.Pillola({ chiave: 'doctor-esito', segno, colore, testo: esito }),
-        !dv.inCorso && !dv.fallita && dv.quando && dv.trovati && !trovati.length ? nota1('doctor-ok', STATO.inCorso, '✓', T('doc.tuttoBene')) : null,
+        !dv.inCorso && !dv.fallita && dv.quando && dv.trovati && !n ? nota1('doctor-ok', STATO.inCorso, '✓', T('doc.tuttoBene')) : null,
+        ...regoleUi(),
         ...righe.map((x, i) => (
           <Box key={`doctor-rilievo-${i}`} flexDirection="column" alignItems="flex-start" gap={terminale ? 0 : 'xs'}>
             {nota1(`doctor-rilievo-${i}-titolo`, x.avviso ? STATO.attesa : STATO.errore, x.avviso ? '!' : '✗', `${T(x.avviso ? 'doc.avviso' : 'doc.problema')} · ${x.titolo}`)}
@@ -1021,7 +1049,13 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
     const config = (await $.env.get('CHIPMANAGER_CONFIG')) ?? `${casa}/.claude/chipmanager/config.json`
     const env = await $.env.get('CHIPMANAGER_DIR')
     if (env) return { config, cartella: env.replace(/\\/g, '/') }
-    const letto = await $.fs.read(config).then(t => JSON.parse(t as string) as unknown, () => null)
+    const testo = await $.fs.read(config).then(t => t as string, () => null)
+    let letto: unknown = null
+    try {
+      if (testo !== null) letto = JSON.parse(testo)
+    } catch {
+      return { config, cartella: T('cfg.illeggibile') }
+    }
     return { config, cartella: cartellaDati(letto, io?.repo ?? null, casa) ?? T('pro.cartellaNonValida') }
   }
   const budgetScritto = (l: RisorseProgetto['limitiManuali'][number]) =>
@@ -1459,7 +1493,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           {SITO_PUBBLICATO ? null : didascalia('aiuto-non-pubblicato', T('aiuto.nonPubblicato'))}
           {PAGINE_AIUTO.map(p =>
             SITO_PUBBLICATO ? (
-              <Button key={`aiuto-${p}`} plain label={T('aiuto.apri', { pagina: T(`aiuto.p.${p}` as Chiave) })} onPress={() => void c.apriPagina(urlAiuto(p))} />
+              <Button key={`aiuto-${p}`} plain label={T('aiuto.apri', { pagina: T(`aiuto.p.${p}` as Chiave) })} onPress={() => void c.fai(() => c.apriPagina(urlAiuto(p)))} />
             ) : (
               <Text key={`aiuto-${p}`} wrap="wrap">{`${T(`aiuto.p.${p}` as Chiave)} · ${urlAiuto(p)}`}</Text>
             ))}

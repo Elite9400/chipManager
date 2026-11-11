@@ -2706,6 +2706,26 @@ test('2.3.1: piano letto senza finestre dopo l\'uso extra: l\'extra (in soldi) r
   await ui.unmount()
 })
 
+test('audit 7: a valid empty plan drops the earlier Claude quotas (status line included) and keeps the Claude API spend', async ($, on) => {
+  const amb = ambiente(on, { strumenti: ['mcp__ccd_session_mgmt__get_usage'],
+    fonte: cmd => (cmd === 'limiti' ? RISPOSTA([
+      RIGA('claude-weekly', 'claude', 'Claude piano · settimanale', { percentuale: 95, unita: '%', letto: new Date().toISOString() }),
+      RIGA('claude-api', 'claude', 'Claude API', { valore: 3, unita: 'USD', letto: new Date().toISOString() }),
+    ]) : undefined),
+    mcp: (_s, tool) => (tool === 'get_usage' ? { isError: false, content: [{ type: 'text', text: JSON.stringify({ plan: { status: 'ok', plan: 'Esempio', windows: [] } }) }] } : undefined) })
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': {} } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('terminal') })
+  expect(await ui.find({ type: 'Text', text: /Claude 95%/ })).toBeUndefined()
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /95% usato/ })).toBeUndefined()
+  await ui.press({ key: 'impostazioni' })
+  expect(await ui.find({ type: 'Text', text: /^Claude: Claude API · mese UTC · letto \d+ min fa$/ })).toBeDefined()
+  await ui.press({ key: 'vista-lavoro' })
+  await ui.unmount()
+})
+
 test('rilievo 2: due letture dei limiti sovrapposte: quella fallita non riporta indietro la misura appena arrivata', LUNGA, async ($, on) => {
   const codex = (percentuale: number) => ({ limiti: [{ id: 'codex-primary', fornitore: 'codex', nome: 'Codex piano · primaria', percentuale, unita: '%', letto: new Date().toISOString(), fonte: 'prova' }],
     proxy: 'non abilitato', chiavi: { anthropic: false, deepseek: false, freellmapi: false } })
@@ -4095,6 +4115,36 @@ test('F13b rilievo 10: Qwen USA chiede l\'host del workspace (validato) e il ril
   await ui.press({ key: 'cmp-rileva' })
   await finche(() => !!amb.processi.find(p => p.argv[1]?.endsWith('/compatibili.cjs') && p.argv[2] === 'rileva'))
   expect(['modelli', !!(await ui.find({ type: 'Text', text: /qwen3:8b, llama3\.2/ }))]).toEqual(['modelli', true])
+  await ui.unmount()
+})
+
+test('audit 9: clearing the Qwen workspace host is a valid draft and Apply removes the field from the config', async ($, on) => {
+  const amb = ambiente(on)
+  const CFG = 'X:/casa/.claude/chipmanager/config.json'
+  amb.disco.set(CFG, JSON.stringify({ account: { compatibili: { qwen: { regione: 'intl', workspace: 'https://ws1.us-east-1.maas.aliyuncs.com/compatible-mode/v1' } } }, progetti: { 'acme/progetto': {} } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.input({ key: 'cmp-workspace-qwen', text: '  ' })
+  expect(await ui.find({ type: 'Text', text: /config.json: «account»/ })).toBeUndefined()
+  await ui.press({ key: 'applica' })
+  expect(JSON.parse(amb.disco.get(CFG)!).account.compatibili.qwen).toEqual({ regione: 'intl' })
+  await ui.unmount()
+})
+
+test('audit 11: Load counts the starts of compatible providers, named by provider', async ($, on) => {
+  const amb = ambiente(on)
+  const ora = new Date().toISOString()
+  const cmp = alLavoro('a-cmpavv01', { esecutore: 'compatibile', provider: 'ollama', modello: 'qwen3:8b', effort: 'low', corsia: 'R1', revisore: 'claude', avviataIl: ora })
+  const cl = alLavoro('a-cmpavv02', { ordine: 2, avviataIl: ora })
+  for (const x of [cmp, cl]) amb.disco.set(`X:/orch/azioni/${x.id}.json`, JSON.stringify(x))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: 'vista-carico' })
+  expect(await ui.find({ type: 'Text', text: /^Avvii nelle ultime 24 ore: Claude 1 \(50%\) · Compatibile OpenAI\/ollama 1 \(50%\)$/ })).toBeDefined()
   await ui.unmount()
 })
 

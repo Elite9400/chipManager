@@ -175,7 +175,9 @@ export async function osservaRisorse($: EngineInterface, options: Record<string,
         const json: unknown = JSON.parse(m.content.filter(c => c.type === 'text').map(c => c.text).join('\n'))
         const l = usoDesktop(json, new Date().toISOString())
         // Piano letto senza finestre né uso extra: è una risposta, non un guasto; le finestre di prima non valgono più.
-        if (!l.length && pianoVuoto(json)) risultato = { ...risultato, letti: ['claude'] }
+        // Neither do the plan quotas the helper just read (status line): kept here they would be cached again. API spend stays.
+        if (!l.length && pianoVuoto(json))
+          risultato = { ...risultato, limiti: risultato.limiti.filter(x => x.fornitore !== 'claude' || x.id === 'claude-api'), letti: ['claude'] }
         // Un «non disponibile» dall'app non cancella una misura della status line ancora presente.
         const misurato = risultato.limiti.some(x => x.fornitore === 'claude' && x.id !== 'claude-api' && x.percentuale !== undefined)
         if (l.length && !(misurato && l.every(x => x.errore))) risultato ={ ...risultato, limiti: [...risultato.limiti.filter(x => x.fornitore !== 'claude' || x.id === 'claude-api'), ...l] }

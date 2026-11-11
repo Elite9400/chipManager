@@ -11,10 +11,11 @@ const api = require('./api-claude.cjs')
 
 const oggetto = v => !!v && typeof v === 'object' && !Array.isArray(v)
 // I campi che la mod conosce, per strato: gli altri si segnalano (mai cancellati).
+// They mirror ConfigFile, StratoAccount and ConfigProgetto in types/index.d.ts (parity test in prova-disco).
 const NOTI_RADICE = ['account', 'progetti', 'lingua', 'versione', 'cartella']
 const NOTI_ACCOUNT = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi', 'modoLavoro', 'compatibili']
-const NOTI_PROGETTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere',
-  'restrizioni', 'modoLavoro', 'pesiRevisione', 'pesiOrigine', 'cartella', 'compatibili']
+const NOTI_PROGETTO = ['routing', 'sensibili', 'background', 'fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo',
+  'apiClaude', 'consigliere', 'restrizioni', 'modoLavoro', 'pesiRevisione', 'pesiOrigine', 'cartella', 'compatibili']
 const nome = s => String(s).replace(/[^A-Za-z0-9_.-]/g, '?').slice(0, 40)
 
 /** Le copie valide del config (bak1 è la più recente), lette senza toccarle. */
@@ -178,4 +179,4 @@ async function archiviaRegistro(cartella) {
   return r.occupato ? [3, ''] : r.valore
 }
 
-module.exports = { diagnosi, archiviaRegistro, copieValide }
+module.exports = { diagnosi, archiviaRegistro, copieValide, NOTI_RADICE, NOTI_ACCOUNT, NOTI_PROGETTO }

@@ -82,6 +82,46 @@ export type StratoProgetto = {
   /** F11.1: il modo di lavoro del progetto (sostituisce l'account campo per campo). */
   modoLavoro?: ModoLavoro
 }
+/**
+ * The config file (`~/.claude/chipmanager/config.json`) as it is on disk: raw layers, no effective values. The doctor's
+ * lists of known fields (strumenti/diagnosi.cjs) follow these keys and those of StratoAccount; a test fails when one is missing.
+ */
+export type ConfigFile = {
+  account?: Partial<StratoAccount>
+  progetti?: Record<string, ConfigProgetto>
+  lingua?: 'en' | 'it' | 'es' | 'fr' | 'de' | 'pt'
+  /** Written by the helper on every write (compare-and-swap counter). */
+  versione?: number
+  /** Legacy global data folder (a project's own `cartella` wins). */
+  cartella?: string
+}
+/** One `progetti[repo]` section of the config file, raw. */
+export type ConfigProgetto = {
+  /** Path of the project's rules, relative to the repository root (default `.claude/routing.json`). */
+  routing?: string
+  /** Extra sensitive terms (regular expressions) for this project. */
+  sensibili?: string[]
+  /** Fixed local brief context for this project. */
+  background?: string
+  cartella?: string
+  fornitori?: Fornitore[]
+  soloLocale?: boolean
+  milestoneGithub?: boolean
+  pesi?: Peso[]
+  limitiManuali?: Limite[]
+  freellmapi?: { livello?: 'niente' | 'R1' | 'R2'; endpoint?: string }
+  board?: BoardProgetto
+  soglie?: SogliePerStrato
+  profilo?: RisorseProgetto['profilo']
+  apiClaude?: { budgetUsd?: number; tetto?: number }
+  consigliere?: 'suggerisci' | 'applica'
+  restrizioni?: Restrizioni
+  modoLavoro?: ModoLavoro
+  /** Written by the helper on each profile or weights write. */
+  pesiRevisione?: number
+  pesiOrigine?: RisorseProgetto['pesiOrigine']
+  compatibili?: Record<string, 'R1' | 'R2'>
+}
 export type RisorseProgetto = {
   fornitori: Fornitore[]
   soloLocale: boolean

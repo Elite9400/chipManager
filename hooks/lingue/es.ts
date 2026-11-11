@@ -138,6 +138,12 @@ const es: Dizionario = {
   "regole.nonLette": "no leídas ({motivo})",
   "regole.routingAssente": "falta routing.json",
   "regole.nonLetteAncora": "aún no leídas",
+  // Settings — setup and doctor: project rules (routing.json) missing or invalid
+  "rot.titolo": "Reglas del proyecto no legibles: {motivo}",
+  "rot.incompleto": "routing.json incompleto",
+  "rot.spiega": "chipManager lee las reglas de este proyecto de .claude/routing.json en el repositorio (o de la ruta del campo «routing» de la configuración): modelos, effort, revisores y carriles de Codex permitidos. Mientras el archivo no esté completo, todo inicio queda bloqueado. La configuración guiada no lo escribe: pide a quien mantiene el proyecto o a Claude que lo prepare y luego actualiza.",
+  "rot.guida": "Guía: {url}",
+  "rot.apri": "Abrir la guía de routing.json",
   // Balancing: positions, profiles, thresholds, budgets
   "pos.moltoMeno": "Mucho menos (no excluye)",
   "pos.meno": "Menos",

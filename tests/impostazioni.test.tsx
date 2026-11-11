@@ -2061,9 +2061,55 @@ test('F11.2 setup: /chipmanager --setup apre il passo 1 di 7; Avanti, Indietro, 
   expect(await passo()).toBe('Step 7 of 7 · Summary')
   expect(await ui.find({ key: 'setup-avanti' })).toBeUndefined()
   expect(testi(await ui.drawn()).join('\n')).toContain('Nothing to apply yet.')
+  // With the project's rules read, the summary has no rules guide.
+  expect(await ui.find({ key: 'regole-guida' })).toBeUndefined()
   await ui.press({ key: 'setup-chiudi' })
   expect(await ui.find({ key: 'pagina-connessioni' })).toBeDefined()
   expect(amb.configure()).toBe(0)
+})
+
+test('audit 4: without a readable routing.json, setup and doctor say what the file is and where the guide is; nothing is written', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.disco.delete('X:/repo/.claude/routing.json')
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': {} } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--setup' } as never)
+  const ui = await $.ui.mount({ ...PANE('terminal', 60) })
+  await ui.press({ key: 'setup-riepilogo-vai' })
+  let testo = testi(await ui.drawn()).join('\n')
+  for (const t of ['Project rules not readable: routing.json missing', '.claude/routing.json', 'Guide: https://elite9400.github.io/chipManager/site/quick-start.html#rules'])
+    expect([t, testo.includes(t)]).toEqual([t, true])
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  testo = testi(await ui.drawn()).join('\n')
+  expect(testo).toContain('Project rules not readable: routing.json missing')
+  expect([testo.includes('All checks passed'), testo.includes('Nothing to fix.')]).toEqual([false, false])
+  // An incomplete file: the same guide, with its reason.
+  amb.disco.set('X:/repo/.claude/routing.json', JSON.stringify({ modelli_ammessi: ['claude-opus-5-5'] }))
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  expect(testi(await ui.drawn()).join('\n')).toContain('Project rules not readable: routing.json incomplete')
+  // Nothing written in the repository (only the file the test put there).
+  expect([...amb.disco.keys()].filter(k => k.startsWith('X:/repo/'))).toEqual(['X:/repo/.claude/routing.json'])
+  amb.disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING))
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  expect(await ui.find({ key: 'regole-guida' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('audit 8: a malformed config does not break the Project section: it shows the config error', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.variabili.CHIPMANAGER_DIR = ''
+  amb.disco.set(CONFIG, '{')
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-progetto-premi' })
+  expect(await ui.find({ key: 'pagina-progetto' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'config.json cannot be read' })).toBeDefined()
+  await ui.unmount()
 })
 
 test('F11.2 setup: lingua e preset del modo di lavoro vanno nella bozza; il riepilogo li elenca; Applica scrive tutto con un solo CAS', async ($, on) => {

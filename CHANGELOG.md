@@ -295,6 +295,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - A malformed profile counts as absent instead of breaking the view; decimal thresholds can be adjusted.
 - Button labels are unique, so no two controls share a name.
 - The disk tests use their own locks, so they never contend with a real panel or another run on the same machine.
+- Setup's summary and the doctor say when the project's `routing.json` is missing or incomplete, what it is for, and
+  where the guide is; the doctor no longer reports "all checks passed" while every start is blocked. Nothing is written.
+- A valid empty Claude plan drops the earlier plan quotas, status-line ones included; the Claude API spend stays.
+- A malformed config shows "config.json cannot be read" in the Project section instead of breaking it.
+- The Qwen workspace host can be cleared: Apply removes it from the config.
+- A help page that cannot be opened shows the error instead of an unhandled rejection.
+- The Load view counts starts on compatible providers, one line per provider.
+- The doctor no longer reports a project's `routing`, `sensibili` and `background` as unknown fields; its known-field
+  lists follow the typed config, checked by a test.
 
 ### Security
 

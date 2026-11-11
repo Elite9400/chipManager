@@ -1,5 +1,5 @@
 // Vista Carico: quale modello fa cosa, con quale effort, e quanto resta dei limiti.
-import type { Limite, Motore, Soglia } from '../types'
+import type { Azione, Limite, Motore, Soglia } from '../types'
 import {
   coloreLimite,
   aspettoLimite,
@@ -217,7 +217,10 @@ export function vistaCarico(d: Dati) {
     return l && livelloDi(l.percentuale!, sogliaDi(regoleOra.risorse, f)) === 'critica' ? [`${NOME_FORNITORE[f]} (${l.percentuale}%)`] : []
   })
   const avviiRecenti = tutte.filter(a => a.avviataIl && adesso - Date.parse(a.avviataIl) <= 86_400_000)
-  const quote = MOTORI.map(m => ({ m, n: avviiRecenti.filter(a => a.esecutore === m).length })).filter(x => x.n > 0)
+  // A compatible provider is its own line («OpenAI-compatible/ollama»), after the fixed engines.
+  const nomeAvvio = (a: Azione) => (a.esecutore === 'compatibile' ? `${motore('compatibile')}/${a.provider ?? '—'}` : motore(a.esecutore))
+  const nomiAvvio = [...MOTORI.map(m => motore(m)), ...new Set(avviiRecenti.filter(a => a.esecutore === 'compatibile').map(nomeAvvio))]
+  const quote = nomiAvvio.map(nome => ({ nome, n: avviiRecenti.filter(a => nomeAvvio(a) === nome).length })).filter(x => x.n > 0)
   const pesiInUso = ui.Sezione({ chiave: 'pesi-uso', titolo: T('car.pesi'), figli: [
       <Text>
         {parolePesi
@@ -228,7 +231,7 @@ export function vistaCarico(d: Dati) {
       d.registroPesi('carico-pesi'),
       <Text size="caption" dimColor>
         {quote.length
-          ? T('car.avvii', { quote: quote.map(x => `${motore(x.m)} ${x.n} (${Math.round((x.n / avviiRecenti.length) * 100)}%)`).join(' · ') })
+          ? T('car.avvii', { quote: quote.map(x => `${x.nome} ${x.n} (${Math.round((x.n / avviiRecenti.length) * 100)}%)`).join(' · ') })
           : T('car.nessunAvvio')}
       </Text>,
     ] })

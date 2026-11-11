@@ -2811,6 +2811,51 @@ test('F11.3 diagnosi: ogni rilievo su un caso finto, in sola lettura (lock, chia
   assert.strictEqual(fs.readFileSync(config, 'utf8'), '{ rotto')
 })
 
+test('audit 12: the doctor knows every field of the typed config (types/index.d.ts); routing, sensibili, background are not unknown', () => {
+  const tipi = fs.readFileSync(path.join(__dirname, '..', 'types', 'index.d.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+  // The top-level keys of `export type <nome> = { ... }`: nested braces, generics and arrays are skipped by depth.
+  const chiavi = nome => {
+    const inizio = tipi.indexOf(`export type ${nome} = {`)
+    assert.ok(inizio >= 0, nome)
+    const out = []
+    const chiudi = pezzo => {
+      const m = /^(\w+)\??\s*:/.exec(pezzo.trim())
+      if (m) out.push(m[1])
+    }
+    let prof = 1
+    let pezzo = ''
+    for (const ch of tipi.slice(tipi.indexOf('{', inizio) + 1)) {
+      if ('{<[('.includes(ch)) prof++
+      if ('}>])'.includes(ch)) prof--
+      if (prof === 0) break
+      if (prof === 1 && (ch === ';' || ch === '\n')) {
+        chiudi(pezzo)
+        pezzo = ''
+      } else pezzo += ch
+    }
+    chiudi(pezzo)
+    return out
+  }
+  const { NOTI_RADICE, NOTI_ACCOUNT, NOTI_PROGETTO } = require('./diagnosi.cjs')
+  for (const [tipo, noti] of [['ConfigFile', NOTI_RADICE], ['StratoAccount', NOTI_ACCOUNT], ['ConfigProgetto', NOTI_PROGETTO]]) {
+    const campi = chiavi(tipo)
+    assert.ok(campi.length >= 3, tipo)
+    assert.deepStrictEqual(campi.filter(k => !noti.includes(k)), [], `${tipo}: typed fields missing from the doctor's list`)
+  }
+  const casa = fuori()
+  const config = path.join(casa, 'config.json')
+  fs.writeFileSync(config, JSON.stringify({ progetti: { 'owner/prova': { routing: 'regole/routing.json', sensibili: ['pagamenti'], background: 'Contesto.', pesiRevisione: 2, pesiOrigine: { tipo: 'manuale' } } } }))
+  const esito = require('./diagnosi.cjs').diagnosi(config, path.join(casa, 'dati'), casa, 'owner/prova', { dm: path.join(casa, 'macchina'), fonti: [], env: {}, esegui: () => null })
+  assert.deepStrictEqual(esito.trovati.filter(t => t.codice === 'config.campoIgnoto'), [])
+})
+
+test('audit 10: the panel never opens a page as a bare promise: a refused page goes through c.fai or esegui, never unhandled', () => {
+  const dir = path.join(__dirname, '..', 'hooks')
+  const nude = fs.readdirSync(dir).filter(n => n.endsWith('.tsx'))
+    .flatMap(n => (fs.readFileSync(path.join(dir, n), 'utf8').match(/void\s+c\.apriPagina\(/g) ?? []).map(() => n))
+  assert.deepStrictEqual(nude, [])
+})
+
 test('F11.3 archivia il registro per cartella: rinomina reversibile, mai sovrascritto; poi la diagnosi non lo trova più', async () => {
   const dati = path.join(fuori(), 'dati')
   fs.mkdirSync(dati)

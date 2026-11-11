@@ -140,6 +140,12 @@ const en = {
   "regole.nonLette": "not read ({motivo})",
   "regole.routingAssente": "routing.json missing",
   "regole.nonLetteAncora": "not read yet",
+  // Settings — setup and doctor: project rules (routing.json) missing or invalid
+  "rot.titolo": "Project rules not readable: {motivo}",
+  "rot.incompleto": "routing.json incomplete",
+  "rot.spiega": "chipManager reads this project's rules from .claude/routing.json in the repository (or the path in the config's «routing» field): allowed models, efforts, reviewers and Codex lanes. Until the file is complete, every start stays blocked. Setup does not write it: ask the project maintainer or Claude to prepare it, then refresh.",
+  "rot.guida": "Guide: {url}",
+  "rot.apri": "Open the routing.json guide",
   // Balancing: positions, profiles, thresholds, budgets
   "pos.moltoMeno": "Much less (does not exclude)",
   "pos.meno": "Less",
