@@ -4365,3 +4365,25 @@ test('F13a↔F13b: una catena con scrittore compatibile (Ollama): la riscrittura
   expect(amb.disco.get(`X:/orch/azioni/artefatti/${c}/2-scrittore.md`)).toBe(`<!-- chipManager artefatto catena=${c} giro=2 ruolo=scrittore rif=1-revisore.md -->\nTesto scritto.`)
   await ui.unmount()
 })
+
+test('Revisione F13a, giro 5, punto 1: con una bozza sensibile il passo con scrittore esterno si ferma prima della conferma e nulla parte', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { compatibili: { ollama: 'R1' },
+    modoLavoro: { pipeline: { scrittore: { provider: 'ollama', modello: 'qwen3:8b' } } } } } }))
+  mock.clock(on)
+  const viste: string[] = []
+  conferme(on, testo => ((viste.push(testo)), 'Invia testo'))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Guida', brief: 'Scrivi la guida.', corsia: 'R1', catena: true } as never)
+  const [w1, r1, w2] = amb.azione().sort((x, y) => x.ordine - y.ordine) as [Azione, Azione, Azione]
+  const c = w1.catena!.id
+  amb.disco.set(`X:/orch/azioni/artefatti/${c}/1-scrittore.md`, `<!-- chipManager artefatto catena=${c} giro=1 ruolo=scrittore rif=- -->\nGuida alle login permissions dell'amministratore.`)
+  amb.disco.set(`X:/orch/azioni/artefatti/${c}/1-revisore.md`, `<!-- chipManager artefatto catena=${c} giro=1 ruolo=revisore rif=1-scrittore.md -->\nAccorcia.`)
+  for (const [x, f] of [[w1, '1-scrittore.md'], [r1, '1-revisore.md']] as const)
+    amb.disco.set(`X:/orch/azioni/${x.id}.json`, JSON.stringify({ ...x, versione: x.versione + 1, stato: 'consegnata', artefatto: f }))
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `avvia-${w2.id}` }).catch(() => {})
+  expect([viste.length, amb.processi.filter(p => p.argv[1]?.endsWith('/compatibili.cjs') && p.argv[2] === 'completa').length]).toEqual([0, 0])
+  expect(amb.azione().find(a => a.id === w2.id)).toMatchObject({ stato: 'proposta', esecutore: 'compatibile', provider: 'ollama' })
+  await ui.unmount()
+})

@@ -71,7 +71,7 @@ function ascolta(nome) {
 
 /** Esegue `fn` tenendo il mutex; null se non si ottiene entro `attesa` ms. */
 /** I mutex di produzione della corsia API e dell'accesso: le prove non devono mai chiederli (giro 4 di F13a, punto 2). */
-const PRODUZIONE_MUTEX = nome => nome === 'api-claude:macchina' || /^accesso(-vivo)?:/.test(nome)
+const PRODUZIONE_MUTEX = nome => nome === 'api-claude:macchina' || nome === 'codex:corsia-della-macchina' || /^accesso(-vivo)?:/.test(nome)
 async function conMutex(nome, attesa, fn) {
   // Le prove (CHIPMANAGER_PROVE=1, impostato da prova-disco) usano solo mutex propri: uno di produzione è un errore.
   if (process.env.CHIPMANAGER_PROVE === '1' && PRODUZIONE_MUTEX(nome)) throw new Error(`prova: mutex di produzione richiesto (${nome})`)

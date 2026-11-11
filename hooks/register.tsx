@@ -887,11 +887,14 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
   }
 }
 
-/** F13.6: il testo per uno scrittore non Claude, con bozza e feedback letti dagli artefatti della catena (testoScrittore). */
+/**
+ * F13.6: il testo per uno scrittore non Claude, con bozza e feedback letti dagli artefatti della catena (testoScrittore).
+ * Le regole (termini sensibili del progetto compresi) si rileggono adesso: prima della conferma e di nuovo prima dell'invio.
+ */
 async function testoCatena($: Eng, a: Azione) {
   const rif = a.catena ? rifCatena(a.catena) : {}
   const leggi = async (f?: string) => (f && a.catena ? ((await $.fs.read(`${await cartella($)}/artefatti/${a.catena.id}/${f}`).catch(() => undefined)) as string | undefined) : undefined)
-  return testoScrittore(a, await leggi(rif.bozza), await leggi(rif.feedback))
+  return testoScrittore(a, await leggiRegole($), await leggi(rif.bozza), await leggi(rif.feedback))
 }
 
 async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azione, confermato?: string) {

@@ -1537,7 +1537,8 @@ export function leggiArtefatto(testo: string) {
  * vN e il feedback che si riferisce proprio a quella bozza (per id). Filtro dei dati di rete locale e limite sull'INTERO
  * testo: oltre, il passo si ferma col motivo, mai un taglio silenzioso.
  */
-export function testoScrittore(a: Pick<Azione, 'titolo' | 'brief' | 'catena' | 'vincoliPadre'>, bozza?: string, feedback?: string): { testo: string } | { motivo: Msg } {
+export function testoScrittore(a: Pick<Azione, 'titolo' | 'brief' | 'catena' | 'vincoliPadre'>, regole: Pick<Regole, 'sensibili'> & Partial<Pick<Regole, 'background'>>,
+  bozza?: string, feedback?: string): { testo: string } | { motivo: Msg } {
   const c = a.catena
   const parti = [a.titolo, a.brief]
   const rif = c ? rifCatena(c) : {}
@@ -1552,6 +1553,10 @@ export function testoScrittore(a: Pick<Azione, 'titolo' | 'brief' | 'catena' | '
   }
   const testo = parti.join('\n\n')
   if (a.vincoliPadre?.datiLan || datiLocali(testo)) return { motivo: msg('cat.datiLan') }
+  // Giro 5 di F13a, punto 1: lo stesso rilevatore delle chip (termini fissi e del progetto) sull'INTERO testo: una bozza o
+  // un feedback sensibile non va a uno scrittore esterno; il passo si ferma e lo scrittore non cambia da sé.
+  const causa = causaSensibile({ titolo: '', brief: testo }, regole)
+  if (a.vincoliPadre?.sensibile || causa) return { motivo: msg('cat.sensibile', { termine: causa && 'termine' in causa ? causa.termine : '—' }) }
   if (testo.length > CLOUD_MAX) return { motivo: msg('cat.troppoLungo', { n: testo.length, max: CLOUD_MAX }) }
   return { testo }
 }

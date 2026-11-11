@@ -151,21 +151,21 @@ test('F13.6 riscrittura («correggi il secondo paragrafo»): il testo per lo scr
   const w2 = az({ titolo: 'Guida', brief: 'Scrivi la guida.', catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
   const bozza = `${intestazione(1, 'scrittore')}Primo paragrafo.\n\nSecondo paragrafo, con un errore.`
   const feedback = `${intestazione(1, 'revisore', '1-scrittore.md')}Correggi il secondo paragrafo.`
-  const r = testoScrittore(w2, bozza, feedback)
+  const r = testoScrittore(w2, REGOLE_DEFAULT, bozza, feedback)
   expect('testo' in r).toBe(true)
   const t = (r as { testo: string }).testo
   for (const x of ['Scrivi la guida.', '--- Draft v1 ---\nPrimo paragrafo.\n\nSecondo paragrafo, con un errore.', '--- Review feedback on draft v1 ---\nCorreggi il secondo paragrafo.', 'Write draft v2'])
     expect([x, t.includes(x)]).toEqual([x, true])
   // Il primo giro: titolo e brief, come sempre.
-  expect(testoScrittore({ ...w2, catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' } })).toEqual({ testo: 'Guida\n\nScrivi la guida.' })
+  expect(testoScrittore({ ...w2, catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' } }, REGOLE_DEFAULT)).toEqual({ testo: 'Guida\n\nScrivi la guida.' })
   // Il feedback di un'altra bozza, di un'altra catena, o un artefatto mancante: il passo si ferma.
-  expect(testoScrittore(w2, bozza, `${intestazione(1, 'revisore', '2-scrittore.md')}x`)).toEqual({ motivo: { k: 'cat.riferimento' } })
-  expect(testoScrittore(w2, bozza.replace('c-catena001', 'c-altra0001'), feedback)).toEqual({ motivo: { k: 'cat.riferimento' } })
-  expect(testoScrittore(w2, bozza)).toEqual({ motivo: { k: 'cat.artefattoMancante' } })
-  expect(testoScrittore(w2, 'senza intestazione', feedback)).toEqual({ motivo: { k: 'cat.artefattoMancante' } })
+  expect(testoScrittore(w2, REGOLE_DEFAULT, bozza, `${intestazione(1, 'revisore', '2-scrittore.md')}x`)).toEqual({ motivo: { k: 'cat.riferimento' } })
+  expect(testoScrittore(w2, REGOLE_DEFAULT, bozza.replace('c-catena001', 'c-altra0001'), feedback)).toEqual({ motivo: { k: 'cat.riferimento' } })
+  expect(testoScrittore(w2, REGOLE_DEFAULT, bozza)).toEqual({ motivo: { k: 'cat.artefattoMancante' } })
+  expect(testoScrittore(w2, REGOLE_DEFAULT, 'senza intestazione', feedback)).toEqual({ motivo: { k: 'cat.artefattoMancante' } })
   // Filtro dei dati di rete locale e limite sull'INTERO testo: oltre, si ferma col numero, mai tagliato.
-  expect(testoScrittore(w2, `${intestazione(1, 'scrittore')}Il server è 192.168.1.20.`, feedback)).toEqual({ motivo: { k: 'cat.datiLan' } })
-  const lungo = testoScrittore(w2, `${intestazione(1, 'scrittore')}${'x'.repeat(CLOUD_MAX)}`, feedback)
+  expect(testoScrittore(w2, REGOLE_DEFAULT, `${intestazione(1, 'scrittore')}Il server è 192.168.1.20.`, feedback)).toEqual({ motivo: { k: 'cat.datiLan' } })
+  const lungo = testoScrittore(w2, REGOLE_DEFAULT, `${intestazione(1, 'scrittore')}${'x'.repeat(CLOUD_MAX)}`, feedback)
   expect((lungo as { motivo: { k: string; p: { max: number } } }).motivo).toMatchObject({ k: 'cat.troppoLungo', p: { max: CLOUD_MAX } })
 })
 
@@ -278,4 +278,14 @@ test('Revisione F13a, rilievo 7: i costi si raggruppano per tipo con costoDi, ma
   const c = costiPerTipo(lista)
   expect([c.stimato, c.piano, c.ignoto, c.gratuito]).toEqual([{ n: 1, usd: 0.7 }, { n: 1, usd: 0 }, { n: 1, usd: 0 }, { n: 1, usd: 0 }])
   expect([c.osservato!.n, Math.round(c.osservato!.usd * 100) / 100]).toEqual([2, 0.5])
+})
+
+test('Revisione F13a, giro 5, punto 1: una bozza o un feedback sensibile (termini fissi o del progetto) non va a uno scrittore esterno', () => {
+  const w2 = az({ titolo: 'Guida', brief: 'Scrivi la guida.', catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  const bozza = (corpo: string) => `${intestazione(1, 'scrittore')}${corpo}`
+  const feedback = (corpo: string) => `${intestazione(1, 'revisore', '1-scrittore.md')}${corpo}`
+  expect(testoScrittore(w2, REGOLE_DEFAULT, bozza('Spiega le login permissions.'), feedback('Va bene.'))).toEqual({ motivo: { k: 'cat.sensibile', p: { termine: 'login' } } })
+  const progetto = { ...REGOLE_DEFAULT, sensibili: ['fatturazione interna'] }
+  expect(testoScrittore(w2, progetto, bozza('Testo.'), feedback('Aggiungi la fatturazione interna.'))).toEqual({ motivo: { k: 'cat.sensibile', p: { termine: 'fatturazione interna' } } })
+  expect('testo' in testoScrittore(w2, progetto, bozza('Testo.'), feedback('Va bene.'))).toBe(true)
 })

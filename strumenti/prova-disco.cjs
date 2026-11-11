@@ -4213,6 +4213,8 @@ test('Revisione F13a, giro 3, punto 3: la corsia API nelle prove non prende mai 
   await assert.rejects(API_VERA.contaSpesa(dm, 'az-mut00001', 0.2), /mutex di produzione/)
   await assert.rejects(require(DISCO).conMutex(API_VERA.MUTEX_API, 0, () => true), /mutex di produzione/)
   await assert.rejects(require(DISCO).conMutex('accesso:claude', 0, () => true), /mutex di produzione/)
+  // Giro 5 di F13a, punto 2: anche la corsia Codex della macchina.
+  await assert.rejects(require(DISCO).conMutex(require(DISCO).MUTEX_CODEX, 0, () => true), /mutex di produzione/)
   // Col wrapper e tre soli argomenti: ISOLA va nei deps, riportato resta undefined.
   await API.contaSpesa(dm, 'az-mut00001', 0.2)
   assert.deepStrictEqual(API.leggiSpesa(dm).voci['az-mut00001'], { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 1, stato: 'contato', costo: 0.2 })

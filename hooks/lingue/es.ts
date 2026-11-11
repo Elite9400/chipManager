@@ -1269,6 +1269,7 @@ const es: Dizionario = {
   "cat.costiCatena": "coste de la cadena: {costi}",
   "v.tettoNonValido": "{campo} en la configuración no es un importe válido: ninguna chip de este grupo arranca con créditos API hasta corregirlo",
   "dir.tetto": "tope ${tetto}, blando: la última chip puede superarlo en lo que gaste en su turno",
+  "cat.sensibile": "el texto para el escritor es sensible ({termine}): no se envía a un escritor externo y el paso se detiene",
   // ‹fine›
 }
 

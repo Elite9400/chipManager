@@ -1269,6 +1269,7 @@ const de: Dizionario = {
   "cat.costiCatena": "Kosten der Kette: {costi}",
   "v.tettoNonValido": "{campo} in der Konfiguration ist kein gültiger Betrag: kein Chip dieser Gruppe startet mit API-Guthaben, bis es korrigiert ist",
   "dir.tetto": "Grenze ${tetto}, weich: der letzte Chip kann sie um das überschreiten, was er in seinem Zug ausgibt",
+  "cat.sensibile": "der Text für den Schreiber ist sensibel ({termine}): er geht an keinen externen Schreiber, und der Schritt stoppt",
   // ‹fine›
 }
 
