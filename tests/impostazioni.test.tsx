@@ -2192,13 +2192,20 @@ test('default rules: a file that appeared meanwhile is never overwritten; a path
   await ui.unmount()
 })
 
-test('default rules: the configured routing path has one normal form for confirmation, writing and reading; a backslash is refused', async ($, on) => {
-  expect(progettoDa({ progetti: { 'esempio/demo': { routing: './regole//routing.json' } } }, 'esempio/demo')).toMatchObject({ routing: 'regole/routing.json' })
-  expect(progettoDa({ progetti: { 'esempio/demo': { routing: 'regole\\routing.json' } } }, 'esempio/demo')).toEqual({ k: 'cfg.routing' })
+test('default rules: the configured routing path has one normal form for confirmation, writing and reading; a backslash separates on Windows only', async ($, on) => {
+  const con = (routing: string, windows: boolean) => progettoDa({ progetti: { 'esempio/demo': { routing } } }, 'esempio/demo', windows)
+  for (const windows of [false, true]) expect(con('./regole//routing.json', windows)).toMatchObject({ routing: 'regole/routing.json' })
+  // A backslash: separator on Windows (configs that work today keep working), ambiguous on POSIX.
+  expect([con('.\\regole\\routing.json', true), con('regole\\routing.json', false)]).toMatchObject([{ routing: 'regole/routing.json' }, { k: 'cfg.routing' }])
+  // Everywhere: no `..`, no absolute path, no drive.
+  for (const windows of [false, true])
+    for (const r of ['..\\fuori.json', 'a/../b.json', '\\abs.json', '/abs.json', 'C:\\x.json', 'c:x.json'])
+      expect([r, windows, con(r, windows)]).toEqual([r, windows, { k: 'cfg.routing' }])
+  // A Windows session (drive root X:): a backslashed config reads, confirms and writes the same file.
   const amb = ambiente(on)
   amb.disco.lingua = 'en'
   amb.disco.delete('X:/repo/.claude/routing.json')
-  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { routing: './regole//routing.json' } } }))
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { routing: '.\\regole\\\\routing.json' } } }))
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'chipmanager', args: '--setup' } as never)

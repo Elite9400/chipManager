@@ -489,15 +489,14 @@ async function chiSonoIo($: Eng, opz: { cache?: boolean } = {}): Promise<Chiaman
   return c
 }
 
-/**
- * Configurazione locale e routing.json riletti dal disco: si chiama prima di ogni decisione, non solo
- * all'apertura. Una configurazione che non vale blocca come un routing.json illeggibile.
- */
+/** Windows session: a backslash in the config's `routing` is a separator there (normalizzaRouting). */
+const suWindows = async ($: Eng, root?: string) => /^[A-Za-z]:/.test(root ?? '') || (await $.env.get('OS').catch(() => undefined)) === 'Windows_NT'
+
 /** Where the rules are read from: the project's `routing` (default `.claude/routing.json`) under the session's root. */
 async function percorsoRegole($: Eng) {
   const sr = await $.session.repo().catch(() => null)
   const root = sr?.root
-  const progetto = progettoDa(await leggiConfig($), repoGithub(sr?.remote) ?? (root ? checkoutDi(root) : null))
+  const progetto = progettoDa(await leggiConfig($), repoGithub(sr?.remote) ?? (root ? checkoutDi(root) : null), await suWindows($, root))
   if (eMsg(progetto)) throw new Errore(progetto)
   return { root, progetto, file: root ? `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/${progetto.routing}` : undefined }
 }
@@ -523,6 +522,10 @@ async function creaRegole($: Eng): Promise<boolean> {
   return true
 }
 
+/**
+ * Configurazione locale e routing.json riletti dal disco: si chiama prima di ogni decisione, non solo
+ * all'apertura. Una configurazione che non vale blocca come un routing.json illeggibile.
+ */
 async function leggiRegole($: Eng) {
   let r: Regole
   let progetto: ReturnType<typeof progettoDa> | undefined
@@ -2087,7 +2090,7 @@ async function configura($: Eng, opz: Record<string, unknown>, campi: Record<str
     // F10 rilievo 4: la base della lingua si confronta sullo STESSO testo che va come `atteso` nel CAS: una lingua salvata
     // altrove dopo la scelta è un conflitto, mai sovrascritta.
     if (lingua && linguaBase && linguaDa(config.lingua) !== linguaBase) throw errore('imp.linguaCambiataAltrove')
-    const precedente = progettoDa(config, chi.repo)
+    const precedente = progettoDa(config, chi.repo, await suWindows($, (await $.session.repo().catch(() => null))?.root))
     if (eMsg(precedente)) throw new Errore(precedente)
     if (JSON.stringify(precedente.risorse) !== JSON.stringify(attese)) throw errore('err.impostazioniCambiate')
     const p = conBozza(precedente.risorse, campi)

@@ -137,22 +137,26 @@ const PROGETTO_PREDEFINITO: Progetto = { routing: ROUTING_PREDEFINITO, sensibili
 
 /**
  * The one normal form of a project's `routing` path, used to read, to confirm and to write it: relative, `/`-separated,
- * no empty or `.` segments. A backslash is refused (a separator on Windows, a file-name character on POSIX), as are
- * `..`, absolute paths and drives. strumenti/regole-crea.cjs accepts only paths already in this form (parity test).
+ * no empty or `.` segments. On Windows a backslash is a separator and becomes `/` first (configs written that way keep
+ * working); on POSIX it may be part of a file name, so it is ambiguous and refused. `..`, absolute paths and drives are
+ * refused everywhere. strumenti/regole-crea.cjs accepts only paths already in this form (parity test).
  */
-export function normalizzaRouting(v: unknown): string | undefined {
-  if (typeof v !== 'string' || !v || v.length > 400 || v.includes('\\') || v.startsWith('/') || /^[a-z]:/i.test(v)) return undefined
-  const pezzi = v.split('/').filter(s => s !== '' && s !== '.')
+export function normalizzaRouting(v: unknown, windows = false): string | undefined {
+  if (typeof v !== 'string' || !v || v.length > 400 || (!windows && v.includes('\\'))) return undefined
+  const s = windows ? v.replace(/\\/g, '/') : v
+  if (s.startsWith('/') || /^[a-z]:/i.test(s)) return undefined
+  const pezzi = s.split('/').filter(x => x !== '' && x !== '.')
   return pezzi.length && !pezzi.includes('..') ? pezzi.join('/') : undefined
 }
 
 /**
  * `config` = il JSON della configurazione (`null` se il file non c'è). Restituisce la sezione del progetto o il
  * motivo per cui la configurazione non vale: chi chiama tratta il motivo come regole non lette (nessun avvio).
+ * `windows`: the session runs on Windows (only `routing` depends on it: normalizzaRouting).
  */
-export function progettoDa(config: unknown, repo: string | null): Progetto | Msg {
+export function progettoDa(config: unknown, repo: string | null, windows = false): Progetto | Msg {
   // Un config assente vale come vuoto: la stessa lettura (e la stessa forma) di quella fatta prima di scriverlo.
-  if (config === null || config === undefined) return progettoDa({}, repo)
+  if (config === null || config === undefined) return progettoDa({}, repo, windows)
   const oggetto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
   if (!oggetto(config)) return msg('cfg.nonOggetto')
   const progetti = config.progetti ?? {}
@@ -165,7 +169,7 @@ export function progettoDa(config: unknown, repo: string | null): Progetto | Msg
   }
   if (!oggetto(p)) return msg('cfg.progetto', { repo: repo ?? '' })
   const { sensibili, background } = p
-  const routing = p.routing === undefined ? undefined : normalizzaRouting(p.routing)
+  const routing = p.routing === undefined ? undefined : normalizzaRouting(p.routing, windows)
   if (p.routing !== undefined && routing === undefined) return msg('cfg.routing')
   if (sensibili !== undefined && (!Array.isArray(sensibili) || !sensibili.every(t => typeof t === 'string' && t.length > 0 && t.length <= 200)))
     return msg('cfg.sensibili')

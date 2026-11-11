@@ -2904,16 +2904,23 @@ test('default rules helper: a repository reached through a junction is written w
 test('default rules helper: one normal form for the routing path, shared with the reader (normalizzaRouting); others refused', () => {
   const { crea, percorso } = require('./regole-crea.cjs')
   const ingressi = ['.claude/routing.json', 'regole/routing.json', './regole//routing.json', 'regole/./routing.json', 'regole\\routing.json', 'a\\b/c.json',
-    '../routing.json', 'a/../b.json', '/abs.json', 'C:/abs.json', 'c:rel.json', '', '.', 'regole/', 'x'.repeat(401)]
-  const normali = conLogica('console.log(JSON.stringify(ingresso.map(x => nuova.normalizzaRouting(x) ?? null)))', ingressi)
+    '.\\regole\\\\routing.json', '../routing.json', 'a/../b.json', '..\\b.json', '/abs.json', '\\abs.json', 'C:/abs.json', 'C:\\abs.json', 'c:rel.json', '', '.',
+    'regole/', 'x'.repeat(401)]
+  // The platform is simulated: the same inputs as a POSIX session and as a Windows one.
+  const [posix, windows] = conLogica('console.log(JSON.stringify([false, true].map(w => ingresso.map(x => nuova.normalizzaRouting(x, w) ?? null))))', ingressi)
   const root = fuori()
-  for (const [i, x] of ingressi.entries()) {
-    // The helper takes exactly the strings the reader would produce, and nothing else.
-    assert.strictEqual(percorso(root, x) !== null, normali[i] === x, `${JSON.stringify(x)} -> ${JSON.stringify(normali[i])}`)
-    if (normali[i] !== null) assert.ok(percorso(root, normali[i]), `${normali[i]}`)
-  }
-  assert.deepStrictEqual(normali.slice(0, 5), ['.claude/routing.json', 'regole/routing.json', 'regole/routing.json', 'regole/routing.json', null])
-  // A backslash is ambiguous (separator on Windows, file-name character on POSIX): refused on both sides, nothing written.
+  for (const normali of [posix, windows])
+    for (const [i, x] of ingressi.entries()) {
+      // The helper takes exactly the strings the reader would produce, and nothing else: it never normalizes itself.
+      assert.strictEqual(percorso(root, x) !== null, normali[i] === x, `${JSON.stringify(x)} -> ${JSON.stringify(normali[i])}`)
+      if (normali[i] !== null) assert.ok(percorso(root, normali[i]), `${normali[i]}`)
+    }
+  assert.deepStrictEqual(posix.slice(0, 7), ['.claude/routing.json', 'regole/routing.json', 'regole/routing.json', 'regole/routing.json', null, null, null])
+  // On Windows a backslash is a separator: the same normal form the reader and the confirmation use.
+  assert.deepStrictEqual(windows.slice(0, 7), ['.claude/routing.json', 'regole/routing.json', 'regole/routing.json', 'regole/routing.json', 'regole/routing.json', 'a/b/c.json', 'regole/routing.json'])
+  // `..`, absolute paths and drives: refused on both platforms.
+  for (const normali of [posix, windows]) assert.deepStrictEqual(normali.slice(7, 15), Array(8).fill(null))
+  // The helper itself never takes a backslash: it receives the normalized form.
   assert.strictEqual(crea({ root, relativo: 'regole\\routing.json', testo: '{}' }), 2)
   assert.deepStrictEqual(fs.readdirSync(root), [])
 })

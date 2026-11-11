@@ -302,7 +302,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   R4/R5 with Claude and always reviewed, no external provider. Exclusive creation only: never over an existing file,
   never inside `.git`, never through a link below the repository root; a failed write leaves no partial file.
 - A project's `routing` path in the config has one normal form, used to read, confirm and write the file (`./a//b.json`
-  is `a/b.json`). A backslash is refused as ambiguous: use `/`, which works on Windows too.
+  is `a/b.json`). On Windows a backslash is a separator, so existing configs keep working; on POSIX it is ambiguous and
+  refused (use `/`). `..`, absolute paths and drives are refused everywhere.
 - A valid empty Claude plan drops the earlier plan quotas, status-line ones included; the Claude API spend stays.
 - A malformed config shows "config.json cannot be read" in the Project section instead of breaking it.
 - The Qwen workspace host can be cleared: Apply removes it from the config.
