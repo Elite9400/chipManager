@@ -1,9 +1,11 @@
 // F13a: Fable 5.2, modo dirigente e catene di lavoro (logica pura).
 import { expect, test } from 'claude-code/testing'
 
-import { ADVISOR, corsiaDi, effortDi, idAuditor, istruzioniDirigente, mandato, MODELLI_ADVISOR, modelloDi, motivoAuditor, nomeModello, occupa, pianifica,
+import { ADVISOR, CLOUD_MAX, corsiaDi, dipendenze, effortDi, idAuditor, istruzioniDirigente, mandato, MODELLI_ADVISOR, modelloDi, motivoAuditor, nomeModello, normalizza, occupa,
+  passiCatena, PIPELINE_PREDEFINITA, pianifica,
   rangoModello, REGOLE_DEFAULT, revisoreConcreto, RISORSE_DEFAULT, ruoloNuovo, sensibile, TRANSIZIONI, violazioni } from '../hooks/logica'
 import { campiDaProposta } from '../hooks/bilanciamento'
+import { costoDi, testoScrittore } from '../hooks/logica'
 import { famigliaDi } from '../hooks/tema'
 import type { Azione, Regole } from '../types'
 
@@ -117,4 +119,93 @@ test('F13.2 proposta d\'impostazioni: il modo dirigente si fonde campo per campo
   expect(campiDaProposta({ progetto: { modoLavoro: { dirigente: { quando: 'sempre', lavoratori: { R1: 'claude-haiku-5-5' } } } } } as never, r)).toEqual({
     modoLavoro: { dirigente: { maxFigli: 4, quando: 'sempre', lavoratori: { R0: 'claude-sonnet-5-5', R1: 'claude-haiku-5-5' } } },
   })
+})
+
+// --- F13.6: catene di lavoro ---------------------------------------------------------------------------------------------
+
+const intestazione = (giro: number, ruolo: string, rif = '-') => `<!-- chipManager artefatto catena=c-catena001 giro=${giro} ruolo=${ruolo} rif=${rif} -->\n`
+const conPipeline = (p: Record<string, unknown>): Regole => ({ ...REGOLE_DEFAULT, risorse: { ...RISORSE_DEFAULT,
+  modoLavoro: { ...RISORSE_DEFAULT.modoLavoro, pipeline: { ...RISORSE_DEFAULT.modoLavoro.pipeline, ...p } } } }) as Regole
+const ids = () => {
+  let n = 0
+  return () => `a-passo00${n++}`
+}
+
+test('F13.6 passi: scrittore → revisore → riscrittura → applicatore, legati da dopoConsegna; l\'applicatore è sempre Claude', () => {
+  const base = az({ titolo: 'Guida', brief: 'Scrivi la guida.', corsia: 'R2', dipende: ['a-prima0001'], ordine: 3 })
+  const passi = passiCatena(base, PIPELINE_PREDEFINITA, 'c-catena001', ids())
+  expect(passi.map(p => [p.titolo, p.catena?.ruolo, p.catena?.giro, p.esecutore, p.modello ?? null, p.revisore, p.dopoConsegna, p.dipende, p.ordine])).toEqual([
+    ['Guida · draft v1', 'scrittore', 1, 'claude', 'claude-sonnet-5-5', 'nessuno', [], ['a-prima0001'], 3],
+    ['Guida · review v1', 'revisore', 1, 'claude', 'claude-opus-5-5', 'nessuno', ['a-passo000'], [], 4],
+    ['Guida · draft v2', 'scrittore', 2, 'claude', 'claude-sonnet-5-5', 'nessuno', ['a-passo001'], [], 5],
+    ['Guida · apply', 'applicatore', 2, 'claude', 'claude-sonnet-5-5', 'claude', ['a-passo002'], [], 6],
+  ])
+  // Scrittore FreeLLMAPI (R1, low, revisione Claude come vuole la sua guardia) e revisore Codex, due giri.
+  const altri = passiCatena(base, { scrittore: { provider: 'freellmapi', modello: 'testo-compatto' }, revisore: 'codex', giri: 2 }, 'c-catena001', ids())
+  expect(altri.map(p => `${p.catena!.ruolo}${p.catena!.giro}:${p.esecutore}/${p.corsia}/${p.effort ?? '-'}/${p.revisore}`)).toEqual([
+    'scrittore1:freellmapi/R1/low/claude', 'revisore1:codex/R2/-/nessuno', 'scrittore2:freellmapi/R1/low/claude', 'revisore2:codex/R2/-/nessuno',
+    'scrittore3:freellmapi/R1/low/claude', 'applicatore3:claude/R2/-/claude'])
+})
+
+test('F13.6 riscrittura («correggi il secondo paragrafo»): il testo per lo scrittore porta la bozza v1 e il feedback su di essa', () => {
+  const w2 = az({ titolo: 'Guida', brief: 'Scrivi la guida.', catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  const bozza = `${intestazione(1, 'scrittore')}Primo paragrafo.\n\nSecondo paragrafo, con un errore.`
+  const feedback = `${intestazione(1, 'revisore', '1-scrittore.md')}Correggi il secondo paragrafo.`
+  const r = testoScrittore(w2, bozza, feedback)
+  expect('testo' in r).toBe(true)
+  const t = (r as { testo: string }).testo
+  for (const x of ['Scrivi la guida.', '--- Draft v1 ---\nPrimo paragrafo.\n\nSecondo paragrafo, con un errore.', '--- Review feedback on draft v1 ---\nCorreggi il secondo paragrafo.', 'Write draft v2'])
+    expect([x, t.includes(x)]).toEqual([x, true])
+  // Il primo giro: titolo e brief, come sempre.
+  expect(testoScrittore({ ...w2, catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' } })).toEqual({ testo: 'Guida\n\nScrivi la guida.' })
+  // Il feedback di un'altra bozza, di un'altra catena, o un artefatto mancante: il passo si ferma.
+  expect(testoScrittore(w2, bozza, `${intestazione(1, 'revisore', '2-scrittore.md')}x`)).toEqual({ motivo: { k: 'cat.riferimento' } })
+  expect(testoScrittore(w2, bozza.replace('c-catena001', 'c-altra0001'), feedback)).toEqual({ motivo: { k: 'cat.riferimento' } })
+  expect(testoScrittore(w2, bozza)).toEqual({ motivo: { k: 'cat.artefattoMancante' } })
+  expect(testoScrittore(w2, 'senza intestazione', feedback)).toEqual({ motivo: { k: 'cat.artefattoMancante' } })
+  // Filtro dei dati di rete locale e limite sull'INTERO testo: oltre, si ferma col numero, mai tagliato.
+  expect(testoScrittore(w2, `${intestazione(1, 'scrittore')}Il server è 192.168.1.20.`, feedback)).toEqual({ motivo: { k: 'cat.datiLan' } })
+  const lungo = testoScrittore(w2, `${intestazione(1, 'scrittore')}${'x'.repeat(CLOUD_MAX)}`, feedback)
+  expect((lungo as { motivo: { k: string; p: { max: number } } }).motivo).toMatchObject({ k: 'cat.troppoLungo', p: { max: CLOUD_MAX } })
+})
+
+test('F13.6 dopoConsegna: il passo parte quando il precedente ha CONSEGNATO un artefatto; scartato = problema', () => {
+  const prima = az({ id: 'a-prima0001', stato: 'consegnata', catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' } })
+  const dopo = az({ id: 'a-dopo00001', dopoConsegna: ['a-prima0001'], catena: { id: 'c-catena001', giro: 1, ruolo: 'revisore' } })
+  expect(dipendenze(dopo, [prima, dopo]).chiuse).toBe(false)
+  expect(dipendenze(dopo, [{ ...prima, artefatto: '1-scrittore.md' }, dopo]).chiuse).toBe(true)
+  expect(dipendenze(dopo, [{ ...prima, stato: 'avviata', artefatto: '1-scrittore.md' }, dopo]).chiuse).toBe(false)
+  expect(dipendenze(dopo, [{ ...prima, stato: 'scartata' }, dopo]).problemi.map(m => m.k)).toEqual(['v.dipendenzaScartata'])
+  // Il record si legge solo nella forma che scrive il pannello.
+  expect('k' in normalizza({ ...dopo, artefatto: '../x.md' })).toBe(true)
+  expect('k' in normalizza({ ...dopo, catena: { id: 'c-catena001', giro: 9, ruolo: 'scrittore' } })).toBe(true)
+  expect(normalizza({ ...dopo, artefatto: '1-revisore.md', costo: { tipo: 'osservato', usd: 0.4 } })).toMatchObject({ artefatto: '1-revisore.md' })
+})
+
+test('F13.6 mandati: lo scrittore legge bozza e feedback e consegna l\'artefatto; Codex rivede in sola lettura; solo l\'applicatore cambia file', () => {
+  const s = { disco: 'X:/m/strumenti/disco.cjs', dati: 'X:/orch/azioni' }
+  const passo = (giro: number, ruolo: 'scrittore' | 'revisore' | 'applicatore', extra: Partial<Azione> = {}) =>
+    mandato(az({ catena: { id: 'c-catena001', giro, ruolo }, corsia: 'R1', tentativo: 'az-prova001', ...extra }), REGOLE_DEFAULT, s).prompt
+  const w2 = passo(2, 'scrittore')
+  for (const x of ['X:/orch/azioni/artefatti/c-catena001/1-scrittore.md', 'X:/orch/azioni/artefatti/c-catena001/1-revisore.md', '`artefatto`', 'Change no files and push nothing'])
+    expect([x, w2.includes(x)]).toEqual([x, true])
+  expect(w2.includes('branch pushed')).toBe(false)
+  const rc = passo(1, 'revisore', { esecutore: 'codex', revisore: 'claude' })
+  expect(rc).toContain('-s read-only')
+  expect(rc).toContain('X:/orch/azioni/artefatti/c-catena001/1-scrittore.md')
+  const ap = passo(2, 'applicatore')
+  expect(ap).toContain('only step of the chain that changes files')
+  expect(ap).toContain('branch pushed')
+})
+
+test('F13.6 tetto della catena: raggiunta la spesa misurata, nessun altro passo parte; i tipi di costo restano distinti', () => {
+  const r = conPipeline({ tettoUsd: 1 })
+  const fatto = az({ id: 'a-fatto0001', stato: 'consegnata', destinazione: 'api-claude', costoApi: 0.7, catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' } })
+  const altro = az({ id: 'a-altro0001', costo: { tipo: 'osservato', usd: 0.4 }, catena: { id: 'c-catena001', giro: 1, ruolo: 'revisore' } })
+  const prossimo = az({ id: 'a-pross0001', catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  expect(violazioni(prossimo, r, [fatto, prossimo]).map(x => x.k)).not.toContain('v.catenaTetto')
+  expect(violazioni(prossimo, r, [fatto, altro, prossimo]).find(x => x.k === 'v.catenaTetto')).toEqual({ k: 'v.catenaTetto', p: { tetto: 1, speso: 1.1 } })
+  expect(violazioni(prossimo, REGOLE_DEFAULT, [fatto, altro, prossimo]).map(x => x.k)).not.toContain('v.catenaTetto')
+  expect([costoDi(fatto), costoDi(altro), costoDi(prossimo), costoDi({ ...prossimo, destinazione: 'api-claude' })]).toEqual([
+    { tipo: 'stimato', usd: 0.7 }, { tipo: 'osservato', usd: 0.4 }, { tipo: 'piano' }, { tipo: 'ignoto' }])
 })

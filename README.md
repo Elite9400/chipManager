@@ -437,12 +437,13 @@ cannot be shown, the same request stays at the top of the Work view. When upgrad
 
 ```json
 {
-  "modelli_ammessi": ["claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6-astra"],
+  "modelli_ammessi": ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2", "gpt-6.1-sol", "gpt-6-astra"],
   "effort_ammessi": ["low", "medium", "high", "xhigh"],
   "tetto_per_modello": { "claude-fable-5-1": "xhigh" },
   "revisione": {
     "revisori_ammessi_per_autore": {
-      "claude-opus-5-5": ["claude-fable-5-1", "motore:codex"],
+      "claude-opus-5-5": ["claude-fable-5-2", "motore:codex"],
+      "claude-fable-5-2": ["claude-opus-5-5"],
       "gpt-6-astra": ["claude-sonnet-5-5", "claude-opus-5-5"]
     }
   },

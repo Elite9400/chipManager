@@ -32,7 +32,7 @@ import {
   valoreConfig,
 } from './bilanciamento'
 import type { Profilo } from './bilanciamento'
-import { cartellaDati, conMisura, connesso, durata, endpointLocale, FORNITORI, livelloDi, modoEfficace, nomeModello, passiMancanti, piuPieno, SOGLIA_PREDEFINITA, sogliaDi, TETTO_API_PREDEFINITO, velo } from './logica'
+import { cartellaDati, conMisura, connesso, durata, endpointLocale, FORNITORI, livelloDi, modoEfficace, nomeModello, passiMancanti, piuPieno, PRESET_CATENA, SOGLIA_PREDEFINITA, sogliaDi, TETTO_API_PREDEFINITO, velo } from './logica'
 import type { Ctx, Dati } from './pannello'
 import { eMsg, Errore, LEGENDA, LINGUE, msg, msgDi, NOMI_LINGUE } from './lingua'
 import type { Chiave, Lingua, T } from './lingua'
@@ -859,11 +859,29 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
           onCambia: v => scrivi('modo-dir-ripiani', { dirigente: { ...strato.dirigente, maxRipiani: Number(v) } }),
         }),
         didascalia('modo-dir-fable', T('dir.fable')),
+        // F13.6: la catena di lavoro (scrittore, revisore, giri) coi tre preset, e cosa costa ogni ruolo.
+        u.GruppoChip({
+          chiave: 'modo-catena', etichetta: T('modo.catena'), contesto: T('modo.catena'), modo: 'scelta',
+          valore: (Object.entries(PRESET_CATENA).find(([, v]) => v.scrittore.provider === m.pipeline.scrittore.provider && v.scrittore.modello === m.pipeline.scrittore.modello &&
+            v.revisore === m.pipeline.revisore)?.[0]) ?? '',
+          voci: [{ valore: 'locale', testo: T('modo.cLocale') }, { valore: 'risparmio', testo: T('modo.cRisparmio') }, { valore: 'qualita', testo: T('modo.cQualita') }],
+          onCambia: v => scrivi('modo-catena', { pipeline: { ...strato.pipeline, ...PRESET_CATENA[v as keyof typeof PRESET_CATENA] } }),
+        }),
+        u.GruppoChip({
+          chiave: 'modo-catena-giri', etichetta: T('modo.catenaGiri'), contesto: T('modo.catenaGiri'), modo: 'scelta', valore: String(m.pipeline.giri),
+          voci: [1, 2, 3].map(n => ({ valore: String(n), testo: String(n) })),
+          onCambia: v => scrivi('modo-catena-giri', { pipeline: { ...strato.pipeline, giri: Number(v) } }),
+        }),
+        didascalia('modo-catena-ruoli', T('modo.catenaRuoli', {
+          scrittore: m.pipeline.scrittore.provider === 'claude' ? nomeModello(m.pipeline.scrittore.modello) : `${m.pipeline.scrittore.provider} ${m.pipeline.scrittore.modello}`,
+          cs: T(m.pipeline.scrittore.provider === 'claude' ? 'costo.piano' : m.pipeline.scrittore.provider === 'ollama' ? 'costo.gratuito' : 'costo.ignoto'),
+          revisore: m.pipeline.revisore === 'codex' ? 'Codex' : nomeModello(m.pipeline.revisore), cr: T('costo.piano'),
+        })),
         Object.keys(strato).length ? (
           <Button key="modo-ripristina" plain label={progetto ? T('modo.eredita') : T('modo.predefiniti')}
             onPress={() => salva('modo-ripristina', () => ({ [campo]: null }))()} />
         ) : null,
-        ...['modo-ripristina', 'modo-codex', 'modo-parallelo', 'modo-auditor', 'modo-incrociata', 'modo-dir-quando', 'modo-dir-modello', 'modo-dir-figli', 'modo-dir-ripiani',
+        ...['modo-ripristina', 'modo-codex', 'modo-parallelo', 'modo-auditor', 'modo-incrociata', 'modo-dir-quando', 'modo-dir-modello', 'modo-dir-figli', 'modo-dir-ripiani', 'modo-catena', 'modo-catena-giri',
           ...['R0', 'R1', 'R2', 'R3', 'R4', 'R5'].map(c => `modo-effort-${c}`)].map(errore),
         ...skillUi((id, on) => scrivi(`skill-usa-${id}`, { skillBase: { ...strato.skillBase, [id]: on } }), m.skillBase),
       ],

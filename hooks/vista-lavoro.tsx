@@ -39,6 +39,7 @@ import {
   transizione,
   velo,
   violazioniAvvio,
+  costoDi,
 } from './logica'
 import { letto, msg, msgDi, salvato } from './lingua'
 import type { Msg } from './lingua'
@@ -46,6 +47,10 @@ import type { Dati } from './pannello'
 import { diversoDa, presetChi, PRESET_CHI, PROFILI } from './bilanciamento'
 import type { PresetChi } from './bilanciamento'
 import { ACCENTO, EFFORT, FAMIGLIA, famigliaDi, GRIGIO, MOTORE, STATO, VELO } from './tema'
+
+/** F13.6: le chiavi del dizionario per ruolo di catena e tipo di costo. */
+const RUOLO_CATENA = { scrittore: 'cat.ruolo.scrittore', revisore: 'cat.ruolo.revisore', applicatore: 'cat.ruolo.applicatore' } as const
+const COSTO = { piano: 'costo.piano', stimato: 'costo.stimato', osservato: 'costo.osservato', ignoto: 'costo.ignoto', gratuito: 'costo.gratuito' } as const
 
 // Copia identica degli atomi di register.tsx (lo scanner li vuole nel file che li usa).
 const avviso = atom({ plugin: 'chip-manager', key: 'avviso' } as const, null as Msg | string | null)
@@ -548,7 +553,12 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
    */
   const rigaDirigente = (a: Azione) => {
     const d = regoleOra.risorse.modoLavoro.dirigente
-    if (a.padre) return <Text key={`figlia-${a.id}`} size="caption" dimColor wrap="wrap">{T('dir.figlia', { titolo: tutte.find(x => x.id === a.padre)?.titolo ?? a.padre })}</Text>
+    // F13.6: il passo di catena (giro, ruolo, che tipo di costo, l'artefatto consegnato) e, se c'è, la sua dirigente.
+    const k = costoDi(a)
+    const catena = a.catena && [T('cat.riga', { catena: a.catena.id, giro: a.catena.giro, ruolo: T(RUOLO_CATENA[a.catena.ruolo]),
+      costo: T(COSTO[k.tipo], { usd: T.numero(k.usd ?? 0, 2) }) }), a.artefatto && T('cat.artefatto', { file: a.artefatto })].filter(Boolean).join(' · ')
+    const figlia = a.padre && T('dir.figlia', { titolo: tutte.find(x => x.id === a.padre)?.titolo ?? a.padre })
+    if (catena || figlia) return <Text key={`figlia-${a.id}`} size="caption" dimColor wrap="wrap">{[catena, figlia].filter(Boolean).join(' · ')}</Text>
     if (a.ruolo !== 'dirigente') return null
     const figlie = tutte.filter(x => x.padre === a.id)
     const osservate = figlie.filter(x => typeof x.costoApi === 'number')

@@ -1181,9 +1181,12 @@ async function lanciaCli(dir, id, tentativo, input) {
  */
 async function figlio(dir, richiesta) {
   registraRadici(dir)
-  const f = richiesta?.figlio
-  if (!oggetto(richiesta) || !idValido(richiesta.padre) || !oggetto(f) || !idValido(f.id) || !Number.isInteger(richiesta.maxFigli) || richiesta.maxFigli < 1 || richiesta.maxFigli > 20) return [2, '']
-  if (f.ruolo !== undefined || f.padre !== undefined || f.vincoliPadre !== undefined || f.vincoliPropri !== undefined) return [2, '']
+  // F13.6: `figli` (al più 8, i passi di una catena) si scrivono tutti o nessuno; `figlio` resta per una sola figlia.
+  const tutte = oggetto(richiesta) && richiesta.figli !== undefined ? richiesta.figli : [richiesta?.figlio]
+  if (!oggetto(richiesta) || !idValido(richiesta.padre) || !Array.isArray(tutte) || !tutte.length || tutte.length > 8 ||
+      !tutte.every(f => oggetto(f) && idValido(f.id)) || new Set(tutte.map(f => f.id)).size !== tutte.length ||
+      !Number.isInteger(richiesta.maxFigli) || richiesta.maxFigli < 1 || richiesta.maxFigli > 20) return [2, '']
+  if (tutte.some(f => f.ruolo !== undefined || f.padre !== undefined || f.vincoliPadre !== undefined || f.vincoliPropri !== undefined)) return [2, '']
   const r = await conMutex(MUTEX_AZIONI(dir), 8000, () => {
     let padre
     try {
@@ -1200,7 +1203,7 @@ async function figlio(dir, richiesta) {
         // un record illeggibile non è una figlia di questo padre
       }
     }
-    if (n >= richiesta.maxFigli) return [4, JSON.stringify({ motivo: 'maxFigli', n })]
+    if (n + tutte.length > richiesta.maxFigli) return [4, JSON.stringify({ motivo: 'maxFigli', n })]
     const v = oggetto(padre.vincoliPropri) ? padre.vincoliPropri : {}
     const vincoliPadre = {
       sensibile: v.sensibile === true,
@@ -1208,13 +1211,39 @@ async function figlio(dir, richiesta) {
       datiLan: v.datiLan === true,
       fornitori: Array.isArray(v.fornitori) ? v.fornitori.filter(x => typeof x === 'string' && /^[a-z0-9-]{1,40}$/.test(x)) : [],
     }
-    const file = path.join(dir, `${f.id}.json`)
-    if (fs.existsSync(file)) return [4, JSON.stringify({ motivo: 'esiste' })]
-    const rec = { ...f, ruolo: 'lavoro', padre: richiesta.padre, vincoliPadre }
-    scriviDati(file, JSON.stringify(rec, null, 2))
-    return [0, JSON.stringify(rec)]
+    if (tutte.some(f => fs.existsSync(path.join(dir, `${f.id}.json`)))) return [4, JSON.stringify({ motivo: 'esiste' })]
+    const scritte = tutte.map(f => ({ ...f, ruolo: 'lavoro', padre: richiesta.padre, vincoliPadre }))
+    for (const rec of scritte) scriviDati(path.join(dir, `${rec.id}.json`), JSON.stringify(rec, null, 2))
+    return [0, JSON.stringify(richiesta.figli !== undefined ? scritte : scritte[0])]
   })
   return r.occupato ? [3, ''] : r.valore
+}
+
+/** F13.6: il tetto di un artefatto, in caratteri (lo stesso di hooks/logica.ts). */
+const ARTEFATTO_MAX = 60000
+/**
+ * F13.6: l'artefatto di un passo di catena, sotto il lock delle azioni: `artefatti/<catena>/<giro>-<ruolo>.md`, con
+ * un'intestazione (catena, giro, ruolo, riferimento) e il testo, al più ARTEFATTO_MAX caratteri, con le regole dei
+ * percorsi. Il riferimento è quello atteso (la bozza per il feedback, il feedback per la riscrittura) e deve esistere.
+ * stdin `{ catena: { id, giro, ruolo }, rif?, testo }`: 0 e il nome; 2 richiesta non valida; 4 riferimento assente.
+ */
+async function artefatto(dir, r) {
+  registraRadici(dir)
+  const c = r?.catena
+  if (!oggetto(r) || !oggetto(c) || typeof c.id !== 'string' || !/^c-[a-z0-9]{6,20}$/.test(c.id) || !Number.isInteger(c.giro) || c.giro < 1 || c.giro > 4 ||
+      !['scrittore', 'revisore'].includes(c.ruolo) || typeof r.testo !== 'string' || !r.testo.trim() || r.testo.length > ARTEFATTO_MAX) return [2, '']
+  const atteso = c.ruolo === 'revisore' ? `${c.giro}-scrittore.md` : c.giro > 1 ? `${c.giro - 1}-revisore.md` : undefined
+  if (r.rif !== atteso) return [2, JSON.stringify({ motivo: 'rif' })]
+  const cartella = path.join(dir, 'artefatti', c.id)
+  const nome = `${c.giro}-${c.ruolo}.md`
+  const v = await conMutex(MUTEX_AZIONI(dir), 8000, () => {
+    if (atteso !== undefined && !fs.existsSync(path.join(cartella, atteso))) return [4, JSON.stringify({ motivo: 'rif' })]
+    percorsoSicuro(path.resolve(cartella))
+    fs.mkdirSync(cartella, { recursive: true })
+    scriviDati(path.join(cartella, nome), `<!-- chipManager artefatto catena=${c.id} giro=${c.giro} ruolo=${c.ruolo} rif=${atteso ?? '-'} -->\n${r.testo}`)
+    return [0, nome]
+  })
+  return v.occupato ? [3, ''] : v.valore
 }
 
 /**
@@ -1807,7 +1836,7 @@ async function main(argv, opz = {}) {
   const [cmd, ...a] = argv
   const cartellaDi = f => (typeof f === 'string' && path.isAbsolute(f) ? path.dirname(path.resolve(f)) : undefined)
   if (/^(configura|configura-utente|ripristina-config|pesi-[a-z]+|impostazioni-[a-z]+)$/.test(cmd ?? '')) registraRadici(cartellaDi(a[0]))
-  else if (/^(prenota|lancia-cli|esegui-cli|stato-cli|archivia-registro|figlio)$/.test(cmd ?? '')) registraRadici(a[0])
+  else if (/^(prenota|lancia-cli|esegui-cli|stato-cli|archivia-registro|figlio|artefatto)$/.test(cmd ?? '')) registraRadici(a[0])
   else if (cmd === 'cas') registraRadici(cartellaDi(a[0]))
   else if (/^board-[a-z]+$/.test(cmd ?? '') || cmd === 'diagnosi') registraRadici(cartellaDi(a[0]), a[1])
   else if (cmd === 'sposta-dati') registraRadici(cartellaDi(a[0]), a[2])
@@ -1825,7 +1854,7 @@ async function comandoHelper(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {
   // F6.2: la corsia a crediti API di Claude vive in un modulo suo (letto qui, a modulo caricato).
   if (/^((lancia|esegui|stato|libera|termina)-api|stato-esecuzione|accedi)$/.test(cmd ?? '')) return require('./api-claude.cjs').comando(cmd, a, stdin, { dirMacchina })
   // F10: config e cartelle dei dati fuori da ogni albero git e da ogni link, prima di qualunque lettura o scrittura.
-  const sicuro = cmd === 'cas' ? path.dirname(a[0] ?? '') : /^(configura|configura-utente|ripristina-config|board-[a-z]+|pesi-[a-z]+|impostazioni-[a-z]+|prenota|figlio|lancia-cli|esegui-cli|stato-cli)$/.test(cmd ?? '') ? a[0] : undefined
+  const sicuro = cmd === 'cas' ? path.dirname(a[0] ?? '') : /^(configura|configura-utente|ripristina-config|board-[a-z]+|pesi-[a-z]+|impostazioni-[a-z]+|prenota|figlio|artefatto|lancia-cli|esegui-cli|stato-cli)$/.test(cmd ?? '') ? a[0] : undefined
   if (sicuro !== undefined) {
     try {
       percorsoSicuro(sicuro)
@@ -1849,6 +1878,7 @@ async function comandoHelper(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {
     return Array.isArray(r) ? esci(...r) : esci(r)
   }
   if (cmd === 'figlio' && a.length === 1) return esci(...(await figlio(a[0], stdin())))
+  if (cmd === 'artefatto' && a.length === 1) return esci(...(await artefatto(a[0], stdin())))
   if (cmd === 'esegui-cli' && a.length === 3) return esci(await eseguiCli(...a, stdin()))
   if (cmd === 'stato-cli' && a.length === 2 && tentativoValido(a[1])) {
     return esci(0, fs.readFileSync(fileEsecuzione(a[0], a[1]), 'utf8'))
@@ -1884,7 +1914,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, percorsoCanonico, mutexEsecuzione, registraRadici, figlio, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, apriPagina, PAGINE_AIUTO, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, percorsoCanonico, mutexEsecuzione, registraRadici, figlio, artefatto, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, apriPagina, PAGINE_AIUTO, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

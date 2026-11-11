@@ -66,6 +66,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   included), in the environment, or an unreadable source, stops it with the reason and both ways to start it. Opus is
   only the owner's explicit «Run director on Opus». Discarding a director discards its children that never started.
   The card shows children, re-plans, the children's observed and unknown cost, and that Fable may bill extra usage.
+- **Work chains** (Settings › Work mode): `suggerisci_azione` with `catena: true` turns a goal into ordinary chips:
+  writer → reviewer → rewrite, for 1–3 review rounds, then an applier. Each step starts with the owner's approval once
+  the previous one has delivered an artefact (`dopoConsegna`); the helper writes artefacts as versioned files under
+  `artefatti/<chain>/` with a size cap, the path rules and a checked reference. A rewrite receives draft vN and the
+  feedback on vN; for a writer outside Claude the whole text passes the LAN-data filter and the text limit, and the
+  step stops with the reason when it does not. Only the applier, always Claude, changes the repository; a Codex reviewer
+  works read-only. Presets Director + local writer, Economy and Quality; the cost of each role (plan, estimated,
+  observed, unknown, free) and an optional money cap per chain. Writers from the new provider registry plug in at one
+  point; until then the chain refuses them with the reason. Sensitive work never goes into a chain.
 - **Work mode** (Settings, Account group): default effort per lane, the Codex sandbox when Codex executes, sessions
   started together (1–8, over the host option), a suggested auditor in the Recommended preset, and cross review on
   R0–R2. Set for all projects, with a per-project override field by field; presets Recommended, Economy and Quality.

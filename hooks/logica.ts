@@ -1,5 +1,5 @@
 // Logica pura del pannello: niente `$`, così i test la provano senza engine.
-import type { Dirigente, DirigenteEfficace, ModoLavoro, ModoLavoroEfficace } from '../types'
+import type { Catena, Costo, Dirigente, DirigenteEfficace, ModoLavoro, ModoLavoroEfficace, Pipeline, PipelineEfficace, Scrittore } from '../types'
 import type { Azione, BoardProgetto, Chiamante, Consumo, ControlloEsecuzione, Corsia, Destinazione, Fornitore, Limite, PassoEsecuzione, Peso, Regole, Restrizioni, RisorseProgetto, SessioneProgetto, Soglia, SogliePerStrato, StratoAccount, StatoAzione, StratoProgetto, Traguardo, Vita } from '../types'
 import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
@@ -54,7 +54,8 @@ export const RISORSE_DEFAULT: RisorseProgetto = {
   account: { soglie: {}, limitiManuali: [] },
   strato: { soglie: {}, freellmapi: { livello: 'niente' }, restrizioni: {} },
   modoLavoro: { effortPredefinito: { R0: 'medium', R1: 'medium', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', auditorSuggerito: false, revisioneIncrociata: true,
-    dirigente: { modello: 'claude-fable-5-2', quando: 'R3+', lavoratori: { R0: 'claude-haiku-5-5', R1: 'claude-sonnet-5-5', R2: 'claude-sonnet-5-5', R3: 'claude-opus-5-5', R4: 'claude-opus-5-5', R5: 'claude-opus-5-5' }, maxFigli: 8, maxRipiani: 2 } },
+    dirigente: { modello: 'claude-fable-5-2', quando: 'R3+', lavoratori: { R0: 'claude-haiku-5-5', R1: 'claude-sonnet-5-5', R2: 'claude-sonnet-5-5', R3: 'claude-opus-5-5', R4: 'claude-opus-5-5', R5: 'claude-opus-5-5' }, maxFigli: 8, maxRipiani: 2 },
+    pipeline: { scrittore: { provider: 'claude', modello: 'claude-sonnet-5-5' }, revisore: 'claude-opus-5-5', giri: 1 } },
 }
 export const REGOLE_DEFAULT: Regole = {
   lette: false,
@@ -225,7 +226,7 @@ function manualiDa(v: unknown, progetto: boolean): Limite[] | undefined {
 // --- F11.1: il modo di lavoro --------------------------------------------------------------------------------------
 const EFFORT_MODO = ['low', 'medium', 'high', 'xhigh'] as const
 const CORSIE_MODO: readonly Corsia[] = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5']
-const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata', 'skillBase', 'dirigente']
+const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata', 'skillBase', 'dirigente', 'pipeline']
 /** F13.7: the baseline skill ids the work mode may turn on or off (absent = the entry's default). */
 const ID_SKILL = SKILL_BASE.map(v => v.id)
 // --- F13.2: il modo dirigente ------------------------------------------------------------------------------------------
@@ -287,6 +288,53 @@ function dirigenteEfficace(a: Dirigente | undefined, p: Dirigente | undefined): 
     maxRipiani: p?.maxRipiani ?? a?.maxRipiani ?? d.maxRipiani,
   }
 }
+// --- F13.6: le catene di lavoro (pipeline) ------------------------------------------------------------------------------
+const CAMPI_PIPELINE = ['scrittore', 'revisore', 'giri', 'tettoUsd']
+const PROVIDER_RE = /^[a-z0-9-]{1,40}$/
+/** Gli id di modello di uno scrittore (F13a↔F13b): i due punti ammessi (`qwen3:8b`), niente che diventi percorso o intestazione. */
+export const MODELLO_SCRITTORE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/
+export const PIPELINE_PREDEFINITA: PipelineEfficace = { scrittore: { provider: 'claude', modello: 'claude-sonnet-5-5' }, revisore: 'claude-opus-5-5', giri: 1 }
+/** I tre preset (F13.6): dirigente + scrittore locale, Risparmio, Qualità. Il dirigente resta quello del modo dirigente. */
+export const PRESET_CATENA = {
+  locale: { scrittore: { provider: 'ollama', modello: 'qwen3' }, revisore: 'claude-opus-5-5' },
+  risparmio: { scrittore: { provider: 'claude', modello: 'claude-sonnet-5-5' }, revisore: 'claude-opus-5-5' },
+  qualita: { scrittore: { provider: 'claude', modello: 'claude-opus-5-5' }, revisore: 'claude-fable-5-2' },
+} as const
+const scrittoreForma = (x: unknown): x is Scrittore =>
+  oggettoRisorse(x) && Object.keys(x).every(k => k === 'provider' || k === 'modello') && typeof x.provider === 'string' && PROVIDER_RE.test(x.provider) &&
+  typeof x.modello === 'string' && MODELLO_SCRITTORE.test(x.modello) && (x.provider !== 'claude' || ID_CLAUDE.test(x.modello))
+const revisoreCatena = (x: unknown): x is string => x === 'codex' || (typeof x === 'string' && ID_CLAUDE.test(x))
+const tettoValido = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && x > 0 && x <= 1000
+/** La pipeline come si legge: un campo che non vale si ignora (eredita). */
+function pipelineDa(v: unknown): Pipeline | undefined {
+  if (!oggettoRisorse(v)) return undefined
+  const o: Pipeline = {}
+  if (scrittoreForma(v.scrittore)) o.scrittore = { provider: v.scrittore.provider, modello: v.scrittore.modello }
+  if (revisoreCatena(v.revisore)) o.revisore = v.revisore
+  if (intero(v.giri, 1, 3)) o.giri = v.giri as number
+  if (tettoValido(v.tettoUsd)) o.tettoUsd = v.tettoUsd
+  return Object.keys(o).length ? o : undefined
+}
+/** In scrittura: il primo campo della pipeline che non vale (null = togli). */
+function pipelineNonValido(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined
+  if (!oggettoRisorse(v)) return 'modoLavoro.pipeline'
+  const ignoto = Object.keys(v).find(k => !CAMPI_PIPELINE.includes(k))
+  if (ignoto) return `modoLavoro.pipeline.${ignoto.replace(/[^A-Za-z0-9_]/g, '?').slice(0, 40)}`
+  const presente = (k: string) => v[k] !== undefined && v[k] !== null
+  if (presente('scrittore') && !scrittoreForma(v.scrittore)) return 'modoLavoro.pipeline.scrittore'
+  if (presente('revisore') && !revisoreCatena(v.revisore)) return 'modoLavoro.pipeline.revisore'
+  if (presente('giri') && !intero(v.giri, 1, 3)) return 'modoLavoro.pipeline.giri'
+  if (presente('tettoUsd') && !tettoValido(v.tettoUsd)) return 'modoLavoro.pipeline.tettoUsd'
+  return undefined
+}
+/** Per campo il progetto sostituisce l'account, poi i predefiniti; lo scrittore vale intero (fornitore e modello insieme). */
+function pipelineEfficace(a: Pipeline | undefined, p: Pipeline | undefined): PipelineEfficace {
+  const d = PIPELINE_PREDEFINITA
+  const tetto = p?.tettoUsd ?? a?.tettoUsd ?? undefined
+  return { scrittore: p?.scrittore ?? a?.scrittore ?? d.scrittore, revisore: p?.revisore ?? a?.revisore ?? d.revisore, giri: p?.giri ?? a?.giri ?? d.giri,
+    ...(tetto !== undefined && { tettoUsd: tetto }) }
+}
 /** F13.2: una chip nuova senza padre nasce dirigente se `quando` lo dice per la sua corsia; mai una figlia. */
 export function ruoloNuovo(corsia: Corsia | undefined, regole: Regole): 'dirigente' | undefined {
   const q = (regole.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).dirigente.quando
@@ -324,6 +372,8 @@ export function modoDa(v: unknown): ModoLavoro {
   }
   const dirigente = dirigenteDa(v.dirigente)
   if (dirigente) out.dirigente = dirigente
+  const pipeline = pipelineDa(v.pipeline)
+  if (pipeline) out.pipeline = pipeline
   return out
 }
 
@@ -349,7 +399,7 @@ export function modoNonValido(v: unknown): string | undefined {
     if (!oggettoRisorse(sb)) return 'modoLavoro.skillBase'
     for (const [k, x] of Object.entries(sb)) if (!ID_SKILL.includes(k) || (x !== null && typeof x !== 'boolean')) return `modoLavoro.skillBase.${k.replace(/[^A-Za-z0-9_-]/g, '?').slice(0, 40)}`
   }
-  return dirigenteNonValido(v.dirigente)
+  return dirigenteNonValido(v.dirigente) ?? pipelineNonValido(v.pipeline)
 }
 
 /** Il modo efficace: per campo il progetto sostituisce l'account, poi i predefiniti (R0–R2 medium, R3–R5 high, Codex workspace-write). */
@@ -366,6 +416,7 @@ export function modoEfficace(account: ModoLavoro | undefined, progetto: ModoLavo
     // F13.7: per skill the project replaces the account; empty = absent, so payloads without the field stay as before.
     ...(Object.keys({ ...account?.skillBase, ...progetto?.skillBase }).length && { skillBase: { ...account?.skillBase, ...progetto?.skillBase } }),
     dirigente: dirigenteEfficace(account?.dirigente, progetto?.dirigente),
+    pipeline: pipelineEfficace(account?.pipeline, progetto?.pipeline),
   }
 }
 
@@ -791,6 +842,13 @@ export function dipendenze(a: Azione, lista: readonly Azione[]) {
     else if (d.stato === 'scartata') problemi.push(msg('v.dipendenzaScartata', { titolo: d.titolo }))
     else if (d.stato !== 'completata') aperte += 1
   }
+  // F13.6: un passo di catena parte quando il precedente ha CONSEGNATO un artefatto (non serve la fusione).
+  for (const id of a.dopoConsegna ?? []) {
+    const d = lista.find(x => x.id === id)
+    if (!d) problemi.push(msg('v.dipendenzaAssente', { id }))
+    else if (d.stato === 'scartata') problemi.push(msg('v.dipendenzaScartata', { titolo: d.titolo }))
+    else if (!((d.stato === 'consegnata' || d.stato === 'completata') && d.artefatto)) aperte += 1
+  }
   return { chiuse: problemi.length === 0 && aperte === 0, problemi }
 }
 export const dipendenzeChiuse = (a: Azione, lista: readonly Azione[]) => dipendenze(a, lista).chiuse
@@ -979,6 +1037,10 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
   if (a.ruolo === 'dirigente' && a.padre) v.push(msg('v.dirigenteFiglia'))
   if (a.ruolo === 'dirigente' && a.esecutore !== 'claude') v.push(msg('v.dirigenteClaude'))
   if (a.padre && a.vincoliPadre && !a.vincoliPadre.fornitori.includes(a.esecutore)) v.push(msg('v.fornitorePadre', { fornitore: a.esecutore }))
+  // F13.6: il tetto in dollari della catena (dove la spesa si misura): raggiunto, nessun altro passo parte.
+  const tettoCatena = (politica.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).pipeline.tettoUsd
+  if (a.catena && tettoCatena !== undefined && spesaCatena(a.catena.id, lista) >= tettoCatena)
+    v.push(msg('v.catenaTetto', { tetto: tettoCatena, speso: Math.round(spesaCatena(a.catena.id, lista) * 100) / 100 }))
   if (a.revisore !== 'nessuno' && !politica.fornitori.includes(a.revisore)) v.push(msg('v.revisoreNonAbilitato', { revisore: a.revisore }))
   if (!compatibile && !regole.modelli[a.esecutore].length) v.push(msg('v.nessunModello', { esecutore: a.esecutore }))
   // Every non-Claude text executor: same lanes, LAN-data filter, text limit, isolation, Claude review and low effort (F13 r1.7).
@@ -1365,6 +1427,16 @@ export function normalizza(x: unknown): Azione | Msg {
       (a.vincoliPadre !== undefined && !vincoliValidi(a.vincoliPadre)) || (a.vincoliPropri !== undefined && !vincoliValidi(a.vincoliPropri)) ||
       (a.ripiani !== undefined && !(Number.isInteger(a.ripiani) && (a.ripiani as number) >= 0 && (a.ripiani as number) <= 100)) || !bool('dirigenteSuOpus'))
     return msg('rec.campo', { campo: 'dirigente' })
+  // F13.6: passo di catena, predecessori, artefatto e costo nella forma che scrivono pannello e helper.
+  const c = a.catena as Record<string, unknown> | undefined
+  if ((c !== undefined && !(c && typeof c === 'object' && typeof c.id === 'string' && ID_CATENA.test(c.id) && Number.isInteger(c.giro) && (c.giro as number) >= 1 &&
+      (c.giro as number) <= 4 && ['scrittore', 'revisore', 'applicatore'].includes(c.ruolo as string))) ||
+      (a.dopoConsegna !== undefined && !(Array.isArray(a.dopoConsegna) && a.dopoConsegna.length <= 4 && a.dopoConsegna.every(d => typeof d === 'string' && ID_RE.test(d)))) ||
+      (a.artefatto !== undefined && !(typeof a.artefatto === 'string' && /^[1-4]-(scrittore|revisore)\.md$/.test(a.artefatto))))
+    return msg('rec.campo', { campo: 'catena' })
+  const k = a.costo as Record<string, unknown> | undefined
+  if (k !== undefined && !(k && typeof k === 'object' && ['stimato', 'osservato', 'ignoto', 'gratuito'].includes(k.tipo as string) && (k.usd === undefined || numero(k.usd, 0, 1_000_000))))
+    return msg('rec.campo', { campo: 'costo' })
   if (a.revisione !== undefined) {
     const r = a.revisione as Record<string, unknown>
     if (!r || typeof r !== 'object' || !['in-corso', 'approvata', 'da-correggere'].includes(r.esito as string) ||
@@ -1398,8 +1470,119 @@ export function normalizza(x: unknown): Azione | Msg {
 
 // --- mandato e avvio -------------------------------------------------------------------------------
 
+// --- F13.6: passi, artefatti e testo delle catene ----------------------------------------------------------------------
+/** Il tetto di un artefatto (caratteri): oltre, l'helper rifiuta e il passo non consegna. */
+export const ARTEFATTO_MAX = 60_000
+export const ID_CATENA = /^c-[a-z0-9]{6,20}$/
+export const fileArtefatto = (c: Catena) => `${c.giro}-${c.ruolo}.md`
+/** Gli artefatti che un passo legge: la bozza per il revisore e per l'applicatore; bozza e feedback del giro prima per la riscrittura. */
+export function rifCatena(c: Catena): { bozza?: string; feedback?: string } {
+  if (c.ruolo !== 'scrittore') return { bozza: `${c.giro}-scrittore.md` }
+  return c.giro > 1 ? { bozza: `${c.giro - 1}-scrittore.md`, feedback: `${c.giro - 1}-revisore.md` } : {}
+}
+/** Il riferimento scritto nell'intestazione dell'artefatto consegnato: per il feedback la bozza, per la riscrittura il feedback. */
+export const rifConsegna = (c: Catena) => (c.ruolo === 'revisore' ? `${c.giro}-scrittore.md` : c.giro > 1 ? `${c.giro - 1}-revisore.md` : undefined)
+const INTESTAZIONE = /^<!-- chipManager artefatto catena=(c-[a-z0-9]{6,20}) giro=([1-4]) ruolo=(scrittore|revisore) rif=([1-4]-(?:scrittore|revisore)\.md|-) -->\r?\n/
+/** Un artefatto letto: l'intestazione dell'helper e il corpo; undefined se l'intestazione non c'è o non vale. */
+export function leggiArtefatto(testo: string) {
+  const m = INTESTAZIONE.exec(testo)
+  return m ? { catena: m[1]!, giro: Number(m[2]), ruolo: m[3] as 'scrittore' | 'revisore', rif: m[4] === '-' ? undefined : m[4], corpo: testo.slice(m[0].length) } : undefined
+}
+
+/**
+ * F13 (round 3, N2): il testo per uno scrittore non Claude. Il primo giro: titolo e brief. Una riscrittura: in più la bozza
+ * vN e il feedback che si riferisce proprio a quella bozza (per id). Filtro dei dati di rete locale e limite sull'INTERO
+ * testo: oltre, il passo si ferma col motivo, mai un taglio silenzioso.
+ */
+export function testoScrittore(a: Pick<Azione, 'titolo' | 'brief' | 'catena' | 'vincoliPadre'>, bozza?: string, feedback?: string): { testo: string } | { motivo: Msg } {
+  const c = a.catena
+  const parti = [a.titolo, a.brief]
+  const rif = c ? rifCatena(c) : {}
+  if (c && rif.feedback) {
+    const b = bozza === undefined ? undefined : leggiArtefatto(bozza)
+    const f = feedback === undefined ? undefined : leggiArtefatto(feedback)
+    if (!b || !f) return { motivo: msg('cat.artefattoMancante') }
+    if (b.catena !== c.id || f.catena !== c.id || b.giro !== c.giro - 1 || f.giro !== c.giro - 1 || b.ruolo !== 'scrittore' || f.ruolo !== 'revisore' || f.rif !== rif.bozza)
+      return { motivo: msg('cat.riferimento') }
+    parti.push(`--- Draft v${b.giro} ---\n${b.corpo.trim()}`, `--- Review feedback on draft v${b.giro} ---\n${f.corpo.trim()}`,
+      `Write draft v${c.giro}: apply the feedback to the draft and return the whole new text only.`)
+  }
+  const testo = parti.join('\n\n')
+  if (a.vincoliPadre?.datiLan || datiLocali(testo)) return { motivo: msg('cat.datiLan') }
+  if (testo.length > CLOUD_MAX) return { motivo: msg('cat.troppoLungo', { n: testo.length, max: CLOUD_MAX }) }
+  return { testo }
+}
+
+/**
+ * F13.6: i passi di una catena dal suo obiettivo (`base`): per ogni giro scrittore → revisore, poi la riscrittura finale e
+ * l'applicatore (sempre Claude: l'unico che cambia il repository). Ogni passo aspetta il precedente con `dopoConsegna`.
+ * Uno scrittore non Claude lavora in R1 a effort low con revisione Claude (le guardie di sempre); Codex rivede in sola lettura.
+ */
+export function passiCatena(base: Azione, p: PipelineEfficace, idCatena: string, nuovoId: () => string): Azione[] {
+  const passi: Azione[] = []
+  const claude = p.scrittore.provider === 'claude'
+  const corsia = base.corsia ?? 'R1'
+  const passo = (giro: number, ruolo: Catena['ruolo'], titolo: string, extra: Partial<Azione>): Azione => {
+    const prima = passi.at(-1)
+    const a: Azione = { ...base, id: nuovoId(), titolo: `${base.titolo} · ${titolo}`.slice(0, 200), ordine: base.ordine + passi.length, ruolo: undefined,
+      catena: { id: idCatena, giro, ruolo }, dipende: prima ? [] : base.dipende, dopoConsegna: prima ? [prima.id] : [], modello: undefined, effort: undefined, ...extra }
+    passi.push(a)
+    return a
+  }
+  for (let g = 1; g <= p.giri + 1; g++) {
+    passo(g, 'scrittore', `draft v${g}`, claude
+      ? { esecutore: 'claude', modello: p.scrittore.modello, revisore: 'nessuno', corsia }
+      : { esecutore: p.scrittore.provider as Azione['esecutore'], modello: p.scrittore.modello, revisore: 'claude', corsia: 'R1', effort: 'low' })
+    if (g <= p.giri)
+      passo(g, 'revisore', `review v${g}`, p.revisore === 'codex'
+        ? { esecutore: 'codex', revisore: 'nessuno', corsia: ['R1', 'R2', 'R3'].includes(corsia) ? corsia : 'R1' }
+        : { esecutore: 'claude', modello: p.revisore, revisore: 'nessuno', corsia })
+  }
+  passo(p.giri + 1, 'applicatore', 'apply', { esecutore: 'claude', modello: claude ? p.scrittore.modello : base.modello, revisore: base.revisore, corsia: base.corsia })
+  return passi
+}
+
+/**
+ * F13a↔F13b: perché lo scrittore di una catena non si può usare (undefined = si può). Claude: un modello ammesso;
+ * FreeLLMAPI: abilitato nel progetto (il resto lo controllano le guardie all'avvio). Gli altri fornitori sono di F13b
+ * (`scrittoreAmmesso` del suo registro): questo è l'unico punto dove entra alla fusione; fino ad allora si rifiutano.
+ */
+export function scrittoreCatena(s: Scrittore, regole: Regole): Msg | undefined {
+  if (s.provider === 'claude') return regole.modelli.claude.includes(s.modello) ? undefined : msg('v.modelloNonAmmesso', { modello: s.modello, esecutore: 'claude' })
+  if (s.provider === 'freellmapi') return regole.risorse.fornitori.includes('freellmapi') ? undefined : msg('v.fornitoreNonAbilitato', { fornitore: 'freellmapi' })
+  return msg('cat.scrittoreAssente', { provider: s.provider })
+}
+
+/** F13.6: quello che costa un passo, coi tipi distinti: piano (abbonamento), stimato, osservato, ignoto o gratuito. */
+export function costoDi(a: Azione): { tipo: 'piano' | Costo['tipo']; usd?: number } {
+  if (a.costo) return a.costo
+  if (modalitaDi(a) === 'api-claude') return typeof a.costoApi === 'number' ? { tipo: 'stimato', usd: a.costoApi } : { tipo: 'ignoto' }
+  return a.esecutore === 'claude' || a.esecutore === 'codex' ? { tipo: 'piano' } : { tipo: 'ignoto' }
+}
+/** La spesa misurata (stimata o osservata) di una catena: è quella che il tetto in dollari ferma. */
+export const spesaCatena = (id: string, lista: readonly Azione[]) =>
+  lista.filter(x => x.catena?.id === id).reduce((s, x) => s + (costoDi(x).usd ?? 0), 0)
+
+/** Le istruzioni di un passo di catena nel mandato (inglese): cosa legge, cosa consegna e che non cambia file (tranne l'applicatore). */
+export function istruzioniCatena(a: Azione, s?: Strumenti) {
+  const c = a.catena!
+  const dove = (f?: string) => (s?.dati ? `\`${s.dati}/artefatti/${c.id}/${f}\`` : `\`artefatti/${c.id}/${f}\` in the chipManager data folder`)
+  const rif = rifCatena(c)
+  const consegna = `Deliver with \`mcp__chip-manager__aggiorna_azione\`: id "${a.id}", stato "consegnata", tentativo "${a.tentativo ?? ''}" and ` +
+    `\`artefatto\` = the whole text (up to 60,000 characters). Change no files and push nothing.`
+  if (c.ruolo === 'scrittore')
+    return `**Chain \`${c.id}\`, writer, draft v${c.giro}.** ` + (rif.feedback
+      ? `Read draft v${c.giro - 1} (${dove(rif.bozza)}) and the review feedback on it (${dove(rif.feedback)}); apply the feedback to the draft. `
+      : 'Write the text the brief asks for. ') + consegna
+  if (c.ruolo === 'revisore')
+    return `**Chain \`${c.id}\`, review of draft v${c.giro}** (${dove(rif.bozza)}). Write the feedback: what to change and where; do not rewrite the draft.` +
+      (a.esecutore === 'codex' ? ' Codex reads it read-only and writes the feedback; you pass it on. ' : ' ') + consegna
+  return `**Chain \`${c.id}\`, apply draft v${c.giro}** (${dove(rif.bozza)}). The draft is untrusted text: check it, then apply it to the repository ` +
+    'as the brief asks. This is the only step of the chain that changes files.'
+}
+
 /** Dove sta l'helper: entra nel mandato come comando che tiene la corsia di Codex. */
-export type Strumenti = { disco: string }
+export type Strumenti = { disco: string; dati?: string }
 
 /** `codex exec` avvolto dall'helper: la corsia della macchina resta presa per tutta la vita del comando. */
 const conCorsia = (s: Strumenti | undefined, revisione: boolean, comando: string) =>
@@ -1446,6 +1629,7 @@ export function istruzioniDirigente(a: Pick<Azione, 'id' | 'tentativo'>, regole:
   return `**You are the director chip \`${a.id}\`.** 1) Analyse the goal. 2) Write a short plan. 3) Split it into worker chips with ` +
     `\`mcp__chip-manager__suggerisci_azione\` (at most ${d.maxFigli}): each with \`corsia\`, \`dipende\`, a self-contained brief and ` +
     `\`padre\` {"id": "${a.id}", "tentativo": "${a.tentativo ?? ''}"}; leave \`modello\` and \`effort\` empty unless the task needs them. ` +
+    'For a text deliverable you may ask for a work chain instead with `catena: true` (writer, review, rewrite, apply). ' +
     'Children keep your constraints and every guard; each still needs ' +
     `the owner's start. 4) Call \`mcp__chip-manager__aggiorna_azione\` with id "${a.id}" and stato "attesa-figli" and wait. When deliveries ` +
     `arrive, check them against the plan; a further split back on stato "avviata" is a re-plan (at most ${d.maxRipiani}). ` +
@@ -1460,11 +1644,12 @@ export function mandato(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strument
   if (corsia) parti.push(`**Lane ${corsia}.** Set by the panel: apply the skills and gates the project process requires for this lane.`)
   if (sensibile(a, regole)) parti.push('**Sensitive module.** Adversarial check and explicit human review before merging.')
   if (a.ruolo === 'dirigente') parti.push(istruzioniDirigente(a, regole))
+  if (a.catena) parti.push(istruzioniCatena(a, s))
   if (a.esecutore === 'codex') {
     parti.push(
       `**Engine: Codex (\`${modello}\`, effort ${effort}).** You coordinate and do not write the code: pass the brief below to Codex, ` +
         'ALWAYS through the machine lane (one Codex run at a time): ' +
-        `\`${conCorsia(s, false, `codex exec -m ${modello} -c model_reasoning_effort="${effort}" -s ${(regole.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).codexSandbox} -C <your worktree> -`)}\` with the brief on stdin. ` +
+        `\`${conCorsia(s, false, `codex exec -m ${modello} -c model_reasoning_effort="${effort}" -s ${a.catena?.ruolo === 'revisore' ? 'read-only' : (regole.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).codexSandbox} -C <your worktree> -`)}\` with the brief on stdin. ` +
         // F11.1: Codex modifica soltanto (la sandbox protegge .git e di solito non ha rete): commit e push restano a te.
         'Codex only edits files; you commit and push. Then check the tests and the diff.',
     )
@@ -1475,7 +1660,8 @@ export function mandato(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strument
   if (skill) parti.push(skill)
   const rev = revisione(a, regole, s)
   if (rev) parti.push(rev)
-  parti.push(
+  // Un passo di catena che consegna un artefatto ha già le sue istruzioni di consegna (niente ramo da spingere).
+  if (!a.catena || a.catena.ruolo === 'applicatore') parti.push(
     `_Suggested action \`${a.id}\`, attempt \`${a.tentativo ?? '-'}\`._ When the work is delivered (branch pushed, report to the coordinator), if you have ` +
       `the \`mcp__chip-manager__aggiorna_azione\` tool, call it with id "${a.id}", stato "consegnata" and tentativo "${a.tentativo ?? ''}". ` +
       'The merge decides the closing. When the review has an outcome, report it with the same tool: id, tentativo and ' +

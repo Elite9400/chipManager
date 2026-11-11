@@ -954,6 +954,56 @@ export const NUOVI_F11: Record<string, unknown> = {
    "gestori": [
     "press"
    ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-locale-premi",
+   "label": "Work chain, Director + local writer",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-risparmio-premi",
+   "label": "Work chain, Economy",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-qualita-premi",
+   "label": "Work chain, Quality",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-1-premi",
+   "label": "Review rounds, 1",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-2-premi",
+   "label": "Review rounds, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-3-premi",
+   "label": "Review rounds, 3",
+   "gestori": [
+    "press"
+   ]
   }
  ],
  "controlli:terminal:impostazioni-modo": [
@@ -1534,6 +1584,56 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "modo-dir-ripiani-5-premi",
    "label": "Max re-plans, 5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-locale-premi",
+   "label": "Work chain, Director + local writer",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-risparmio-premi",
+   "label": "Work chain, Economy",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-qualita-premi",
+   "label": "Work chain, Quality",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-1-premi",
+   "label": "Review rounds, 1",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-2-premi",
+   "label": "Review rounds, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-3-premi",
+   "label": "Review rounds, 3",
    "gestori": [
     "press"
    ]
@@ -2120,6 +2220,56 @@ export const NUOVI_F11: Record<string, unknown> = {
    "gestori": [
     "press"
    ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-locale-premi",
+   "label": "Work chain, Director + local writer",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-risparmio-premi",
+   "label": "Work chain, Economy",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-qualita-premi",
+   "label": "Work chain, Quality",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-1-premi",
+   "label": "Review rounds, 1",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-2-premi",
+   "label": "Review rounds, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-3-premi",
+   "label": "Review rounds, 3",
+   "gestori": [
+    "press"
+   ]
   }
  ],
  "controlli:mobile:impostazioni-modo": [
@@ -2700,6 +2850,56 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "modo-dir-ripiani-5-premi",
    "label": "Max re-plans, 5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-locale-premi",
+   "label": "Work chain, Director + local writer",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-risparmio-premi",
+   "label": "Work chain, Economy",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-qualita-premi",
+   "label": "Work chain, Quality",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-1-premi",
+   "label": "Review rounds, 1",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-2-premi",
+   "label": "Review rounds, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-3-premi",
+   "label": "Review rounds, 3",
    "gestori": [
     "press"
    ]
@@ -4394,6 +4594,56 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "modo-dir-ripiani-5-premi",
    "label": "Max re-plans, 5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-locale-premi",
+   "label": "Work chain, Director + local writer",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-risparmio-premi",
+   "label": "Work chain, Economy",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-qualita-premi",
+   "label": "Work chain, Quality",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-1-premi",
+   "label": "Review rounds, 1",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-2-premi",
+   "label": "Review rounds, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-3-premi",
+   "label": "Review rounds, 3",
    "gestori": [
     "press"
    ]
@@ -6279,6 +6529,56 @@ export const NUOVI_F11: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
+   "chiave": "modo-catena-locale-premi",
+   "label": "Work chain, Director + local writer",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-risparmio-premi",
+   "label": "Work chain, Economy",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-qualita-premi",
+   "label": "Work chain, Quality",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-1-premi",
+   "label": "Review rounds, 1",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-2-premi",
+   "label": "Review rounds, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-3-premi",
+   "label": "Review rounds, 3",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
    "chiave": "consigliere-spento-premi",
    "label": "Off",
    "variant": "primary",
@@ -8158,6 +8458,56 @@ export const NUOVI_F11: Record<string, unknown> = {
   },
   {
    "tipo": "Button",
+   "chiave": "modo-catena-locale-premi",
+   "label": "Work chain, Director + local writer",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-risparmio-premi",
+   "label": "Work chain, Economy",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-qualita-premi",
+   "label": "Work chain, Quality",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-1-premi",
+   "label": "Review rounds, 1",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-2-premi",
+   "label": "Review rounds, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-3-premi",
+   "label": "Review rounds, 3",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
    "chiave": "consigliere-spento-premi",
    "label": "Off",
    "variant": "primary",
@@ -10031,6 +10381,56 @@ export const NUOVI_F11: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "modo-dir-ripiani-5-premi",
    "label": "Max re-plans, 5",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-locale-premi",
+   "label": "Work chain, Director + local writer",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-risparmio-premi",
+   "label": "Work chain, Economy",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-qualita-premi",
+   "label": "Work chain, Quality",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-1-premi",
+   "label": "Review rounds, 1",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-2-premi",
+   "label": "Review rounds, 2",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "modo-catena-giri-3-premi",
+   "label": "Review rounds, 3",
    "gestori": [
     "press"
    ]

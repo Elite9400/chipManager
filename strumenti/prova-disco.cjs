@@ -2377,8 +2377,8 @@ test('F11.1 parità: modo di lavoro efficace e controllo in scrittura uguali nel
 }))`, { coppie: coppie.map(([a, p]) => [a ?? null, p ?? null]), modi: [...MODI_VALIDI, ...MODI_NON_VALIDI] })
   coppie.forEach(([a, p], i) =>
     assert.deepStrictEqual(R.regoleEfficaci(a === undefined ? undefined : { modoLavoro: a }, p === undefined ? {} : { modoLavoro: p }).modoLavoro, ts.efficaci[i], JSON.stringify([a, p])))
-  // Il modo dirigente (F13.2) ha il suo test di parità: qui si confronta il resto.
-  ts.efficaci.forEach(e => delete e.dirigente)
+  // Il modo dirigente (F13.2) e la pipeline (F13.6) hanno il loro test di parità: qui si confronta il resto.
+  ts.efficaci.forEach(e => { delete e.dirigente; delete e.pipeline })
   assert.deepStrictEqual(ts.efficaci[0], { effortPredefinito: { R0: 'medium', R1: 'medium', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', auditorSuggerito: false, revisioneIncrociata: true })
   // Il progetto sostituisce l'account campo per campo; null o assente eredita.
   assert.deepStrictEqual(ts.efficaci[2], { effortPredefinito: { R0: 'high', R1: 'medium', R2: 'low', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', parallelo: 2, auditorSuggerito: false, revisioneIncrociata: false })
@@ -3884,4 +3884,69 @@ test('F13 N1: la corsia CLI parte solo con le credenziali dell\'abbonamento: ogn
   }
   assert.deepStrictEqual([c, JSON.parse(u).fonti], [5, [{ nome: 'progetto', chiavi: ['apiKeyHelper'] }]])
   assert.strictEqual(fs.existsSync(path.join(dir, 'esecuzioni', 'az-cli0009.json')), false)
+})
+
+// --- F13.6: catene di lavoro (helper) ----------------------------------------------------------------------------------
+
+test('F13.6 parità: la pipeline si legge, si combina e si controlla allo stesso modo nel pannello e nell\'helper', () => {
+  const R = require('./regole.cjs')
+  const coppie = [
+    [null, null],
+    [{ pipeline: { scrittore: { provider: 'ollama', modello: 'qwen3:8b' }, giri: 2 } }, { pipeline: { revisore: 'codex', tettoUsd: 5 } }],
+    [{ pipeline: { revisore: 'claude-fable-5-2', tettoUsd: 3 } }, { pipeline: { giri: 9, scrittore: { provider: 'claude', modello: 'gpt-6-astra' }, tettoUsd: null } }],
+  ]
+  const modi = [{ pipeline: {} }, { pipeline: { scrittore: null, giri: null } }, { pipeline: { giri: 0 } }, { pipeline: { tettoUsd: 0 } },
+    { pipeline: { scrittore: { provider: 'Ollama', modello: 'x' } } }, { pipeline: { scrittore: { provider: 'ollama', modello: 'x', url: 'http://x' } } },
+    { pipeline: { revisore: 'gpt-6-astra' } }, { pipeline: { ignoto: 1 } }, { pipeline: [] }]
+  const ts = conLogica(`console.log(JSON.stringify({
+  e: ingresso.coppie.map(([a, p]) => nuova.risorseDa(p === null ? {} : { modoLavoro: p }, a === null ? undefined : { modoLavoro: a }).modoLavoro.pipeline),
+  n: ingresso.modi.map(m => nuova.modoNonValido(m) ?? null),
+}))`, { coppie, modi })
+  coppie.forEach(([a, p], i) => assert.deepStrictEqual(R.regoleEfficaci(a === null ? undefined : { modoLavoro: a }, p === null ? {} : { modoLavoro: p }).modoLavoro.pipeline, ts.e[i]))
+  modi.forEach((m, i) => assert.strictEqual(R.modoNonValido(m), ts.n[i], JSON.stringify(m)))
+  assert.deepStrictEqual(ts.e[0], { scrittore: { provider: 'claude', modello: 'claude-sonnet-5-5' }, revisore: 'claude-opus-5-5', giri: 1 })
+  assert.deepStrictEqual(ts.e[1], { scrittore: { provider: 'ollama', modello: 'qwen3:8b' }, revisore: 'codex', giri: 2, tettoUsd: 5 })
+  // Un valore che non vale si ignora in lettura (eredita): giri 9 e uno scrittore Claude con un id non Claude non passano.
+  assert.deepStrictEqual(ts.e[2], { scrittore: { provider: 'claude', modello: 'claude-sonnet-5-5' }, revisore: 'claude-fable-5-2', giri: 1, tettoUsd: 3 })
+  assert.deepStrictEqual(ts.n, [null, null, 'modoLavoro.pipeline.giri', 'modoLavoro.pipeline.tettoUsd', 'modoLavoro.pipeline.scrittore', 'modoLavoro.pipeline.scrittore',
+    'modoLavoro.pipeline.revisore', 'modoLavoro.pipeline.ignoto', 'modoLavoro.pipeline'])
+})
+
+test('F13.6 artefatto: file versionati della catena con intestazione, riferimento atteso ed esistente, tetto, regole dei percorsi', async () => {
+  const dir = tmp()
+  const c = (giro, ruolo) => ({ id: 'c-catena001', giro, ruolo })
+  const leggiA = n => fs.readFileSync(path.join(dir, 'artefatti', 'c-catena001', n), 'utf8')
+  // Il feedback prima della bozza: il riferimento non esiste ancora.
+  assert.strictEqual((await D.artefatto(dir, { catena: c(1, 'revisore'), rif: '1-scrittore.md', testo: 'Feedback.' }))[0], 4)
+  assert.deepStrictEqual(await D.artefatto(dir, { catena: c(1, 'scrittore'), testo: 'Primo paragrafo.\n\nSecondo paragrafo.' }), [0, '1-scrittore.md'])
+  assert.strictEqual(leggiA('1-scrittore.md'), '<!-- chipManager artefatto catena=c-catena001 giro=1 ruolo=scrittore rif=- -->\nPrimo paragrafo.\n\nSecondo paragrafo.')
+  assert.deepStrictEqual(await D.artefatto(dir, { catena: c(1, 'revisore'), rif: '1-scrittore.md', testo: 'Correggi il secondo paragrafo.' }), [0, '1-revisore.md'])
+  assert.match(leggiA('1-revisore.md'), /^<!-- chipManager artefatto catena=c-catena001 giro=1 ruolo=revisore rif=1-scrittore\.md -->\n/)
+  assert.deepStrictEqual(await D.artefatto(dir, { catena: c(2, 'scrittore'), rif: '1-revisore.md', testo: 'v2' }), [0, '2-scrittore.md'])
+  // Riferimento diverso da quello atteso, ruolo applicatore, id, giro o testo fuori forma, oltre il tetto: richiesta non valida.
+  for (const r of [{ catena: c(2, 'revisore'), rif: '1-scrittore.md', testo: 'x' }, { catena: c(2, 'scrittore'), testo: 'x' }, { catena: c(3, 'applicatore'), testo: 'x' },
+    { catena: { ...c(1, 'scrittore'), id: '../fuori' }, testo: 'x' }, { catena: c(5, 'scrittore'), testo: 'x' }, { catena: c(1, 'scrittore'), testo: '  ' },
+    { catena: c(1, 'scrittore'), testo: 'x'.repeat(60001) }])
+    assert.strictEqual((await D.artefatto(dir, r))[0], 2, JSON.stringify(r).slice(0, 80))
+  // Una junction al posto della cartella degli artefatti non porta la scrittura altrove.
+  const d2 = tmp()
+  const vero = fuori()
+  fs.symlinkSync(vero, path.join(d2, 'artefatti'), process.platform === 'win32' ? 'junction' : 'dir')
+  await assert.rejects(D.artefatto(d2, { catena: c(1, 'scrittore'), testo: 'x' }), /helper\.collegamento/)
+  assert.deepStrictEqual(fs.readdirSync(vero), [])
+})
+
+test('F13.6 figli: i passi di una catena si scrivono tutti o nessuno, entro maxFigli', async () => {
+  const dir = tmp()
+  fs.writeFileSync(path.join(dir, 'a-dir00001.json'), JSON.stringify(recDirigente('a-dir00001')))
+  const passi = ['a-pas00001', 'a-pas00002', 'a-pas00003', 'a-pas00004'].map(id => ({ ...recFiglia(id), catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' } }))
+  const [c1, u1] = await D.figlio(dir, { padre: 'a-dir00001', figli: passi, maxFigli: 3 })
+  assert.deepStrictEqual([c1, JSON.parse(u1).motivo], [4, 'maxFigli'])
+  assert.deepStrictEqual(fs.readdirSync(dir).filter(n => n.startsWith('a-pas')), [])
+  const [c2, u2] = await D.figlio(dir, { padre: 'a-dir00001', figli: passi, maxFigli: 8 })
+  assert.strictEqual(c2, 0)
+  assert.deepStrictEqual(JSON.parse(u2).map(x => [x.id, x.padre, x.vincoliPadre.corsiaMin]), passi.map(x => [x.id, 'a-dir00001', 'R4']))
+  // Id ripetuti o un passo che porta già i vincoli: rifiutata.
+  assert.strictEqual((await D.figlio(dir, { padre: 'a-dir00001', figli: [recFiglia('a-pas00009'), recFiglia('a-pas00009')], maxFigli: 8 }))[0], 2)
+  assert.strictEqual((await D.figlio(dir, { padre: 'a-dir00001', figli: [{ ...recFiglia('a-pas00009'), vincoliPadre: {} }], maxFigli: 8 }))[0], 2)
 })

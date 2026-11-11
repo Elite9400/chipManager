@@ -50,7 +50,7 @@ function apiDa(v, campo) {
 // --- F11.1: il modo di lavoro (gemello di modoDa, modoNonValido e modoEfficace in hooks/logica.ts) ---------------------
 const EFFORT_MODO = ['low', 'medium', 'high', 'xhigh']
 const CORSIE_MODO = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5']
-const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata', 'skillBase', 'dirigente']
+const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata', 'skillBase', 'dirigente', 'pipeline']
 const ID_SKILL = require('./skill-base.cjs').SKILL_BASE.map(v => v.id)
 const MODO_PREDEFINITO = { effortPredefinito: { R0: 'medium', R1: 'medium', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', auditorSuggerito: false, revisioneIncrociata: true }
 const sottoHigh = (c, x) => (c === 'R4' || c === 'R5') && EFFORT_MODO.indexOf(x) < 2
@@ -102,6 +102,42 @@ function dirigenteNonValido(v) {
   if (presente('maxRipiani') && !interoIn(v.maxRipiani, 0, 5)) return 'modoLavoro.dirigente.maxRipiani'
   return null
 }
+// F13.6: la pipeline delle catene (gemello di pipelineDa, pipelineNonValido, pipelineEfficace in hooks/logica.ts).
+const CAMPI_PIPELINE = ['scrittore', 'revisore', 'giri', 'tettoUsd']
+const PROVIDER_RE = /^[a-z0-9-]{1,40}$/
+const MODELLO_SCRITTORE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/
+const PIPELINE_PREDEFINITA = { scrittore: { provider: 'claude', modello: 'claude-sonnet-5-5' }, revisore: 'claude-opus-5-5', giri: 1 }
+const scrittoreForma = x => oggetto(x) && Object.keys(x).every(k => k === 'provider' || k === 'modello') && typeof x.provider === 'string' && PROVIDER_RE.test(x.provider) &&
+  typeof x.modello === 'string' && MODELLO_SCRITTORE.test(x.modello) && (x.provider !== 'claude' || ID_CLAUDE.test(x.modello))
+const revisoreCatena = x => x === 'codex' || (typeof x === 'string' && ID_CLAUDE.test(x))
+const tettoValido = x => typeof x === 'number' && Number.isFinite(x) && x > 0 && x <= 1000
+function pipelineDa(v) {
+  if (!oggetto(v)) return undefined
+  const o = {}
+  if (scrittoreForma(v.scrittore)) o.scrittore = { provider: v.scrittore.provider, modello: v.scrittore.modello }
+  if (revisoreCatena(v.revisore)) o.revisore = v.revisore
+  if (interoIn(v.giri, 1, 3)) o.giri = v.giri
+  if (tettoValido(v.tettoUsd)) o.tettoUsd = v.tettoUsd
+  return Object.keys(o).length ? o : undefined
+}
+function pipelineNonValido(v) {
+  if (v === undefined || v === null) return null
+  if (!oggetto(v)) return 'modoLavoro.pipeline'
+  const ignoto = Object.keys(v).find(k => !CAMPI_PIPELINE.includes(k))
+  if (ignoto) return `modoLavoro.pipeline.${ignoto.replace(/[^A-Za-z0-9_]/g, '?').slice(0, 40)}`
+  const presente = k => v[k] !== undefined && v[k] !== null
+  if (presente('scrittore') && !scrittoreForma(v.scrittore)) return 'modoLavoro.pipeline.scrittore'
+  if (presente('revisore') && !revisoreCatena(v.revisore)) return 'modoLavoro.pipeline.revisore'
+  if (presente('giri') && !interoIn(v.giri, 1, 3)) return 'modoLavoro.pipeline.giri'
+  if (presente('tettoUsd') && !tettoValido(v.tettoUsd)) return 'modoLavoro.pipeline.tettoUsd'
+  return null
+}
+function pipelineEfficace(a, p) {
+  const d = PIPELINE_PREDEFINITA
+  const tetto = p?.tettoUsd ?? a?.tettoUsd ?? undefined
+  return { scrittore: p?.scrittore ?? a?.scrittore ?? d.scrittore, revisore: p?.revisore ?? a?.revisore ?? d.revisore, giri: p?.giri ?? a?.giri ?? d.giri,
+    ...(tetto !== undefined && { tettoUsd: tetto }) }
+}
 function dirigenteEfficace(a, p) {
   const d = DIRIGENTE_PREDEFINITO
   return {
@@ -134,6 +170,8 @@ function modoDa(v) {
   }
   const dirigente = dirigenteDa(v.dirigente)
   if (dirigente) out.dirigente = dirigente
+  const pipeline = pipelineDa(v.pipeline)
+  if (pipeline) out.pipeline = pipeline
   return out
 }
 
@@ -158,7 +196,7 @@ function modoNonValido(v) {
     if (!oggetto(sb)) return 'modoLavoro.skillBase'
     for (const [k, x] of Object.entries(sb)) if (!ID_SKILL.includes(k) || (x !== null && typeof x !== 'boolean')) return `modoLavoro.skillBase.${k.replace(/[^A-Za-z0-9_-]/g, '?').slice(0, 40)}`
   }
-  return dirigenteNonValido(v.dirigente)
+  return dirigenteNonValido(v.dirigente) ?? pipelineNonValido(v.pipeline)
 }
 
 /** Per campo il progetto sostituisce l'account, poi i predefiniti. */
@@ -176,6 +214,7 @@ function modoEfficace(accountGrezzo, progettoGrezzo) {
     revisioneIncrociata: p.revisioneIncrociata ?? a.revisioneIncrociata ?? d.revisioneIncrociata,
     ...(Object.keys({ ...a.skillBase, ...p.skillBase }).length && { skillBase: { ...a.skillBase, ...p.skillBase } }),
     dirigente: dirigenteEfficace(a.dirigente, p.dirigente),
+    pipeline: pipelineEfficace(a.pipeline, p.pipeline),
   }
 }
 

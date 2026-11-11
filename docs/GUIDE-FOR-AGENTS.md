@@ -33,6 +33,7 @@ the prompt the mod builds from your brief for the started session. The **owner**
 | `completata` | panel | the branch is merged (registry task closed) or the owner marked it done |
 | `fallita` | panel or the starting session | the start failed; the owner retries |
 | `scartata` | the proposer or the owner | withdrawn; the owner can undo it |
+| `attesa-figli` | a director chip, with `aggiorna_azione` | waiting for its child chips; not counted against parallel sessions |
 
 Rules that follow from it:
 
@@ -241,6 +242,20 @@ characters; when trimmed, `nota` says what was cut.
 - If the result says `Warning, as it is it cannot start: …`, fix the cause: withdraw it with
   `aggiorna_azione { id, stato: "scartata" }` and propose it again corrected, or tell the owner what to change.
 
+## Director chips and work chains
+
+- **Director.** From lane R3 (configurable), a chip becomes a director on Fable 5.2: its mandate says so. It plans and
+  splits the work into child chips with `suggerisci_azione` and `padre: { "id": "a-…", "tentativo": "az-…" }` from its
+  own mandate. Children keep the director's constraints (sensitivity, R4/R5 floor, LAN data, providers), get the lane's
+  worker model unless you set one, and each still needs the owner's start. Depth is one: a child is never a director.
+- **Waiting and re-planning.** The director reports `attesa-figli` with its `tentativo` and waits; `avviata` again is a
+  re-plan. Limits: at most `maxFigli` children (default 8) and `maxRipiani` re-plans (default 2). Over a limit the call
+  is refused: stop and report to the owner.
+- **Work chain.** For a text deliverable, `catena: true` on `suggerisci_azione` creates writer → reviewer → rewrite
+  (1–3 rounds) → applier from the project's pipeline. Each step starts after the previous one delivers its artefact.
+  Writer and reviewer steps change no files: they deliver the whole text in `artefatto` (up to 60,000 characters). Only
+  the applier, always Claude, applies the final draft to the repository. Never for sensitive work.
+
 ## Report from a started session
 
 The mandate ends with the action id and the attempt token. Use them exactly.
@@ -248,6 +263,8 @@ The mandate ends with the action id and the attempt token. Use them exactly.
 ```jsonc
 // work delivered: branch pushed, report sent to the coordinator
 { "id": "a-…", "stato": "consegnata", "tentativo": "az-…" }
+// chain step (writer or reviewer): the whole text in artefatto
+{ "id": "a-…", "stato": "consegnata", "tentativo": "az-…", "artefatto": "…" }
 // review outcome, with or without stato
 { "id": "a-…", "tentativo": "az-…", "revisione": { "esito": "approvata", "nota": "2 findings fixed" } }
 ```

@@ -40,6 +40,13 @@ import {
   chiaviCliVietate,
   datiLocali,
   dirigenteSuCli,
+  ARTEFATTO_MAX,
+  fileArtefatto,
+  passiCatena,
+  rifCatena,
+  rifConsegna,
+  scrittoreCatena,
+  testoScrittore,
   RISORSE_DEFAULT,
   ruoloNuovo,
   consigliaDove,
@@ -265,6 +272,8 @@ const cartella = async ($: Eng) => `${await baseOrch($)}/azioni`
 /** Le proposte di pesi, accanto al config (le scrive solo l'helper, sotto il suo mutex): un file solo per ogni sessione. */
 const fileProposte = async ($: Eng) => (await fileConfig($)).replace(/\\/g, '/').replace(/[^/]*$/, 'proposte-pesi.json')
 const strumenti = ($: Eng): Strumenti => ({ disco: `${$.plugin.root.replace(/\\/g, '/')}/strumenti/disco.cjs` })
+/** F13.6: anche la cartella dei dati, per i percorsi degli artefatti nel mandato di un passo di catena. */
+const strumentiDati = async ($: Eng): Promise<Strumenti> => ({ ...strumenti($), dati: await cartella($) })
 const ora = () => new Date().toISOString()
 const gettone = () => `az-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 7)}`
 
@@ -807,6 +816,7 @@ async function confermaCloud($: Eng, a: Azione) {
 
 /** Avvia (o accoda) un'azione e chiama l'app fuori dalla sezione critica. */
 async function avvia($: Eng, options: Record<string, unknown>, id: string, approvata?: number) {
+  let confermato: string | undefined
   const tutte = await carica($)
   const prima = tutte.find(x => x.id === id)
   const esterno = !!prima && modalitaDi(prima) === 'esterno'
@@ -814,11 +824,17 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
     const v = violazioni(prima, await leggiRegole($), tutte)
     if (v.length) throw errore('err.nonParte', { motivi: v })
     if (approvata !== undefined && prima.versione !== approvata) throw errore('err.cambiataPrimaInvio')
+    // F13.6: un passo di catena manda il testo intero (bozza e feedback compresi): si conferma quello.
+    const composto = await testoCatena($, prima)
+    if ('motivo' in composto) throw errore('err.nonParte', { motivi: [composto.motivo] })
     const T = await lingue($)
     const intestazione = prima.esecutore === 'compatibile' ? voceCompatibile(prima.provider)?.nome ?? 'OpenAI-compatible' : 'FreeLLMAPI'
-    const domanda = prima.esecutore === 'compatibile' ? T('pop.esterno', { provider: intestazione, titolo: prima.titolo, brief: prima.brief }) : T('pop.free', { titolo: prima.titolo, brief: prima.brief })
+    // F13.6: per un passo di catena si conferma il testo intero che parte (bozza e feedback compresi).
+    const brief = prima.catena ? composto.testo : prima.brief
+    const domanda = prima.esecutore === 'compatibile' ? T('pop.esterno', { provider: intestazione, titolo: prima.titolo, brief }) : T('pop.free', { titolo: prima.titolo, brief })
     if (await $.ui.ask(domanda, { options: [T('pop.inviaTesto'), T('comune.annulla')], header: intestazione }) !== T('pop.inviaTesto')) return
     approvata = prima.versione
+    confermato = composto.testo
   }
   if (prima?.destinazione === 'cloud' && ['proposta', 'accodata', 'fallita'].includes(prima.stato)) {
     if (approvata !== undefined && prima.versione !== approvata) throw errore('err.cambiataDopoConferma', { titolo: prima.titolo })
@@ -832,8 +848,8 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
   if (d.blocchi) throw errore('err.nonParte', { motivi: d.blocchi })
   if (!d.avvia) return
   const presa = d.avvia
-  if (presa.lanciatore === 'cli' || presa.lanciatore === 'freellmapi' || presa.lanciatore === 'compatibile' || presa.lanciatore === 'api-claude') return avviaAlternativa($, options, presa)
-  const args = parametriAvvio(presa, (await read($, regole)) ?? REGOLE_DEFAULT, strumenti($))
+  if (presa.lanciatore === 'cli' || presa.lanciatore === 'freellmapi' || presa.lanciatore === 'compatibile' || presa.lanciatore === 'api-claude') return avviaAlternativa($, options, presa, confermato)
+  const args = parametriAvvio(presa, (await read($, regole)) ?? REGOLE_DEFAULT, await strumentiDati($))
   let risposta: Awaited<ReturnType<Eng['mcp']['call']>>
   // Il gettone resta «in volo» finché la risposta non è SALVATA: fino ad allora non si annulla.
   inVolo.add(presa.tentativo!)
@@ -866,7 +882,14 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
   }
 }
 
-async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azione) {
+/** F13.6: il testo per uno scrittore non Claude, con bozza e feedback letti dagli artefatti della catena (testoScrittore). */
+async function testoCatena($: Eng, a: Azione) {
+  const rif = a.catena ? rifCatena(a.catena) : {}
+  const leggi = async (f?: string) => (f && a.catena ? ((await $.fs.read(`${await cartella($)}/artefatti/${a.catena.id}/${f}`).catch(() => undefined)) as string | undefined) : undefined)
+  return testoScrittore(a, await leggi(rif.bozza), await leggi(rif.feedback))
+}
+
+async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azione, confermato?: string) {
   inVolo.add(a.tentativo!)
   try {
     const r = await leggiRegole($)
@@ -883,13 +906,24 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
             costo: { tipo: voceCompatibile(a.provider)?.locale ? 'gratuito' : 'ignoto' } } : null)
     }
     if (a.lanciatore === 'freellmapi') {
-      const risultato = await fonte($, options, 'completa', { politica: r.risorse, testo: `${a.titolo}\n\n${a.brief}`, modello: a.modello }) as { risultato?: unknown }
+      const fallisce = (m: Msg) => aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo ? { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', m) } : null)
+      // Il testo si ricompone e deve essere quello confermato: un artefatto cambiato nel frattempo ferma il passo.
+      const composto = await testoCatena($, a)
+      if ('motivo' in composto) return fallisce(composto.motivo)
+      if (confermato !== undefined && composto.testo !== confermato) return fallisce(msg('err.cambiataPrimaInvio'))
+      const risultato = await fonte($, options, 'completa', { politica: r.risorse, testo: composto.testo, modello: a.modello }) as { risultato?: unknown }
       if (typeof risultato.risultato !== 'string' || risultato.risultato.length > 30000) throw new Error('invalid answer')
+      // F13.6: l'uscita di uno scrittore di catena diventa il suo artefatto (helper, sotto il lock); senza, il passo non consegna.
+      if (a.catena) {
+        const esito = await helper($, ['artefatto', await cartella($)], JSON.stringify({ catena: a.catena, rif: rifConsegna(a.catena), testo: risultato.risultato }))
+        if (esito.codice !== 0) return fallisce(msg('cat.artefattoMancante'))
+      }
       return aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo
-        ? { ...transizione(x, 'consegnata', ora()), risultato: risultato.risultato as string, avviataIl: ora(), ...salvato('errore', 'errore', msg('rec.bozzaFree')) } : null)
+        ? { ...transizione(x, 'consegnata', ora()), risultato: risultato.risultato as string, avviataIl: ora(), ...(a.catena && { artefatto: fileArtefatto(a.catena) }),
+            ...salvato('errore', 'errore', msg('rec.bozzaFree')) } : null)
     }
     if (a.lanciatore === 'api-claude') return await avviaApi($, options, a, r)
-    const m = mandato(a, r, strumenti($))
+    const m = mandato(a, r, await strumentiDati($))
     const root = (await $.session.repo())?.root
     if (!root) throw new Error('repository root not available')
     // F13 (N1): le fonti dell'host lette subito prima; l'helper le unisce ai file e all'ambiente, e nel dubbio non parte.
@@ -992,7 +1026,7 @@ async function faiQui($: Eng, options: Record<string, unknown>, id: string) {
   if (!d.avvia) return
   const presa = d.avvia
   try {
-    await invia($, mandato(presa, (await read($, regole)) ?? REGOLE_DEFAULT, strumenti($)).prompt)
+    await invia($, mandato(presa, (await read($, regole)) ?? REGOLE_DEFAULT, await strumentiDati($)).prompt)
   } catch (err) {
     await aggiorna($, id, x =>
       x.tentativo === presa.tentativo ? { ...transizione(x, 'fallita', ora()), qui: undefined, ...salvato('errore', 'errore', msgDi(err), 160) } : null,
@@ -1217,6 +1251,9 @@ const SCHEMA_MODO = {
     parallelo: { type: 'integer', minimum: 1, maximum: 8 },
     auditorSuggerito: { type: 'boolean' },
     revisioneIncrociata: { type: 'boolean' },
+    pipeline: { type: 'object', additionalProperties: false, properties: {
+      scrittore: { type: ['object', 'null'], additionalProperties: false, properties: { provider: { type: 'string' }, modello: { type: 'string' } }, required: ['provider', 'modello'] },
+      revisore: { type: 'string' }, giri: { type: 'integer', minimum: 1, maximum: 3 }, tettoUsd: { type: ['number', 'null'] } } },
     dirigente: { type: 'object', additionalProperties: false, properties: {
       modello: { type: 'string' }, quando: { type: 'string', enum: ['off', 'R3+', 'sempre'] }, maxFigli: { type: 'integer', minimum: 1, maximum: 20 },
       maxRipiani: { type: 'integer', minimum: 0, maximum: 5 }, lavoratori: { type: 'object', additionalProperties: false,
@@ -1955,6 +1992,7 @@ const schemaSuggerisci = (r: Regole) => ({
     sveglia: { type: 'boolean', description: 'Wake the starter even without a report.' },
     piano: { type: 'string', description: '.md or .txt relative to the repository; the board shows it.' },
     padre: { type: 'object' },
+    catena: { type: 'boolean' },
   },
   required: ['titolo', 'brief'],
 })
@@ -2372,6 +2410,7 @@ export const register: Register = (on, options) => {
           stato: { type: 'string', enum: ['presa', 'avviata', 'fallita', 'consegnata', 'scartata', 'attesa-figli'] },
           tentativo: { type: 'string', description: 'The az-… token of the brief (mandatory except for "scartata" and for a review reported by the proposer)' },
           sessione: { type: 'string', description: 'local_… of the started session (mandatory with "avviata")' },
+          artefatto: { type: 'string' },
           revisione: {
             type: 'object',
             description: 'Review outcome of the current attempt; the board shows it as “reported by” whoever writes it.',
@@ -2449,6 +2488,28 @@ export const register: Register = (on, options) => {
       aggiornata: ora(),
       // Per il bilanciamento i vincoli del padre come li vede il pannello; l'helper li ricopia dal record sotto il lock.
       ...(padre && { ruolo: 'lavoro', padre: padre.id, vincoliPadre: padre.vincoliPropri ?? { sensibile: false, datiLan: false, fornitori: [] } }),
+    }
+    // F13.6: una catena di lavoro dall'obiettivo: i passi dalla pipeline efficace, ognuno una chip ordinaria con le sue guardie.
+    if (resto.catena !== undefined) {
+      if (resto.catena !== true) return { deny: 'suggerisci_azione: catena: true, or leave it out' }
+      const pipe = (r.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).pipeline
+      const no = scrittoreCatena(pipe.scrittore, r)
+      if (no) return { deny: `suggerisci_azione: chain writer ${pipe.scrittore.provider}: ${testo('en', no)}` }
+      if (sensibile(base, r)) return { deny: 'suggerisci_azione: a chain is text work and never sensitive: propose sensitive work as ordinary chips' }
+      const idCatena = `c-${id.slice(2)}`
+      let n = 0
+      const passi = passiCatena({ ...base, ruolo: undefined }, pipe, idCatena, () => `${id}${(n++).toString(36)}`)
+      if (padre) {
+        const figli = passi.map(({ ruolo: _r, padre: _p, vincoliPadre: _v, ...x }) => ({ ...x, versione: 1, aggiornata: ora() }))
+        const esito = await helper($, ['figlio', await cartella($)], JSON.stringify({ padre: padre.id, figli, maxFigli: d.maxFigli }))
+        if (esito.codice !== 0)
+          return { deny: `suggerisci_azione: ${esito.codice === 4 && /maxFigli/.test(esito.testo) ? `the chain needs ${passi.length} child chips and the director may have at most ${d.maxFigli} (maxFigli)` : 'chain not recorded'}` }
+        const scritte = JSON.parse(esito.testo) as Azione[]
+        await update($, azioni, l => [...l.filter(x => !scritte.some(y => y.id === x.id)), ...scritte])
+      } else for (const p of passi) await salva($, p, { nuova: true })
+      void $.ui.open({ id: PANE, title: TITOLO })
+      return { result: `Chain ${idCatena}: ${passi.length} chips in the panel (${passi.map(p => `${p.id} ${p.catena!.ruolo} v${p.catena!.giro}`).join(', ')}). ` +
+        'Each starts with the owner\'s approval, after the previous step delivers its artefact.' }
     }
     const ruolo = padre ? 'lavoro' : ruoloNuovo(corsiaDi(base, r), r)
     const scelta = bilancia({ ...base, ruolo }, resto, r, (await read($, risorse)).limiti, lista, chi)
@@ -2555,7 +2616,7 @@ export const register: Register = (on, options) => {
   })
 
   on('tool.call', { tool: 'mcp__chip-manager__aggiorna_azione' }, async ($, e) => {
-    const { id, stato, sessione, tentativo, revisione } = e as unknown as { id?: unknown; stato?: unknown; sessione?: unknown; tentativo?: unknown; revisione?: unknown }
+    const { id, stato, sessione, tentativo, revisione, artefatto } = e as unknown as { id?: unknown; stato?: unknown; sessione?: unknown; tentativo?: unknown; revisione?: unknown; artefatto?: unknown }
     if (typeof id !== 'string' || !ID_RE.test(id)) return { deny: 'aggiorna_azione: invalid id' }
     if (stato === undefined && revisione === undefined) return { deny: 'aggiorna_azione: a stato, a revisione or both are needed' }
     // «completata» resta accettata come sinonimo per i mandati della versione precedente.
@@ -2574,6 +2635,16 @@ export const register: Register = (on, options) => {
     // L'identità di chi scrive la dà la sessione, mai gli argomenti.
     const io = (await read($, contesto))?.io ?? (await $.session.id())
     const r = await leggiRegole($)
+    // F13.6: un passo di catena consegna il suo testo; l'helper lo scrive come artefatto PRIMA del cambio di stato.
+    if (artefatto !== undefined) {
+      if (voluto !== 'consegnata' || typeof artefatto !== 'string' || !artefatto.trim() || artefatto.length > ARTEFATTO_MAX)
+        return { deny: `aggiorna_azione: artefatto is the whole text (up to ${ARTEFATTO_MAX} characters), only with stato "consegnata"` }
+      const a = (await carica($)).find(x => x.id === id)
+      if (!a?.catena || a.catena.ruolo === 'applicatore') return { deny: 'aggiorna_azione: artefatto only for a writer or review step of a chain' }
+      if (tentativo !== a.tentativo || !TRANSIZIONI.consegnata!.includes(a.stato)) return { deny: 'aggiorna_azione: the tentativo is not the current one' }
+      const esito = await helper($, ['artefatto', await cartella($)], JSON.stringify({ catena: a.catena, rif: rifConsegna(a.catena), testo: artefatto }))
+      if (esito.codice !== 0) return { deny: `aggiorna_azione: artefact not written (${esito.codice === 4 ? 'the step it refers to has not delivered its artefact' : 'invalid request'})` }
+    }
     let rifiuto: string | undefined
     const perStato = (a: Azione): Partial<Azione> | null => {
       if (voluto === undefined) return {}
@@ -2624,6 +2695,14 @@ export const register: Register = (on, options) => {
       if (voluto === 'avviata') return { ...transizione(a, 'avviata', ora()), sessione: sessione as string, incerto: false, ...salvato('errore', 'errore', undefined) }
       if (voluto === 'fallita') return { ...transizione(a, 'fallita', ora()), incerto: false, ...salvato('errore', 'errore', msg('rec.fallitaSessione')) }
       if (voluto === 'scartata') return { ...transizione(a, 'scartata', ora()), statoPrima: a.stato }
+      // Un passo di catena (non l'applicatore) consegna sempre un artefatto: senza, la catena non avanzerebbe.
+      if (voluto === 'consegnata' && a.catena && a.catena.ruolo !== 'applicatore') {
+        if (artefatto === undefined) {
+          rifiuto = 'a chain step delivers its text in `artefatto`'
+          return null
+        }
+        return { ...transizione(a, 'consegnata', ora()), artefatto: fileArtefatto(a.catena) }
+      }
       return transizione(a, voluto, ora())
     }
     const fatta = await aggiorna($, id, a => {

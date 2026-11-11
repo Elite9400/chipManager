@@ -461,6 +461,8 @@ export function campiDaProposta(p: PropostaImpostazioni, r: RisorseProgetto): Re
   const sotto = (x: unknown, k: string) => (x as Record<string, unknown> | undefined)?.[k] as Record<string, unknown> | undefined
   const modo = (ora: Record<string, unknown> | undefined, nuovo: Record<string, unknown>) => ({ ...ora, ...nuovo,
     ...(ora?.effortPredefinito || nuovo.effortPredefinito ? { effortPredefinito: { ...(ora?.effortPredefinito as object), ...(nuovo.effortPredefinito as object) } } : {}),
+    // F13.6: la pipeline campo per campo (lo scrittore intero: fornitore e modello insieme).
+    ...(nuovo.pipeline ? { pipeline: { ...sotto(ora, 'pipeline'), ...sotto(nuovo, 'pipeline') } } : {}),
     // F13.2: anche il modo dirigente (e i lavoratori per corsia) si fonde campo per campo.
     ...(nuovo.dirigente ? { dirigente: { ...sotto(ora, 'dirigente'), ...sotto(nuovo, 'dirigente'),
       ...(sotto(sotto(ora, 'dirigente'), 'lavoratori') || sotto(sotto(nuovo, 'dirigente'), 'lavoratori')
@@ -751,15 +753,24 @@ export function rispostaRisorse(dati: Record<string, unknown>, tetto = TETTO_RIS
     ['contesto: the 5 most used models', x => ({ ...x, contesto: Object.fromEntries(Object.entries((x.contesto ?? {}) as Record<string, { misurate: string }>).sort((a, b) => sessioniDi(b[1]) - sessioniDi(a[1])).slice(0, 5)) })],
     ['policy weights: only the count', x => ({ ...x, politica: { ...(x.politica as object), pesi: `${((x.politica as { pesi?: unknown[] }).pesi ?? []).length} weights: see Settings` } })],
     ['settings: thresholds omitted', x => ({ ...x, impostazioni: x.impostazioni && { ...(x.impostazioni as object), soglie: 'omitted: see Settings' } })],
+    // F13: col modo dirigente e la pipeline il modo di lavoro pesa: resta una volta sola, quello efficace.
+    ['work mode only in impostazioni.effective', x => {
+      const imp = x.impostazioni as Record<string, Record<string, unknown>> | undefined
+      const strato = (k: string) => imp?.[k] && { ...imp[k], modoLavoro: 'by layer: see Settings' }
+      return { ...x, ...(typeof x.politica === 'object' && { politica: { ...(x.politica as object), modoLavoro: 'see impostazioni.effective' } }),
+        ...(imp && { impostazioni: { ...imp, project: strato('project'), account: strato('account') } }) }
+    }],
     ['limits omitted', x => ({ ...x, limiti: 'omitted: too many for the answer' })],
     ['policy omitted', x => ({ ...x, politica: 'omitted: too long' })],
   ]
+  // La nota conta nella misura: una risposta che sta nel tetto solo senza la nota va ridotta ancora.
+  const conNota = (x: Record<string, unknown>) => (ridotti.length ? { ...x, nota: `answer reduced under ${tetto} characters: ${ridotti.join('; ')}` } : x)
   for (const [nome, passo] of passi) {
-    if (JSON.stringify(d).length <= tetto) break
+    if (JSON.stringify(conNota(d)).length <= tetto) break
     d = passo(d)
     ridotti.push(nome)
   }
-  if (ridotti.length) d = { ...d, nota: `answer reduced under ${tetto} characters: ${ridotti.join('; ')}` }
+  d = conNota(d)
   const testo = JSON.stringify(d)
   return testo.length <= tetto ? testo : JSON.stringify({ nota: `answer over ${tetto} characters even when reduced`, chiavi: Object.keys(d) })
 }

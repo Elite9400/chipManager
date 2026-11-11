@@ -41,7 +41,12 @@ export type Dirigente = {
   maxRipiani?: number
 }
 export type DirigenteEfficace = { modello: string; quando: 'off' | 'R3+' | 'sempre'; lavoratori: Record<Corsia, string>; maxFigli: number; maxRipiani: number }
+/** F13.6: lo scrittore astratto di una catena (interfaccia F13a↔F13b): 'claude' o un esecutore di testo di F13b. */
+export type Scrittore = { provider: string; modello: string }
+export type Pipeline = { scrittore?: Scrittore; revisore?: string; giri?: number; tettoUsd?: number | null }
+export type PipelineEfficace = { scrittore: Scrittore; revisore: string; giri: number; tettoUsd?: number }
 export type ModoLavoro = {
+  pipeline?: Pipeline
   dirigente?: Dirigente
   effortPredefinito?: Partial<Record<Corsia, 'low' | 'medium' | 'high' | 'xhigh'>>
   codexSandbox?: 'workspace-write' | 'read-only'
@@ -53,6 +58,7 @@ export type ModoLavoro = {
 }
 /** F11.1: il modo di lavoro efficace (account, progetto e predefiniti combinati). */
 export type ModoLavoroEfficace = {
+  pipeline: PipelineEfficace
   dirigente: DirigenteEfficace
   effortPredefinito: Record<Corsia, 'low' | 'medium' | 'high' | 'xhigh'>
   codexSandbox: 'workspace-write' | 'read-only'
@@ -176,6 +182,10 @@ export type Destinazione = 'local' | 'cloud' | 'api-claude'
 /** Una riga del pannello: un file JSON in `<dir azioni>/<id>.json`, scritto solo con CAS atomico. */
 /** F13.2: i vincoli della chip dirigente, copiati dall'helper dal record del padre (mai dal testo). */
 export type VincoliPadre = { sensibile: boolean; corsiaMin?: Corsia; datiLan: boolean; fornitori: string[] }
+/** F13.6: il passo di una catena (scrittore, revisore o applicatore) e il suo giro. */
+export type Catena = { id: string; giro: number; ruolo: 'scrittore' | 'revisore' | 'applicatore' }
+/** F13a↔F13b: il costo di un record, coi tipi tenuti distinti. */
+export type Costo = { tipo: 'stimato' | 'osservato' | 'ignoto' | 'gratuito'; usd?: number }
 export type Azione = {
   /** F13.2: `dirigente` pianifica e assegna; `lavoro` è una figlia (profondità 1). Assente = chip normale. */
   ruolo?: 'dirigente' | 'lavoro'
@@ -188,6 +198,11 @@ export type Azione = {
   ripiani?: number
   /** F13.2: scelta esplicita del committente («Dirigente su Opus»): mai un ripiego automatico. */
   dirigenteSuOpus?: boolean
+  /** F13.6: il passo di catena, i predecessori che devono consegnare un artefatto, l'artefatto consegnato e il costo. */
+  catena?: Catena
+  dopoConsegna?: string[]
+  artefatto?: string
+  costo?: Costo
   id: string
   /** Contatore di scrittura: il CAS dell'helper rifiuta chi scrive su una versione vecchia. */
   versione: number

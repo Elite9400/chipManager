@@ -581,16 +581,28 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
       disco.set(f, JSON.stringify({ id, tentativo, stato: 'avviata', ramo: `chipmanager/${tentativo}` }))
       return fine(0)
     }
+    // F13.6: come l'helper, l'artefatto di un passo di catena col riferimento atteso, che deve esistere.
+    if (cmd === 'artefatto') {
+      const req = JSON.parse(String(e.init?.stdin)) as { catena: { id: string; giro: number; ruolo: string }; rif?: string; testo: string }
+      const { id, giro, ruolo } = req.catena
+      const atteso = ruolo === 'revisore' ? `${giro}-scrittore.md` : giro > 1 ? `${giro - 1}-revisore.md` : undefined
+      if (req.rif !== atteso || !['scrittore', 'revisore'].includes(ruolo)) return fine(2)
+      const cart = `${p(a[0])}/artefatti/${id}`
+      if (atteso && !disco.has(`${cart}/${atteso}`)) return fine(4, '{"motivo":"rif"}')
+      disco.set(`${cart}/${giro}-${ruolo}.md`, `<!-- chipManager artefatto catena=${id} giro=${giro} ruolo=${ruolo} rif=${atteso ?? '-'} -->\n${req.testo}`)
+      return fine(0, `${giro}-${ruolo}.md`)
+    }
     // F13.2: come l'helper, la figlia sotto il lock: vincoli copiati dal record del padre, al più maxFigli.
     if (cmd === 'figlio') {
       const dir = p(a[0])
-      const req = JSON.parse(String(e.init?.stdin)) as { padre: string; figlio: Azione; maxFigli: number }
+      const req = JSON.parse(String(e.init?.stdin)) as { padre: string; figlio?: Azione; figli?: Azione[]; maxFigli: number }
+      const tutte = req.figli ?? [req.figlio!]
       const padre = JSON.parse(disco.get(`${dir}/${req.padre}.json`) ?? 'null') as Azione | null
       if (!padre || padre.ruolo !== 'dirigente' || padre.padre || !['avviata', 'attesa-figli'].includes(padre.stato)) return fine(4, '{"motivo":"padre"}')
-      if ([...disco.entries()].filter(([k, v]) => k.startsWith(`${dir}/a-`) && JSON.parse(v).padre === req.padre).length >= req.maxFigli) return fine(4, '{"motivo":"maxFigli"}')
-      const rec = { ...req.figlio, ruolo: 'lavoro', padre: req.padre, vincoliPadre: padre.vincoliPropri }
-      disco.set(`${dir}/${rec.id}.json`, JSON.stringify(rec))
-      return fine(0, JSON.stringify(rec))
+      if ([...disco.entries()].filter(([k, v]) => k.startsWith(`${dir}/a-`) && JSON.parse(v).padre === req.padre).length + tutte.length > req.maxFigli) return fine(4, '{"motivo":"maxFigli"}')
+      const recs = tutte.map(f => ({ ...f, ruolo: 'lavoro', padre: req.padre, vincoliPadre: padre.vincoliPropri }))
+      for (const rec of recs) disco.set(`${dir}/${rec.id}.json`, JSON.stringify(rec))
+      return fine(0, JSON.stringify(req.figli ? recs : recs[0]))
     }
     if (cmd === 'stato-cli') return disco.has(`${a[0]}/esecuzioni/${a[1]}.json`) ? fine(0, disco.get(`${a[0]}/esecuzioni/${a[1]}.json`)) : fine(1)
     if (cmd === 'cas') {
@@ -4189,5 +4201,82 @@ test('F13.2 pannello: «Dirigente su Opus» è solo una scelta del committente: 
   await ui.press({ key: `avvia-${dir.id}` })
   expect(amb.processi.filter(p => p.argv[2] === 'lancia-cli').length).toBe(0)
   expect(amb.chiamate.filter(c => c.tool === 'start_session').map(c => c.args.model)).toEqual(['claude-opus-5-5'])
+  await ui.unmount()
+})
+
+// --- F13.6: catene di lavoro nel pannello ---------------------------------------------------------------------------
+
+test('F13.6 pannello: catena: true crea i passi dalla pipeline; ogni passo consegna il suo artefatto e sblocca il successivo', async ($, on) => {
+  const amb = ambienteF13(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const r = await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Guida', brief: 'Scrivi la guida d\'uso.', corsia: 'R1', catena: true } as never) as { result?: string }
+  expect(String(r.result)).toMatch(/^Chain c-[a-z0-9]+: 4 chips/)
+  const passi = amb.azione().sort((x, y) => x.ordine - y.ordine)
+  expect(passi.map(p => [p.catena!.ruolo, p.catena!.giro, p.modello ?? null])).toEqual([['scrittore', 1, 'claude-sonnet-5-5'], ['revisore', 1, 'claude-opus-5-5'],
+    ['scrittore', 2, 'claude-sonnet-5-5'], ['applicatore', 2, 'claude-sonnet-5-5']])
+  const [w1, r1] = passi as [Azione, Azione]
+  // Il primo passo al lavoro: senza artefatto non consegna; con l'artefatto sì, e il revisore può partire.
+  amb.disco.set(`X:/orch/azioni/${w1.id}.json`, JSON.stringify({ ...w1, versione: w1.versione + 1, stato: 'avviata', tentativo: 'az-scr00001', sessione: SID }))
+  const consegna = (extra: Record<string, unknown>) => $.tool.call({ tool: 'mcp__chip-manager__aggiorna_azione', id: w1.id, stato: 'consegnata', tentativo: 'az-scr00001', ...extra } as never) as Promise<{ deny?: string }>
+  expect(String((await consegna({})).deny)).toContain('`artefatto`')
+  expect(String((await consegna({ artefatto: 'x'.repeat(60001) })).deny)).toContain('60000')
+  expect((await consegna({ artefatto: 'Primo paragrafo.\n\nSecondo paragrafo.' })).deny).toBe(undefined)
+  expect(amb.azione().find(a => a.id === w1.id)).toMatchObject({ stato: 'consegnata', artefatto: '1-scrittore.md' })
+  const c = w1.catena!.id
+  expect(amb.disco.get(`X:/orch/azioni/artefatti/${c}/1-scrittore.md`)).toBe(`<!-- chipManager artefatto catena=${c} giro=1 ruolo=scrittore rif=- -->\nPrimo paragrafo.\n\nSecondo paragrafo.`)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `avvia-${r1.id}` })
+  expect(amb.chiamate.filter(x => x.tool === 'start_session').map(x => x.args.model)).toEqual(['claude-opus-5-5'])
+  // Il mandato del revisore nomina la bozza da leggere e la consegna dell'artefatto.
+  expect(String(amb.chiamate.find(x => x.tool === 'start_session')!.args.prompt)).toContain(`X:/orch/azioni/artefatti/${c}/1-scrittore.md`)
+  await ui.unmount()
+})
+
+test('F13.6 pannello: una catena sensibile o con uno scrittore che qui non c\'è si rifiuta col motivo; la dirigente ne crea una fra le sue figlie', async ($, on) => {
+  const amb = ambienteF13(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const nega = async (extra: Record<string, unknown>) => String(((await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Guida', brief: 'Scrivi.', corsia: 'R1', catena: true, ...extra } as never)) as { deny?: string }).deny)
+  expect(await nega({ sensibile: true })).toContain('never sensitive')
+  expect(await nega({ catena: 'sì' })).toContain('catena: true')
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { modoLavoro: { pipeline: { scrittore: { provider: 'ollama', modello: 'qwen3' } } } } } }))
+  expect(await nega({})).toContain('ollama')
+  expect(amb.azione().length).toBe(0)
+  // Dalla dirigente: i passi sono sue figlie, coi suoi vincoli.
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { milestoneGithub: true } } }))
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Motore', brief: 'Riscrivi il pianificatore.', corsia: 'R3' } as never)
+  const dir = amb.azione()[0]!
+  dirigenteAlLavoro(amb, dir.id)
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Guida', brief: 'Scrivi la guida.', corsia: 'R1', catena: true, padre: { id: dir.id, tentativo: 'az-dir00001' } } as never)
+  expect(amb.azione().filter(a => a.padre === dir.id).map(a => a.catena!.ruolo).sort()).toEqual(['applicatore', 'revisore', 'scrittore', 'scrittore'])
+})
+
+test('F13.6 «correggi il secondo paragrafo»: lo scrittore FreeLLMAPI riceve bozza v1 e feedback, il committente conferma quel testo, e l\'uscita è la v2', { options: { freellmapiKey: 'fl-prova-0123456789' } }, async ($, on) => {
+  let inviato = ''
+  const amb = ambiente(on, { fonte: (cmd, input) => (cmd === 'completa' ? (inviato = String(input.testo), { risultato: 'Primo paragrafo.\n\nSecondo paragrafo, corretto.' }) : undefined) })
+  configuraFree(amb)
+  const cfg = JSON.parse(amb.disco.get('X:/casa/.claude/chipmanager/config.json')!)
+  cfg.progetti['acme/progetto'].modoLavoro = { pipeline: { scrittore: { provider: 'freellmapi', modello: 'testo-compatto' } } }
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify(cfg))
+  mock.clock(on)
+  let confermato = ''
+  conferme(on, testo => ((confermato = testo), 'Invia testo'))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Guida', brief: 'Scrivi la guida.', corsia: 'R1', catena: true } as never)
+  const passi = amb.azione().sort((x, y) => x.ordine - y.ordine)
+  const [w1, r1, w2] = passi as [Azione, Azione, Azione]
+  const c = w1.catena!.id
+  // Bozza v1 e feedback v1 consegnati (il feedback non ripete la bozza).
+  amb.disco.set(`X:/orch/azioni/artefatti/${c}/1-scrittore.md`, `<!-- chipManager artefatto catena=${c} giro=1 ruolo=scrittore rif=- -->\nPrimo paragrafo.\n\nSecondo paragrafo, con un errore.`)
+  amb.disco.set(`X:/orch/azioni/artefatti/${c}/1-revisore.md`, `<!-- chipManager artefatto catena=${c} giro=1 ruolo=revisore rif=1-scrittore.md -->\nCorreggi il secondo paragrafo.`)
+  for (const [x, f] of [[w1, '1-scrittore.md'], [r1, '1-revisore.md']] as const)
+    amb.disco.set(`X:/orch/azioni/${x.id}.json`, JSON.stringify({ ...x, versione: x.versione + 1, stato: 'consegnata', artefatto: f }))
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `avvia-${w2.id}` })
+  for (const t of [inviato, confermato])
+    for (const x of ['Secondo paragrafo, con un errore.', 'Correggi il secondo paragrafo.', 'Write draft v2']) expect([x, t.includes(x)]).toEqual([x, true])
+  expect(amb.azione().find(a => a.id === w2.id)).toMatchObject({ stato: 'consegnata', artefatto: '2-scrittore.md' })
+  expect(amb.disco.get(`X:/orch/azioni/artefatti/${c}/2-scrittore.md`)).toBe(`<!-- chipManager artefatto catena=${c} giro=2 ruolo=scrittore rif=1-revisore.md -->\nPrimo paragrafo.\n\nSecondo paragrafo, corretto.`)
   await ui.unmount()
 })
