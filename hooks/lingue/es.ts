@@ -1041,7 +1041,7 @@ const es: Dizionario = {
   "skill.flusso.locale": "solo local",
   "skill.flusso.esterno": "envía datos fuera de este equipo",
   "skill.flusso.ignoto": "flujo de datos no verificado",
-  "skill.sperimentale": "experimental, apagado por defecto",
+  "skill.sperimentale": "experimental, apagado por defecto, solo Windows en la 2.2.0",
   "skill.utente": "lo invocas tú; nunca se nombra en los mandatos",
   "skill.fonte": "fuente {repo}",
   "skill.usa": "Nombrar en los mandatos · {nome}",

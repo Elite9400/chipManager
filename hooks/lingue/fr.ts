@@ -1041,7 +1041,7 @@ const fr: Dizionario = {
   "skill.flusso.locale": "local uniquement",
   "skill.flusso.esterno": "envoie des données hors de cet ordinateur",
   "skill.flusso.ignoto": "flux de données non vérifié",
-  "skill.sperimentale": "expérimental, éteint par défaut",
+  "skill.sperimentale": "expérimental, éteint par défaut, Windows uniquement en 2.2.0",
   "skill.utente": "vous l'invoquez vous-même ; jamais nommé dans les mandats",
   "skill.fonte": "source {repo}",
   "skill.usa": "Nommer dans les mandats · {nome}",

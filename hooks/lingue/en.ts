@@ -1043,7 +1043,7 @@ const en = {
   "skill.flusso.locale": "local only",
   "skill.flusso.esterno": "sends data off this computer",
   "skill.flusso.ignoto": "data flow not verified",
-  "skill.sperimentale": "experimental, off by default",
+  "skill.sperimentale": "experimental, off by default, Windows only in 2.2.0",
   "skill.utente": "you invoke it yourself; never named in mandates",
   "skill.fonte": "source {repo}",
   "skill.usa": "Name in mandates · {nome}",

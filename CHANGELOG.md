@@ -47,6 +47,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   per run). Under such a cap a step on a remote OpenAI-compatible provider does not start, since its cost is unknown; a
   local server is free and runs.
 
+### Known limits
+
+- **TokenEconomizer installs only on Windows, from a git checkout without symlinks.** Upstream's `plugin/lib/tokeneconomizer`
+  is a symlink, and the approval refuses any link in the plugin tree, so on Linux, macOS or with `core.symlinks=true`
+  the install stops before the consent, safely, with nothing installed. Settings → Work mode says «Windows only in
+  2.2.0» next to it, in six languages.
+- **TokenEconomizer's runtime is outside the fingerprint.** Its hooks import the package at the root of the clone,
+  outside the fingerprinted `plugin/` folder; that code is checked by the clone's commit and `git status` only, which
+  do not see ignored files. A `.pyc` planted under `__pycache__/` by someone who can already write to the mod's data
+  folder is not detected. Same level as the known limit of the default rules: it needs local write access.
+
 ### Fixed
 
 - **API lane with a linked `.claude`.** Starting an API chip no longer fails with «the mod's data must be outside any

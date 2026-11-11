@@ -1041,7 +1041,7 @@ const de: Dizionario = {
   "skill.flusso.locale": "nur lokal",
   "skill.flusso.esterno": "sendet Daten von diesem Computer weg",
   "skill.flusso.ignoto": "Datenfluss nicht geprüft",
-  "skill.sperimentale": "experimentell, standardmäßig aus",
+  "skill.sperimentale": "experimentell, standardmäßig aus, in 2.2.0 nur Windows",
   "skill.utente": "du rufst es selbst auf; nie in Aufträgen genannt",
   "skill.fonte": "Quelle {repo}",
   "skill.usa": "In Aufträgen nennen · {nome}",

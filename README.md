@@ -594,6 +594,7 @@ at session start without your approval is disabled again. **TokenEconomizer** (e
 its own sequence: Python 3.10+ (and Git's `sh` on Windows) checked first, the approved commit cloned, its manifest set to
 `defaultEnabled: false`, install and immediate disable, `toolprune=propose` and `loopguard=off` set and read back, `status`
 from the installed copy; it is enabled only with a second consent. One you installed yourself is never touched.
+Experimental: Windows only in 2.2.0 (upstream ships a symlink, which the approval refuses on Linux and macOS).
 
 **caveman** is pinned by its annotated tag `v4.1.0`: the tag object and the commit must both match, checked before the
 download and again right before install, and only the pinned commit is downloaded. Its data flow is external
