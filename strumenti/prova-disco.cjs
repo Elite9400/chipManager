@@ -59,15 +59,34 @@ const pidVivo = pid => {
 }
 /** Codice di un processo finto che resta vivo finché la prova non crea il file `via`. */
 const finoA = via => `setInterval(()=>{if(require('fs').existsSync(${JSON.stringify(via)}))process.exit(0)},50)`
-/** Codice che scrive il pid del processo in `file` (per aspettarne l'uscita) e poi esegue `resto`. */
-const conPid = (file, resto) => `require('fs').writeFileSync(${JSON.stringify(file)},String(process.pid));${resto}`
-const leggiPid = file => {
+/**
+ * Codice che registra il processo in `file` e poi esegue `resto`: pid, istante di nascita e un marcatore. Il marcatore
+ * sta anche nella riga di comando del processo (qui in un commento del codice `-e`; per uno script, il nome della sua
+ * cartella), così `chiudi` può riconoscerlo prima di ucciderlo.
+ */
+const conPid = (file, resto, marcatore = `chipmanager-prova-${require('node:crypto').randomUUID()}`) =>
+  `/*${marcatore}*/require('fs').writeFileSync(${JSON.stringify(file)},JSON.stringify({pid:process.pid,marcatore:${JSON.stringify(marcatore)},nato:Date.now()-process.uptime()*1000}));${resto}`
+const leggiRegistro = file => {
   try {
-    return Number(fs.readFileSync(file, 'utf8')) || undefined
+    const r = JSON.parse(fs.readFileSync(file, 'utf8'))
+    return Number.isInteger(r?.pid) && r.pid > 0 && typeof r.marcatore === 'string' && Number.isFinite(r.nato) ? r : undefined
   } catch {
     return undefined
   }
 }
+const leggiPid = file => leggiRegistro(file)?.pid
+/** Istante di creazione e riga di comando di un pid vivo (Windows, via CIM); undefined se non si leggono. */
+const identita = pid => {
+  if (process.platform !== 'win32') return undefined
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${Number(pid)}"; if ($p) { $p.CreationDate.ToUniversalTime().ToString('o'); $p.CommandLine }`],
+  { encoding: 'utf8', timeout: 30_000, windowsHide: true })
+  if (r.status !== 0 || !r.stdout?.trim()) return undefined
+  const [creato, ...riga] = r.stdout.split(/\r?\n/)
+  return { creato: Date.parse(creato), riga: riga.join('\n') }
+}
+/** È ancora il processo registrato? Stessa riga di comando col marcatore e stessa nascita (10 s di tolleranza fra CIM e node). */
+const stessoProcesso = (reg, id) => !!id && id.riga.includes(reg.marcatore) && Math.abs(id.creato - reg.nato) < 10_000
 /** Un wrapper della corsia Codex in parallelo alla prova: il processo e la promessa del suo codice d'uscita. */
 const corsiaViva = (args, opzioniNode = []) => {
   const p = spawn(process.execPath, [...opzioniNode, ENTRATA, 'corsia-codex', ...args])
@@ -76,8 +95,10 @@ const corsiaViva = (args, opzioniNode = []) => {
 const dorme = ms => new Promise(r => setTimeout(r, ms))
 /**
  * F13.5: la chiusura dei processi tenuti da un file, nel `finally` di ogni prova: crea i segnali d'uscita, aspetta che
- * escano i wrapper (`figli`) e i processi staccati (pid scritti in `filePid`); chi entro `ms` non esce viene ucciso. Così
- * un'asserzione fallita non lascia vivo un processo che non ha più una scadenza sua.
+ * escano i figli diretti (`figli`, uccisi dal loro handle) e i processi staccati (registrati in `filePid`); chi entro `ms`
+ * non esce viene ucciso. Così un'asserzione fallita non lascia vivo un processo che non ha più una scadenza sua. Uno
+ * staccato si uccide solo se è ancora lui (marcatore nella riga di comando, stessa nascita): un pid riusato da un altro
+ * processo, o un'identità che non si legge, non si tocca e lo si scrive nel log della prova. Restituisce i pid lasciati.
  */
 async function chiudi(segnali, { figli = [], filePid = [] } = {}, ms = 15_000) {
   for (const s of [].concat(segnali)) fs.writeFileSync(s, '')
@@ -89,18 +110,24 @@ async function chiudi(segnali, { figli = [], filePid = [] } = {}, ms = 15_000) {
       await f.uscita
     }
   }
+  const lasciati = []
   for (const file of filePid) {
-    while (!leggiPid(file) && Date.now() < scadenza) await dorme(50)
-    const pid = leggiPid(file)
-    while (pid && pidVivo(pid) && Date.now() < scadenza) await dorme(50)
-    if (pid && pidVivo(pid)) {
-      try {
-        process.kill(pid)
-      } catch {
-        // uscito proprio adesso
-      }
+    while (!leggiRegistro(file) && Date.now() < scadenza) await dorme(50)
+    const reg = leggiRegistro(file)
+    while (reg && pidVivo(reg.pid) && Date.now() < scadenza) await dorme(50)
+    if (!reg || !pidVivo(reg.pid)) continue
+    if (!stessoProcesso(reg, identita(reg.pid))) {
+      lasciati.push(reg.pid)
+      process.stderr.write(`chiudi: pid ${reg.pid} (${file}) non ucciso: identità non verificabile o diversa da quella registrata\n`)
+      continue
+    }
+    try {
+      process.kill(reg.pid)
+    } catch {
+      // uscito proprio adesso
     }
   }
+  return lasciati
 }
 const staccato = codice => `require('child_process').spawn(process.execPath,['-e',${JSON.stringify(codice)}],{detached:true,stdio:'ignore'}).unref();`
 
@@ -166,17 +193,37 @@ test('prenota: crea la cartella mancante; rifiuta se l\'insieme dei record è ca
   assert.match(r.stdout, /elenco cambiato/)
 })
 
-test('F13.5 chiudi: chi non esce al segnale viene ucciso entro il tempo dato (wrapper e processo staccato)', async () => {
+test('F13.5 chiudi: chi non esce al segnale viene ucciso entro il tempo dato; un pid che non è più il processo registrato non si tocca', async () => {
   const dir = tmp()
+  const sordo = 'setInterval(() => {}, 1000)'
   const filePid = path.join(dir, 'sordo.pid')
-  // Due processi che ignorano il segnale: uno staccato (solo il pid) e uno figlio diretto (processo e uscita).
-  spawn(process.execPath, ['-e', conPid(filePid, 'setInterval(() => {}, 1000)')], { detached: true, stdio: 'ignore' }).unref()
-  const p = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'])
-  const figlio = { p, uscita: new Promise(r => p.on('exit', r)) }
-  await aspetta(() => leggiPid(filePid), 'il processo staccato non è partito')
-  await chiudi(path.join(dir, 'via'), { figli: [figlio], filePid: [filePid] }, 2_000)
-  await aspetta(() => !pidVivo(leggiPid(filePid)), 'il processo staccato doveva essere ucciso', 10_000)
-  assert.ok(p.exitCode !== null || p.signalCode !== null, 'il figlio doveva essere ucciso')
+  const fileRiusato = path.join(dir, 'riusato.pid')
+  const avvia = (codice, opzioni = {}) => {
+    const p = spawn(process.execPath, ['-e', codice], opzioni)
+    return { p, uscita: new Promise(r => p.on('exit', r)) }
+  }
+  // Tre processi che ignorano il segnale, tenuti dal primo avvio: il `finally` li chiude dal loro handle anche se la
+  // prova si ferma prima (per esempio senza file del pid). Uno staccato e registrato; un figlio diretto; un estraneo.
+  const staccato = avvia(conPid(filePid, sordo), { detached: true, stdio: 'ignore' })
+  const figlio = avvia(sordo)
+  const estraneo = avvia(sordo)
+  try {
+    await aspetta(() => leggiRegistro(filePid), 'il processo staccato non è partito')
+    // Un registro che punta a un processo vivo ma diverso (un pid riusato): né il suo marcatore né la sua nascita.
+    fs.writeFileSync(fileRiusato, JSON.stringify({ pid: estraneo.p.pid, marcatore: 'chipmanager-prova-altro', nato: Date.now() - 3_600_000 }))
+    const lasciati = await chiudi(path.join(dir, 'via'), { figli: [figlio], filePid: [filePid, fileRiusato] }, 2_000)
+    assert.ok(figlio.p.exitCode !== null || figlio.p.signalCode !== null, 'il figlio doveva essere ucciso dal suo handle')
+    if (process.platform === 'win32') {
+      await aspetta(() => !pidVivo(staccato.p.pid), 'il processo staccato, riconosciuto, doveva essere ucciso', 10_000)
+      assert.deepStrictEqual(lasciati, [estraneo.p.pid])
+    } else assert.deepStrictEqual(lasciati, [staccato.p.pid, estraneo.p.pid]) // identità non verificabile: nessuno ucciso
+    assert.ok(pidVivo(estraneo.p.pid), "l'estraneo non doveva essere toccato")
+  } finally {
+    for (const x of [staccato, figlio, estraneo]) {
+      if (x.p.exitCode === null && x.p.signalCode === null) x.p.kill()
+      await x.uscita
+    }
+  }
 })
 
 test('corsia Codex: se il wrapper muore, il comando muore con lui o la corsia resta occupata finché vive', async () => {
@@ -1827,9 +1874,10 @@ test('F6.7 accedi: di GitHub esce solo il codice; l\'output del login non tocca 
   // non crea `fine` (un evento, non 3 s): con la macchina carica il secondo clic deve trovarlo ancora vivo.
   const fine = path.join(tmp(), 'fine')
   const pidGh = path.join(tmp(), 'gh.pid')
-  const finti = eseguibiliFinti({
-    gh: `console.log('! First copy your one-time code: AB12-CD34'); console.log('Logged in as ' + 'account-' + 'nascosto-gh7'); ${conPid(pidGh, finoA(fine))}`,
-  })
+  const finti = eseguibiliFinti({ gh: '' })
+  // Il marcatore è il nome della cartella dello script: è nella riga di comando del processo (node «…\<cartella>\gh.js»).
+  fs.writeFileSync(path.join(finti, 'gh.js'),
+    `console.log('! First copy your one-time code: AB12-CD34'); console.log('Logged in as ' + 'account-' + 'nascosto-gh7'); ${conPid(pidGh, finoA(fine), path.basename(finti))}`)
   const aperti = []
   const openSync = fs.openSync
   const writeFileSync = fs.writeFileSync
