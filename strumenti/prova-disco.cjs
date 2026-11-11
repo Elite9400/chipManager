@@ -3034,3 +3034,48 @@ test('Paths, round 2 finding 3: the confirmed names must be exactly the skipped 
   assert.strictEqual(c2, 0, u2)
   assert.strictEqual(JSON.parse(fs.readFileSync(x.config, 'utf8')).progetti['owner/prova'].cartella, x.a.replace(/\\/g, '/'))
 })
+
+// --- Path fix, review round 3 ------------------------------------------------------------------------------------------
+
+test('Paths, round 3 finding 2a: the alias above the root re-pointed before the config write: the foreign config is not overwritten, no success', async () => {
+  const fisico1 = fuori()
+  const fisico2 = fuori()
+  const ponte = path.join(fuori(), 'ponte')
+  giunzione(fisico1, ponte)
+  const x = { ...datiDaSpostare(), config: path.join(ponte, 'chipmanager', 'config.json'), a: path.join(ponte, 'chipmanager', 'progetti', 'owner__prova') }
+  const testo = await configuraDa(x)
+  const estraneo = path.join(fisico2, 'chipmanager', 'config.json')
+  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+    primaDelConfig: () => {
+      fs.mkdirSync(path.dirname(estraneo), { recursive: true })
+      fs.writeFileSync(estraneo, '{"di":"altri"}')
+      togliLink(ponte)
+      giunzione(fisico2, ponte)
+    },
+  })
+  assert.strictEqual(fs.readFileSync(estraneo, 'utf8'), '{"di":"altri"}')
+  assert.deepStrictEqual(fs.readdirSync(path.dirname(estraneo)), ['config.json'])
+  assert.strictEqual(r[0], 6, r[1])
+  assert.match(r[1], /helper\.configAltrove: /)
+  assert.deepStrictEqual(fs.readFileSync(path.join(fisico1, 'chipmanager', 'config.json')), testo)
+})
+
+test('Paths, round 3 finding 2b: a staging folder swapped for another one with the same name before the rename: nothing unverified is published', async () => {
+  const x = datiDaSpostare()
+  const testo = await configuraDa(x)
+  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+    dopoCopia: () => {
+      // Same name and same verified files, plus one more: only the folder's identity tells it apart.
+      const sopra = path.dirname(x.a)
+      const nome = fs.readdirSync(sopra).find(n => n.includes('.staging-'))
+      const vero = path.join(sopra, nome)
+      fs.renameSync(vero, `${vero}-vero`)
+      fs.cpSync(`${vero}-vero`, vero, { recursive: true })
+      fs.writeFileSync(path.join(vero, 'non-verificato.txt'), 'x')
+    },
+  })
+  assert.strictEqual(fs.existsSync(path.join(x.a, 'non-verificato.txt')), false)
+  assert.notStrictEqual(r[0], 0, r[1])
+  assert.strictEqual(fs.existsSync(x.a), false)
+  assert.deepStrictEqual(fs.readFileSync(x.config), testo)
+})

@@ -245,8 +245,10 @@ function leggiContatori(file) {
  * Ogni scrittura del config. PRIMA i contatori (il massimo fra file dei contatori, config attuale e nuovo): se non si
  * salvano, il config non si scrive. Poi il config, poi la copia più recente in `.bak1` (le altre scalano fino a
  * `.bak3`): una rotazione che non riesce lascia valida la scrittura e il doctor lo dice («senza copie»).
+ * `prima` (optional) runs before reading and before each of the two writes; whatever it throws stops the write.
  */
-function scriviConfig(file, testo) {
+function scriviConfig(file, testo, prima = () => {}) {
+  prima()
   let attuale = { versione: 0, progetti: {} }
   try {
     attuale = contatoriDi(JSON.parse(fs.readFileSync(file, 'utf8')))
@@ -254,7 +256,9 @@ function scriviConfig(file, testo) {
     // config assente o illeggibile: valgono il file dei contatori e il nuovo testo
   }
   const k = maxContatori(maxContatori(leggiContatori(file), attuale), contatoriDi(JSON.parse(testo)))
+  prima()
   scriviDati(fileContatori(file), JSON.stringify(k))
+  prima()
   scriviDati(file, testo)
   try {
     for (let i = COPIE; i > 1; i--) if (fs.existsSync(`${file}.bak${i - 1}`)) fs.renameSync(`${file}.bak${i - 1}`, `${file}.bak${i}`)
@@ -400,13 +404,16 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
     let staging
     let identita
     let realeSopra
-    // Removes the staging folder only if it is still the one created here: same physical parent and same dev+ino. A
-    // re-pointed alias above the root could otherwise lead to someone else's folder with the same name.
+    // The staging folder is still the one created here: same physical parent and same dev+ino. A re-pointed alias above
+    // the root, or a folder swapped in under the same name, would otherwise be published or deleted as if it were ours.
+    const nostro = () => {
+      const st = fs.lstatSync(staging, { bigint: true })
+      return st.isDirectory() && st.dev === identita.dev && st.ino === identita.ino && stessoPercorso(fs.realpathSync.native(sopra), realeSopra)
+    }
     const togli = () => {
       try {
         percorsoSicuro(staging)
-        const st = fs.lstatSync(staging, { bigint: true })
-        if (!st.isDirectory() || st.dev !== identita.dev || st.ino !== identita.ino || !stessoPercorso(fs.realpathSync.native(sopra), realeSopra)) return false
+        if (!nostro()) return false
         fs.rmSync(staging, { recursive: true, force: true })
         return true
       } catch {
@@ -414,7 +421,19 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
       }
     }
     const rimasto = () => [6, `helper.stagingNonRimosso: ${staging}`]
+    const dirConfig = path.dirname(path.resolve(config))
     try {
+      // The config folder's physical identity, fixed now and checked again before each config write: an alias above the
+      // root re-pointed meanwhile would make the write land in someone else's config.
+      percorsoSicuro(dirConfig)
+      fs.mkdirSync(dirConfig, { recursive: true })
+      const idConfig = fs.statSync(dirConfig, { bigint: true })
+      const realeConfig = fs.realpathSync.native(dirConfig)
+      const configFermo = () => {
+        const st = fs.statSync(dirConfig, { bigint: true })
+        if (st.dev !== idConfig.dev || st.ino !== idConfig.ino || !stessoPercorso(fs.realpathSync.native(dirConfig), realeConfig))
+          throw new Rifiuto(6, `helper.configAltrove: ${dirConfig}`)
+      }
       percorsoSicuro(sopra)
       fs.mkdirSync(sopra, { recursive: true })
       percorsoSicuro(sopra)
@@ -450,7 +469,10 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
         }
       }
       copia(DA, staging)
-      // The chain again while verifying: a link slipped in between a check and its write is still caught here.
+      await deps.dopoCopia?.()
+      controlla(staging)
+      // The chain again while verifying: a link slipped in between a check and its write is still caught here. Nothing
+      // awaits between this verification and the rename, so what is published is what was verified.
       for (const [x, y] of copiati) {
         controlla(y)
         if (improntaByte(fs.readFileSync(x)) !== improntaByte(fs.readFileSync(y))) throw new Error('copia non verificata')
@@ -461,16 +483,17 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
         if (!togli()) return rimasto()
         return [4, JSON.stringify({ saltati })]
       }
-      await deps.dopoCopia?.()
-      controlla(staging)
       // The destination: absent, or empty as it was at the start (rmdir fails if someone put something in it).
       if (fs.existsSync(A)) fs.rmdirSync(A)
+      // Right before the rename: the folder about to be published is still the one verified, not one swapped in.
+      controlla(staging)
+      if (!nostro()) throw new Rifiuto(6, `helper.stagingCambiato: ${staging}`)
       fs.renameSync(staging, A)
       staging = undefined
       await deps.primaDelConfig?.()
       const prog = oggetto(c.progetti?.[repo]) ? c.progetti[repo] : {}
       const nuovo = { ...c, progetti: { ...(oggetto(c.progetti) ? c.progetti : {}), [repo]: { ...prog, cartella: A.replace(/\\/g, '/') } } }
-      scriviConfig(config, JSON.stringify(nuovo, null, 2))
+      scriviConfig(config, JSON.stringify(nuovo, null, 2), configFermo)
       return [0, JSON.stringify({ da: DA, a: A, copiati: copiati.length, saltati })]
     } catch (e) {
       if (staging && identita && !togli()) return rimasto()
