@@ -3358,8 +3358,8 @@ test('F13.7 prepara: revisione approvata (testa del repo o sha del marketplace u
     const x = bancoSkill(opz)
     assert.throws(() => S.prepara('ponytail', x.dir, x.deps), e => e.motivo === motivo, motivo)
   }
-  // TokenEconomizer ha la sua procedura: qui non si installa.
-  assert.throws(() => S.prepara('tokeneconomizer', b.dir, b.deps), e => e.motivo === 'skill.err.nonInstallabile')
+  // TokenEconomizer ha la sua procedura: i prerequisiti vengono prima di ogni rete o clone (qui nessun Python).
+  assert.throws(() => S.prepara('tokeneconomizer', b.dir, b.deps), e => e.motivo === 'skill.err.python')
 })
 
 test('F13.7 installa: marketplace locale con source.sha e defaultEnabled false, --scope user, controllo dello sha; diverso o non verificabile = spento', () => {
@@ -3445,4 +3445,112 @@ test('F13.7 download della revisione: controlli di percorso (nessun link sotto l
   assert.ok(!c.comandi.some(x => x.startsWith('git init')))
   // Dalla riga di comando un rifiuto di percorso esce come codice, mai come eccezione.
   assert.deepStrictEqual(S.main(['prepara', 'ponytail'], { ...c.deps, dir: c.dir }), [2, JSON.stringify({ motivo: 'skill.err.inatteso' })])
+})
+
+// --- F13.7 point 4: TokenEconomizer's guarded sequence (fake commands only) -------------------------------------------
+
+const MANIFEST_TE = { name: 'tokeneconomizer', owner: { name: 'TokenEconomizer authors' }, plugins: [{ name: 'tokeneconomizer', source: './plugin' }] }
+const HOOK_TE = { hooks: { SessionStart: [{ hooks: [{ type: 'command', command: '${CLAUDE_PLUGIN_ROOT}/scripts/te-hook', timeout: 15 }] }] } }
+function bancoTe(opz = {}) {
+  const dir = tmp()
+  const comandi = []
+  const clone = path.join(dir, 'skill', 'tokeneconomizer')
+  const note = path.join(dir, 'known_marketplaces.json')
+  fs.writeFileSync(note, JSON.stringify({ tokeneconomizer: { source: { source: 'directory', path: opz.notePath ?? clone.replace(/\\/g, '/') } } }))
+  let testa = SHA_A
+  const scrivi = (p, t) => { fs.mkdirSync(path.dirname(path.join(clone, p)), { recursive: true }); fs.writeFileSync(path.join(clone, p), t) }
+  const esegui = argv => {
+    comandi.push(argv.join(' ').replace(dir, '<dati>').replace(dir.replace(/\\/g, '/'), '<dati>'))
+    const [exe, ...a] = argv
+    if (exe === 'python3' || exe === 'python') return a[0] === '--version' ? { status: 0, stdout: `Python ${opz.python ?? '3.12.1'}` } : opz.te?.(a) ?? { status: 0, stdout: '' }
+    if (exe === 'sh') return { status: opz.sh ?? 0, stdout: '' }
+    if (exe === 'git' && a[0] === 'ls-remote') return { status: 0, stdout: `${SHA_A}\tHEAD\n` }
+    if (exe === 'git' && a[0] === 'init') { fs.mkdirSync(path.join(a[2], '.git'), { recursive: true }); return { status: 0, stdout: '' } }
+    if (exe === 'git' && a[2] === 'fetch') return { status: 0, stdout: '' }
+    if (exe === 'git' && a[2] === 'checkout') {
+      scrivi('.claude-plugin/marketplace.json', JSON.stringify(MANIFEST_TE, null, 2) + '\n')
+      scrivi('plugin/.claude-plugin/plugin.json', JSON.stringify({ name: 'tokeneconomizer', version: '0.1.0' }))
+      scrivi('plugin/hooks/hooks.json', JSON.stringify(HOOK_TE))
+      return { status: 0, stdout: '' }
+    }
+    if (exe === 'git' && a[2] === 'rev-parse') return { status: 0, stdout: `${testa}\n` }
+    if (exe === 'git' && a[2] === 'status') {
+      const cambiato = fs.readFileSync(path.join(clone, '.claude-plugin/marketplace.json'), 'utf8') !== JSON.stringify(MANIFEST_TE, null, 2) + '\n'
+      return { status: 0, stdout: `${cambiato ? ' M .claude-plugin/marketplace.json\n' : ''}${opz.altro ? ' M plugin/scripts/te-hook\n' : ''}` }
+    }
+    if (exe === 'claude' && a[1] === 'list') return { status: 0, stdout: JSON.stringify([{ id: 'tokeneconomizer@tokeneconomizer', scope: 'user', enabled: !!opz.attivo, installPath: path.join(clone, 'plugin') }]) }
+    return { status: 0, stdout: '' }
+  }
+  const te = a => (a[0] === 'config' && a.length === 1 ? { status: 0, stdout: opz.letto ?? 'toolprune = propose\nloopguard = off\n' } : { status: 0, stdout: '' })
+  return { dir, clone, comandi, deps: { esegui: argv => (argv[0].startsWith('python') && argv[1] !== '--version' ? (comandi.push(argv.join(' ').split(dir).join('<dati>').split(dir.replace(/\\/g, '/')).join('<dati>')), (opz.te ?? te)(argv.slice(3))) : esegui(argv)),
+    dir, piattaforma: opz.piattaforma ?? 'linux', marketplaceNote: note }, avanti: () => { testa = SHA_B } }
+}
+
+test('F13.7 TokenEconomizer: prerequisiti, clone allo sha approvato, manifest con defaultEnabled false, install poi subito disable, config sicura riletta, status dalla copia installata', () => {
+  const S = require('./skill-installa.cjs')
+  const b = bancoTe()
+  const p = S.prepara('tokeneconomizer', b.dir, b.deps)
+  assert.deepStrictEqual([p.url, p.sha], ['https://github.com/microsoft/TokenEconomizer.git', SHA_A])
+  assert.deepStrictEqual(p.hook, ['hooks/hooks.json · SessionStart: ${CLAUDE_PLUGIN_ROOT}/scripts/te-hook'])
+  b.comandi.length = 0
+  assert.deepStrictEqual(S.installa('tokeneconomizer', { url: p.url, sha: SHA_A, hook: p.hook }, b.dir, b.deps), { id: 'tokeneconomizer', plugin: 'tokeneconomizer@tokeneconomizer', sha: SHA_A })
+  const m = JSON.parse(fs.readFileSync(path.join(b.clone, '.claude-plugin', 'marketplace.json'), 'utf8'))
+  assert.deepStrictEqual(m.plugins, [{ name: 'tokeneconomizer', source: './plugin', defaultEnabled: false }])
+  const claude = b.comandi.filter(c => c.startsWith('claude '))
+  assert.deepStrictEqual(claude, ['claude plugin marketplace add <dati>/skill/tokeneconomizer --scope user', 'claude plugin install tokeneconomizer@tokeneconomizer --scope user',
+    'claude plugin disable tokeneconomizer@tokeneconomizer --scope user', 'claude plugin list --json'])
+  const py = b.comandi.filter(c => c.includes('te_bootstrap.py'))
+  assert.deepStrictEqual(py.map(c => c.replace(/\\/g, '/').replace(/^python3 \S+\/scripts\/te_bootstrap\.py cli /, '')), ['config set toolprune=propose --global', 'config set loopguard=off --global', 'config', '--host claude status'])
+  // L'install arriva dopo la modifica del manifest; il disable subito dopo l'install, prima di config e status.
+  assert.ok(b.comandi.indexOf('claude plugin disable tokeneconomizer@tokeneconomizer --scope user') < b.comandi.findIndex(c => c.includes('te_bootstrap.py')))
+  const rec = JSON.parse(fs.readFileSync(S.fileRecord(b.dir), 'utf8')).voci.tokeneconomizer
+  assert.deepStrictEqual([rec.sha, rec.abilitato, rec.hook], [SHA_A, false, p.hook])
+})
+
+test('F13.7 TokenEconomizer: ogni passo che fallisce lascia spento con il motivo; diff oltre il manifest, Python vecchio, sh mancante', () => {
+  const S = require('./skill-installa.cjs')
+  const url = 'https://github.com/microsoft/TokenEconomizer.git'
+  const hook = ['hooks/hooks.json · SessionStart: ${CLAUDE_PLUGIN_ROOT}/scripts/te-hook']
+  for (const [opz, motivo, installato] of [
+    [{ letto: 'toolprune = auto\nloopguard = off\n' }, 'skill.err.config', true],
+    [{ te: a => (a.includes('status') ? { status: 1, stdout: '' } : a.length === 1 && a[0] === 'config' ? { status: 0, stdout: 'toolprune = propose\nloopguard = off' } : { status: 0, stdout: '' }) }, 'skill.err.status', true],
+    [{ altro: true }, 'skill.err.diff', false],
+    [{ python: '3.9.7' }, 'skill.err.python', false],
+    [{ piattaforma: 'win32', sh: 1 }, 'skill.err.sh', false],
+  ]) {
+    const b = bancoTe(opz)
+    assert.throws(() => S.installa('tokeneconomizer', { url, sha: SHA_A, hook }, b.dir, b.deps), e => e.motivo === motivo, motivo)
+    assert.ok(!fs.existsSync(S.fileRecord(b.dir)), motivo)
+    if (installato) assert.strictEqual(b.comandi.filter(c => c === 'claude plugin disable tokeneconomizer@tokeneconomizer --scope user').length, 2, motivo)
+    else assert.ok(!b.comandi.some(c => c.startsWith('claude plugin install')), motivo)
+  }
+})
+
+test('F13.7 TokenEconomizer: secondo consenso solo con clone integro; avvio spegne il nostro se non approvato, mai quello dell\'utente; pulizia solo se non installato', () => {
+  const S = require('./skill-installa.cjs')
+  const url = 'https://github.com/microsoft/TokenEconomizer.git'
+  const hook = ['hooks/hooks.json · SessionStart: ${CLAUDE_PLUGIN_ROOT}/scripts/te-hook']
+  // Rifiutato alla prima conferma: il clone si cancella.
+  const r = bancoTe()
+  S.prepara('tokeneconomizer', r.dir, r.deps)
+  assert.deepStrictEqual(S.pulisci('tokeneconomizer', r.dir), { tolte: 1 })
+  assert.ok(!fs.existsSync(r.clone))
+  const b = bancoTe({ attivo: true })
+  S.installa('tokeneconomizer', { url, sha: SHA_A, hook }, b.dir, b.deps)
+  assert.deepStrictEqual(S.pulisci('tokeneconomizer', b.dir), { tolte: 0 })
+  // Attivo senza il secondo consenso registrato: l'avvio lo spegne.
+  b.comandi.length = 0
+  assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: ['tokeneconomizer'] })
+  assert.deepStrictEqual(S.abilita('tokeneconomizer', b.dir, b.deps), { id: 'tokeneconomizer', plugin: 'tokeneconomizer@tokeneconomizer' })
+  assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: [] })
+  // Il clone si sposta su un altro commit: niente attivazione e l'avvio lo spegne; nulla viene reinstallato.
+  b.avanti()
+  assert.throws(() => S.abilita('tokeneconomizer', b.dir, b.deps), e => e.motivo === 'skill.err.cambiato')
+  b.comandi.length = 0
+  assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: ['tokeneconomizer'] })
+  assert.ok(!b.comandi.some(c => /plugin (install|marketplace add)/.test(c)))
+  // Un TokenEconomizer installato dall'utente (marketplace altrove): mai toccato.
+  const u = bancoTe({ attivo: true, notePath: '/altrove/TokenEconomizer' })
+  assert.deepStrictEqual(S.controlla(u.dir, u.deps), { spenti: [] })
+  assert.ok(!u.comandi.some(c => c.includes('disable')))
 })

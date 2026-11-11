@@ -21,6 +21,15 @@ const fileRecord = dm => path.join(dm, 'skill-approvate.json')
 const dirMarketplace = dm => path.join(dm, 'skill', 'marketplace')
 const dirRevisione = (dm, id, sha) => path.join(dm, 'skill', 'revisioni', `${id}-${sha}`)
 const urlDi = v => `https://github.com/${v.repo}.git`
+/**
+ * A folder this helper turns into a git checkout (a revision download or the TokenEconomizer clone): the path checks run
+ * on its parent (no link at or below the data root; the checkout itself is a git tree by design), and the folder is not a
+ * link. Throws a refusal from disco.cjs otherwise.
+ */
+function cartellaGitSicura(dir, dm) {
+  require('./disco.cjs').percorsoSicuro(path.dirname(dir), [dm])
+  if (fs.existsSync(dir) && fs.lstatSync(dir).isSymbolicLink()) throw new Rifiuto('skill.err.percorso')
+}
 class Rifiuto extends Error {
   constructor(motivo) { super(motivo); this.motivo = motivo }
 }
@@ -101,7 +110,7 @@ function hookDa(v, esiste, testo) {
  */
 function hookDellaRevisione(v, sha, dm, deps) {
   const dir = dirRevisione(dm, v.id, sha)
-  require('./disco.cjs').percorsoSicuro(dir, [dm])
+  cartellaGitSicura(dir, dm)
   fs.mkdirSync(dir, { recursive: true })
   const git = (...a) => deps.esegui(['git', '-C', dir, ...a], { timeoutMs: 120_000 })
   if (!fs.existsSync(path.join(dir, '.git')) && deps.esegui(['git', 'init', '-q', dir]).status !== 0) throw new Rifiuto('skill.err.git')
@@ -130,6 +139,15 @@ function hookInstallati(v, installPath) {
 function pulisci(id, dm) {
   const v = K.voceSkill(id)
   if (!v) throw new Rifiuto('skill.err.nonInstallabile')
+  if (v.pin === 'clone') {
+    // The clone is the installed marketplace once approved: it goes only when nothing was installed from it.
+    const dir = dirClone(dm)
+    if (leggiRecord(dm).voci[id] || !fs.existsSync(dir)) return { tolte: 0 }
+    cartellaGitSicura(dir, dm)
+    if (fs.lstatSync(dir).isSymbolicLink()) return { tolte: 0 }
+    fs.rmSync(dir, { recursive: true, force: true })
+    return { tolte: 1 }
+  }
   const base = path.join(dm, 'skill', 'revisioni')
   if (!fs.existsSync(base)) return { tolte: 0 }
   require('./disco.cjs').percorsoSicuro(base, [dm])
@@ -182,14 +200,133 @@ const coincide = (inst, sha) => !!inst && (inst.pieno ? inst.pieno === sha : sha
 
 function voce(id) {
   const v = K.voceSkill(id)
-  if (!v || v.pin === 'clone') throw new Rifiuto('skill.err.nonInstallabile')
+  if (!v) throw new Rifiuto('skill.err.nonInstallabile')
   return v
 }
+/** The id the plugin has when the mod installed it: TokenEconomizer keeps its upstream identity (its clone is the marketplace). */
+const pluginInstallato = v => (v.pin === 'clone' ? v.plugin : K.pluginDellaMod(v))
 
 function prepara(id, dm, deps) {
   const v = voce(id)
+  if (v.pin === 'clone') return preparaClone(v, dm, deps)
   const sha = revisione(v, deps)
   return { id, url: urlDi(v), sha, hook: hookDellaRevisione(v, sha, dm, deps) }
+}
+
+// --- TokenEconomizer (F13.7 corrections r2–r4): experimental, off until the owner's second consent ------------------
+// Upstream packaging is kept: the approved clone is itself the marketplace, its plugin loads in place from `plugin/`, and
+// its runtime is found in the clone. The only edit is `defaultEnabled: false` in the clone's own marketplace manifest.
+
+const dirClone = dm => path.join(dm, 'skill', 'tokeneconomizer')
+const MANIFEST_CLONE = '.claude-plugin/marketplace.json'
+/** Forward slashes on Windows too: the marketplace path upstream documents. */
+const percorsoAvanti = p => p.replace(/\\/g, '/')
+
+/** Python ≥ 3.10 (first working of python3, python, py -3) and, on Windows, Git's `sh`: argv of the interpreter, or a refusal. */
+function prerequisiti(deps) {
+  const piattaforma = deps.piattaforma ?? process.platform
+  let py
+  for (const c of [['python3'], ['python'], ...(piattaforma === 'win32' ? [['py', '-3']] : [])]) {
+    const r = deps.esegui([...c, '--version'], { timeoutMs: 15_000 })
+    const m = /Python (\d+)\.(\d+)/.exec(r.stdout)
+    if (r.status === 0 && m && (Number(m[1]) > 3 || (Number(m[1]) === 3 && Number(m[2]) >= 10))) { py = c; break }
+  }
+  if (!py) throw new Rifiuto('skill.err.python')
+  if (piattaforma === 'win32' && deps.esegui(['sh', '-c', 'exit 0'], { timeoutMs: 15_000 }).status !== 0) throw new Rifiuto('skill.err.sh')
+  return py
+}
+
+/** The clone checked out at `sha`, through the path checks; reused when it is already there at that commit. */
+function cloneA(dm, url, sha, deps) {
+  const dir = dirClone(dm)
+  cartellaGitSicura(dir, dm)
+  const git = (...a) => deps.esegui(['git', '-C', dir, ...a], { timeoutMs: 300_000 })
+  if (!fs.existsSync(path.join(dir, '.git'))) {
+    fs.mkdirSync(dir, { recursive: true })
+    if (deps.esegui(['git', 'init', '-q', dir]).status !== 0) throw new Rifiuto('skill.err.git')
+  }
+  if (git('fetch', '-q', '--depth', '1', '--no-tags', url, sha).status !== 0 || git('checkout', '-q', '--detach', '--force', sha).status !== 0) throw new Rifiuto('skill.err.git')
+  return { dir, git }
+}
+
+/** The clone is at the approved commit and its only change is the manifest edit (the plugin code is untouched). */
+function cloneIntegro(dir, git, sha) {
+  const testa = git('rev-parse', 'HEAD')
+  if (testa.status !== 0 || testa.stdout.trim() !== sha) return false
+  const stato = git('status', '--porcelain')
+  return stato.status === 0 && stato.stdout.split(/\r?\n/).filter(Boolean).every(r => r.slice(3) === MANIFEST_CLONE)
+}
+
+function preparaClone(v, dm, deps) {
+  prerequisiti(deps)
+  const sha = revisione({ ...v, pin: 'ls-remote' }, deps)
+  const { dir, git } = cloneA(dm, urlDi(v), sha, deps)
+  const hook = hookDa(v, p => fs.existsSync(path.join(dir, 'plugin', p)), p => {
+    try { return fs.readFileSync(path.join(dir, 'plugin', p), 'utf8') } catch { return null }
+  })
+  if (!cloneIntegro(dir, git, sha)) throw new Rifiuto('skill.err.git')
+  return { id: v.id, url: urlDi(v), sha, hook }
+}
+
+/**
+ * The guarded sequence, after the owner's first consent (the confirmation): manifest edit to `defaultEnabled: false` and
+ * diff check, marketplace add of the clone, install (arrives disabled), immediate disable, safe configuration
+ * (toolprune=propose, loopguard=off) checked by reading it back, `status` from the installed copy, approval record with
+ * `abilitato: false`. Any failure leaves it disabled with the reason; the second consent enables it later (`abilita`).
+ */
+function installaClone(v, input, dm, deps) {
+  const py = prerequisiti(deps)
+  const { dir, git } = cloneA(dm, input.url, input.sha, deps)
+  const f = path.join(dir, MANIFEST_CLONE)
+  let m
+  try { m = JSON.parse(fs.readFileSync(f, 'utf8')) } catch { throw new Rifiuto('skill.err.fonte') }
+  const e = Array.isArray(m?.plugins) ? m.plugins.find(p => p?.name === K.nomePlugin(v)) : undefined
+  if (m?.name !== v.marketplace || !e || e.source !== './plugin') throw new Rifiuto('skill.err.fonte')
+  e.defaultEnabled = false
+  fs.writeFileSync(f, `${JSON.stringify(m, null, 2)}\n`)
+  if (!cloneIntegro(dir, git, input.sha)) throw new Rifiuto('skill.err.diff')
+  const claude = (...a) => deps.esegui(['claude', 'plugin', ...a], { timeoutMs: 300_000 })
+  const spegni = () => claude('disable', v.plugin, '--scope', 'user')
+  claude('marketplace', 'add', percorsoAvanti(dir), '--scope', 'user')
+  if (claude('install', v.plugin, '--scope', 'user').status !== 0) throw new Rifiuto('skill.err.installa')
+  spegni()
+  try {
+    const te = (radice, ...a) => deps.esegui([...py, path.join(radice, 'scripts', 'te_bootstrap.py'), 'cli', ...a], { timeoutMs: 60_000 })
+    const plugin = path.join(dir, 'plugin')
+    if (te(plugin, 'config', 'set', 'toolprune=propose', '--global').status !== 0 || te(plugin, 'config', 'set', 'loopguard=off', '--global').status !== 0)
+      throw new Rifiuto('skill.err.config')
+    // The settings file format is not documented: read the values back and require both, or stay off.
+    const letto = te(plugin, 'config')
+    if (letto.status !== 0 || !/toolprune\W+propose\b/i.test(letto.stdout) || !/loopguard\W+off\b/i.test(letto.stdout)) throw new Rifiuto('skill.err.config')
+    const installato = percorsoInstallato(v.plugin, deps)
+    if (!installato) throw new Rifiuto('skill.err.percorso')
+    if (te(installato, '--host', 'claude', 'status').status !== 0) throw new Rifiuto('skill.err.status')
+    if (!stessiHook(hookInstallati(v, installato), input.hook)) throw new Rifiuto('skill.err.hookCambiati')
+  } catch (err) {
+    spegni()
+    throw err
+  }
+  const r = leggiRecord(dm)
+  r.voci[v.id] = { plugin: v.plugin, url: input.url, sha: input.sha, hook: input.hook, clone: percorsoAvanti(dir), quando: new Date().toISOString(), abilitato: false }
+  scriviRecord(dm, r)
+  return { id: v.id, plugin: v.plugin, sha: input.sha }
+}
+
+/** The plugin loads in place from the clone: the installed revision is the clone's, checked with git (not the host's records). */
+function revisioneOk(v, rec, dm, deps) {
+  if (v.pin !== 'clone') return coincide(shaInstallato(pluginInstallato(v), deps), rec.sha)
+  const dir = dirClone(dm)
+  return fs.existsSync(path.join(dir, '.git')) && cloneIntegro(dir, (...a) => deps.esegui(['git', '-C', dir, ...a], { timeoutMs: 60_000 }), rec.sha)
+}
+
+/** Ours only when the marketplace that provides it is the mod's clone (a TokenEconomizer the user installed is never touched). */
+function dellaMod(v, dm, deps) {
+  if (v.pin !== 'clone') return true
+  const f = deps.marketplaceNote ?? path.join(process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR ?? path.join(os.homedir(), '.claude', 'plugins'), 'known_marketplaces.json')
+  try {
+    const s = JSON.parse(fs.readFileSync(f, 'utf8'))?.[v.marketplace]?.source
+    return s?.source === 'directory' && typeof s.path === 'string' && path.resolve(s.path) === path.resolve(dirClone(dm))
+  } catch { return false }
 }
 
 /** Installs exactly the approved revision from the mod's local marketplace, arriving disabled (`defaultEnabled: false`). */
@@ -199,6 +336,7 @@ function installa(id, input, dm, deps) {
   // The hooks the owner saw and approved, kept in the record: the installed copy must declare exactly these.
   const hook = input.hook
   if (!Array.isArray(hook) || hook.length > 60 || !hook.every(x => typeof x === 'string' && x.length <= 200)) throw new Rifiuto('skill.err.fonte')
+  if (v.pin === 'clone') return installaClone(v, input, dm, deps)
   const dir = dirMarketplace(dm)
   const f = path.join(dir, '.claude-plugin', 'marketplace.json')
   const d = require('./disco.cjs')
@@ -229,11 +367,11 @@ function installa(id, input, dm, deps) {
 /** Enables a mod-installed plugin only if the installed revision is still the approved one; records the consent. */
 function abilita(id, dm, deps) {
   const v = voce(id)
-  const plugin = K.pluginDellaMod(v)
+  const plugin = pluginInstallato(v)
   const r = leggiRecord(dm)
   const rec = r.voci[id]
   if (!rec || rec.plugin !== plugin || !SHA.test(String(rec.sha))) throw new Rifiuto('skill.err.nonApprovato')
-  if (!coincide(shaInstallato(plugin, deps), rec.sha)) throw new Rifiuto('skill.err.cambiato')
+  if (!revisioneOk(v, rec, dm, deps)) throw new Rifiuto('skill.err.cambiato')
   if (!stessiHook(hookInstallati(v, percorsoInstallato(plugin, deps)), rec.hook)) throw new Rifiuto('skill.err.hookCambiati')
   const e = deps.esegui(['claude', 'plugin', 'enable', plugin, '--scope', 'user'], { timeoutMs: 60_000 })
   if (e.status !== 0 && !/already enabled/i.test(e.stdout)) throw new Rifiuto('skill.err.abilita')
@@ -258,12 +396,12 @@ function controlla(dm, deps) {
   const r = leggiRecord(dm)
   const spenti = []
   for (const v of K.SKILL_BASE) {
-    const plugin = K.pluginDellaMod(v)
+    const plugin = pluginInstallato(v)
     const p = elenco.find(x => x.id === plugin)
-    if (!p?.attivo) continue
+    if (!p?.attivo || !dellaMod(v, dm, deps)) continue
     const rec = r.voci[v.id]
     const percorso = grezzo.find(x => x?.id === plugin && x?.scope === 'user')?.installPath
-    if (rec?.abilitato && rec.plugin === plugin && coincide(shaInstallato(plugin, deps), rec.sha) && stessiHook(hookInstallati(v, percorso), rec.hook)) continue
+    if (rec?.abilitato && rec.plugin === plugin && revisioneOk(v, rec, dm, deps) && stessiHook(hookInstallati(v, percorso), rec.hook)) continue
     deps.esegui(['claude', 'plugin', 'disable', plugin, '--scope', 'user'], { timeoutMs: 60_000 })
     spenti.push(v.id)
   }
@@ -289,4 +427,4 @@ if (require.main === module) {
   process.exitCode = codice
 }
 
-module.exports = { main, prepara, installa, abilita, controlla, pulisci, hookInstallati, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }
+module.exports = { main, prepara, installa, abilita, controlla, pulisci, prerequisiti, dirClone, hookInstallati, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }

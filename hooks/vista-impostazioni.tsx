@@ -859,12 +859,11 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
               azioni: stato === 'attivo' || stato === 'disattivo'
                 ? [<Button key={`skill-cambia-${v.id}`} plain label={T(stato === 'attivo' ? 'skill.disabilita' : 'skill.abilita', { nome: v.id })}
                     onPress={() => void esegui(`skill-${v.id}`, () => c.cambiaPlugin(v.id, stato !== 'attivo'), '')} />]
-                : stato === 'mancante' && v.pin !== 'clone' && !(soloLocale && v.flusso !== 'locale')
+                : stato === 'mancante' && !(soloLocale && v.flusso !== 'locale')
                   ? [<Button key={`skill-installa-${v.id}`} variant="secondary" label={T('skill.installa', { nome: v.id })}
                       onPress={() => void esegui(`skill-${v.id}`, () => c.installaSkill(v.id), '')} />]
                   : [],
             })}
-            {stato === 'mancante' && v.pin === 'clone' ? didascalia(`skill-nonInstallabile-${v.id}`, T('skill.nonInstallabile')) : null}
             {usa && !v.utente
               ? u.GruppoChip({
                   chiave: `skill-usa-${v.id}`, etichetta: T('skill.usa', { nome: v.id }), contesto: v.id, modo: 'scelta', valore: (accese?.[v.id] ?? v.predefinito) ? 'si' : 'no',

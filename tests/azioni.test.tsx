@@ -3888,8 +3888,8 @@ test('F13.7 installa dal pannello: conferma con fonte, commit e hook; senza sì 
   await ui.press({ key: 'impostazioni' })
   await ui.press({ key: 'sezione-modo-premi' })
   await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
-  // TokenEconomizer non ha il pulsante: la mod non lo installa ancora.
-  expect(await ui.find({ key: 'skill-installa-tokeneconomizer' })).toBeUndefined()
+  // TokenEconomizer ha la sua procedura (F13.7 punto 4): anche lui si installa solo dal clic, sperimentale e spento.
+  expect(await ui.find({ key: 'skill-installa-tokeneconomizer' })).toBeDefined()
   await ui.press({ key: 'skill-installa-ponytail' })
   await finche(() => domande.length === 1)
   for (const parte of ['https://github.com/DietrichGebert/ponytail.git', SHA, 'SessionStart: node inizio.js', 'privilegi']) expect(domande[0]).toContain(parte)

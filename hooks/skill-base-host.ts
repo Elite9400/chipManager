@@ -36,7 +36,7 @@ export async function helperSkill($: EngineInterface, argv: string[], stdin?: st
  */
 export async function installaSkill($: EngineInterface, id: string, conferma: (d: { url: string; sha: string; hook: string[] }) => Promise<boolean>) {
   const v = voceSkill(id)
-  if (!v || v.pin === 'clone') throw new Error('skill.err.nonInstallabile')
+  if (!v) throw new Error('skill.err.nonInstallabile')
   const p = await helperSkill($, ['prepara', id])
   // The downloaded revision is only for reading its hooks: it goes once the owner has decided (or the preparation failed).
   const pulisci = () => helperSkill($, ['pulisci', id]).catch(() => undefined)
@@ -88,7 +88,8 @@ export async function cambiaPlugin($: EngineInterface, id: string, attiva: boole
   const p = ora?.find(x => eDellaVoce(v, x.id))
   if (!p) throw new Error('not installed')
   if (p.scope === 'managed') throw new Error('locked by managed policy')
-  if (attiva && p.id === pluginDellaMod(v)) {
+  // TokenEconomizer keeps its upstream id: enabling it from the mod always goes through the helper's approval checks.
+  if (attiva && (p.id === pluginDellaMod(v) || v.pin === 'clone')) {
     const r = await helperSkill($, ['abilita', id])
     await leggiPlugin($)
     if (!r.ok) throw new Error(r.motivo)

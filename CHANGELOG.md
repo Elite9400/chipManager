@@ -41,8 +41,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   cannot be verified leaves it disabled. **Enable** on a mod-installed plugin checks the installed revision and its hooks
   against the record and records the approval; at session start a mod-installed plugin found enabled without that
   approval, or with a different revision or different hooks, is disabled and the owner is told. Nothing is ever
-  installed or reinstalled without the owner's click. A local-only project does not install or enable anything that sends data off the computer. Not in this
-  build: TokenEconomizer's guarded install sequence (it stays experimental and off) and the plugin-overhead measure.
+  installed or reinstalled without the owner's click. A local-only project does not install or enable anything that sends data off the computer.
+  **TokenEconomizer** (experimental, not verified on your Claude Code version, off by default) has its own sequence:
+  Python ≥ 3.10 and, on Windows, Git's `sh` are checked first; the approved commit is cloned into the data folder and the
+  first consent shows it with its hooks and data flow; the clone's own marketplace manifest gets `defaultEnabled: false`
+  and `git status` must show no other change; then marketplace add, install and an immediate disable; its configuration
+  is set to `toolprune=propose` and `loopguard=off` and read back, and `status` runs from the installed copy. Any failure
+  leaves it disabled with the reason; only a second consent enables it. A TokenEconomizer you installed yourself is
+  never touched. Not in this build: the plugin-overhead measure.
 
 - **Work mode** (Settings, Account group): default effort per lane, the Codex sandbox when Codex executes, sessions
   started together (1–8, over the host option), a suggested auditor in the Recommended preset, and cross review on

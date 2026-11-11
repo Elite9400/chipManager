@@ -605,8 +605,11 @@ revisione fissata dal marketplace ufficiale, o la testa del repository per ponyt
 il plugin dichiara, letto da quel commit (gli hook girano con i privilegi del tuo utente). Il plugin si installa dal
 marketplace locale della mod, fissato a quel commit, e arriva disattivato; se la revisione installata non risulta quella
 approvata, resta disattivato. Un plugin installato dalla mod si attiva solo dopo lo stesso controllo, e uno trovato
-attivo all'avvio della sessione senza la tua approvazione viene disattivato di nuovo. TokenEconomizer la mod non lo
-installa.
+attivo all'avvio della sessione senza la tua approvazione viene disattivato di nuovo. **TokenEconomizer** (sperimentale,
+spento di serie) segue una sequenza sua: prima Python 3.10+ (e `sh` di Git su Windows), poi il clone del commit approvato,
+`defaultEnabled: false` nel suo manifest, installazione e disattivazione immediata, `toolprune=propose` e `loopguard=off`
+scritti e riletti, `status` dalla copia installata; si attiva solo con un secondo consenso. Uno installato da te non
+viene mai toccato.
 
 ## Lingue
 

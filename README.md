@@ -588,7 +588,10 @@ the computer are never named. The mod reads `claude plugin list --json` and stor
 plugin declares, read from that commit (hooks run with your user's privileges). The plugin is installed from the mod's
 own local marketplace pinned to that commit and arrives disabled; if the installed revision cannot be verified as the
 approved one, it stays disabled. A plugin the mod installed is enabled only after the same check, and one found enabled
-at session start without your approval is disabled again. TokenEconomizer is not installed by the mod.
+at session start without your approval is disabled again. **TokenEconomizer** (experimental, off by default) follows
+its own sequence: Python 3.10+ (and Git's `sh` on Windows) checked first, the approved commit cloned, its manifest set to
+`defaultEnabled: false`, install and immediate disable, `toolprune=propose` and `loopguard=off` set and read back, `status`
+from the installed copy; it is enabled only with a second consent. One you installed yourself is never touched.
 
 ## Languages
 
