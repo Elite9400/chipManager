@@ -50,6 +50,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   leaves it disabled with the reason; only a second consent enables it. A TokenEconomizer you installed yourself is
   never touched. Not in this build: the plugin-overhead measure.
 
+- **Fable 5.2** (`claude-fable-5-2`) in the Claude model list, with its name, family colour, rank and effort cap; Fable
+  5.1 stays selectable. It may author sensitive R4/R5 work; the adversarial reviewer is Opus 5.5 for a Fable author and
+  Fable 5.2 for an Opus author. Work on Fable 5.2 starts at `high` effort unless chosen otherwise. The auditor table
+  follows Claude Code's advisor table (source and date in the code): `fable` means `claude-fable-5-2` in the mod's own
+  table, a Fable 5.2 executor accepts only Fable 5.2, Fable 5.2 may advise every listed executor, and Mythos ids are
+  recognised but not enabled. The doctor warns when Claude Code is older than 2.1.321, which Fable 5.2 needs.
 - **Work mode** (Settings, Account group): default effort per lane, the Codex sandbox when Codex executes, sessions
   started together (1–8, over the host option), a suggested auditor in the Recommended preset, and cross review on
   R0–R2. Set for all projects, with a per-project override field by field; presets Recommended, Economy and Quality.
