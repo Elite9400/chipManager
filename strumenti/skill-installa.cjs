@@ -303,9 +303,10 @@ function marchioHost(abs, nome) {
       const x = path.join(abs, f)
       const t = fs.lstatSync(x)
       if (!/^\d{1,10}$/.test(f) || t.isSymbolicLink() || !t.isFile() || t.size > 200) return false
-      const j = JSON.parse(fs.readFileSync(x, 'utf8'))
-      return oggettoPuro(j) && j.pid === Number(f) &&
-        Object.keys(j).every(k => k === 'pid' || (k === 'procStartFt' && typeof j[k] === 'string' && /^\d{1,25}$/.test(j[k])))
+      // Third review, point 1: the raw text, whole, in the host's exact form (keys in order, no duplicate, no spaces, no
+      // other field): JSON.parse would keep the last of two `pid` and hide extra data from the fingerprint.
+      const m = /^\{"pid":([1-9]\d{0,9}),"procStartFt":"(\d{1,25})"\}$/.exec(fs.readFileSync(x, 'latin1'))
+      return !!m && m[1] === f
     })
   } catch {
     return false
@@ -321,9 +322,12 @@ function marchioHost(abs, nome) {
  * Second review: `lato` 'revisione' (the approved checkout) refuses the host marks' names outright; 'copia' (the installed
  * copy) leaves them out only in the host's exact form (marchioHost). On POSIX each file's executable bit is in the
  * fingerprint (git checks the tree mode 100755/100644 out as that bit, so the checkout and the copy carry it alike); on
- * Windows there is no such bit and it is left out on both sides. `eseguibile` only for the tests.
+ * Windows there is no such bit and it is left out on both sides. The bit is the owner's (0100), the one git reads to
+ * choose 100755 or 100644 (third review, point 5). `eseguibile` only for the tests.
  */
-function alberoImpronta(root, voce, lato = 'revisione', eseguibile = (s => (process.platform === 'win32' ? false : (s.mode & 0o111) !== 0))) {
+/** The executable bit as git reads it: the owner's (0100); on Windows there is none. */
+const bitEseguibile = (s, piattaforma = process.platform) => piattaforma !== 'win32' && (s.mode & 0o100) !== 0
+function alberoImpronta(root, voce, lato = 'revisione', eseguibile = s => bitEseguibile(s)) {
   const h = require('node:crypto').createHash('sha256')
   const file = []
   const giro = (abs, rel) => {
@@ -332,8 +336,10 @@ function alberoImpronta(root, voce, lato = 'revisione', eseguibile = (s => (proc
     if (s.isDirectory()) {
       for (const n of fs.readdirSync(abs)) {
         if (!rel && n === '.git') continue
-        if (!rel && MARCHI_HOST.has(n)) {
-          if (lato === 'copia' && marchioHost(path.join(abs, n), n)) continue
+        // Third review, point 4: the reserved names in any case (on Windows `.IN_USE` is `.in_use`): refused in the
+        // revision; on the copy skipped only with the exact name and form the host writes, empty folders included.
+        if (!rel && MARCHI_HOST.has(n.toLowerCase())) {
+          if (lato === 'copia' && MARCHI_HOST.has(n) && marchioHost(path.join(abs, n), n)) continue
           throw new Rifiuto('skill.err.percorso')
         }
         giro(path.join(abs, n), rel ? `${rel}/${n}` : n)
@@ -857,4 +863,4 @@ if (require.main === module) {
   process.exitCode = codice
 }
 
-module.exports = { main, prepara, installa, abilita, controlla, pulisci, prerequisiti, dirClone, fileSenzaLink, marketplace, hookInstallati, alberoImpronta, hookDellaRevisione, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }
+module.exports = { main, prepara, installa, abilita, controlla, pulisci, prerequisiti, dirClone, fileSenzaLink, marketplace, hookInstallati, alberoImpronta, bitEseguibile, hookDellaRevisione, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }

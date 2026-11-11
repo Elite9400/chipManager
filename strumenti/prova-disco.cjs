@@ -5279,3 +5279,37 @@ test('RC 2.2.0, Knowledgebase: pubblicato apre la pagina iniziale del sito; prim
   for (const radice of [senza, conLink]) assert.deepStrictEqual(D.apriPagina(D.KNOWLEDGEBASE_LOCALE, { avvia, radice }), [4, ''], radice)
   assert.strictEqual(aperti.length, 2)
 })
+
+// --- Terzo giro Codex dell'audit RC 2.2.0 ------------------------------------------------------------------------------
+
+test('RC 2.2.0, terzo giro, punto 1: il segno `.in_use` vale solo nel testo esatto dell\'host (niente chiavi doppie, spazi, ordine diverso o campi in più)', () => {
+  const S = require('./skill-installa.cjs')
+  const copia = extra => { const d = tmp(); scriviAlbero(d, { ...FILE_PONY, ...extra }); return d }
+  const base = S.alberoImpronta(copia({}), undefined, 'copia')
+  assert.strictEqual(S.alberoImpronta(copia({ '.in_use/1234': '{"pid":1234,"procStartFt":"134388645927262999"}' }), undefined, 'copia'), base)
+  for (const t of ['{"pid":"EXTRA","pid":1234,"procStartFt":"1"}', '{"pid":1234,"procStartFt":"1","pid":1234}', '{ "pid":1234,"procStartFt":"1"}', '{"procStartFt":"1","pid":1234}',
+    '{"pid":1234,"procStartFt":"1"}\n', '{"pid":1234,"procStartFt":1}', '{"pid":01234,"procStartFt":"1"}', '{"pid":1234}'])
+    assert.throws(() => S.alberoImpronta(copia({ '.in_use/1234': t }), undefined, 'copia'), e => e.motivo === 'skill.err.percorso', t)
+})
+
+test('RC 2.2.0, terzo giro, punto 4: i nomi riservati in qualunque maiuscola: rifiutati nella revisione; nella copia solo nome e forma esatti, cartelle vuote comprese', () => {
+  const S = require('./skill-installa.cjs')
+  for (const extra of [{ '.IN_USE/x': 'y' }, { '.In_Use/1234': '{"pid":1234,"procStartFt":"1"}' }, { '.ORPHANED_AT': '1793885108848' }]) {
+    const b = banco({ file: { ...FILE_PONY, ...extra } })
+    assert.throws(() => S.prepara('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.percorso', JSON.stringify(extra))
+  }
+  const copia = (extra, vuote = []) => { const d = tmp(); scriviAlbero(d, { ...FILE_PONY, ...extra }); for (const v of vuote) fs.mkdirSync(path.join(d, v)); return d }
+  for (const [extra, vuote] of [[{}, ['.ORPHANED_AT']], [{}, ['.orphaned_at']], [{}, ['.IN_USE']], [{ '.IN_USE/1234': '{"pid":1234,"procStartFt":"1"}' }, []]])
+    assert.throws(() => S.alberoImpronta(copia(extra, vuote), undefined, 'copia'), e => e.motivo === 'skill.err.percorso', JSON.stringify([extra, vuote]))
+})
+
+test('RC 2.2.0, terzo giro, punto 5: il bit eseguibile è quello del proprietario (0100), come lo legge git; su Windows non c\'è', () => {
+  const S = require('./skill-installa.cjs')
+  assert.deepStrictEqual([0o755, 0o655, 0o744, 0o644, 0o100, 0o011].map(m => S.bitEseguibile({ mode: m }, 'linux')), [true, false, true, false, true, false])
+  assert.strictEqual(S.bitEseguibile({ mode: 0o755 }, 'win32'), false)
+  // Sull'albero: 0755 → 0655 cambia l'impronta (POSIX simulato col bit del proprietario).
+  const d = tmp()
+  scriviAlbero(d, { ...FILE_PONY, 'bin/tool': '#!/bin/sh\n' })
+  const conModo = modo => S.alberoImpronta(d, undefined, 'copia', (st, abs) => S.bitEseguibile({ mode: abs.endsWith('tool') ? modo : 0o644 }, 'linux'))
+  assert.notStrictEqual(conModo(0o755), conModo(0o655))
+})

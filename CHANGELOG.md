@@ -20,9 +20,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   files in `bin/` (on the Bash PATH), the root `SKILL.md` and the raw frontmatter of every skill and command are shown
   too; a frontmatter that cannot be delimited, or a folder that cannot be listed, is a refusal.
 - **The approval fingerprints the whole plugin.** The fingerprint is the sha256 of the entire plugin tree on disk, raw
-  bytes of every file and, on POSIX, its executable bit (`.git` left out), computed from a checkout of the approved
+  bytes of every file and, on POSIX, its owner's executable bit (as git reads it) (`.git` left out), computed from a checkout of the approved
   revision and from the installed copy alike; a link anywhere is a refusal. The host's marks (`.in_use`, `.orphaned_at`)
-  are refused in the revision and left out of the installed copy only in the exact form the host writes. Any change to
+  are refused in the revision, in any letter case, and left out of the installed copy only with the exact name and the
+  exact text the host writes. Any change to
   any file turns the plugin off at start-up. **Baseline skills approved with earlier builds must be approved again.**
 - **Default rules: no write into `.git` by another name.** The rules path refuses `~` (Windows short names such as
   `GIT~1`) and segments ending in a dot or a space, for the reader and the helper alike; a folder whose real name is
