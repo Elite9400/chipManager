@@ -355,6 +355,7 @@ const de: Dizionario = {
   "motivi.primo": "Kann nicht starten: {motivo}",
   "motivi.titolo": { one: "Der Grund", other: "Die {n} Gründe" },
   "az.avvia": "▶ Starten",
+  "az.fix": "Beheben",
   "az.accoda": "▶ Einreihen",
   "az.riprova": "▶ Wiederholen",
   "az.qui": "Hier erledigen",

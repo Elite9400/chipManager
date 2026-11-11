@@ -357,6 +357,7 @@ const en = {
   "motivi.primo": "Cannot start: {motivo}",
   "motivi.titolo": { one: "The reason", other: "The {n} reasons" },
   "az.avvia": "▶ Start",
+  "az.fix": "Fix",
   "az.accoda": "▶ Queue",
   "az.riprova": "▶ Retry",
   "az.qui": "Do it here",

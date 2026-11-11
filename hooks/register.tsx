@@ -1466,6 +1466,20 @@ async function segnalaRapporto($: Eng, come: 'gh' | 'url') {
   $.ui.toast(T(e.codice === 0 ? (come === 'gh' ? 'rap.creato' : 'rap.aperto') : 'rap.nonRiuscito'))
 }
 
+/**
+ * RC 2.2.0 (richiesta del committente): «Fix» accanto a err.percorsoDati. Apre il doctor e ricontrolla; se i dati sono
+ * davvero fuori posto (link dentro i dati, dati in un repository) e si possono spostare nella cartella sicura predefinita,
+ * avvia quel rimedio, che chiede conferma, copia verificando e lascia intatta la vecchia cartella. Altrimenti resta sul
+ * doctor, che mostra il controllo dei percorsi. Nulla di distruttivo senza la conferma del rimedio.
+ */
+async function fixPercorsoDati($: Eng, opz: Record<string, unknown>) {
+  await update($, impostazioni, (s): StatoImpostazioni => ({ ...s, sezione: 'doctor', errore: undefined }))
+  await update($, vistaOra, (): Vista => 'impostazioni')
+  await diagnosiDoctor($)
+  const r = (await read($, statoDoctor)).trovati?.find(x => x.codice === 'percorso.dati' && x.spostabile === true)
+  if (r) await rimedioDoctor($, opz, r)
+}
+
 /** Un rimedio: «Accedi» parte dal clic; ripristino, archivio e «Libera» chiedono conferma. Poi si ricontrolla. */
 async function rimedioDoctor($: Eng, opz: Record<string, unknown>, r: Rilievo) {
   const T = await lingue($)
@@ -2916,6 +2930,7 @@ export const register: Register = (on, options) => {
       controllaEsecuzione: () => controllaEsecuzione($),
       diagnosi: () => diagnosiDoctor($),
       rimedio: r => rimedioDoctor($, opz, r),
+      fixPercorso: () => fixPercorsoDati($, opz),
       rapporto: superficie => preparaRapporto($, superficie),
       segnala: come => segnalaRapporto($, come),
       cambiaSessione: (a, campo, valore) => cambiaSessione($, a.id, campo, valore),

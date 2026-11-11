@@ -519,7 +519,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
     }
     if (cmd === 'occupata') return fine(0)
     // F6.2: la corsia API dell'helper, scriptabile dalla prova.
-    if (/-api$/.test(cmd ?? '')) {
+    if (/-api$|^diagnosi$|^sposta-dati$/.test(cmd ?? '')) {
       const [codice, testo] = opz.api?.(cmd!, a, e.init?.stdin) ?? [0, '']
       return fine(codice, testo)
     }
@@ -4836,5 +4836,39 @@ test('RC 2.2.0: /chipmanager con i dati che non si leggono risponde col motivo, 
   delete (amb.elenchi as { push?: unknown }).push
   const ui = await $.ui.mount({ ...PANE('desktop') })
   expect(await ui.find({ key: 'pagina-doctor' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('RC 2.2.0, richiesta: l\'errore dei percorsi dei dati mostra «Correggi», che porta al rimedio del doctor (con conferma) o al doctor', { options: { anthropicApiKey: CHIAVE_API } }, async ($, on) => {
+  const motivo = 'helper.collegamento: X:/dati/progetto/azioni'
+  const sposte: string[][] = []
+  const amb = ambiente(on, { senzaDir: true, api: (cmd, a) =>
+    cmd === 'lancia-api' ? [6, JSON.stringify({ percorso: motivo })]
+      : cmd === 'diagnosi' ? [0, JSON.stringify({ trovati: [{ codice: 'percorso.dati', motivo }], versione: '2.2.0' })]
+      : cmd === 'sposta-dati' ? (sposte.push(a), [0, JSON.stringify({ copia: 1 })])
+      : undefined })
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ account: { apiClaude: { budgetUsd: 20 } }, progetti: { 'acme/progetto': { cartella: 'X:/dati/progetto' } } }))
+  const a = chipApi('a-fixperc1')
+  amb.disco.set(`X:/dati/progetto/azioni/${a.id}.json`, JSON.stringify(a))
+  mock.clock(on)
+  const domande: string[] = []
+  let risposta = 'Annulla'
+  conferme(on, q => (domande.push(q), risposta))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: `avvia-${a.id}` })
+  expect((JSON.parse(amb.disco.get(`X:/dati/progetto/azioni/${a.id}.json`)!) as Azione).erroreCodice).toBe('err.percorsoDati')
+  expect(await ui.find({ key: `fix-${a.id}` })).toBeDefined()
+  // «Correggi»: il doctor si apre, ricontrolla e propone di spostare i dati; senza il sì nulla si sposta.
+  await ui.press({ key: `fix-${a.id}` })
+  await finche(() => domande.length === 1)
+  expect([domande[0]!.includes('X:/dati/progetto'), domande[0]!.includes('X:/casa/.claude/chipmanager/progetti/acme__progetto'), sposte.length]).toEqual([true, true, 0])
+  expect(await ui.find({ key: 'pagina-doctor' })).toBeDefined()
+  // Con il sì: lo spostamento verso la cartella sicura predefinita (la vecchia resta, lo dice l'helper).
+  risposta = 'Applica il rimedio'
+  await ui.press({ key: 'doctor-rimedio-0' })
+  await finche(() => sposte.length === 1)
+  expect(sposte[0]!.slice(2)).toEqual(['X:/dati/progetto', 'X:/casa/.claude/chipmanager/progetti/acme__progetto'])
   await ui.unmount()
 })

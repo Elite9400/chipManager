@@ -355,6 +355,7 @@ const fr: Dizionario = {
   "motivi.primo": "Lancement impossible : {motivo}",
   "motivi.titolo": { one: "La raison", other: "Les {n} raisons" },
   "az.avvia": "▶ Lancer",
+  "az.fix": "Corriger",
   "az.accoda": "▶ En file",
   "az.riprova": "▶ Réessayer",
   "az.qui": "Faire ici",

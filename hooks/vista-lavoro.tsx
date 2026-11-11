@@ -654,6 +654,12 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         </Text>
       ),
       a.errore && nota1(`err-${a.id}`, STATO.attesa, '!', T.m(letto(a.erroreCodice, a.erroreParametri, a.errore))),
+      // RC 2.2.0: accanto all'errore dei percorsi dei dati, «Fix» porta al rimedio del doctor (sempre con conferma).
+      a.errore && a.erroreCodice === 'err.percorsoDati' && (
+        <Box key={`fix-riga-${a.id}`} flexDirection="row">
+          <Button key={`fix-${a.id}`} variant="secondary" label={`${T('az.fix')} ${breve(a)}`} onPress={fai(() => c.fixPercorso())}>{T('az.fix')}</Button>
+        </Box>
+      ),
       a.risultato && <Box flexDirection="column" gap={conVelo ? 'xs' : 0}><Text weight="semibold">{T('info.bozza')}</Text><Text>{a.risultato}</Text></Box>,
       <Box key={`azioni-${a.id}`} flexDirection="row" gap={conVelo ? 'sm' : 1} marginTop={conVelo ? 0 : 1} flexWrap="wrap" justifyContent="space-between" alignItems="center">
         <Box flexDirection="row" columnGap={conVelo ? 'xs' : 1} rowGap={conVelo ? 'xs' : 0} flexWrap="wrap" alignItems="center">
@@ -954,6 +960,12 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         </Box>
       ) : nota1(`coda-${a.id}`, STATO.coda, '◔', T('info.inCoda', { motivo: T.m(letto(a.motivoCodice, a.motivoParametri, a.motivoCoda)) }))),
       a.errore && nota1(`err-${a.id}`, STATO.attesa, '!', T.m(letto(a.erroreCodice, a.erroreParametri, a.errore))),
+      // RC 2.2.0: accanto all'errore dei percorsi dei dati, «Fix» porta al rimedio del doctor (sempre con conferma).
+      a.errore && a.erroreCodice === 'err.percorsoDati' && (
+        <Box key={`fix-riga-${a.id}`} flexDirection="row">
+          <Button key={`fix-${a.id}`} variant="secondary" label={`${T('az.fix')} ${breve(a)}`} onPress={fai(() => c.fixPercorso())}>{T('az.fix')}</Button>
+        </Box>
+      ),
       bloccata && nota1(`blocco-${a.id}`, STATO.errore, '▲', `${T('motivi.primo', { motivo: T.m(blocchi[0]) })}${blocchi.length > 1 ? ` (+${blocchi.length - 1})` : ''}`),
       <Box key={`azioni-${a.id}`} flexDirection="row" flexWrap="wrap" columnGap={conVelo ? 'sm' : 1} rowGap={conVelo ? 'sm' : 0} alignItems="center">
         <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={conVelo ? 'xs' : 1} rowGap={conVelo ? 'xs' : 0}>

@@ -47,6 +47,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   repository» when `.claude` (or the home) is a junction above the data folders: the API lane's commands now register
   their roots (actions folder, machine folder, config folder) before any check, like the other commands; the baseline
   skill installer checks its own files against its data folder. A link inside a data folder is still refused.
+- **«Fix» next to the data-path error.** When a chip stops because its data folder is out of place, a Fix button opens
+  the doctor and checks again; if the data can move, it offers the doctor's remedy (copy to the safe default folder,
+  verified, after your confirmation, the old folder left intact); otherwise the doctor shows the path check.
 - **`/chipmanager` never fails silently.** If the mod's data cannot be read (or anything else in the command fails), the
   panel opens on the doctor anyway, the reason shows, and the command answers in the user's language, suggesting
   `/reload-plugins` after an update.

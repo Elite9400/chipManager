@@ -355,6 +355,7 @@ const it: Dizionario = {
   "motivi.primo": "Non può partire: {motivo}",
   "motivi.titolo": { one: "Il motivo", other: "I {n} motivi" },
   "az.avvia": "▶ Avvia",
+  "az.fix": "Correggi",
   "az.accoda": "▶ Accoda",
   "az.riprova": "▶ Riprova",
   "az.qui": "Fallo qui",

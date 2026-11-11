@@ -97,6 +97,8 @@ export type Ctx = {
   /** F11.3: il doctor: diagnosi in sola lettura e un rimedio su conferma, poi di nuovo la diagnosi. */
   diagnosi: () => Promise<unknown>
   rimedio: (r: Rilievo) => Promise<unknown>
+  /** RC 2.2.0: «Fix» accanto all'errore dei percorsi dei dati: il rimedio del doctor (con conferma) o la sua pagina. */
+  fixPercorso: () => Promise<unknown>
   /** F11.4: prepara il rapporto (solo codici) e, su conferma, lo apre su GitHub o lo crea con gh. */
   rapporto: (superficie: 'desktop' | 'terminal') => Promise<unknown>
   segnala: (come: 'gh' | 'url') => Promise<unknown>

@@ -355,6 +355,7 @@ const pt: Dizionario = {
   "motivi.primo": "Não pode iniciar: {motivo}",
   "motivi.titolo": { one: "O motivo", other: "Os {n} motivos" },
   "az.avvia": "▶ Iniciar",
+  "az.fix": "Corrigir",
   "az.accoda": "▶ Enfileirar",
   "az.riprova": "▶ Tentar de novo",
   "az.qui": "Fazer aqui",

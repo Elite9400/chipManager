@@ -355,6 +355,7 @@ const es: Dizionario = {
   "motivi.primo": "No puede iniciarse: {motivo}",
   "motivi.titolo": { one: "El motivo", other: "Los {n} motivos" },
   "az.avvia": "▶ Iniciar",
+  "az.fix": "Corregir",
   "az.accoda": "▶ Encolar",
   "az.riprova": "▶ Reintentar",
   "az.qui": "Hazlo aquí",
