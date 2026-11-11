@@ -5105,8 +5105,8 @@ test('RC 2.2.0, revisione A: l\'impronta è l\'albero intero sui byte grezzi; qu
     assert.notStrictEqual(S.alberoImpronta(albero(extra)), base, JSON.stringify(extra))
   // I segni dell'host alla radice (`.in_use/<pid>`, `.orphaned_at`) e `.git` non contano.
   const conHost = albero()
-  scriviAlbero(conHost, { '.in_use/1234': 'x', '.orphaned_at': '1', '.git/HEAD': 'ref' })
-  assert.strictEqual(S.alberoImpronta(conHost), base)
+  scriviAlbero(conHost, { '.in_use/1234': '{"pid":1234,"procStartFt":"134388645927262999"}', '.orphaned_at': '1793885108848', '.git/HEAD': 'ref' })
+  assert.strictEqual(S.alberoImpronta(conHost, undefined, 'copia'), base)
   // Un collegamento in qualunque punto dell'albero: rifiutato.
   const conLink = albero()
   fs.symlinkSync(tmp(), path.join(conLink, 'docs', 'altrove'), process.platform === 'win32' ? 'junction' : 'dir')
@@ -5184,4 +5184,46 @@ test('RC 2.2.0, revisione C: una cartella scambiata prima dell\'apertura verso .
   assert.strictEqual(fs.existsSync(path.join(r2, '.claude', 'routing.json')), false)
   // Senza scambi: creato.
   assert.strictEqual(crea({ root: fuori(), relativo: '.claude/routing.json', testo }), 0)
+})
+
+// --- Secondo giro Codex dell'audit RC 2.2.0 ---------------------------------------------------------------------------
+
+test('RC 2.2.0, secondo giro, punto 1: i segni dell\'host sono vietati nella revisione; nella copia installata contano solo nella forma esatta dell\'host', () => {
+  const S = require('./skill-installa.cjs')
+  const marchio = pid => `{"pid":${pid},"procStartFt":"134388645927262999"}`
+  // Nella revisione approvata: rifiutati, in qualunque forma (anche quella dell'host).
+  for (const extra of [{ '.in_use/1234': marchio(1234) }, { '.orphaned_at': '1793885108848' }, { '.in_use/payload.cjs': 'require("child_process")' }]) {
+    const b = banco({ file: { ...FILE_PONY, ...extra } })
+    assert.throws(() => S.prepara('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.percorso', JSON.stringify(extra))
+  }
+  // Nella copia installata: la forma dell'host non conta; ogni altra cosa con quei nomi fa rifiutare.
+  const copia = extra => { const d = tmp(); scriviAlbero(d, { ...FILE_PONY, ...extra }); return d }
+  const base = S.alberoImpronta(copia({}), undefined, 'copia')
+  assert.strictEqual(S.alberoImpronta(copia({ '.in_use/1234': marchio(1234), '.in_use/99': marchio(99), '.orphaned_at': '1793885108848' }), undefined, 'copia'), base)
+  for (const extra of [
+    { '.in_use/payload.cjs': 'require("child_process")' }, { '.in_use/1234': marchio(4321) }, { '.in_use/1234': '{"pid":1234,"procStartFt":"1","cmd":"x"}' },
+    { '.in_use/1234': 'non json' }, { '.in_use/sub/1': marchio(1) }, { '.in_use': 'file' }, { '.orphaned_at': 'domani' }, { '.orphaned_at/x': '1' },
+  ])
+    assert.throws(() => S.alberoImpronta(copia(extra), undefined, 'copia'), e => e.motivo === 'skill.err.percorso', JSON.stringify(extra))
+  // Un collegamento al posto di `.in_use`: rifiutato.
+  const conLink = copia({})
+  const fuoriDir = tmp()
+  fs.writeFileSync(path.join(fuoriDir, '1234'), marchio(1234))
+  fs.symlinkSync(fuoriDir, path.join(conLink, '.in_use'), process.platform === 'win32' ? 'junction' : 'dir')
+  assert.throws(() => S.alberoImpronta(conLink, undefined, 'copia'), e => e.motivo === 'skill.err.percorso')
+})
+
+test('RC 2.2.0, secondo giro, punto 2: su POSIX il bit eseguibile entra nell\'impronta; su Windows è ignorato da tutti e due i lati', () => {
+  const S = require('./skill-installa.cjs')
+  const d = tmp()
+  scriviAlbero(d, { ...FILE_PONY, 'bin/tool': '#!/bin/sh\necho ok\n' })
+  // POSIX simulato: lo stesso albero con bin/tool 0644 o 0755 dà impronte diverse.
+  const posix = eseguibili => (s, abs) => eseguibili.some(x => abs.endsWith(x))
+  assert.notStrictEqual(S.alberoImpronta(d, undefined, 'copia', posix([])), S.alberoImpronta(d, undefined, 'copia', posix([`bin${path.sep}tool`])))
+  // Sulla piattaforma vera: su Windows un chmod non cambia l'impronta (nessun bit da leggere); su POSIX sì.
+  const prima = S.alberoImpronta(d, undefined, 'copia')
+  fs.chmodSync(path.join(d, 'bin', 'tool'), 0o755)
+  const dopo = S.alberoImpronta(d, undefined, 'copia')
+  if (process.platform === 'win32') assert.strictEqual(dopo, prima)
+  else assert.notStrictEqual(dopo, prima)
 })

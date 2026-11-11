@@ -25,7 +25,12 @@ function percorso(root, relativo) {
 /** The file written: the root as given (a POSIX root may hold a literal `\`), then the segments. Twin of fileRegole. */
 const fileDi = (root, pezzi, p = path) => p.join(p.resolve(root), ...pezzi)
 
-/** 0 created, 4 exists, 6 unsafe; throws on other I/O errors. `fsx` only for the tests. */
+/**
+ * 0 created, 4 exists, 6 unsafe; throws on other I/O errors. `fsx` only for the tests.
+ * Known limit (accepted for 2.2.0): between the last real-path check and the open, a folder can still be swapped; the
+ * post-open checks catch what they can, but closing the window fully would need a concurrent local process with write
+ * access to the repository to be impossible, and that process could write into `.git` directly anyway.
+ */
 function crea(input, fsx = fs) {
   const { root, relativo, testo } = input ?? {}
   const pezzi = percorso(root, relativo)

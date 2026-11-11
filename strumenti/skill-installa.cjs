@@ -285,33 +285,68 @@ function hookDa(v, esiste, testo, voce, elenca = () => null) {
   return { righe }
 }
 
-/** Entries the host adds at the root of an installed plugin (`.in_use/<pid>`, the orphan mark): never the plugin's. */
-const DELL_HOST = new Set(['.git', '.in_use', '.orphaned_at'])
+/** The host's own marks at the root of an installed plugin: `.in_use/<pid>` files and the orphan time. */
+const MARCHI_HOST = new Set(['.in_use', '.orphaned_at'])
+/**
+ * RC 2.2.0, second review, point 1: a host mark in the exact form the host writes it (seen on the installed copies):
+ * `.in_use` a real folder holding only regular files named by a pid, each `{"pid":<that pid>,"procStartFt":"<digits>"}`
+ * and nothing more; `.orphaned_at` a regular file holding a time in milliseconds. Anything else under these names (a
+ * link, a script, another field) is not the host's.
+ */
+function marchioHost(abs, nome) {
+  try {
+    const s = fs.lstatSync(abs)
+    if (s.isSymbolicLink()) return false
+    if (nome === '.orphaned_at') return s.isFile() && s.size <= 32 && /^\d{10,16}$/.test(fs.readFileSync(abs, 'utf8'))
+    if (nome !== '.in_use' || !s.isDirectory()) return false
+    return fs.readdirSync(abs).every(f => {
+      const x = path.join(abs, f)
+      const t = fs.lstatSync(x)
+      if (!/^\d{1,10}$/.test(f) || t.isSymbolicLink() || !t.isFile() || t.size > 200) return false
+      const j = JSON.parse(fs.readFileSync(x, 'utf8'))
+      return oggettoPuro(j) && j.pid === Number(f) &&
+        Object.keys(j).every(k => k === 'pid' || (k === 'procStartFt' && typeof j[k] === 'string' && /^\d{1,25}$/.test(j[k])))
+    })
+  } catch {
+    return false
+  }
+}
 /**
  * RC 2.2.0, review A: the integrity fingerprint, sha256 of the whole plugin tree on disk, raw bytes: every regular file by
- * its relative path (sorted), size and content, nothing decoded or normalised. `.git` and the host's own marks at the
- * root are left out. A link anywhere, an entry that is neither file nor folder, or a file that cannot be read is a
- * refusal. Both sides are checkouts made by git on this machine (the approved revision here, the host's install there),
- * so line-ending conversion is the same on both (test with core.autocrlf and .gitattributes). `voce`, TokenEconomizer's
- * marketplace entry, is added without `defaultEnabled` (the mod's only edit).
+ * its relative path (sorted), size and content, nothing decoded or normalised. `.git` at the root is left out. A link
+ * anywhere, an entry that is neither file nor folder, or a file that cannot be read is a refusal. Both sides are
+ * checkouts made by git on this machine (the approved revision here, the host's install there), so line-ending
+ * conversion is the same on both (test with core.autocrlf and .gitattributes). `voce`, TokenEconomizer's marketplace
+ * entry, is added without `defaultEnabled` (the mod's only edit).
+ * Second review: `lato` 'revisione' (the approved checkout) refuses the host marks' names outright; 'copia' (the installed
+ * copy) leaves them out only in the host's exact form (marchioHost). On POSIX each file's executable bit is in the
+ * fingerprint (git checks the tree mode 100755/100644 out as that bit, so the checkout and the copy carry it alike); on
+ * Windows there is no such bit and it is left out on both sides. `eseguibile` only for the tests.
  */
-function alberoImpronta(root, voce) {
+function alberoImpronta(root, voce, lato = 'revisione', eseguibile = (s => (process.platform === 'win32' ? false : (s.mode & 0o111) !== 0))) {
   const h = require('node:crypto').createHash('sha256')
   const file = []
   const giro = (abs, rel) => {
     const s = fs.lstatSync(abs)
     if (s.isSymbolicLink()) throw new Rifiuto('skill.err.percorso')
     if (s.isDirectory()) {
-      for (const n of fs.readdirSync(abs)) if (rel || !DELL_HOST.has(n)) giro(path.join(abs, n), rel ? `${rel}/${n}` : n)
-    } else if (s.isFile()) file.push([rel, abs])
+      for (const n of fs.readdirSync(abs)) {
+        if (!rel && n === '.git') continue
+        if (!rel && MARCHI_HOST.has(n)) {
+          if (lato === 'copia' && marchioHost(path.join(abs, n), n)) continue
+          throw new Rifiuto('skill.err.percorso')
+        }
+        giro(path.join(abs, n), rel ? `${rel}/${n}` : n)
+      }
+    } else if (s.isFile()) file.push([rel, abs, eseguibile(s, abs)])
     else throw new Rifiuto('skill.err.percorso')
   }
   try {
     giro(path.resolve(root), '')
     file.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    for (const [rel, abs] of file) {
+    for (const [rel, abs, x] of file) {
       const b = fs.readFileSync(abs)
-      h.update(`f\0${rel}\0${b.length}\0`)
+      h.update(`f\0${rel}\0${x ? 'x' : '-'}\0${b.length}\0`)
       h.update(b)
       h.update('\0')
     }
@@ -372,12 +407,11 @@ function scriviSenzaLink(radice, rel, testo) {
   } finally { fs.closeSync(fd) }
 }
 
-/** The hooks of the installed copy (its `installPath`, read from disk, no links); undefined = cannot be read (counts as different). */
 /**
  * The preview and the whole-tree fingerprint of a plugin on disk (a checked-out revision or an installed copy), or a
  * refusal that names what failed.
  */
-function leggiPlugin(v, installPath, voce) {
+function leggiPlugin(v, installPath, voce, lato = 'revisione') {
   if (typeof installPath !== 'string' || !path.isAbsolute(installPath)) throw new Rifiuto('skill.err.percorso')
   const dentro = p => {
     const f = path.resolve(installPath, p)
@@ -404,7 +438,7 @@ function leggiPlugin(v, installPath, voce) {
       return null
     }
   }
-  const impronta = alberoImpronta(installPath, voce)
+  const impronta = alberoImpronta(installPath, voce, lato)
   const { righe } = hookDa(v, p => !!dentro(p) && fs.existsSync(dentro(p)), p => {
     try { return dentro(p) ? fs.readFileSync(fileSenzaLink(installPath, p), 'utf8') : null } catch { return null }
   }, voce, elenca)
@@ -413,7 +447,7 @@ function leggiPlugin(v, installPath, voce) {
 /** The same, for a copy whose content is only compared: undefined = cannot be read (counts as different). */
 function hookInstallati(v, installPath, voce) {
   try {
-    return leggiPlugin(v, installPath, voce)
+    return leggiPlugin(v, installPath, voce, 'copia')
   } catch (e) {
     // Too much to show is its own refusal; anything else is «cannot be read» (counts as different).
     if (e instanceof Rifiuto && e.motivo === 'skill.err.troppi') throw e
@@ -605,7 +639,11 @@ function cloneIntegro(dir, git, sha, v) {
   const testa = git('rev-parse', 'HEAD')
   if (testa.status !== 0 || testa.stdout.trim() !== sha) return false
   const stato = git('status', '--porcelain')
-  return stato.status === 0 && stato.stdout.split(/\r?\n/).filter(Boolean).every(r => r.slice(3) === MANIFEST_CLONE) && manifestoAmmesso(dir, git, sha, v)
+  // Second review, point 1: the marks the host writes into the plugin it loads in place (untracked) are allowed only in
+  // their exact form; any other change or untracked file is not.
+  const ammessa = r => r.slice(3) === MANIFEST_CLONE ||
+    (r.startsWith('?? ') && ['plugin/.in_use/', 'plugin/.orphaned_at'].includes(r.slice(3)) && marchioHost(path.join(dir, r.slice(3)), path.basename(r.slice(3))))
+  return stato.status === 0 && stato.stdout.split(/\r?\n/).filter(Boolean).every(ammessa) && manifestoAmmesso(dir, git, sha, v)
 }
 /**
  * Revisione dell'audit 2.2.0, S1: the clone's marketplace manifest, compared as structure with the one at the approved
