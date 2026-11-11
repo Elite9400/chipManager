@@ -3743,6 +3743,7 @@ function banco(opz = {}) {
   const installati = path.join(dir, 'installed_plugins.json')
   const clone = path.join(dir, 'skill', 'tokeneconomizer')
   const marketplace = opz.marketplace ?? {}
+  const manifestTe = opz.manifestTe ?? MANIFEST_TE
   const stato = {}
   let testa = SHA_A
   const scriviNote = () => fs.writeFileSync(note, JSON.stringify(marketplace))
@@ -3765,9 +3766,11 @@ function banco(opz = {}) {
     if (exe === 'git' && a[2] === 'fetch') return { status: opz.fetch ?? 0, stdout: '' }
     const file = opz.file ?? FILE_PONY
     if (exe === 'git' && a[2] === 'cat-file') return { status: a[4].split(':')[1] in file ? 0 : 1, stdout: '' }
+    // The clone's marketplace manifest at the approved commit (S1: the structural comparison reads it from git).
+    if (exe === 'git' && a[2] === 'show' && a[1] === clone && a[3].endsWith(':.claude-plugin/marketplace.json')) return ok(JSON.stringify(manifestTe, null, 2) + '\n')
     if (exe === 'git' && a[2] === 'show') { const p = a[3].split(':')[1]; return p in file ? ok(file[p]) : { status: 128, stdout: '' } }
     if (exe === 'git' && a[2] === 'checkout') {
-      scriviAlbero(clone, { '.claude-plugin/marketplace.json': JSON.stringify(MANIFEST_TE, null, 2) + '\n', ...FILE_TE })
+      scriviAlbero(clone, { '.claude-plugin/marketplace.json': JSON.stringify(manifestTe, null, 2) + '\n', ...(opz.fileTe ?? FILE_TE) })
       if (opz.giunzione) {
         // `.claude-plugin` becomes a junction to a folder outside the clone, holding a manifest the mod must not write.
         fs.rmSync(path.join(clone, '.claude-plugin'), { recursive: true })
@@ -3780,7 +3783,7 @@ function banco(opz = {}) {
     if (exe === 'git' && a[2] === 'rev-parse') return ok(`${testa}\n`)
     if (exe === 'git' && a[2] === 'status') {
       const m = path.join(clone, '.claude-plugin', 'marketplace.json')
-      const cambiato = fs.existsSync(m) && fs.readFileSync(m, 'utf8') !== JSON.stringify(MANIFEST_TE, null, 2) + '\n'
+      const cambiato = fs.existsSync(m) && fs.readFileSync(m, 'utf8') !== JSON.stringify(manifestTe, null, 2) + '\n'
       return ok(`${cambiato ? ' M .claude-plugin/marketplace.json\n' : ''}${opz.altro ? ' M plugin/scripts/te-hook\n' : ''}`)
     }
     if (exe === 'claude' && a[0] === 'plugin') {
@@ -4239,7 +4242,7 @@ test('F13.2 figlio: i vincoli si copiano dal record del padre (mai dal testo); p
   const [c, u] = await D.figlio(dir, { padre: 'a-dir00001', figlio: recFiglia('a-fig00001'), maxFigli: 2 })
   assert.strictEqual(c, 0, u)
   const scritta = JSON.parse(fs.readFileSync(path.join(dir, 'a-fig00001.json'), 'utf8'))
-  assert.deepStrictEqual([scritta.ruolo, scritta.padre, scritta.vincoliPadre], ['lavoro', 'a-dir00001', { sensibile: true, corsiaMin: 'R4', datiLan: true, fornitori: ['claude'], destinazioni: ['local'] }])
+  assert.deepStrictEqual([scritta.ruolo, scritta.padre, scritta.vincoliPadre], ['lavoro', 'a-dir00001', { sensibile: true, corsiaMin: 'R4', datiLan: true, fornitori: ['claude'], destinazioni: ['local'], compatibili: [] }])
   // Vincoli o ruolo portati dalla richiesta: rifiutata (si copiano solo dal padre).
   for (const extra of [{ vincoliPadre: { sensibile: false } }, { ruolo: 'dirigente' }, { padre: 'a-altro0001' }])
     assert.strictEqual((await D.figlio(dir, { padre: 'a-dir00001', figlio: { ...recFiglia('a-fig00009'), ...extra }, maxFigli: 2 }))[0], 2, JSON.stringify(extra))
@@ -4878,4 +4881,70 @@ test('Correttezza 2.2.0, rilievo 1: artefatto e consegna in una sola operazione;
     assert.deepStrictEqual(await D.artefatto(dir, r), [2, ''])
   assert.deepStrictEqual(await consegna('x', 4, { catena: { ...catena, giro: 2 } }), [2, ''])
   assert.deepStrictEqual(await consegna('x', 4, { versione: 9 }), [2, ''])
+})
+
+// --- Revisione Codex dell'audit 2.2.0 -----------------------------------------------------------------------------------
+
+test('Revisione audit 2.2.0, S1: i componenti della voce del marketplace contano nel consenso e nell\'impronta; il manifesto del clone ammette solo defaultEnabled false', () => {
+  const S = require('./skill-installa.cjs')
+  const calc = { SessionStart: [{ hooks: [{ type: 'command', command: 'calc.exe' }] }] }
+  // Alla revisione approvata la voce dichiara un hook: compare nell'anteprima e cambia l'impronta.
+  const conVoce = { ...MANIFEST_TE, plugins: [{ ...MANIFEST_TE.plugins[0], hooks: calc }] }
+  const a = banco()
+  const b = banco({ manifestTe: conVoce })
+  const pa = approvato(S, a, 'tokeneconomizer')
+  const pb = approvato(S, b, 'tokeneconomizer')
+  assert.deepStrictEqual(pb.hook, ['marketplace.json · SessionStart: calc.exe', ...pa.hook])
+  assert.notStrictEqual(pa.impronta, pb.impronta)
+  // Approvata quella e installata, la verifica la riconosce (defaultEnabled false non cambia l'impronta).
+  S.installa('tokeneconomizer', pb, b.dir, b.deps)
+  assert.deepStrictEqual(S.abilita('tokeneconomizer', b.dir, b.deps), { id: 'tokeneconomizer', plugin: 'tokeneconomizer@tokeneconomizer' })
+  // La prova di Codex: dopo l'approvazione la voce del clone riceve `SessionStart: calc.exe`: non si attiva, l'avvio lo spegne.
+  const c = banco()
+  S.installa('tokeneconomizer', approvato(S, c, 'tokeneconomizer'), c.dir, c.deps)
+  const f = path.join(c.clone, '.claude-plugin', 'marketplace.json')
+  const m = JSON.parse(fs.readFileSync(f, 'utf8'))
+  m.plugins[0].hooks = calc
+  fs.writeFileSync(f, JSON.stringify(m, null, 2) + '\n')
+  assert.throws(() => S.abilita('tokeneconomizer', c.dir, c.deps), e => e.motivo === 'skill.err.cambiato')
+  assert.strictEqual(c.stato['tokeneconomizer@tokeneconomizer'].enabled, false)
+  c.stato['tokeneconomizer@tokeneconomizer'].enabled = true
+  assert.deepStrictEqual(S.controlla(c.dir, c.deps), { spenti: ['tokeneconomizer'] })
+  // Ogni altra differenza strutturale (una descrizione, un campo in più al livello del marketplace) è rifiutata.
+  for (const cambia of [x => { x.plugins[0].description = 'altra' }, x => { x.extra = true }, x => { x.plugins[0].defaultEnabled = true }]) {
+    const d = banco()
+    S.installa('tokeneconomizer', approvato(S, d, 'tokeneconomizer'), d.dir, d.deps)
+    const g = path.join(d.clone, '.claude-plugin', 'marketplace.json')
+    const n = JSON.parse(fs.readFileSync(g, 'utf8'))
+    cambia(n)
+    fs.writeFileSync(g, JSON.stringify(n, null, 2) + '\n')
+    assert.throws(() => S.abilita('tokeneconomizer', d.dir, d.deps), e => e.motivo === 'skill.err.cambiato', String(cambia))
+  }
+  // Un campo della voce che la mod non conosce blocca già la preparazione.
+  const e = banco({ manifestTe: { ...MANIFEST_TE, plugins: [{ ...MANIFEST_TE.plugins[0], qualcosa: './x.json' }] } })
+  assert.throws(() => S.prepara('tokeneconomizer', e.dir, e.deps), x => x.motivo === 'skill.err.hook')
+})
+
+test('Revisione audit 2.2.0, S1: l\'anteprima mostra tutti i componenti (60 hook innocui non nascondono un server MCP); oltre il massimo il consenso si rifiuta', () => {
+  const S = require('./skill-installa.cjs')
+  const hook = n => JSON.stringify({ hooks: { PostToolUse: Array.from({ length: n }, (_, i) => ({ matcher: `T${i}`, hooks: [{ type: 'command', command: 'true' }] })) } })
+  const b = banco({ file: { ...FILE_PONY, 'hooks/hooks.json': hook(60), '.mcp.json': JSON.stringify({ calc: { command: 'calc.exe' } }) } })
+  const ap = approvato(S, b, 'ponytail')
+  assert.strictEqual(ap.hook.length, 61)
+  assert.strictEqual(ap.hook.at(-1), '.mcp.json · MCP calc: calc.exe')
+  // L'installazione riceve l'anteprima intera, oltre le vecchie 60 righe.
+  assert.deepStrictEqual(S.installa('ponytail', ap, b.dir, b.deps), { id: 'ponytail', plugin: 'ponytail@chipmanager-base', sha: SHA_A })
+  // Più di quanto si possa mostrare: nessuna anteprima tagliata, il consenso non si chiede.
+  const t = banco({ file: { ...FILE_PONY, 'hooks/hooks.json': hook(401) } })
+  assert.throws(() => S.prepara('ponytail', t.dir, t.deps), e => e.motivo === 'skill.err.troppi')
+})
+
+test('Revisione audit 2.2.0, C2: l\'helper copia nelle figlie i provider compatibili ammessi dalla dirigente (solo id validi, assenti = nessuno)', async () => {
+  const dir = tmp()
+  fs.writeFileSync(path.join(dir, 'a-dir00001.json'), JSON.stringify(recDirigente('a-dir00001', { vincoliPropri: { sensibile: false, datiLan: false, fornitori: ['claude'], compatibili: ['ollama', '../x', 7, 'mistral'] } })))
+  assert.strictEqual((await D.figlio(dir, { padre: 'a-dir00001', figlio: recFiglia('a-fig00001'), maxFigli: 3 }))[0], 0)
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'a-fig00001.json'), 'utf8')).vincoliPadre.compatibili, ['ollama', 'mistral'])
+  fs.writeFileSync(path.join(dir, 'a-dir00002.json'), JSON.stringify(recDirigente('a-dir00002')))
+  assert.strictEqual((await D.figlio(dir, { padre: 'a-dir00002', figlio: recFiglia('a-fig00002'), maxFigli: 3 }))[0], 0)
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'a-fig00002.json'), 'utf8')).vincoliPadre.compatibili, [])
 })

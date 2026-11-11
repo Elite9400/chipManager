@@ -11,7 +11,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Baseline skills: the approval covers everything that runs on its own.** The install preview and the content digest
   now include MCP and LSP servers (`.mcp.json`, `.lsp.json` or the manifest's `mcpServers`/`lspServers`), monitors and
   the mod modules a hooks file loads, besides hooks. A manifest field the mod does not know, or a component it cannot
-  read, stops the install.
+  read, stops the install. For TokenEconomizer the components its marketplace entry declares count too, and its
+  marketplace manifest may differ from the approved commit only by `defaultEnabled: false` (structural comparison).
+  Every line is shown, 20 to a page, each page confirmed; a preview too long to show stops the install.
 - **TokenEconomizer runs none of its code at the first consent.** Install only clones, checks the commit and records it
   disabled; its global configuration and status check run when you enable it, after the second consent. Both questions
   say so, in six languages.
@@ -29,7 +31,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   with a compare-and-swap on the record version read by the panel: a late or concurrent delivery writes nothing, and an
   artefact a record has already delivered is never overwritten.
 - **Director children on OpenAI-compatible providers can start.** The director's constraints now carry the compatible
-  providers its project allows (only ever narrowed), and a child is checked against its own provider.
+  providers its project allows (only ever narrowed), the helper copies them into each child, and checks and planning
+  always use the director's current constraints; a child is checked against its own provider.
 - **«Start all» queues a chain step before composing its text.** A rewrite whose review has not been delivered goes to
   the queue; the text is composed and confirmed when its dependencies are met.
 - **API lane: a run stopped before any process started releases its reservation**, month and group together, so

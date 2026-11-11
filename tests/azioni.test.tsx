@@ -613,7 +613,11 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
       const padre = JSON.parse(disco.get(`${dir}/${req.padre}.json`) ?? 'null') as Azione | null
       if (!padre || padre.ruolo !== 'dirigente' || padre.padre || !['avviata', 'attesa-figli'].includes(padre.stato)) return fine(4, '{"motivo":"padre"}')
       if ([...disco.entries()].filter(([k, v]) => k.startsWith(`${dir}/a-`) && JSON.parse(v).padre === req.padre).length + tutte.length > req.maxFigli) return fine(4, '{"motivo":"maxFigli"}')
-      const recs = tutte.map(f => ({ ...f, ruolo: 'lavoro', padre: req.padre, vincoliPadre: padre.vincoliPropri }))
+      // Come l'helper: i vincoli si ricopiano campo per campo dal record del padre (anche i provider compatibili).
+      const v = (padre.vincoliPropri ?? {}) as Partial<NonNullable<Azione['vincoliPadre']>>
+      const vincoliPadre = { sensibile: v.sensibile === true, ...(v.corsiaMin && { corsiaMin: v.corsiaMin }), datiLan: v.datiLan === true, fornitori: v.fornitori ?? [],
+        destinazioni: v.destinazioni ?? ['local'], compatibili: v.compatibili ?? [] }
+      const recs = tutte.map(f => ({ ...f, ruolo: 'lavoro', padre: req.padre, vincoliPadre }))
       for (const rec of recs) disco.set(`${dir}/${rec.id}.json`, JSON.stringify(rec))
       return fine(0, JSON.stringify(req.figli ? recs : recs[0]))
     }
@@ -4691,4 +4695,69 @@ test('Correttezza 2.2.0, rilievo 1: due consegne concorrenti dello stesso passo:
   // Una consegna tardiva col gettone di allora: rifiutata, e il testo accettato non cambia.
   expect((await consegna('Versione C.')).deny).toBeDefined()
   expect(amb.disco.get(file)).toBe(testoDi(vinta))
+})
+
+test('Revisione audit 2.2.0, S1: la conferma d\'installazione mostra tutti i componenti, 20 per pagina, e ogni pagina vuole il sì; oltre il massimo nessuna domanda', async ($, on) => {
+  const SHA = 'c'.repeat(40)
+  const righe = Array.from({ length: 45 }, (_, i) => (i === 44 ? '.mcp.json · MCP calc: calc.exe' : `hooks/hooks.json · PostToolUse [T${i}]: true`))
+  let preview = righe
+  const installate: string[] = []
+  const amb = ambiente(on, {
+    fonte: (cmd, input) => {
+      if (cmd === 'claude plugin list --json') return []
+      if (cmd === 'skill-prepara') return { id: input.id, url: 'https://github.com/DietrichGebert/ponytail.git', sha: SHA, impronta: 'e'.repeat(64), hook: preview }
+      if (cmd === 'skill-installa') return (installate.push(input.stdin as string), { id: 'ponytail', plugin: 'ponytail@chipmanager-base', sha: SHA })
+      if (cmd === 'skill-pulisci') return { tolte: 1 }
+      return undefined
+    },
+  })
+  mock.clock(on)
+  const domande: string[] = []
+  let risposte: string[] = []
+  conferme(on, testo => (domande.push(testo), risposte.shift() ?? 'Annulla'))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
+  // Sì alla prima pagina, no alla seconda: niente installato.
+  risposte = ['Installa · ponytail', 'Annulla']
+  await ui.press({ key: 'skill-installa-ponytail' })
+  await finche(() => domande.length === 2)
+  expect([domande[0]!.includes('(1/3)'), domande[1]!.includes('(2/3)'), installate.length]).toEqual([true, true, 0])
+  // Sì a tutte e tre: l'ultima pagina mostra il server MCP e l'helper riceve l'anteprima intera.
+  domande.length = 0
+  risposte = ['Installa · ponytail', 'Installa · ponytail', 'Installa · ponytail']
+  await ui.press({ key: 'skill-installa-ponytail' })
+  await finche(() => installate.length === 1)
+  expect([domande.length, domande[2]!.includes('MCP calc: calc.exe'), (JSON.parse(installate[0]!) as { hook: string[] }).hook]).toEqual([3, true, righe])
+  // Oltre il massimo che si può mostrare: nessuna domanda, niente installato.
+  domande.length = 0
+  preview = Array.from({ length: 401 }, (_, i) => `hooks/hooks.json · Stop [T${i}]: true`)
+  await ui.press({ key: 'skill-installa-ponytail' }).catch(() => {})
+  expect([domande.length, installate.length]).toEqual([0, 1])
+  await ui.unmount()
+})
+
+test('Revisione audit 2.2.0, C2: una figlia Ollama ammessa dal progetto della dirigente va dalla creazione all\'avvio, passando dal pianificatore', async ($, on) => {
+  const amb = ambienteF13(on)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { milestoneGithub: true, compatibili: { ollama: 'R1' } } } }))
+  mock.clock(on)
+  conferme(on, () => 'Invia testo')
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Motore', brief: 'Riscrivi il pianificatore.', corsia: 'R3' } as never)
+  const dir = amb.azione()[0]!
+  expect(dir.vincoliPropri?.compatibili).toEqual(['ollama'])
+  dirigenteAlLavoro(amb, dir.id)
+  const r = await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Nota', brief: 'Scrivi una nota breve.', corsia: 'R1', esecutore: 'compatibile', provider: 'ollama',
+    modello: 'qwen3:8b', effort: 'low', revisore: 'claude', padre: { id: dir.id, tentativo: 'az-dir00001' } } as never) as { deny?: unknown }
+  expect(r.deny).toBeUndefined()
+  const f = amb.azione().find(a => a.titolo === 'Nota')!
+  expect([f.padre, f.vincoliPadre?.compatibili]).toEqual([dir.id, ['ollama']])
+  // Avvio dal pannello: violazioni, decisione e pianificatore con i vincoli aggiornati; parte e consegna.
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `avvia-${f.id}` })
+  const inviati = amb.processi.filter(p => p.argv[1]?.endsWith('/compatibili.cjs') && p.argv[2] === 'completa').length
+  expect([inviati, amb.azione().find(a => a.id === f.id)!.stato]).toEqual([1, 'consegnata'])
+  await ui.unmount()
 })

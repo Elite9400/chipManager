@@ -1095,7 +1095,10 @@ export function consigliaDove(a: Azione, regole: Regole, limiti: readonly Limite
 export const connesso = (r: Pick<Regole, 'connessi'>, f: Fornitore) => f === 'claude' || f === 'codex' || (r.connessi ?? FORNITORI).includes(f)
 
 /** Perché un'azione non può partire così com'è: vuoto = può partire. */
-export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] = []): Msg[] {
+export function violazioni(azione: Azione, regole: Regole, lista: readonly Azione[] = []): Msg[] {
+  // Revisione dell'audit 2.2.0, C2: una figlia si giudica sempre coi vincoli della sua dirigente di ADESSO fusi coi suoi
+  // (solo verso l'alto), in ogni punto che chiama: avvio, coda, pianificazione, vista.
+  const a = conVincoliPadre(azione, lista, regole)
   const v: Msg[] = []
   if (!regole.lette) v.push(msg('v.regoleNonLette'))
   const modello = modelloDi(a, regole)
@@ -1413,6 +1416,8 @@ export function pianifica(
   const ids = new Set(candidate.map(a => a.id))
   // L'ordine scelto dall'utente vale finché non configura pesi o non opera la corsia (Automatico su una chip R0–R1 a
   // effort alto): solo allora il punteggio riordina il massivo. L'ordinamento è stabile: a pari punteggio resta il suo.
+  // Il record della lista è la verità (dipendenze, stato). Revisione dell'audit 2.2.0, C2: i vincoli della dirigente di
+  // adesso li fonde `violazioni` stessa, quindi rileggere il record non scarta più la fusione.
   const ordinate = attive(lista).filter(x => ids.has(x.id))
   if (regole.risorse.pesi.length || ordinate.some(a => corsiaPenalizza(a, regole)))
     ordinate.sort((a, b) => punteggio(b, regole, limiti, lista) - punteggio(a, regole, limiti, lista))

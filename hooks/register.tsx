@@ -92,7 +92,7 @@ import {
 import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
 import { MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
 import { chiamaCompatibile, connessiCompatibili, rilevaLocali, verificaCompatibile } from './compatibili-host'
-import { cambiaPlugin, controllaApprovate, installaSkill, leggiPlugin } from './skill-base-host'
+import { cambiaPlugin, controllaApprovate, installaSkill, leggiPlugin, RIGHE_PER_PAGINA } from './skill-base-host'
 import { voceSkill } from './skill-base'
 import { campoRegoleMancante, testoRegoleIniziali } from './regole-iniziali'
 import type { Chiave } from './lingua'
@@ -2912,9 +2912,15 @@ export const register: Register = (on, options) => {
         if (v && v.flusso !== 'locale' && (!r.lette || r.risorse.soloLocale)) throw errore('skill.bloccatoLocale', { nome: id })
         try {
           const fatto = await installaSkill($, id, async ({ url, sha, hook }) => {
-            const domanda = T('skill.conferma', { nome: id, url, sha, nota: v?.nota ?? '', hook: hook.length ? hook.map(h => `· ${h}`).join('\n') : T('skill.nessunHook') })
-              + (v?.pin === 'clone' ? `\n\n${T('skill.setupClone')}` : '')
-            return (await $.ui.ask(domanda, { options: [T('skill.installa', { nome: id }), T('comune.annulla')], header: 'chipManager' }).catch(() => '')) === T('skill.installa', { nome: id })
+            // Revisione dell'audit 2.2.0, S1: every component is shown, RIGHE_PER_PAGINA lines a page, and every page needs a yes.
+            const pagine = Math.max(1, Math.ceil(hook.length / RIGHE_PER_PAGINA))
+            for (let i = 0; i < pagine; i++) {
+              const righe = hook.slice(i * RIGHE_PER_PAGINA, (i + 1) * RIGHE_PER_PAGINA).map(h => `· ${h}`).join('\n') + (pagine > 1 ? `\n(${i + 1}/${pagine})` : '')
+              const domanda = T('skill.conferma', { nome: id, url, sha, nota: v?.nota ?? '', hook: hook.length ? righe : T('skill.nessunHook') })
+                + (v?.pin === 'clone' ? `\n\n${T('skill.setupClone')}` : '')
+              if ((await $.ui.ask(domanda, { options: [T('skill.installa', { nome: id }), T('comune.annulla')], header: 'chipManager' }).catch(() => '')) !== T('skill.installa', { nome: id })) return false
+            }
+            return true
           }, async () => {
             // The policy may have changed while the confirmation was open: read and validate it again, fail closed.
             const ora = await leggiRegole($)

@@ -6,6 +6,9 @@ import type { StatoSkill } from '../types'
 import { conta } from './logica'
 import { eDellaVoce, MARKETPLACE_BASE, pluginDa, pluginDellaMod, SKILL_BASE, voceSkill } from './skill-base'
 
+/** The most preview lines (MAX_RIGHE of skill-installa.cjs): shown 20 to a page, each page confirmed. */
+export const MAX_RIGHE_SKILL = 400
+export const RIGHE_PER_PAGINA = 20
 export const statoSkill = atom({ plugin: 'chip-manager', key: 'skill' } as const, {} as StatoSkill, { shape: 'skill-1' })
 
 /** Installed plugins, or null when the listing cannot be read (unknown, never «absent»). */
@@ -48,7 +51,13 @@ export async function installaSkill($: EngineInterface, id: string, conferma: (d
   }
   const url = String(p.dati.url ?? '')
   const sha = String(p.dati.sha ?? '')
-  const hook = Array.isArray(p.dati.hook) ? p.dati.hook.filter((x): x is string => typeof x === 'string').slice(0, 60) : []
+  // Revisione dell'audit 2.2.0, S1: every line the helper read is shown (a page at a time); a preview that is not all
+  // strings, or longer than the helper's own limit, is never cut down to what fits: nothing is asked or installed.
+  const hook = Array.isArray(p.dati.hook) && p.dati.hook.every(x => typeof x === 'string') ? (p.dati.hook as string[]) : null
+  if (!hook || hook.length > MAX_RIGHE_SKILL) {
+    await pulisci()
+    throw new Error(hook ? 'skill.err.troppi' : 'skill.err.inatteso')
+  }
   const impronta = typeof p.dati.impronta === 'string' && /^[0-9a-f]{64}$/.test(p.dati.impronta) ? p.dati.impronta : ''
   if (!(await conferma({ url, sha, hook }))) {
     await pulisci()

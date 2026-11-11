@@ -1056,6 +1056,7 @@ const es: Dizionario = {
   "skill.err.nonInstallabile": "el mod no instala este plugin",
   "skill.err.git": "git no pudo leer la revisión de la fuente",
   "skill.err.hook": "un componente que declara (hook, módulo, servidor MCP o LSP, monitor) no se puede leer, o su manifiesto tiene un campo que la mod no conoce: no se instaló nada",
+  "skill.err.troppi": "declara más componentes que se ejecutan solos de los que se pueden mostrar para tu aprobación: no se instaló nada",
   "skill.err.nome": "el nombre del plugin no coincide con el registro: no se instaló nada",
   "skill.err.installa": "claude plugin install falló",
   "skill.err.shaDiverso": "la revisión instalada no es la aprobada: queda desactivado",

@@ -305,7 +305,9 @@ test('Correttezza 2.2.0, rilievo 2: una figlia con provider compatibile parte se
   const fissata = figlia('mistral', { sensibile: false, datiLan: false, fornitori: ['claude', 'codex'], compatibili: ['ollama'] } as never)
   expect(padreDice(fissata, con({ ollama: 'R1', mistral: 'R2' }))?.k).toBe('v.fornitorePadre')
   const senza = figlia('ollama')
-  expect(violazioni(senza, con({ ollama: 'R1' }), [padre, senza]).find(m => m.k === 'v.fornitorePadre')).toEqual({ k: 'v.fornitorePadre', p: { fornitore: 'ollama' } })
+  // Revisione dell'audit 2.2.0, C2: violazioni fonde da sé la dirigente della lista; senza la dirigente nella lista, nessun provider passa.
+  expect(violazioni(senza, con({ ollama: 'R1' }), [padre, senza]).find(m => m.k === 'v.fornitorePadre')).toBeUndefined()
+  expect(violazioni(senza, con({ ollama: 'R1' }), [senza]).find(m => m.k === 'v.fornitorePadre')).toEqual({ k: 'v.fornitorePadre', p: { fornitore: 'ollama' } })
   expect(vincoliDirigente(padre, con({ ollama: 'R1', mistral: 'R2' })).compatibili).toEqual(['ollama', 'mistral'])
   expect('k' in normalizza({ ...senza, vincoliPadre: { ...senza.vincoliPadre, compatibili: ['../x'] } })).toBe(true)
 })

@@ -1229,6 +1229,8 @@ async function figlio(dir, richiesta) {
       fornitori: Array.isArray(v.fornitori) ? v.fornitori.filter(x => typeof x === 'string' && /^[a-z0-9-]{1,40}$/.test(x)) : [],
       // Revisione F13a, rilievo 2: anche le destinazioni dove gira la dirigente (assenti = solo locale: nel dubbio si blocca).
       destinazioni: Array.isArray(v.destinazioni) ? v.destinazioni.filter(x => ['local', 'cloud', 'api-claude'].includes(x)) : ['local'],
+      // Revisione dell'audit 2.2.0, C2: i provider compatibili che la dirigente ammette (assenti = nessuno: nel dubbio si blocca).
+      compatibili: Array.isArray(v.compatibili) ? v.compatibili.filter(x => typeof x === 'string' && /^[a-z0-9-]{1,40}$/.test(x)).slice(0, 20) : [],
     }
     if (tutte.some(f => fs.existsSync(path.join(dir, `${f.id}.json`)))) return [4, JSON.stringify({ motivo: 'esiste' })]
     const scritte = tutte.map(f => ({ ...f, ruolo: 'lavoro', padre: richiesta.padre, vincoliPadre }))

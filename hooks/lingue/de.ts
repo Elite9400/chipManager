@@ -1056,6 +1056,7 @@ const de: Dizionario = {
   "skill.err.nonInstallabile": "die Mod installiert dieses Plugin nicht",
   "skill.err.git": "git konnte die Revision der Quelle nicht lesen",
   "skill.err.hook": "eine deklarierte Komponente (Hook, Modul, MCP- oder LSP-Server, Monitor) ist nicht lesbar, oder sein Manifest hat ein Feld, das die Mod nicht kennt: nichts installiert",
+  "skill.err.troppi": "es deklariert mehr Komponenten, die von selbst laufen, als sich zur Freigabe zeigen lassen: nichts installiert",
   "skill.err.nome": "der Name des Plugins passt nicht zum Register: nichts installiert",
   "skill.err.installa": "claude plugin install ist fehlgeschlagen",
   "skill.err.shaDiverso": "die installierte Revision ist nicht die freigegebene: bleibt deaktiviert",

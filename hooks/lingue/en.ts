@@ -1058,6 +1058,7 @@ const en = {
   "skill.err.nonInstallabile": "the mod does not install this plugin",
   "skill.err.git": "git could not read the source revision",
   "skill.err.hook": "a component it declares (hook, module, MCP or LSP server, monitor) cannot be read, or its manifest has a field the mod does not know: nothing installed",
+  "skill.err.troppi": "it declares more components that run on their own than can be shown for your approval: nothing installed",
   "skill.err.nome": "the plugin's name does not match the registry: nothing installed",
   "skill.err.installa": "claude plugin install failed",
   "skill.err.shaDiverso": "the installed revision is not the approved one: left disabled",
