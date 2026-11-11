@@ -742,7 +742,7 @@ async function prendiImpostazioni($: Eng) {
   const esito = await versaProposta($, T, (await leggiRegole($)).risorse, await leggiLingua($), voce)
   if (esito === 'riempita') {
     $.ui.toast(T('imp.propostaArrivata'))
-    void $.ui.open({ id: PANE, title: TITOLO })
+    void $.ui.open({ id: PANE, title: TITOLO }).catch(() => {})
   }
 }
 
@@ -2440,6 +2440,25 @@ async function apriComando($: Eng, parole: string[], pagina: 'doctor' | 'setup' 
  * doctor (which then runs its check, the stale-module warning included), the reason shows as a toast, and the text
  * says to reload the plugins if the mod was just updated.
  */
+/**
+ * RC 2.2.0, third review, point 2: the only reasons `/chipmanager` names after an error, each with the parameters it may
+ * carry (numbers only). Any other error (an exception's text may hold private paths or credentials) gets the generic
+ * sentence; the details are the doctor's, which reports its own findings masked.
+ */
+const MOTIVI_COMANDO: Record<string, readonly string[]> = { 'cfg.cartella': [], 'regole.routingAssente': [], 'err.altraScrive': [], 'err.concorrenti': [] }
+/** Point 3: the sentence when even building one fails (a strange rejection value): constant, so the hook always answers. */
+const FRASE_ERRORE_RIPIEGO = "Could not read the mod's data. Opened the doctor."
+function fraseErrore(T: ReturnType<typeof traduttore>, err: unknown): string {
+  try {
+    const m = err instanceof Errore ? err.msg : undefined
+    const ammesso = !!m && Object.hasOwn(MOTIVI_COMANDO, m.k) &&
+      Object.entries(m.p ?? {}).every(([k, v]) => MOTIVI_COMANDO[m.k]!.includes(k) && typeof v === 'number' && Number.isFinite(v))
+    return ammesso ? T('comando.errore', { motivo: t(T.lingua, m!.k, m!.p) }) : T('comando.erroreGenerico')
+  } catch {
+    return FRASE_ERRORE_RIPIEGO
+  }
+}
+
 async function comandoInErrore($: Eng, err: unknown) {
   let T = traduttore('en')
   try {
@@ -2447,8 +2466,7 @@ async function comandoInErrore($: Eng, err: unknown) {
   } catch {
     /* English */
   }
-  const motivo = (testo(T.lingua, msgDi(err)) || 'unknown error').replace(/\s+/g, ' ').slice(0, 200)
-  const frase = T('comando.errore', { motivo })
+  const frase = fraseErrore(T, err)
   for (const passo of [
     () => update($, impostazioni, (s): StatoImpostazioni => ({ ...s, sezione: 'doctor', errore: undefined })),
     () => update($, vistaOra, (): Vista => 'impostazioni'),
@@ -2595,7 +2613,7 @@ export const register: Register = (on, options) => {
     })
     await carica($).catch(() => [] as Azione[])
     await leggiLingua($).catch(() => {})
-    void $.ui.open({ id: PANE, title: TITOLO })
+    void $.ui.open({ id: PANE, title: TITOLO }).catch(() => {})
     void chiediSenzaProgetto($).catch(() => {})
     void leggiSessioni($).catch(() => {})
     void leggiProposte($)
@@ -2683,7 +2701,7 @@ export const register: Register = (on, options) => {
         const scritte = JSON.parse(esito.testo) as Azione[]
         await update($, azioni, l => [...l.filter(x => !scritte.some(y => y.id === x.id)), ...scritte])
       } else for (const p of passi) await salva($, p, { nuova: true })
-      void $.ui.open({ id: PANE, title: TITOLO })
+      void $.ui.open({ id: PANE, title: TITOLO }).catch(() => {})
       return { result: `Chain ${idCatena}: ${passi.length} chips in the panel (${passi.map(p => `${p.id} ${p.catena!.ruolo} v${p.catena!.giro}`).join(', ')}). ` +
         'Each starts with the owner\'s approval, after the previous step delivers its artefact.' }
     }
@@ -2710,7 +2728,7 @@ export const register: Register = (on, options) => {
       // La dirigente fissa i suoi vincoli alla nascita (vincoliDirigente); si rialzano a ogni figlia e a ogni suo avvio.
       a = await salva($, ruolo !== 'dirigente' ? scelta : { ...scelta, vincoliPropri: vincoliDirigente(scelta, r) }, { nuova: true })
     }
-    void $.ui.open({ id: PANE, title: TITOLO })
+    void $.ui.open({ id: PANE, title: TITOLO }).catch(() => {})
     const blocchi = violazioni(a, r, [...lista, a])
     // I valori effettivi dopo il bilanciamento (la destinazione no: la sceglie il committente o il consigliere).
     const causa = causaSensibile(a, r)
@@ -2767,7 +2785,7 @@ export const register: Register = (on, options) => {
     if (esito.codice !== 0) return { deny: `proponi_pesi: ${chiaveOTesto('en', esito.testo) || 'proposal not recorded'}` }
     const { id, scadute } = JSON.parse(esito.testo) as { id: string; scadute: string[] }
     await leggiProposte($)
-    void $.ui.open({ id: PANE, title: TITOLO })
+    void $.ui.open({ id: PANE, title: TITOLO }).catch(() => {})
     return { result: TESTI_PESI.registrata(id, scadute) }
   })
 
@@ -2784,7 +2802,7 @@ export const register: Register = (on, options) => {
     const esito = await helper($, ['impostazioni-proponi', await fileConfig($)], JSON.stringify({ repo: chi.repo, proponente: { id: chi.io, titolo: chi.titolo ?? '' }, proposta: forma.proposta }))
     if (esito.codice !== 0) return { deny: `proponi_impostazioni: ${esito.testo.slice(0, 300) || 'proposal not recorded'}` }
     await prendiImpostazioni($).catch(() => {})
-    void $.ui.open({ id: PANE, title: TITOLO })
+    void $.ui.open({ id: PANE, title: TITOLO }).catch(() => {})
     return { result: 'Settings proposal recorded: it fills the Settings draft in the panel. Nothing changes until the owner presses Apply; they can also discard it.' }
   })
 

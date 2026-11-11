@@ -82,7 +82,7 @@ import { applicaPatch, diversoDa, presetChi, TETTO_RISORSE } from '../hooks/bila
 import type { Consiglio } from '../hooks/logica'
 import { DiscoIt } from './disco-it'
 import { confrontaF9, controlliF9, fineF9 } from './f9'
-import { chiaveOTesto, colonne } from '../hooks/lingua'
+import { chiaveOTesto, colonne, t } from '../hooks/lingua'
 import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
 import { chiaveRiassunto } from '../hooks/board'
 import { GRIGIO, LIVELLO, STATO } from '../hooks/tema'
@@ -413,7 +413,7 @@ test('codex senza corsia, o routing senza la regola: bloccato', () => {
 // --- il pannello contro un engine finto --------------------------------------------------------------
 
 /** Engine finto: disco in memoria, helper (lock/CAS) e `gh` emulati, servizio di sessione scriptabile. */
-function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown; attesa?: (cmd: string) => Promise<void> | undefined; api?: (cmd: string, a: string[], stdin: string | undefined) => [number, string] | undefined; impostazioni?: (source?: string) => unknown } = {}) {
+function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown; attesa?: (cmd: string) => Promise<void> | undefined; api?: (cmd: string, a: string[], stdin: string | undefined) => [number, string] | undefined; impostazioni?: (source?: string) => unknown; apriRifiuta?: () => unknown } = {}) {
   // Come un disco vero: la data è quella della scrittura, al millisecondo; due scritture nello stesso istante la condividono.
   class Disco extends DiscoIt {
     mtime = new Map<string, number>()
@@ -665,7 +665,11 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
     const r = opz.modello?.(req)
     return { value: (r ?? { isAnswered: true, text: 'Riassunto d\'esempio.', usage: { input_tokens: 700, output_tokens: 20, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } }) as never }
   })
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', () => {
+    // RC 2.2.0, terzo giro: una prova può far rifiutare l'apertura con un valore qualunque.
+    if (opz.apriRifiuta) throw opz.apriRifiuta()
+    return { value: { isPlaced: true } }
+  })
   const inviati: string[] = []
   on('prompt.submit', (_, e) => (inviati.push((e as { text: string }).text), { text: (e as { text: string }).text }))
   const registrati: { name: string; description: string; inputSchema: unknown; isDeferred?: boolean }[] = []
@@ -4825,13 +4829,14 @@ test('RC 2.2.0: /chipmanager con i dati che non si leggono risponde col motivo, 
   Object.defineProperty(amb.elenchi, 'push', {
     configurable: true, writable: true,
     value: (x: string) => {
-      if (x.endsWith('/orch/azioni')) throw new Error('helper.mutexNonCreabile: pipe (EACCES)')
+      if (x.endsWith('/orch/azioni')) throw new Error('C:/Users/segreto/.claude token=sk-ant-SEGRETO')
       return Array.prototype.push.call(amb.elenchi, x)
     },
   })
   const r = await $.command.run({ command: 'chipmanager' } as never) as { text?: unknown }
   const testo = String(r.text)
-  expect([testo.startsWith('Non riesco a leggere i dati della mod: '), testo.split(': ')[1]!.split('. ')[0]!.trim().length > 0, testo.includes('/reload-plugins')]).toEqual([true, true, true])
+  // Terzo giro, punto 2: il testo di un'eccezione (percorsi privati, credenziali) non esce mai: frase generica.
+  expect([testo, testo.includes('segreto'), testo.includes('SEGRETO')]).toEqual([t('it', 'comando.erroreGenerico'), false, false])
   expect(amb.toast).toContain(testo)
   delete (amb.elenchi as { push?: unknown }).push
   const ui = await $.ui.mount({ ...PANE('desktop') })
@@ -4871,4 +4876,21 @@ test('RC 2.2.0, richiesta: l\'errore dei percorsi dei dati mostra «Correggi», 
   await finche(() => sposte.length === 1)
   expect(sposte[0]!.slice(2)).toEqual(['X:/dati/progetto', 'X:/casa/.claude/chipmanager/progetti/acme__progetto'])
   await ui.unmount()
+})
+
+test('RC 2.2.0, terzo giro, punto 2: un motivo noto e sicuro si dice localizzato (cartella dei dati non valida nel config)', async ($, on) => {
+  const amb = ambiente(on, { senzaDir: true })
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { cartella: 'relativa/non/valida' } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const r = await $.command.run({ command: 'chipmanager' } as never) as { text?: unknown }
+  expect(String(r.text)).toBe(t('it', 'comando.errore', { motivo: t('it', 'cfg.cartella') }))
+})
+
+test('RC 2.2.0, terzo giro, punto 3: se l\'apertura rifiuta con un valore strano (senza prototipo), /chipmanager risponde comunque', async ($, on) => {
+  ambiente(on, { apriRifiuta: () => Object.create(null) })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const r = await $.command.run({ command: 'chipmanager' } as never) as { text?: unknown }
+  expect([t('it', 'comando.erroreGenerico'), "Could not read the mod's data. Opened the doctor."]).toContain(String(r.text))
 })

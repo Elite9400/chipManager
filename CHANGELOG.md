@@ -56,8 +56,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   only a fixed token, and the helper opens that one file after checking it has no link on the way and stays inside the
   plugin folder. The address stays written under the button, for the terminal.
 - **`/chipmanager` never fails silently.** If the mod's data cannot be read (or anything else in the command fails), the
-  panel opens on the doctor anyway, the reason shows, and the command answers in the user's language, suggesting
-  `/reload-plugins` after an update.
+  panel opens on the doctor anyway, and the command answers in the user's language, suggesting `/reload-plugins` after
+  an update. It names only a short list of known, safe reasons; any other error gets a generic sentence (an exception's
+  text never leaves, as it may hold private paths), and the details stay with the doctor's own masked check.
 - **Chain deliveries are one write.** A step's artefact and its `consegnata` record are written together by the helper,
   with a compare-and-swap on the record version read by the panel: a late or concurrent delivery writes nothing, and an
   artefact a record has already delivered is never overwritten.

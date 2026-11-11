@@ -1109,6 +1109,7 @@ const es: Dizionario = {
   "comando.setup": "Configuración guiada de chipManager abierta.",
   "comando.ignoto": "Ignorado: {testo} (usa --setup o --doctor).",
   "comando.errore": "No se pudieron leer los datos de la mod: {motivo}. Abrí el doctor; si acabas de actualizar, ejecuta /reload-plugins.",
+  "comando.erroreGenerico": "No se pudieron leer los datos de la mod. Abrí el doctor; si acabas de actualizar, ejecuta /reload-plugins.",
   "doc.titolo": "Doctor",
   "doc.descrizione": "Comprueba ajustes, carpetas de datos, bloqueos, accesos y host del mod. No cambia nada hasta que confirmes un arreglo.",
   "doc.inCorso": "Comprobando…",
