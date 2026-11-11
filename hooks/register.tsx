@@ -891,10 +891,16 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
  * F13.6: il testo per uno scrittore non Claude, con bozza e feedback letti dagli artefatti della catena (testoScrittore).
  * Le regole (termini sensibili del progetto compresi) si rileggono adesso: prima della conferma e di nuovo prima dell'invio.
  */
-async function testoCatena($: Eng, a: Azione) {
+async function testoCatena($: Eng, a: Azione): Promise<{ testo: string } | { motivo: Msg }> {
   const rif = a.catena ? rifCatena(a.catena) : {}
   const leggi = async (f?: string) => (f && a.catena ? ((await $.fs.read(`${await cartella($)}/artefatti/${a.catena.id}/${f}`).catch(() => undefined)) as string | undefined) : undefined)
-  return testoScrittore(a, await leggiRegole($), await leggi(rif.bozza), await leggi(rif.feedback))
+  const bozza = await leggi(rif.bozza)
+  const feedback = await leggi(rif.feedback)
+  // Giro 6 di F13a: regole e termini del progetto riletti ADESSO (dopo gli artefatti, subito prima di comporre). Se non si
+  // leggono (I/O, lista malformata, espressione che non compila) il ripiego non ha i termini: il testo non si compone.
+  const r = await leggiRegole($)
+  if (!r.lette) return { motivo: msg('cat.regoleNonLette') }
+  return testoScrittore(a, r, bozza, feedback)
 }
 
 async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azione, confermato?: string) {

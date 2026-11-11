@@ -4387,3 +4387,105 @@ test('Revisione F13a, giro 5, punto 1: con una bozza sensibile il passo con scri
   expect(amb.azione().find(a => a.id === w2.id)).toMatchObject({ stato: 'proposta', esecutore: 'compatibile', provider: 'ollama' })
   await ui.unmount()
 })
+
+// --- Revisione F13a, giro 6: regole illeggibili alla composizione del testo di catena --------------------------------
+
+/**
+ * Una catena con scrittore esterno (Ollama o FreeLLMAPI) e la bozza v1 e il feedback già consegnati. `rompi` fa fallire le
+ * letture del config dal primo artefatto letto in poi (`causa`: I/O, lista dei termini malformata, espressione che non
+ * compila): così la sola lettura che fallisce è quella del compositore, come nel caso riprodotto.
+ */
+async function catenaEsterna($: Parameters<TestBody>[0], amb: ReturnType<typeof ambiente>, scrittore: { provider: string; modello: string }, extra: Record<string, unknown>) {
+  const CONFIG = 'X:/casa/.claude/chipmanager/config.json'
+  const cfg = (x: Record<string, unknown>) => JSON.stringify({ progetti: { 'acme/progetto': { fornitori: ['claude', 'codex', 'freellmapi'], freellmapi: { livello: 'R1' },
+    compatibili: { ollama: 'R1' }, modoLavoro: { pipeline: { scrittore } }, ...x } } })
+  amb.disco.set(CONFIG, cfg(extra))
+  const prima = new Set(amb.azione().map(a => a.id))
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Guida', brief: 'Scrivi la guida.', corsia: 'R1', catena: true } as never)
+  const passi = amb.azione().filter(a => !prima.has(a.id)).sort((x, y) => x.ordine - y.ordine)
+  expect(passi.length).toBe(4)
+  const [w1, r1, w2] = passi as [Azione, Azione, Azione]
+  const c = w1.catena!.id
+  amb.disco.set(`X:/orch/azioni/artefatti/${c}/1-scrittore.md`, `<!-- chipManager artefatto catena=${c} giro=1 ruolo=scrittore rif=- -->\nIl bosco di cedro e i suoi sentieri.`)
+  amb.disco.set(`X:/orch/azioni/artefatti/${c}/1-revisore.md`, `<!-- chipManager artefatto catena=${c} giro=1 ruolo=revisore rif=1-scrittore.md -->\nAccorcia.`)
+  for (const [x, f] of [[w1, '1-scrittore.md'], [r1, '1-revisore.md']] as const)
+    amb.disco.set(`X:/orch/azioni/${x.id}.json`, JSON.stringify({ ...x, versione: x.versione + 1, stato: 'consegnata', artefatto: f }))
+  let armato = false
+  let rotto: string | undefined
+  let buono = ''
+  // Il finto host registra ogni lettura in `letti` subito prima di leggere: lì si rompe il config al momento giusto.
+  const letti = amb.letti as string[]
+  // `quando`: al primo artefatto letto, o alla seconda lettura del config dopo il tasto (la prima è il controllo delle
+  // regole di `avvia`, la seconda quella del compositore, in qualunque ordine legga gli artefatti).
+  const rompi = (causa: 'io' | 'lista' | 'regex', quando: 'artefatto' | 'secondaLettura' = 'artefatto') => {
+    armato = true
+    let letture = 0
+    buono = amb.disco.get(CONFIG)!
+    // Le primitive sono congelate nel kit: il metodo proprio si definisce, non si assegna.
+    Object.defineProperty(letti, 'push', { configurable: true, writable: true, value: (...xs: string[]) => {
+      for (const x of xs) {
+        if (armato && x === CONFIG) letture += 1
+        if (armato && (quando === 'artefatto' ? x.includes('/artefatti/') : letture === 2)) {
+          armato = false
+          rotto = causa
+          if (causa !== 'io') amb.disco.set(CONFIG, cfg(causa === 'lista' ? { sensibili: 'cedro' } : { sensibili: ['(cedro'] }))
+        }
+        if (rotto === 'io' && x === CONFIG) throw new Error('EIO')
+      }
+      return Array.prototype.push.apply(letti, xs)
+    } })
+  }
+  const ripara = () => {
+    armato = false
+    rotto = undefined
+    delete (letti as unknown as { push?: unknown }).push
+    if (buono) amb.disco.set(CONFIG, buono)
+  }
+  return { w2, rompi, ripara, metti: (x: Record<string, unknown>) => amb.disco.set(CONFIG, cfg(x)) }
+}
+const inviati = (amb: ReturnType<typeof ambiente>) => amb.processi.filter(p => p.argv[2] === 'completa').length
+const SCRITTORI = [{ provider: 'ollama', modello: 'qwen3:8b' }, { provider: 'freellmapi', modello: 'testo-compatto' }]
+
+test('Revisione F13a, giro 6: regole illeggibili alla composizione PRIMA della conferma: niente conferma, nulla inviato (tre cause, due scrittori)', { options: { freellmapiKey: 'fl-prova-0123456789' } }, async ($, on) => {
+  const amb = ambiente(on)
+  configuraFree(amb)
+  mock.clock(on)
+  const viste: string[] = []
+  conferme(on, testo => ((viste.push(testo)), 'Invia testo'))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  for (const scrittore of SCRITTORI)
+    for (const causa of ['io', 'lista', 'regex'] as const) {
+      const k = await catenaEsterna($, amb, scrittore, { sensibili: ['cedro'] })
+      k.rompi(causa, 'secondaLettura')
+      await ui.press({ key: `avvia-${k.w2.id}` }).catch(() => {})
+      k.ripara()
+      expect([scrittore.provider, causa, viste.length, inviati(amb), amb.azione().find(a => a.id === k.w2.id)!.stato]).toEqual([scrittore.provider, causa, 0, 0, 'proposta'])
+    }
+  await ui.unmount()
+})
+
+test('Revisione F13a, giro 6: termine aggiunto dopo la conferma e ultima lettura fallita: il passo si ferma prima dell\'invio (tre cause, due scrittori)', { options: { freellmapiKey: 'fl-prova-0123456789' } }, async ($, on) => {
+  const amb = ambiente(on)
+  configuraFree(amb)
+  mock.clock(on)
+  let dopoConferma: () => void = () => {}
+  conferme(on, () => (dopoConferma(), 'Invia testo'))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  for (const scrittore of SCRITTORI)
+    for (const causa of ['io', 'lista', 'regex'] as const) {
+      const k = await catenaEsterna($, amb, scrittore, {})
+      // Confermato il testo, il progetto aggiunge «cedro»; l'ultima lettura, quella del compositore, fallisce.
+      dopoConferma = () => {
+        k.metti({ sensibili: ['cedro'] })
+        k.rompi(causa)
+      }
+      await ui.press({ key: `avvia-${k.w2.id}` }).catch(() => {})
+      k.ripara()
+      dopoConferma = () => {}
+      const a = amb.azione().find(x => x.id === k.w2.id)!
+      expect([scrittore.provider, causa, inviati(amb), a.stato, a.erroreCodice]).toEqual([scrittore.provider, causa, 0, 'fallita', 'cat.regoleNonLette'])
+    }
+  await ui.unmount()
+})

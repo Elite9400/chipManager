@@ -1272,6 +1272,7 @@ const en = {
   "v.tettoNonValido": "{campo} in the configuration is not a valid amount: no chip of this group starts on API credits until it is fixed",
   "dir.tetto": "cap ${tetto}, soft: the last chip can go over it by what it spends in its turn",
   "cat.sensibile": "the text for the writer is sensitive ({termine}): it is not sent to an external writer and the step stops",
+  "cat.regoleNonLette": "the project's rules or sensitive terms cannot be read right now: the text is not sent to the writer and the step stops",
   // ‹fine›
 } satisfies Record<string, Voce>
 

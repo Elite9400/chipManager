@@ -1270,6 +1270,7 @@ const pt: Dizionario = {
   "v.tettoNonValido": "{campo} na configuração não é um valor válido: nenhuma chip deste grupo arranca com créditos API até ser corrigido",
   "dir.tetto": "teto ${tetto}, flexível: a última chip pode ultrapassá-lo no que gastar na sua vez",
   "cat.sensibile": "o texto para o escritor é sensível ({termine}): não vai para um escritor externo e o passo para",
+  "cat.regoleNonLette": "as regras ou os termos sensíveis do projeto não se leem agora: o texto não vai para o escritor e o passo para",
   // ‹fine›
 }
 

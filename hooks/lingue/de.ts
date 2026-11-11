@@ -1270,6 +1270,7 @@ const de: Dizionario = {
   "v.tettoNonValido": "{campo} in der Konfiguration ist kein gültiger Betrag: kein Chip dieser Gruppe startet mit API-Guthaben, bis es korrigiert ist",
   "dir.tetto": "Grenze ${tetto}, weich: der letzte Chip kann sie um das überschreiten, was er in seinem Zug ausgibt",
   "cat.sensibile": "der Text für den Schreiber ist sensibel ({termine}): er geht an keinen externen Schreiber, und der Schritt stoppt",
+  "cat.regoleNonLette": "die Regeln oder sensiblen Begriffe des Projekts sind gerade nicht lesbar: der Text geht nicht an den Schreiber, und der Schritt stoppt",
   // ‹fine›
 }
 
