@@ -148,16 +148,19 @@ const riga = t => {
 const MAX_RIGA = 1000
 /**
  * RC 2.2.0, review B4: what a line must never hide. Every control (Cc), format (Cf, zero-width and bidirectional marks,
- * the BOM among them), line and paragraph separator, plus the Arabic letter mark, the Mongolian vowel separator, the
- * invisible operators and the Hangul filler: shown as `\u{..}`.
+ * the BOM among them), line and paragraph separator, plus the Arabic letter mark, the Mongolian vowel separator and
+ * free variation selectors (U+180B-180F), the invisible operators, the Hangul fillers (U+115F, U+1160, U+3164, U+FFA0),
+ * the blank Braille pattern and every variation selector (U+FE00-FE0F, U+E0100-E01EF; final audit, point 4): shown as
+ * `\u{..}`.
  */
-const INVISIBILI = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u061c\u180e\u2060-\u2064\u3164\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/gu
+const INVISIBILI = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Variation_Selector}\u061c\u115f\u1160\u180b-\u180f\u2060-\u2064\u2800\u3164\uffa0\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/gu
 /** Keys a hooks file may carry next to its events. */
 const CHIAVI_HOOK = new Set(['hooks', 'modules', 'description', '_comment', 'version'])
 
 /**
  * Servers a plugin starts by itself (MCP: `{ mcpServers: {...} }` or the map itself; LSP: the map itself), one line each
- * with the command and its arguments, or the address of a remote MCP server. A server it cannot read is a refusal.
+ * with the whole entry serialized: `env`, `headers`, `cwd` and `type` change what runs or where it sends (final audit,
+ * point 1). A server with neither a command nor (MCP) an address, or arguments that are not text, is a refusal.
  */
 function righeServer(conf, fonte, tipo) {
   const mappa = tipo === 'MCP' && conf && typeof conf === 'object' && Object.hasOwn(conf, 'mcpServers') ? conf.mcpServers : conf
@@ -166,20 +169,19 @@ function righeServer(conf, fonte, tipo) {
     if (!s || typeof s !== 'object' || Array.isArray(s)) throw new Rifiuto('skill.err.hook')
     const argomenti = s.args ?? []
     if (!Array.isArray(argomenti) || !argomenti.every(a => typeof a === 'string')) throw new Rifiuto('skill.err.hook')
-    const cosa = typeof s.command === 'string' ? [s.command, ...argomenti].join(' ') : tipo === 'MCP' && typeof s.url === 'string' ? s.url : null
-    if (cosa === null) throw new Rifiuto('skill.err.hook')
-    return riga(`${fonte} · ${tipo} ${nome}: ${cosa}`)
+    if (typeof s.command !== 'string' && !(tipo === 'MCP' && typeof s.url === 'string')) throw new Rifiuto('skill.err.hook')
+    return riga(`${fonte} · ${tipo} ${nome}: ${JSON.stringify(s)}`)
   })
 }
 
-/** Background monitors: a list or a map of entries, each with its command. Anything else is a refusal. */
+/** Background monitors: a list or a map of entries, each with its command, shown whole (its `env` too). Anything else is a refusal. */
 function righeMonitor(conf, fonte) {
   const elenco = Array.isArray(conf) ? conf.map((m, i) => [m?.name ?? String(i), m])
     : conf && typeof conf === 'object' ? Object.entries(Object.hasOwn(conf, 'monitors') ? conf.monitors ?? {} : conf) : null
   if (!elenco) throw new Rifiuto('skill.err.hook')
   return elenco.map(([nome, m]) => {
     if (!m || typeof m !== 'object' || typeof m.command !== 'string') throw new Rifiuto('skill.err.hook')
-    return riga(`${fonte} · monitor ${nome}: ${m.command}`)
+    return riga(`${fonte} · monitor ${nome}: ${JSON.stringify(m)}`)
   })
 }
 
@@ -195,15 +197,45 @@ const CAMPI_INERTI = new Set(['$schema', 'name', 'displayName', 'version', 'desc
  * the closing `---`; [] when the file does not start with one. What is not certainly delimited (an opening without a
  * closing, a `---` after a BOM or blank lines) is a refusal: YAML is never parsed, the lines are shown as they are.
  */
-function frontmatter(t) {
+function delimita(t) {
+  const righe = t.split('\n').map(r => r.replace(/\r$/, ''))
   if (!/^---[ \t]*\r?(\n|$)/.test(t)) {
     if (/^(\ufeff|\s)*---/.test(t)) throw new Rifiuto('skill.err.hook')
-    return []
+    return { fm: [], corpo: 0, righe }
   }
-  const righe = t.split('\n').map(r => r.replace(/\r$/, ''))
   const fine = righe.findIndex((r, i) => i > 0 && /^---[ \t]*$/.test(r))
   if (fine < 0) throw new Rifiuto('skill.err.hook')
-  return righe.slice(1, fine).filter(r => r.trim())
+  return { fm: righe.slice(1, fine).filter(r => r.trim()), corpo: fine + 1, righe }
+}
+const frontmatter = t => delimita(t).fm
+/**
+ * Final audit, point 2: the dynamic context of a skill or command body, run by the host when the skill is invoked (by the
+ * model too): every line with an inline `` !`cmd` `` and every ```` ```! ```` (or `~~~!`) block whole, fences included,
+ * as [line number from 1, text]. An inline one with no closing backtick on its line, or a block with no closing fence of
+ * the same character at least as long, cannot be delimited: a refusal.
+ */
+function contestoDinamico(righe, da) {
+  const out = []
+  for (let i = da; i < righe.length; i++) {
+    const apre = /^\s*(`{3,}|~{3,})\s*!/.exec(righe[i])
+    if (apre) {
+      const chiude = r => r.trim().length >= apre[1].length && [...r.trim()].every(c => c === apre[1][0])
+      let j = i + 1
+      while (j < righe.length && !chiude(righe[j])) j++
+      if (j >= righe.length) throw new Rifiuto('skill.err.hook')
+      for (let k = i; k <= j; k++) out.push([k + 1, righe[k]])
+      i = j
+      continue
+    }
+    let k = righe[i].indexOf('!`')
+    if (k < 0) continue
+    for (; k >= 0; k = righe[i].indexOf('!`', k)) {
+      k = righe[i].indexOf('`', k + 2)
+      if (k < 0) throw new Rifiuto('skill.err.hook')
+    }
+    out.push([i + 1, righe[i]])
+  }
+  return out
 }
 /** What runs on its own: the manifest field, the conventional file, and how one configuration reads. */
 const COMPONENTI = [
@@ -295,27 +327,38 @@ function hookDa(v, esiste, testo, voce, elenca = () => null) {
     grezzo(f)
     righe.push(riga(`${f} · on the Bash PATH`))
   }
-  const cartelle = (valori, predefinita, aggiunge) => {
+  // Final audit, point 3: a superset of what the host loads. The default folder is always read, declared paths too, and
+  // file names match in any case (`skill.md`, `.MD`).
+  const cartelle = (valori, predefinita) => {
     const dichiarate = valori.filter(x => x !== undefined).flatMap(x => (Array.isArray(x) ? x : [x]))
     if (!dichiarate.every(x => typeof x === 'string')) throw new Rifiuto('skill.err.hook')
-    const percorsi = dichiarate.map(x => dentro('', x))
-    return aggiunge || !percorsi.length ? [predefinita, ...percorsi] : percorsi
+    return [...new Set([predefinita, ...dichiarate.map(x => dentro('', x))])]
   }
   // RC 2.2.0, review B1 and B2: the root skill (`SKILL.md` at the plugin root) too, and every frontmatter whole.
   const visti = new Set()
   const fileSkill = [...(esiste('SKILL.md') ? ['SKILL.md'] : [])]
-  for (const [dir, nome] of [...cartelle([manifest?.skills, voce?.skills], 'skills', true).map(d => [d, /(^|\/)SKILL\.md$/]),
-    ...cartelle([manifest?.commands, voce?.commands], 'commands', false).map(d => [d, /\.md$/])])
+  for (const [dir, nome] of [...cartelle([manifest?.skills, voce?.skills], 'skills').map(d => [d, /(^|\/)skill\.md$/i]),
+    ...cartelle([manifest?.commands, voce?.commands], 'commands').map(d => [d, /\.md$/i])])
     for (const f of tutti(dir)) if (nome.test(f)) fileSkill.push(f)
   for (const f of fileSkill) {
     if (visti.has(f)) continue
     visti.add(f)
-    for (const r of frontmatter(grezzo(f))) righe.push(riga(`${f} · ${r}`))
+    const { fm, corpo, righe: linee } = delimita(grezzo(f))
+    for (const r of fm) righe.push(riga(`${f} · ${r}`))
+    for (const [n, r] of contestoDinamico(linee, corpo)) righe.push(riga(`${f}:${n} · ${r}`))
+  }
+  // Final audit, point 3: output styles, their frontmatter; one with `force-for-plugin` (any value) changes the prompt of
+  // every session, so its whole body is shown too.
+  for (const f of new Set(cartelle([manifest?.outputStyles, voce?.outputStyles], 'output-styles').flatMap(d => tutti(d).filter(x => /\.md$/i.test(x))))) {
+    const { fm, corpo, righe: linee } = delimita(grezzo(f))
+    for (const r of fm) righe.push(riga(`${f} · ${r}`))
+    if (fm.some(r => /^\s*force-for-plugin\s*:/i.test(r)))
+      for (let i = corpo; i < linee.length; i++) if (linee[i].trim()) righe.push(riga(`${f}:${i + 1} · ${linee[i]}`))
   }
   // RC 2.2.0, review B1: the agent `settings.agent` makes the main thread is shown whole (every non-empty line of its
   // file). It is found by file name, by its path under an agents folder (`a/b.md` = `a:b`) or by its frontmatter `name`;
   // an agent the plugin does not contain is a refusal.
-  const fileAgenti = cartelle([manifest?.agents, voce?.agents], 'agents', false).flatMap(d => tutti(d).filter(f => f.endsWith('.md')).map(f => [d, f]))
+  const fileAgenti = [...new Map(cartelle([manifest?.agents, voce?.agents], 'agents').flatMap(d => tutti(d).filter(f => /\.md$/i.test(f)).map(f => [f, d])))].map(([f, d]) => [d, f])
   for (const nomeAgente of agenti) {
     if (typeof nomeAgente !== 'string' || !nomeAgente.trim()) throw new Rifiuto('skill.err.hook')
     const scelti = fileAgenti.filter(([d, f]) => {

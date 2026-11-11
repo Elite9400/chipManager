@@ -18,7 +18,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   bidirectional marks, the BOM), line or paragraph separator, and the other invisible fillers show as `\u{..}`. The
   plugin's `settings.json` and manifest `settings` (with the whole file of the agent `settings.agent` selects), the
   files in `bin/` (on the Bash PATH), the root `SKILL.md` and the raw frontmatter of every skill and command are shown
-  too; a frontmatter that cannot be delimited, or a folder that cannot be listed, is a refusal.
+  too; a frontmatter that cannot be delimited, or a folder that cannot be listed, is a refusal. MCP and LSP servers and
+  monitors show their whole entry (`env`, `headers`, `cwd`, `type`), not only the command or address. The dynamic
+  context of skills and commands (every `` !`cmd` `` line and ```` ```! ```` block, which the host runs when the skill is
+  invoked) is shown with file and line number; one that cannot be delimited is a refusal. Skill and command files match
+  in any letter case, default folders are read even when the manifest declares its own, and output styles are shown too
+  (a `force-for-plugin` style whole). Hangul fillers, the blank Braille pattern and variation selectors show as `\u{..}`.
 - **The approval fingerprints the whole plugin.** The fingerprint is the sha256 of the entire plugin tree on disk, raw
   bytes of every file and, on POSIX, its owner's executable bit (as git reads it) (`.git` left out), computed from a checkout of the approved
   revision and from the installed copy alike; a link anywhere is a refusal. The host's marks (`.in_use`, `.orphaned_at`)
