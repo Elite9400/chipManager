@@ -1268,6 +1268,8 @@ const de: Dizionario = {
   "v.catenaCloud": "ein Kettenschritt läuft nicht in der Cloud: die Artefakte sind lokale Dateien, die die Cloud nicht liest",
   "v.dirigenteModello": "der Leitungs-Chip läuft auf {modello}, das dieses Projekt nicht erlaubt: wähle «Leitung auf Opus» oder erlaube es",
   "cat.costiCatena": "Kosten der Kette: {costi}",
+  "v.tettoNonValido": "{campo} in der Konfiguration ist kein gültiger Betrag: kein Chip dieser Gruppe startet mit API-Guthaben, bis es korrigiert ist",
+  "dir.tetto": "Grenze ${tetto}, weich: der letzte Chip kann sie um das überschreiten, was er in seinem Zug ausgibt",
   // ‹fine›
 }
 

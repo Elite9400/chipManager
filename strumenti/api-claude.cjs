@@ -195,45 +195,68 @@ const voceValida = v => !!v && typeof v === 'object' && !Array.isArray(v) && typ
   typeof v.tetto === 'number' && Number.isFinite(v.tetto) && v.tetto > 0 &&
   (v.stato === 'prenotato' ? v.costo === undefined : v.stato === 'contato' && (v.costo === null || (Number.isFinite(v.costo) && v.costo >= 0))) &&
   // Revisione F13a, rilievo 3: i gruppi (catena, albero della dirigente) a cui la voce conta.
-  (v.gruppi === undefined || (Array.isArray(v.gruppi) && v.gruppi.length <= 2 && v.gruppi.every(g => typeof g === 'string' && GRUPPO_RE.test(g))))
+  (v.gruppi === undefined || (Array.isArray(v.gruppi) && v.gruppi.length <= 2 && v.gruppi.every(g => typeof g === 'string' && GRUPPO_RE.test(g)))) &&
+  // Giro 2: la cartella delle azioni (per riconoscere un mancato avvio) e il costo riportato da un esito non pulito.
+  (v.dati === undefined || (typeof v.dati === 'string' && path.isAbsolute(v.dati) && v.dati.length <= 1000)) &&
+  (v.riportato === undefined || (typeof v.riportato === 'number' && Number.isFinite(v.riportato) && v.riportato >= 0))
 const GRUPPO_RE = /^(catena:c-[a-z0-9]{6,20}|dirigente:a-[a-z0-9]{6,20})$/
 /** Quanto un gruppo ha già impegnato in tutti i mesi: contato = costo stimato (ignoto = tetto intero), prenotato = tetto. */
+// Revisione F13a, giro 2, punto 3 (tetto morbido): a consuntivo conta sempre il più alto fra costo riportato e
+// prenotazione; un costo ignoto conta la prenotazione intera. `--max-budget-usd` si può superare: il gruppo lo assorbe.
 const spesoNelGruppo = (voci, chiave) =>
-  Object.values(voci).filter(v => v.gruppi?.includes(chiave)).reduce((n, v) => n + (v.stato === 'contato' ? (v.costo ?? v.tetto) : v.tetto), 0)
+  Object.values(voci).filter(v => v.gruppi?.includes(chiave)).reduce((n, v) => n + Math.max(v.tetto, v.costo ?? 0, v.riportato ?? 0), 0)
 
 /** Spesa del mese (di un progetto, se dato): contato = costo stimato (ignoto = tetto intero), prenotato = tetto intero. */
 const spesoNelMese = (voci, mese, progetto) =>
   Object.values(voci).filter(v => v.mese === mese && (progetto === undefined || v.progetto === progetto))
-    .reduce((n, v) => n + (v.stato === 'contato' ? (v.costo ?? v.tetto) : v.tetto), 0)
+    // Giro 2, punto 3: un esito non pulito conta il tetto, o il costo riportato se più alto (mai meno di quanto speso).
+    .reduce((n, v) => n + (v.stato === 'contato' ? (v.costo ?? Math.max(v.tetto, v.riportato ?? 0)) : v.tetto), 0)
 
 /**
  * Prenota il tetto del tentativo (idempotente): deve stare nel residuo del mese dell'account e, se c'è, in quello del
  * progetto. Falso se uno dei due non basta. Da chiamare sotto il mutex del lock.
  */
-function prenotaSpesa(dm, tentativo, mese, tetto, budget, progetto, limiteProgetto, gruppi = []) {
+function prenotaSpesa(dm, tentativo, mese, tetto, budget, progetto, limiteProgetto, gruppi = [], dati) {
   if (typeof progetto !== 'string' || !progetto) throw new Error('progetto mancante')
   const s = leggiSpesa(dm)
   if (s.voci[tentativo]) return true
   if (spesoNelMese(s.voci, mese) + tetto > budget + 1e-9) return false
   if (limiteProgetto !== undefined && spesoNelMese(s.voci, mese, progetto) + tetto > limiteProgetto + 1e-9) return false
-  s.voci[tentativo] = { progetto, mese, tetto, stato: 'prenotato', ...(gruppi.length && { gruppi }) }
+  s.voci[tentativo] = { progetto, mese, tetto, stato: 'prenotato', ...(gruppi.length && { gruppi }), ...(dati && { dati }) }
   fs.mkdirSync(dm, { recursive: true })
   d.scriviDati(fileSpesa(dm), JSON.stringify(s))
   return true
 }
 
 /** La prenotazione diventa il costo stimato (null = ignoto, conta il tetto), senza prendere il mutex (chi chiama lo tiene). */
-function contaSpesaQui(dm, tentativo, costo) {
+function contaSpesaQui(dm, tentativo, costo, riportato) {
   const s = leggiSpesa(dm)
   const v = s.voci[tentativo]
   if (!v || v.stato === 'contato') return
-  s.voci[tentativo] = { ...v, stato: 'contato', costo: typeof costo === 'number' && Number.isFinite(costo) && costo >= 0 ? costo : null }
+  const numero = x => typeof x === 'number' && Number.isFinite(x) && x >= 0
+  s.voci[tentativo] = { ...v, stato: 'contato', costo: numero(costo) ? costo : null, ...(numero(riportato) && { riportato }) }
   d.scriviDati(fileSpesa(dm), JSON.stringify(s))
 }
 
+/**
+ * Revisione F13a, giro 2, punto 4: con il lock libero nessuna esecuzione è attiva, quindi una voce ancora `prenotato` è di
+ * un processo chiuso fra la prenotazione e il lock. Senza il record d'avvio è un mancato avvio e si libera (costo 0); col
+ * record la spesa è incerta e conta per intero. Una voce senza cartella (registri vecchi) resta com'è. Sotto il mutex.
+ */
+function recuperaPrenotazioni(dm) {
+  const s = leggiSpesa(dm)
+  let cambiato = false
+  for (const [t, v] of Object.entries(s.voci)) {
+    if (v.stato !== 'prenotato' || !v.dati) continue
+    s.voci[t] = { ...v, stato: 'contato', costo: fs.existsSync(d.fileEsecuzione(v.dati, t)) ? null : 0 }
+    cambiato = true
+  }
+  if (cambiato) d.scriviDati(fileSpesa(dm), JSON.stringify(s))
+}
+
 /** Come `contaSpesaQui`, sotto lo stesso mutex del lock che prenota. Una seconda contabilizzazione non cambia nulla. */
-async function contaSpesa(dm, tentativo, costo, deps = {}) {
-  const r = await d.conMutex(mutexApi(deps), 30_000, () => contaSpesaQui(dm, tentativo, costo))
+async function contaSpesa(dm, tentativo, costo, riportato, deps = {}) {
+  const r = await d.conMutex(mutexApi(deps), 30_000, () => contaSpesaQui(dm, tentativo, costo, riportato))
   if (r.occupato) throw new Error('mutex della spesa occupato')
 }
 
@@ -260,12 +283,16 @@ function regoleApi(dir, dm, input) {
     const progetti = c.progetti ?? {}
     if (!progetti || typeof progetti !== 'object' || Array.isArray(progetti)) throw new Error('config')
     efficaci = regole.regoleEfficaci(c.account, progetti[input.repo])
+    // Revisione F13a, giro 2, punto 1: i tetti si controllano sulle sorgenti grezze, account e progetto.
+    const grezzo = sezione => regole.tettoGrezzoNonValido(c.account?.modoLavoro, sezione) ?? regole.tettoGrezzoNonValido(progetti[input.repo]?.modoLavoro, sezione)
+    efficaci = { ...efficaci, tettiNonValidi: { catena: grezzo('pipeline'), dirigente: grezzo('dirigente') } }
   } catch {
     return [5, JSON.stringify({ config: 'non valido' })]
   }
   if (!efficaci.apiClaude) return [5, JSON.stringify({ spenta: true })]
   // Revisione F13a, rilievo 3: i tetti della catena e della dirigente, anche questi riletti dal config.
-  return { ...efficaci.apiClaude, tettoCatena: efficaci.modoLavoro.pipeline.tettoUsd, tettoDirigente: efficaci.modoLavoro.dirigente.tettoUsd }
+  return { ...efficaci.apiClaude, tettoCatena: efficaci.modoLavoro.pipeline.tettoUsd, tettoDirigente: efficaci.modoLavoro.dirigente.tettoUsd,
+    tettiNonValidi: efficaci.tettiNonValidi }
 }
 
 // --- lock della macchina (§5, §8, §10-13) --------------------------------------------------------------------
@@ -524,6 +551,12 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
       if (!stato.libero) return [3, JSON.stringify({ motivo: stato.motivo })]
       // Lock libero: nessuna esecuzione attiva, quindi ogni file-chiave rimasto è di un crash e si cancella.
       fs.rmSync(dirChiavi(dm), { recursive: true, force: true })
+      // Revisione F13a, giro 2, punto 4: e ogni prenotazione rimasta aperta è di un processo chiuso fra prenotazione e lock.
+      try {
+        recuperaPrenotazioni(dm)
+      } catch {
+        return [5, JSON.stringify({ registro: 'non valido' })]
+      }
       const blocchi = blocchiImpostazioni(deps.fonti ?? fontiImpostazioni(input.root), deps.env ?? process.env)
       if (blocchi.length) return [6, JSON.stringify({ fonti: blocchi })]
       const api = regoleApi(dir, dm, input)
@@ -531,15 +564,19 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
       // Revisione F13a, rilievo 3: una chip di catena o dell'albero di una dirigente impegna al più il residuo del suo
       // gruppo (tetto del config meno quanto già prenotato o contato), sotto questo mutex: il processo riceve quel limite
       // come `--max-budget-usd` e il consuntivo libera la differenza. I gruppi vengono dal record, i tetti dal config.
+      // Revisione F13a, giro 2, punto 2: l'appartenenza al gruppo si registra SEMPRE, tetto o no: un tetto messo dopo conta
+      // tutta la spesa già fatta. Punto 1: un tetto scritto male nel config ferma la chip del gruppo, col campo.
       const gruppi = [
-        ...(a.catena && typeof a.catena.id === 'string' && api.tettoCatena !== undefined ? [{ chiave: `catena:${a.catena.id}`, tetto: api.tettoCatena }] : []),
-        ...((a.padre || a.ruolo === 'dirigente') && api.tettoDirigente !== undefined ? [{ chiave: `dirigente:${a.padre ?? id}`, tetto: api.tettoDirigente }] : []),
+        ...(a.catena && typeof a.catena.id === 'string' ? [{ chiave: `catena:${a.catena.id}`, tetto: api.tettoCatena, malformato: api.tettiNonValidi?.catena }] : []),
+        ...(a.padre || a.ruolo === 'dirigente' ? [{ chiave: `dirigente:${a.padre ?? id}`, tetto: api.tettoDirigente, malformato: api.tettiNonValidi?.dirigente }] : []),
       ]
       if (gruppi.some(g => !GRUPPO_RE.test(g.chiave))) return [2, '']
+      const malformato = gruppi.find(g => g.malformato)
+      if (malformato) return [5, JSON.stringify({ tettoNonValido: malformato.malformato })]
       let tetto = api.tetto
       try {
         const voci = leggiSpesa(dm).voci
-        for (const g of gruppi) {
+        for (const g of gruppi.filter(x => x.tetto !== undefined)) {
           const speso = spesoNelGruppo(voci, g.chiave)
           // Al centesimo per difetto, con margine per la virgola mobile (1 - 0,9 non è 0,1 esatto).
           const residuo = Math.floor((g.tetto - speso) * 100 + 1e-6) / 100
@@ -553,7 +590,7 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
       input = { ...input, tetto, budget: api.budgetUsd }
       let prenotata
       try {
-        prenotata = prenotaSpesa(dm, tentativo, input.mese, tetto, api.budgetUsd, input.repo, api.limiteProgettoUsd, gruppi.map(g => g.chiave))
+        prenotata = prenotaSpesa(dm, tentativo, input.mese, tetto, api.budgetUsd, input.repo, api.limiteProgettoUsd, gruppi.map(g => g.chiave), path.resolve(dir))
       } catch {
         return [5, JSON.stringify({ registro: 'non valido' })]
       }
@@ -710,7 +747,8 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
       // Un JSON con is_error non è una consegna: finita con errore, il lavoro fatto non si sa (num_turns mancante = ignoto).
       else if (esito.errore) scrivi({ stato: 'avviata', ramo, incerto: true, costo: null, ...riportato, ...(esito.turni !== undefined && { turni: esito.turni }), errore: 'esecuzione API terminata con errore: controlla il worktree prima di chiudere', ...adv, ...stderr })
       else scrivi({ stato: 'consegnata', ramo, costo: esito.costo, turni: esito.turni, errore: codice !== 0 ? 'esecuzione API terminata con errore: controlla il worktree prima di chiudere' : undefined, ...adv, ...stderr })
-      await contaSpesa(dm, tentativo, esito && !esito.errore && !rifiutato ? esito.costo : null, deps)
+      // Giro 2, punto 3: anche quando l'esito non è pulito il costo riportato resta, e conta se supera la prenotazione.
+      await contaSpesa(dm, tentativo, esito && !esito.errore && !rifiutato ? esito.costo : null, esito?.costo ?? undefined, deps)
     } catch (e) {
       if (!partito) {
         scrivi({ stato: 'fallita', ramo: fuori.ramo,
@@ -721,7 +759,7 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
         // prossima verifica ritenta la cancellazione prima di liberarlo.
         if (cancellaChiave(dm, tentativo, deps)) fs.rmSync(fileLock(dm), { force: true })
         else scriviLock(dm, { ...rec, uscita: { codice: null, fine: new Date().toISOString() }, chiaveCancellata: false })
-        await contaSpesa(dm, tentativo, 0, deps).catch(() => {})
+        await contaSpesa(dm, tentativo, 0, undefined, deps).catch(() => {})
       } else scrivi({ stato: 'avviata', ramo: fuori.ramo, incerto: true, costo: null, errore: 'esito API incerto: controlla il processo e il worktree' })
     }
   })

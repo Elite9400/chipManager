@@ -566,11 +566,15 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const perRuolo = a.catena && T('cat.costiCatena', { costi: (['scrittore', 'revisore', 'applicatore'] as const)
       .flatMap(r => (passi.some(x => x.catena!.ruolo === r) ? [`${T(RUOLO_CATENA[r])} ${testoCosti(passi.filter(x => x.catena!.ruolo === r))}`] : [])).join(' · ') })
     const figlia = a.padre && T('dir.figlia', { titolo: tutte.find(x => x.id === a.padre)?.titolo ?? a.padre })
-    if (catena || figlia) return <Text key={`figlia-${a.id}`} size="caption" dimColor wrap="wrap">{[catena, perRuolo, figlia].filter(Boolean).join(' · ')}</Text>
+    // Giro 2, punto 3c: il tetto è morbido, e lo si dice dove c'è.
+    const tettoCatena = a.catena && regoleOra.risorse.modoLavoro.pipeline.tettoUsd
+    const morbido = tettoCatena !== undefined && tettoCatena !== 0 && T('dir.tetto', { tetto: T.numero(tettoCatena as number, 2) })
+    if (catena || figlia) return <Text key={`figlia-${a.id}`} size="caption" dimColor wrap="wrap">{[catena, perRuolo, morbido, figlia].filter(Boolean).join(' · ')}</Text>
     if (a.ruolo !== 'dirigente') return null
     const figlie = tutte.filter(x => x.padre === a.id)
     const parti = [T('dir.riga', { n: figlie.length, max: d.maxFigli, r: a.ripiani ?? 0, maxR: d.maxRipiani })]
     if (figlie.length) parti.push(T('dir.costo', { costi: testoCosti(figlie) }))
+    if (d.tettoUsd !== undefined) parti.push(T('dir.tetto', { tetto: T.numero(d.tettoUsd, 2) }))
     if (/fable/.test(modelloDi(a, regoleOra))) parti.push(T('dir.fable'))
     return <Text key={`dirigente-${a.id}`} size="caption" dimColor wrap="wrap">{parti.join(' · ')}</Text>
   }

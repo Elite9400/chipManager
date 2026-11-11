@@ -984,7 +984,7 @@ async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: 
     try {
       return JSON.parse(esito.testo || '{}') as { motivo?: string; fonti?: string[]; speso?: number; budget?: number; tetto?: number; registro?: string
         registroSviluppo?: string; spenta?: boolean; config?: string; spesoProgetto?: number; limiteProgetto?: number; percorso?: string
-        gruppo?: string; tettoGruppo?: number }
+        gruppo?: string; tettoGruppo?: number; tettoNonValido?: string }
     } catch {
       return {}
     }
@@ -993,6 +993,7 @@ async function avviaApi($: Eng, options: Record<string, unknown>, a: Azione, r: 
   if (esito.codice === 5 && dettaglio.registro) return fallisce(msg('err.apiRegistro'))
   if (esito.codice === 5 && dettaglio.registroSviluppo) return fallisce(msg('err.apiRegistroSviluppo', { cartella: String(dettaglio.registroSviluppo).slice(0, 300) }))
   if (esito.codice === 5 && dettaglio.spenta) return fallisce(msg('v.apiBudget'))
+  if (esito.codice === 5 && dettaglio.tettoNonValido) return fallisce(msg('v.tettoNonValido', { campo: String(dettaglio.tettoNonValido).slice(0, 60) }))
   if (esito.codice === 5 && dettaglio.gruppo)
     return fallisce(msg(dettaglio.gruppo === 'catena' ? 'v.catenaTetto' : 'v.dirigenteTetto', { tetto: Number(dettaglio.tettoGruppo ?? 0), speso: Number(dettaglio.speso ?? 0) }))
   if (esito.codice === 5 && dettaglio.config) return fallisce(msg('cfg.illeggibile'))

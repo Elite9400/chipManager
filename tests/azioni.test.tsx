@@ -4326,3 +4326,14 @@ test('Revisione F13a, rilievo 7: la scheda della dirigente mostra il costo delle
   expect([/stimato \$0,70/.test(t), /osservato \$0,40/.test(t), t.includes('1,10')]).toEqual([true, true, false])
   await ui.unmount()
 })
+
+test('Revisione F13a, giro 2, punto 3c: con un tetto la scheda della dirigente dice che è morbido', async ($, on) => {
+  const amb = ambienteF13(on, { tettoUsd: 2 })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Motore', brief: 'Riscrivi il pianificatore.', corsia: 'R3' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `mod-${amb.azione()[0]!.id}` })
+  expect(await ui.find({ type: 'Text', text: /tetto \$2,00, morbido: l'ultima chip può superarlo/ })).toBeDefined()
+  await ui.unmount()
+})

@@ -250,7 +250,9 @@ characters; when trimmed, `nota` says what was cut.
   worker model unless you set one, and each still needs the owner's start. Depth is one: a child is never a director.
 - **Waiting and re-planning.** The director reports `attesa-figli` with its `tentativo` and waits; `avviata` again is a
   re-plan. Limits: at most `maxFigli` children (default 8) and `maxRipiani` re-plans (default 2). Over a limit the call
-  is refused: stop and report to the owner.
+  is refused: stop and report to the owner. An optional money cap per director tree or chain applies on the API lane;
+  it is soft (the last chip can go over it by what it spends in its turn), and once it is used up no other chip of the
+  group starts.
 - **Work chain.** For a text deliverable, `catena: true` on `suggerisci_azione` creates writer → reviewer → rewrite
   (1–3 rounds) → applier from the project's pipeline. Each step starts after the previous one delivers its artefact.
   Writer and reviewer steps change no files: they deliver the whole text in `artefatto` (up to 60,000 characters). Only

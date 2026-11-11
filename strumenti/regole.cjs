@@ -113,6 +113,19 @@ const scrittoreForma = x => oggetto(x) && Object.keys(x).every(k => k === 'provi
   typeof x.modello === 'string' && MODELLO_SCRITTORE.test(x.modello) && (x.provider !== 'claude' || ID_CLAUDE.test(x.modello))
 const revisoreCatena = x => x === 'codex' || (typeof x === 'string' && ID_CLAUDE.test(x))
 const tettoValido = x => typeof x === 'number' && Number.isFinite(x) && x > 0 && x <= 1000
+/**
+ * Revisione F13a, giro 2, punto 1: il tetto in dollari letto GREZZO (prima della normalizzazione, che scarta un valore che
+ * non vale). Una stringa, un negativo, un booleano o un oggetto non è «nessun tetto»: si nomina il campo e chi spende si
+ * ferma. Assente o null = nessun tetto. `sezione` = 'dirigente' o 'pipeline'.
+ */
+function tettoGrezzoNonValido(modo, sezione) {
+  if (modo === undefined || modo === null) return undefined
+  if (!oggetto(modo)) return 'modoLavoro'
+  const s = modo[sezione]
+  if (s === undefined || s === null) return undefined
+  if (!oggetto(s)) return `modoLavoro.${sezione}`
+  return s.tettoUsd === undefined || s.tettoUsd === null || tettoValido(s.tettoUsd) ? undefined : `modoLavoro.${sezione}.tettoUsd`
+}
 function pipelineDa(v) {
   if (!oggetto(v)) return undefined
   const o = {}
@@ -359,4 +372,4 @@ function dentroRadice(r, x, insensibile) {
   return X === R || X.startsWith(R.endsWith('/') ? R : `${R}/`)
 }
 
-module.exports = { regoleEfficaci, dentroRadice, restrizioneLarga, accountDa, restrizioniDa, applicaPatch, modoNonValido, modoEfficace, NonValido, FORNITORI }
+module.exports = { regoleEfficaci, dentroRadice, restrizioneLarga, accountDa, restrizioniDa, applicaPatch, modoNonValido, modoEfficace, NonValido, FORNITORI, tettoGrezzoNonValido }

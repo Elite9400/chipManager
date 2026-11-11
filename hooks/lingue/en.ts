@@ -1270,6 +1270,8 @@ const en = {
   "v.catenaCloud": "a chain step does not run in the cloud: the artefacts are local files the cloud cannot read",
   "v.dirigenteModello": "the director chip runs on {modello}, which this project does not allow: choose «Run director on Opus» or allow it",
   "cat.costiCatena": "chain cost: {costi}",
+  "v.tettoNonValido": "{campo} in the configuration is not a valid amount: no chip of this group starts on API credits until it is fixed",
+  "dir.tetto": "cap ${tetto}, soft: the last chip can go over it by what it spends in its turn",
   // ‹fine›
 } satisfies Record<string, Voce>
 

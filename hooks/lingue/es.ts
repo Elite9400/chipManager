@@ -1268,6 +1268,8 @@ const es: Dizionario = {
   "v.catenaCloud": "un paso de cadena no corre en la nube: los artefactos son archivos locales que la nube no lee",
   "v.dirigenteModello": "la chip directora trabaja con {modello}, que este proyecto no permite: elige «Directora en Opus» o permítelo",
   "cat.costiCatena": "coste de la cadena: {costi}",
+  "v.tettoNonValido": "{campo} en la configuración no es un importe válido: ninguna chip de este grupo arranca con créditos API hasta corregirlo",
+  "dir.tetto": "tope ${tetto}, blando: la última chip puede superarlo en lo que gaste en su turno",
   // ‹fine›
 }
 

@@ -621,7 +621,8 @@ test('2.0 CLI: worktree distinto, argv senza shell, prompt su stdin e uscita sol
   const chiamate = []
   const prompt = 'Testo con "virgolette" e $(non_eseguire) & %PATH%'
   const codice = await eseguiCli(dir, id, tentativo, { root, prompt, modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', base: 'main', fontiHost: [] }, {
-    env: { CLAUDE_CONFIG_DIR: tmp() },
+    env: {},
+    fontiCwd: fontiIsolate(),
     git: args => { chiamate.push(args); return 'a'.repeat(40) },
     avvia: (argv, opzioni) => {
       assert.deepStrictEqual(argv, ['claude', '-p', '--model', 'claude-opus-5-5', '--effort', 'high', '--permission-mode', 'acceptEdits', '--output-format', 'json'])
@@ -663,7 +664,8 @@ test('2.0 CLI: un errore di preparazione conserva il worktree e non avvia nulla'
   fs.symlinkSync(fuori, path.join(root, '.claude'), process.platform === 'win32' ? 'junction' : 'dir')
   fs.writeFileSync(file, JSON.stringify({ id, tentativo, stato: 'in-avvio' }))
   await eseguiCli(dir, id, tentativo, { root, prompt: 'testo', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', fontiHost: [] }, {
-    env: { CLAUDE_CONFIG_DIR: tmp() },
+    env: {},
+    fontiCwd: fontiIsolate(),
     git: args => { assert.strictEqual(args[0], 'rev-parse'); return 'a'.repeat(40) },
     avvia: () => { avvii++ },
   })
@@ -1249,6 +1251,17 @@ const API = new Proxy(API_VERA, {
   },
 })
 const CHIAVE_PROVA = 'sk-ant-prova-0123456789'
+/** Una voce del registro senza la cartella delle azioni (giro 2 di F13a), che cambia a ogni prova. */
+const senzaDati = v => {
+  const { dati: _dati, ...resto } = v
+  return resto
+}
+/**
+ * Revisione F13a, giro 2, punto 5: nelle prove le fonti utente e gestite stanno in una cartella di prova (CLAUDE_CONFIG_DIR
+ * non sposta managed-settings.json, che resta dell'host); progetto e locale restano i file veri del worktree, letti e
+ * controllati dal codice di sempre.
+ */
+const fontiIsolate = (casa = tmp()) => cwd => API_VERA.fontiImpostazioni(cwd).map(f => (f.nome === 'utente' || f.nome === 'gestite' ? { ...f, file: path.join(casa, `${f.nome}.json`) } : f))
 const { EventEmitter: Emettitore } = require('node:events')
 /** Un `claude -p` finto: emette lo spawn, accetta il prompt, scrive `uscita` su stdout ed esce con `codice`. */
 const claudeFinto = (uscita, codice = 0, durante = () => {}) => (argv, opzioni) => {
@@ -1431,7 +1444,7 @@ test('F6.2 lock: senza uscita registrata nessuna liberazione automatica; «Liber
   assert.deepStrictEqual(await API.liberaApi(dm, { elenco: () => [], adesso: dopo }), { libero: true, liberato: 'az-api0005' })
   assert.strictEqual(fs.existsSync(API.fileChiave(dm, 'az-api0005')), false)
   // Il costo di un tentativo liberato a mano è ignoto: conta il tetto intero.
-  assert.deepStrictEqual(API.leggiSpesa(dm).voci['az-api0005'], { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
+  assert.deepStrictEqual(senzaDati(API.leggiSpesa(dm).voci['az-api0005']), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
 })
 
 test('F6.2 lock: uscita registrata ma un discendente vivo: resta bloccato finché «Termina» o «Libera»', async () => {
@@ -1893,11 +1906,11 @@ test('F7 giro 2, rilievo 3: senza stdout ma con il worktree cambiato è incerto;
 })
 
 test('F7 giro 3: ogni esito incerto contabilizza il tetto intero nel registro della spesa (il costo riportato resta solo un\'informazione); stdout troncato non è mai un rifiuto', async () => {
-  const voce = e => API.leggiSpesa(e.dm).voci[e.tentativo]
-  // is_error con costo 0,30 e tetto 2: incerto, nel registro conta 2.
+  const voce = e => senzaDati(API.leggiSpesa(e.dm).voci[e.tentativo])
+  // is_error con costo 0,30 e tetto 2: incerto, nel registro conta 2 (giro 2 di F13a: il riportato resta nella voce e conta se più alto).
   const errore = await eseguiConAdvisor('az-rv9001', {}, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: JSON.stringify({ is_error: true, total_cost_usd: 0.3, num_turns: 4 }) }))
   assert.deepStrictEqual([errore.stato, errore.incerto, errore.costoRiportato], ['avviata', true, 0.3])
-  assert.deepStrictEqual(voce(errore), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
+  assert.deepStrictEqual(voce(errore), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 2, stato: 'contato', costo: null, riportato: 0.3 })
   assert.strictEqual(API.spesoNelMese(API.leggiSpesa(errore.dm).voci, '2026-11'), 2)
   // Stdout oltre 1 MiB (un JSON potrebbe esserci), uscita subito con stderr sull'advisor e worktree invariato: incerto.
   const lungo = await eseguiConAdvisor('az-rv9002', { advisor: 'claude-opus-5-5' }, fontiCon({}), claudeAdvisor({}, { codice: 1, uscita: 'x'.repeat(1024 * 1024 + 10), stderr: 'advisor model rejected' }))
@@ -2793,7 +2806,8 @@ test('Percorsi, N5: due supervisori CLI sullo stesso record, uno da una junction
   fs.writeFileSync(file, JSON.stringify({ id, tentativo, stato: 'in-avvio' }))
   let avvii = 0
   const deps = () => ({
-    env: { CLAUDE_CONFIG_DIR: tmp() },
+    env: {},
+    fontiCwd: fontiIsolate(),
     git: () => 'a'.repeat(40),
     avvia: () => {
       avvii++
@@ -3967,7 +3981,8 @@ test('Revisione F13a, rilievo 1: la corsia CLI ricontrolla le impostazioni del w
     fs.writeFileSync(file, JSON.stringify({ id: 'a-wtcli0001', tentativo, stato: 'in-avvio' }))
     let avvii = 0
     await eseguiCli(dir, 'a-wtcli0001', tentativo, { root, prompt: 'x', modello: 'claude-opus-5-5', effort: 'high', permessi: 'acceptEdits', base: 'altra', ...(fontiHost && { fontiHost }) }, {
-      env: { CLAUDE_CONFIG_DIR: tmp(), ...opz.env },
+      env: { ...opz.env },
+      fontiCwd: fontiIsolate(),
       // La `base` porta nel worktree un .claude/settings.json che il checkout non ha.
       git: args => {
         if (args[0] === 'worktree' && impostazioni !== undefined) {
@@ -4011,7 +4026,7 @@ test('Revisione F13a, rilievo 3: sulla corsia API una chip di catena o di una di
   const stdin = []
   const config = configApi({ apiClaude: { budgetUsd: 50, tetto: 5 }, modoLavoro: { pipeline: { tettoUsd: 1 }, dirigente: { tettoUsd: 2 } } })
   const registro = (dm, voci) => fs.writeFileSync(API.fileSpesa(dm), JSON.stringify({ v: 1, voci }))
-  const voce = (gruppi, costo) => ({ progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 5, stato: 'contato', costo, gruppi })
+  const voce = (gruppi, costo) => ({ progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.5, stato: 'contato', costo, gruppi })
   const passo = (id, t, extra) => fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ stato: 'in-avvio', lanciatore: 'api-claude', tentativo: t, ...extra }))
   const avvia = (dm, id, t) => API.lanciaApi(dir, id, t, ingressoApi(root, config), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto(stdin) })
   // Catena con tetto 1 $ e 0,90 $ già contati: il passo parte col limite 0,10 $ (non coi 5 $ del tetto API).
@@ -4020,14 +4035,15 @@ test('Revisione F13a, rilievo 3: sulla corsia API una chip di catena o di una di
   passo('a-cat00001', 'az-cat00001', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
   assert.deepStrictEqual(await avvia(dm1, 'a-cat00001', 'az-cat00001'), [0, ''])
   assert.strictEqual(JSON.parse(stdin.at(-1)).tetto, 0.1)
-  assert.deepStrictEqual(API.leggiSpesa(dm1).voci['az-cat00001'], { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'prenotato', gruppi: ['catena:c-catena001'] })
+  assert.deepStrictEqual(senzaDati(API.leggiSpesa(dm1).voci['az-cat00001']), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'prenotato', gruppi: ['catena:c-catena001'] })
   // Con il tetto già tutto impegnato (anche solo prenotato) il passo non parte.
   const dm2 = tmp()
   registro(dm2, { 'az-prima001': { ...voce(['catena:c-catena001']), stato: 'prenotato', tetto: 1, costo: undefined } })
   passo('a-cat00002', 'az-cat00002', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
   const [c2, u2] = await avvia(dm2, 'a-cat00002', 'az-cat00002')
   assert.deepStrictEqual([c2, JSON.parse(u2)], [5, { gruppo: 'catena', speso: 1, tettoGruppo: 1 }])
-  // Albero della dirigente (tetto 2 $): la figlia vede anche la spesa della dirigente e delle sorelle; il consuntivo libera la differenza.
+  // Albero della dirigente (tetto 2 $): la figlia vede anche la spesa della dirigente e delle sorelle. Giro 2 (tetto morbido):
+  // il consuntivo non libera la differenza, la prenotazione conta sempre.
   const dm3 = tmp()
   registro(dm3, { 'az-dirig001': voce(['dirigente:a-dir00001'], 0.5), 'az-sorel001': { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 1.2, stato: 'prenotato', gruppi: ['dirigente:a-dir00001'] } })
   passo('a-fig00001', 'az-fig00001', { padre: 'a-dir00001' })
@@ -4036,8 +4052,8 @@ test('Revisione F13a, rilievo 3: sulla corsia API una chip di catena o di una di
   await API.contaSpesa(dm3, 'az-sorel001', 0.2)
   fs.rmSync(API.fileLock(dm3))
   passo('a-fig00002', 'az-fig00002', { padre: 'a-dir00001' })
-  assert.deepStrictEqual(await avvia(dm3, 'a-fig00002', 'az-fig00002'), [0, ''])
-  assert.strictEqual(JSON.parse(stdin.at(-1)).tetto, 1)
+  const [c3, u3] = await avvia(dm3, 'a-fig00002', 'az-fig00002')
+  assert.deepStrictEqual([c3, JSON.parse(u3).gruppo], [5, 'dirigente'])
   // Una chip qualunque resta col tetto API ordinario.
   const dm4 = tmp()
   recordApi(dir, 'a-api00009', 'az-api0009')
@@ -4049,4 +4065,96 @@ test('Revisione F13a, rilievo 3: sulla corsia API una chip di catena o di una di
   assert.strictEqual(R.modoNonValido({ dirigente: { tettoUsd: 0 } }), 'modoLavoro.dirigente.tettoUsd')
   const ts = conLogica(`console.log(JSON.stringify([nuova.risorseDa({ modoLavoro: { dirigente: { tettoUsd: 2 } } }).modoLavoro.dirigente.tettoUsd, nuova.modoNonValido({ dirigente: { tettoUsd: 0 } })]))`, {})
   assert.deepStrictEqual(ts, [2, 'modoLavoro.dirigente.tettoUsd'])
+})
+
+// --- Revisione F13a, giro 2 (spesa) ------------------------------------------------------------------------------------
+
+const spesaGiro2 = () => {
+  const dir = tmp()
+  const root = tmp()
+  const stdin = []
+  const passo = (id, t, extra) => fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ stato: 'in-avvio', lanciatore: 'api-claude', tentativo: t, ...extra }))
+  const avvia = (dm, id, t, config) => API.lanciaApi(dir, id, t, ingressoApi(root, config), { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto(stdin) })
+  const registro = (dm, voci) => fs.writeFileSync(API.fileSpesa(dm), JSON.stringify({ v: 1, voci }))
+  return { dir, stdin, passo, avvia, registro }
+}
+
+test('Revisione F13a, giro 2, punto 1: un tetto scritto male (stringa, negativo, booleano, oggetto) ferma gli avvii API del gruppo, non vale «nessun tetto»', async () => {
+  const { stdin, passo, avvia } = spesaGiro2()
+  passo('a-fig00001', 'az-fig00001', { padre: 'a-dir00001' })
+  passo('a-cat00001', 'az-cat00001', { catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' } })
+  for (const [strato, valore] of [['account', '2'], ['account', -1], ['progetto', true], ['progetto', { usd: 2 }]]) {
+    const modo = { dirigente: { tettoUsd: valore } }
+    const config = strato === 'account' ? configApi({ apiClaude: { budgetUsd: 50, tetto: 5 }, modoLavoro: modo }) : configApi(undefined, { modoLavoro: modo })
+    const [c, u] = await avvia(tmp(), 'a-fig00001', 'az-fig00001', config)
+    assert.deepStrictEqual([c, JSON.parse(u)], [5, { tettoNonValido: 'modoLavoro.dirigente.tettoUsd' }], JSON.stringify([strato, valore]))
+  }
+  // Anche una sezione che non è un oggetto, e il tetto della catena; una chip fuori dai gruppi non è toccata.
+  const [c1, u1] = await avvia(tmp(), 'a-fig00001', 'az-fig00001', configApi({ apiClaude: { budgetUsd: 50, tetto: 5 }, modoLavoro: { dirigente: 'due' } }))
+  assert.deepStrictEqual([c1, JSON.parse(u1)], [5, { tettoNonValido: 'modoLavoro.dirigente' }])
+  const [c2, u2] = await avvia(tmp(), 'a-cat00001', 'az-cat00001', configApi({ apiClaude: { budgetUsd: 50, tetto: 5 }, modoLavoro: { pipeline: { tettoUsd: '1' } } }))
+  assert.deepStrictEqual([c2, JSON.parse(u2)], [5, { tettoNonValido: 'modoLavoro.pipeline.tettoUsd' }])
+  assert.strictEqual(stdin.length, 0)
+})
+
+test('Revisione F13a, giro 2, punto 2: l\'appartenenza al gruppo si registra sempre; un tetto messo dopo conta la spesa già fatta', async () => {
+  const { stdin, passo, avvia } = spesaGiro2()
+  const dm = tmp()
+  passo('a-fig00001', 'az-fig00001', { padre: 'a-dir00001' })
+  assert.deepStrictEqual(await avvia(dm, 'a-fig00001', 'az-fig00001', configApi({ apiClaude: { budgetUsd: 50, tetto: 5 } })), [0, ''])
+  assert.deepStrictEqual(API.leggiSpesa(dm).voci['az-fig00001'].gruppi, ['dirigente:a-dir00001'])
+  await API.contaSpesa(dm, 'az-fig00001', 1.5)
+  fs.rmSync(API.fileLock(dm))
+  // Tetto di 2 $ messo adesso: la seconda figlia vede la prenotazione intera della prima (5 $, tetto morbido) e non parte.
+  passo('a-fig00002', 'az-fig00002', { padre: 'a-dir00001' })
+  const [c, u] = await avvia(dm, 'a-fig00002', 'az-fig00002', configApi({ apiClaude: { budgetUsd: 50, tetto: 5 }, modoLavoro: { dirigente: { tettoUsd: 2 } } }))
+  assert.deepStrictEqual([c, JSON.parse(u).gruppo], [5, 'dirigente'])
+  assert.strictEqual(stdin.length, 1)
+})
+
+test('Revisione F13a, giro 2, punto 3: tetto morbido: conta il più alto fra costo riportato e prenotazione, anche negli esiti incerti', async () => {
+  const { stdin, passo, avvia, registro } = spesaGiro2()
+  const config = configApi({ apiClaude: { budgetUsd: 50, tetto: 5 }, modoLavoro: { pipeline: { tettoUsd: 1 } } })
+  const voce = extra => ({ progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'contato', gruppi: ['catena:c-catena001'], ...extra })
+  // Esito non pulito con 0,40 $ riportati su 0,10 $ prenotati: il gruppo conta 0,40 (residuo 0,60), e il mese anche.
+  const dm1 = tmp()
+  registro(dm1, { 'az-prima001': voce({ costo: null, riportato: 0.4 }) })
+  passo('a-cat00001', 'az-cat00001', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  assert.deepStrictEqual(await avvia(dm1, 'a-cat00001', 'az-cat00001', config), [0, ''])
+  assert.strictEqual(JSON.parse(stdin.at(-1)).tetto, 0.6)
+  assert.strictEqual(API.spesoNelMese({ x: voce({ costo: null, riportato: 0.4 }) }, '2026-11'), 0.4)
+  // Una consegna pulita sotto la prenotazione conta comunque la prenotazione (il tetto del gruppo è morbido, non rimborsa).
+  const dm2 = tmp()
+  registro(dm2, { 'az-prima001': voce({ costo: 0.05, tetto: 0.3 }) })
+  passo('a-cat00002', 'az-cat00002', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  assert.deepStrictEqual(await avvia(dm2, 'a-cat00002', 'az-cat00002', config), [0, ''])
+  assert.strictEqual(JSON.parse(stdin.at(-1)).tetto, 0.7)
+  // Oltre il tetto (l'ultimo passo l'ha sforato): nessun altro passo parte.
+  const dm3 = tmp()
+  registro(dm3, { 'az-prima001': voce({ costo: 1.2 }) })
+  passo('a-cat00003', 'az-cat00003', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  const [c, u] = await avvia(dm3, 'a-cat00003', 'az-cat00003', config)
+  assert.deepStrictEqual([c, JSON.parse(u)], [5, { gruppo: 'catena', speso: 1.2, tettoGruppo: 1 }])
+  // Il supervisore passa il costo riportato anche quando l'esito non è pulito.
+  const dm4 = tmp()
+  registro(dm4, { 'az-sup00001': { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'prenotato' } })
+  await API.contaSpesa(dm4, 'az-sup00001', null, 0.4)
+  assert.deepStrictEqual(API.leggiSpesa(dm4).voci['az-sup00001'], { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'contato', costo: null, riportato: 0.4 })
+})
+
+test('Revisione F13a, giro 2, punto 4: una prenotazione rimasta senza lock si libera se non c\'è avvio, conta per intero se c\'è', async () => {
+  const { dir, passo, avvia, registro } = spesaGiro2()
+  const dm = tmp()
+  const config = configApi({ apiClaude: { budgetUsd: 50, tetto: 5 } })
+  const orfana = { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 5, stato: 'prenotato', dati: path.resolve(dir) }
+  registro(dm, { 'az-orfa0001': orfana, 'az-orfa0002': orfana, 'az-vecc0001': { ...orfana, dati: undefined } })
+  // La seconda ha il record d'avvio: il processo è partito e la spesa è incerta.
+  fs.mkdirSync(path.join(dir, 'esecuzioni'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'esecuzioni', 'az-orfa0002.json'), JSON.stringify({ id: 'a-orf00002', tentativo: 'az-orfa0002', stato: 'avviata' }))
+  passo('a-nuo00001', 'az-nuo00001', {})
+  assert.deepStrictEqual(await avvia(dm, 'a-nuo00001', 'az-nuo00001', config), [0, ''])
+  const v = API.leggiSpesa(dm).voci
+  assert.deepStrictEqual([v['az-orfa0001'].stato, v['az-orfa0001'].costo, v['az-orfa0002'].stato, v['az-orfa0002'].costo, v['az-vecc0001'].stato],
+    ['contato', 0, 'contato', null, 'prenotato'])
+  assert.strictEqual(v['az-nuo00001'].dati, path.resolve(dir))
 })

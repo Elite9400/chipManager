@@ -67,7 +67,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   included), in the environment, or an unreadable source, stops it with the reason and both ways to start it; the
   sources are checked again in the actual worktree right before the process starts. Opus is only the owner's explicit
   «Run director on Opus»: a director whose model the project does not allow waits for that choice. An optional money
-  cap per director tree (`dirigente.tettoUsd`) reserves on the API lane at most what is left. Discarding a director
+  cap per director tree (`dirigente.tettoUsd`) reserves on the API lane at most what is left. The cap is soft: each
+  chip counts the higher of its reported cost and its reservation, an unknown cost counts the whole reservation, the
+  last chip can go over the cap by what it spends in its turn (as `--max-budget-usd` allows), and once nothing is left
+  no other chip of the group starts. A cap written with the wrong type stops the group's API starts with the field
+  name; a reservation left by a process that never started is released. Discarding a director
   discards its children that never started. The card shows children, re-plans, the children's cost by kind, and that
   Fable may bill extra usage.
 - **Work chains** (Settings › Work mode): `suggerisci_azione` with `catena: true` turns a goal into ordinary chips:
@@ -77,7 +81,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   feedback on vN; for a writer outside Claude the whole text passes the LAN-data filter and the text limit, and the
   step stops with the reason when it does not. Only the applier, always Claude, changes the repository; a Codex reviewer
   works read-only. Presets Director + local writer, Economy and Quality; the cost of each role (plan, estimated,
-  observed, unknown, free) and an optional money cap per chain, reserved at most as what is left. Chain steps run
+  observed, unknown, free) and an optional soft money cap per chain, with the same rules. Chain steps run
   locally only, not on the API lane or in the cloud. Writers from the new provider registry plug in at one point;
   until then the chain refuses them with the reason. Sensitive work never goes into a chain.
 - **Work mode** (Settings, Account group): default effort per lane, the Codex sandbox when Codex executes, sessions
