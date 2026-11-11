@@ -478,9 +478,12 @@ here. Either side may extend it; a change to an existing item is agreed first.
     sensitive);
   - `scrittoreAmmesso(scrittore, regole): Msg | undefined`: `undefined` when the provider is enabled for the project,
     connected, and the model id is valid for it; otherwise the reason. F13a refuses a chain whose writer has a reason.
-- **Writer chips** are created by F13a as ordinary actions: `esecutore` = `'claude'` or the provider id, `modello`,
-  `corsia` from the chain (R0/R1 for non-Claude writers), `catena: { id, giro, ruolo }`, `padre`, `vincoliPadre`, and
-  `dopoConsegna: [<predecessor id>]`.
+- **Writer chips** are created by F13a as ordinary actions. The writer stays `{ provider, modello }`; in the chip
+  `provider: 'claude'` becomes `esecutore: 'claude'`, `provider: 'freellmapi'` becomes `esecutore: 'freellmapi'`, and
+  any other provider becomes `esecutore: 'compatibile'` plus `provider: <id>`. The `Motore` type gains only
+  `'compatibile'`; `regole.modelli.compatibile` is empty, so `bilancia` never picks it by itself. The chip also has
+  `modello`, `corsia` from the chain (R0/R1 for non-Claude writers), `catena: { id, giro, ruolo }`, `padre`,
+  `vincoliPadre`, and `dopoConsegna: [<predecessor id>]`. (Changed on the owner's approval, 11 Nov 2026.)
 - **Input to a non-Claude writer.** F13a composes the full text (`testoScrittore`): brief + draft vN + feedback vN, with
   the LAN-data filter and the text limit applied to the whole text; over the limit the step stops with the reason.
   F13b's executor sends exactly that text as the prompt and nothing else from the repository.

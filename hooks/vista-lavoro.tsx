@@ -129,7 +129,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
       const aud = auditorDi(a)
       return <Box key={k} flexDirection="column" gap="sm">
         {ui.Pillole({ chiave: `${k}-attributi`, voci: [
-          ui.Pillola({ chiave: `${k}-motore`, segno: '◆', colore: MOTORE[a.esecutore], testo: motore(a.esecutore) }),
+          ui.Pillola({ chiave: `${k}-motore`, segno: '◆', colore: MOTORE[a.esecutore === 'compatibile' ? 'freellmapi' : a.esecutore], testo: motore(a.esecutore) }),
           // Come la riga del terminale: senza modello noto (un motore non Claude senza scelta) lo si dice, mai una pillola vuota.
           ui.Pillola({ chiave: `${k}-modello`, segno: '●', colore: famiglia ? FAMIGLIA[famiglia] : GRIGIO, testo: modello ? nomeModello(modello) : T('ses.modelloIgnoto'), mono: !!modello }),
           ui.Pillola({ chiave: `${k}-effort`, segno: barreEffort(eff), colore: EFFORT[eff as keyof typeof EFFORT] ?? GRIGIO, testo: eff, mono: true }),
@@ -524,7 +524,7 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     const famiglia = famigliaDi(modello)
     const k = `info-${a.id}`
     const attributi = [
-      ui.Pillola({ chiave: `${k}-motore`, segno: '◆', colore: MOTORE[a.esecutore], testo: motore(a.esecutore) }),
+      ui.Pillola({ chiave: `${k}-motore`, segno: '◆', colore: MOTORE[a.esecutore === 'compatibile' ? 'freellmapi' : a.esecutore], testo: motore(a.esecutore) }),
       ui.Pillola({ chiave: `${k}-modello`, segno: '●', colore: famiglia ? FAMIGLIA[famiglia] : GRIGIO, testo: nomeModello(modello), mono: true }),
       ui.Pillola({ chiave: `${k}-effort`, segno: barreEffort(effort), colore: EFFORT[effort as keyof typeof EFFORT] ?? GRIGIO, testo: effort, mono: true }),
       ui.Pillola({ chiave: `${k}-rev`, segno: '↺', colore: a.revisore === 'nessuno' ? GRIGIO : MOTORE[a.revisore],

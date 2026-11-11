@@ -209,3 +209,29 @@ test('F13.6 tetto della catena: raggiunta la spesa misurata, nessun altro passo 
   expect([costoDi(fatto), costoDi(altro), costoDi(prossimo), costoDi({ ...prossimo, destinazione: 'api-claude' })]).toEqual([
     { tipo: 'stimato', usd: 0.7 }, { tipo: 'osservato', usd: 0.4 }, { tipo: 'piano' }, { tipo: 'ignoto' }])
 })
+
+test('F13a↔F13b: lo scrittore {provider, modello} nella chip: claude e freellmapi restano esecutori, ogni altro è compatibile col suo provider', () => {
+  const base = az({ titolo: 'Guida', brief: 'Scrivi.', corsia: 'R1' })
+  const scrittore = (provider: string) => passiCatena(base, { scrittore: { provider, modello: 'qwen3:8b' }, revisore: 'claude-opus-5-5', giri: 1 }, 'c-catena001', ids())[0]!
+  expect([scrittore('ollama').esecutore, scrittore('ollama').provider]).toEqual(['compatibile', 'ollama'])
+  expect([scrittore('freellmapi').esecutore, scrittore('freellmapi').provider]).toEqual(['freellmapi', undefined])
+  expect(REGOLE_DEFAULT.modelli.compatibile).toEqual([])
+  // Fino alla fusione con F13b un esecutore compatibile non parte (nel dubbio si blocca).
+  expect(violazioni(scrittore('ollama'), REGOLE_DEFAULT).map(x => x.k)).toContain('cat.scrittoreAssente')
+  // Nel record `provider` va solo, e sempre, con `compatibile`.
+  expect('k' in normalizza({ ...base, esecutore: 'compatibile' })).toBe(true)
+  expect('k' in normalizza({ ...base, provider: 'ollama' })).toBe(true)
+  expect('k' in normalizza({ ...base, esecutore: 'compatibile', provider: '../x' })).toBe(true)
+  expect(normalizza({ ...base, esecutore: 'compatibile', provider: 'ollama' })).toMatchObject({ esecutore: 'compatibile', provider: 'ollama' })
+})
+
+test('F13 violazioni: «non connesso» solo per un fornitore abilitato, anche su un passo di catena oltre il tetto', () => {
+  const free = az({ esecutore: 'freellmapi', revisore: 'claude', corsia: 'R1', effort: 'low' })
+  const k = (a: Azione, r: Regole, lista: Azione[] = [a]) => violazioni(a, r, lista).map(x => x.k)
+  expect(k(free, REGOLE_DEFAULT)).toContain('v.fornitoreNonAbilitato')
+  expect(k(free, REGOLE_DEFAULT)).not.toContain('v.nonConnesso')
+  const abilitato = { ...conPipeline({ tettoUsd: 1 }), risorse: { ...conPipeline({ tettoUsd: 1 }).risorse, fornitori: ['claude', 'codex', 'freellmapi'] }, connessi: ['claude', 'codex'] } as Regole
+  const speso = az({ id: 'a-speso0001', costo: { tipo: 'osservato', usd: 2 }, catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' } })
+  const passo = { ...free, catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' as const } }
+  expect(k(passo, abilitato, [speso, passo])).toEqual(expect.arrayContaining(['v.catenaTetto', 'v.nonConnesso']))
+})

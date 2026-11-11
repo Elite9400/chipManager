@@ -1403,6 +1403,9 @@ export function normalizza(x: unknown): Azione | Msg {
   if (!['claude', 'codex', 'freellmapi', 'compatibile'].includes(a.esecutore as string) || !['claude', 'codex', 'nessuno'].includes(a.revisore as string) ||
       (a.esecutore === 'compatibile') !== (a.provider !== undefined) || (a.provider !== undefined && !voceCompatibile(a.provider)))
     return msg('rec.campo', { campo: 'esecutore/revisore' })
+  // F13a↔F13b: `provider` solo (e sempre) con l'esecutore `compatibile`, nella forma degli id del registro.
+  if ((a.esecutore === 'compatibile') !== (a.provider !== undefined) || (a.provider !== undefined && !(typeof a.provider === 'string' && /^[a-z0-9-]{1,40}$/.test(a.provider))))
+    return msg('rec.campo', { campo: 'provider' })
   if (!Number.isFinite(a.ordine)) return msg('rec.campo', { campo: 'ordine' })
   if (a.dipende !== undefined && !(Array.isArray(a.dipende) && a.dipende.every(d => typeof d === 'string' && ID_RE.test(d))))
     return msg('rec.campo', { campo: 'dipende' })
@@ -1532,7 +1535,9 @@ export function passiCatena(base: Azione, p: PipelineEfficace, idCatena: string,
   for (let g = 1; g <= p.giri + 1; g++) {
     passo(g, 'scrittore', `draft v${g}`, claude
       ? { esecutore: 'claude', modello: p.scrittore.modello, revisore: 'nessuno', corsia }
-      : { esecutore: p.scrittore.provider as Azione['esecutore'], modello: p.scrittore.modello, revisore: 'claude', corsia: 'R1', effort: 'low' })
+      // F13a↔F13b: 'freellmapi' resta il suo esecutore; ogni altro fornitore è `compatibile` col suo id in `provider`.
+      : { ...(p.scrittore.provider === 'freellmapi' ? { esecutore: 'freellmapi' as const } : { esecutore: 'compatibile' as const, provider: p.scrittore.provider }),
+          modello: p.scrittore.modello, revisore: 'claude', corsia: 'R1', effort: 'low' })
     if (g <= p.giri)
       passo(g, 'revisore', `review v${g}`, p.revisore === 'codex'
         ? { esecutore: 'codex', revisore: 'nessuno', corsia: ['R1', 'R2', 'R3'].includes(corsia) ? corsia : 'R1' }
