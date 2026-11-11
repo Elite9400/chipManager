@@ -3097,3 +3097,98 @@ test('Paths, round 3 finding 2b: a staging folder swapped for another one with t
   assert.strictEqual(fs.existsSync(x.a), false)
   assert.deepStrictEqual(fs.readFileSync(x.config), testo)
 })
+
+// --- F13.3b: registry of OpenAI-compatible providers and the generic text executor ---------------------------------
+
+function compatibiliTs(corpo) {
+  const url = require('node:url').pathToFileURL(path.join(RADICE_REPO, 'hooks', 'compatibili.ts')).href
+  const r = spawnSync(process.execPath, ['--experimental-transform-types', '--no-warnings', '--input-type=module', '-e', `const c = await import(${JSON.stringify(url)})\n${corpo}`], { encoding: 'utf8' })
+  assert.strictEqual(r.status, 0, r.stderr)
+  return JSON.parse(r.stdout)
+}
+
+test('F13.3b parità: registro, regioni, esecutori di testo e baseDi uguali in TS e CJS', () => {
+  const C = require('./compatibili.cjs')
+  const casi = [
+    ['deepseek', undefined], ['openrouter', undefined], ['qwen', undefined], ['qwen', { regione: 'cn' }], ['qwen', { regione: 'us' }],
+    ['qwen', { workspace: 'https://ws1.us-east-1.maas.aliyuncs.com/compatible-mode/v1' }], ['qwen', { workspace: 'https://evil.example.com/compatible-mode/v1' }],
+    ['ollama', undefined], ['ollama', { endpoint: 'http://127.0.0.1:11500/v1' }], ['ollama', { endpoint: 'http://192.168.1.5:11434/v1' }],
+    ['lmstudio', { endpoint: 'http://[::1]:1234/v1' }], ['vllm', { endpoint: 'https://localhost:8000/v1' }], ['nessuno', undefined],
+  ]
+  const ts = compatibiliTs(`console.log(JSON.stringify({ registro: c.COMPATIBILI, regioni: c.REGIONI_QWEN, testo: c.ESECUTORI_TESTO,
+    basi: ${JSON.stringify(casi)}.map(([id, imp]) => c.baseDi(id, imp)), modelli: ['qwen3:8b', 'a/b-c.d', ':x', 'a b', 'x'.repeat(129)].map(m => c.MODELLO_COMPATIBILE.test(m)) }))`)
+  assert.deepStrictEqual(ts.registro, C.COMPATIBILI)
+  assert.deepStrictEqual(ts.regioni, C.REGIONI_QWEN)
+  assert.deepStrictEqual(ts.testo, C.ESECUTORI_TESTO)
+  assert.deepStrictEqual(ts.basi, casi.map(([id, imp]) => C.baseDi(id, imp)))
+  assert.deepStrictEqual(ts.modelli, [true, true, false, false, false])
+  // Locali solo loopback; Qwen solo host documentati; ogni opzione nominata esiste come opzione sensibile in plugin.json.
+  assert.deepStrictEqual(C.baseDi('ollama', { endpoint: 'http://192.168.1.5:11434/v1' }), { motivo: 'local servers: loopback endpoint only' })
+  assert.ok('motivo' in C.baseDi('qwen', { workspace: 'https://evil.example.com/compatible-mode/v1' }))
+  const opzioni = JSON.parse(fs.readFileSync(path.join(RADICE_REPO, '.claude-plugin', 'plugin.json'), 'utf8')).userConfig
+  for (const v of C.COMPATIBILI.filter(v => v.opzione)) assert.strictEqual(opzioni[v.opzione]?.sensitive, true, v.opzione)
+  for (const v of C.COMPATIBILI) for (const u of [v.base, v.paginaChiave, v.verificaChiave].filter(x => x?.includes('://'))) assert.match(u, v.locale ? /^http:\/\/localhost:\d+\/v1$/ : /^https:\/\//)
+})
+
+test('F13.3b verifica della chiave: solo codici, mai il corpo; assente, rifiutata, irraggiungibile, non disponibile', async () => {
+  const C = require('./compatibili.cjs')
+  const chiamate = []
+  const ok = async (url, init) => (chiamate.push({ url, auth: init?.headers?.Authorization }), { data: { label: 'testo-del-corpo' } })
+  assert.deepStrictEqual(await C.verifica({ provider: 'openrouter' }, { CHIPMANAGER_OPENROUTER_KEY: 'sk-or-1' }, ok), { esito: 'valida' })
+  assert.deepStrictEqual(chiamate.at(-1), { url: 'https://openrouter.ai/api/v1/key', auth: 'Bearer sk-or-1' })
+  assert.deepStrictEqual(await C.verifica({ provider: 'mistral' }, {}, ok), { esito: 'assente' })
+  assert.deepStrictEqual(await C.verifica({ provider: 'groq' }, { CHIPMANAGER_GROQ_KEY: 'k' }, async () => { throw new Error('HTTP 401') }), { esito: 'rifiutata' })
+  assert.deepStrictEqual(await C.verifica({ provider: 'groq' }, { CHIPMANAGER_GROQ_KEY: 'k' }, async () => { throw new Error('fetch failed') }), { esito: 'irraggiungibile' })
+  assert.deepStrictEqual(await C.verifica({ provider: 'ollama' }, {}, ok), { esito: 'nonDisponibile' })
+  assert.deepStrictEqual(await C.verifica({ provider: 'qwen', imp: { regione: 'us' } }, { CHIPMANAGER_QWEN_KEY: 'k' }, ok), { esito: 'configurazione', motivo: 'Qwen US: needs a workspace host' })
+  // LM Studio: chiave facoltativa, nessuna intestazione senza chiave.
+  assert.deepStrictEqual(await C.verifica({ provider: 'lmstudio' }, {}, ok), { esito: 'valida' })
+  assert.strictEqual(chiamate.at(-1).auth, undefined)
+})
+
+test('F13.3b rilevamento dei server locali: solo loopback, timeout breve, solo id di modello validi', async () => {
+  const C = require('./compatibili.cjs')
+  const viste = []
+  const get = async (url, init) => {
+    viste.push({ url, timeoutMs: init?.timeoutMs })
+    if (url.startsWith('http://localhost:11434/')) return { data: [{ id: 'qwen3:8b' }, { id: 'bad id' }, { id: 'llama3.2' }] }
+    throw new Error('ECONNREFUSED')
+  }
+  const r = await C.rileva(get)
+  assert.deepStrictEqual(r, { trovati: [{ id: 'ollama', base: 'http://localhost:11434/v1', modelli: ['qwen3:8b', 'llama3.2'] }] })
+  assert.ok(viste.every(v => /^http:\/\/localhost:\d+\/v1\/models$/.test(v.url) && v.timeoutMs === 1500))
+  assert.ok(viste.some(v => v.url === 'http://localhost:3001/v1/models'))
+})
+
+test('F13.3b esecutore generico: catalogo, niente tool call, fuga della chiave solo con chiave, abilitazione e testo controllati', async () => {
+  const C = require('./compatibili.cjs')
+  const base = { provider: 'ollama', livello: 'R1', soloLocale: false, modello: 'qwen3:8b', testo: 'Summarise this paragraph.' }
+  const server = risposta => async (url, init) => {
+    if (url.endsWith('/models')) return { data: [{ id: 'qwen3:8b' }] }
+    assert.strictEqual(init.method, 'POST')
+    const corpo = JSON.parse(init.body)
+    assert.deepStrictEqual(Object.keys(corpo).sort(), ['max_tokens', 'messages', 'model', 'stream'])
+    return { choices: [{ message: risposta }] }
+  }
+  assert.strictEqual(await C.completa(base, {}, server({ content: 'Short summary.' })), 'Short summary.')
+  await assert.rejects(C.completa({ ...base, modello: 'llama' }, {}, server({ content: 'x' })), /catalogue/)
+  await assert.rejects(C.completa(base, {}, server({ content: 'x', tool_calls: [{ id: '1' }] })), /unusable/)
+  const fuga = async u => (u.endsWith('/models') ? { data: [{ id: 'qwen3:8b' }] } : { choices: [{ message: { content: 'leak mk-1' } }] })
+  await assert.rejects(C.completa({ ...base, provider: 'mistral' }, { CHIPMANAGER_MISTRAL_KEY: 'mk-1' }, fuga), /unusable/)
+  await assert.rejects(C.completa({ ...base, provider: 'mistral' }, {}, server({ content: 'x' })), /key missing/)
+  for (const no of [{ livello: 'niente' }, { soloLocale: true }, { soloLocale: undefined }, { testo: 'x'.repeat(1503) }, { modello: 'a b' }, { provider: 'claude' }])
+    await assert.rejects(C.completa({ ...base, ...no }, {}, server({ content: 'x' })))
+  await assert.rejects(C.completa({ ...base, imp: { endpoint: 'http://10.0.0.2:11434/v1' } }, {}, server({ content: 'x' })), /loopback/)
+})
+
+test('F13.3b richiesta: redirect rifiutati e timeout per chiamata', async () => {
+  const { richiesta } = require('./fornitori.cjs')
+  let visto
+  await richiesta('http://localhost:1/v1/models', { timeoutMs: 1500 }, async (_u, init) => {
+    visto = init
+    return { ok: true, body: new Blob(['{"data":[]}']).stream() }
+  })
+  assert.strictEqual(visto.redirect, 'error')
+  assert.strictEqual('timeoutMs' in visto, false)
+  assert.ok(visto.signal instanceof AbortSignal)
+})

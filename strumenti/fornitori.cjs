@@ -63,7 +63,8 @@ function usoFree(json, letto) {
 }
 
 async function richiesta(url, init = {}, fetcher = fetch) {
-  const r = await fetcher(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(init.method === 'POST' ? 30_000 : 4_000) })
+  const { timeoutMs, ...resto } = init
+  const r = await fetcher(url, { ...resto, redirect: 'error', signal: AbortSignal.timeout(timeoutMs ?? (init.method === 'POST' ? 30_000 : 4_000)) })
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   const reader = r.body.getReader()
   const parti = []

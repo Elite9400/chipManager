@@ -10,6 +10,12 @@
     "anthropicApiKey": { "type": "string", "title": "Anthropic API (credits)", "description": "Key for running chips on API credits (API Claude destination). Use a dedicated key in a Console workspace with a low monthly spend limit.", "sensitive": true },
     "deepseekKey": { "type": "string", "title": "DeepSeek API", "description": "Key to read the balance; requires a per-project opt-in.", "sensitive": true },
     "freellmapiKey": { "type": "string", "title": "FreeLLMAPI", "description": "Unified key from the local dashboard; requires a per-project opt-in.", "sensitive": true },
+    "openrouterKey": { "type": "string", "title": "OpenRouter API", "description": "Key from openrouter.ai/settings/keys; text-only chips, requires a per-project opt-in.", "sensitive": true },
+    "qwenKey": { "type": "string", "title": "Qwen API (Model Studio)", "description": "Key from Alibaba Cloud Model Studio, for the region chosen in Settings; requires a per-project opt-in.", "sensitive": true },
+    "mistralKey": { "type": "string", "title": "Mistral API", "description": "Key from console.mistral.ai/api-keys; text-only chips, requires a per-project opt-in.", "sensitive": true },
+    "groqKey": { "type": "string", "title": "Groq API", "description": "Key from console.groq.com/keys; text-only chips, requires a per-project opt-in.", "sensitive": true },
+    "lmstudioKey": { "type": "string", "title": "LM Studio token (optional)", "description": "Only if the local LM Studio server requires an API token.", "sensitive": true },
+    "vllmKey": { "type": "string", "title": "vLLM key (optional)", "description": "Only if the local vLLM server was started with an API key.", "sensitive": true },
     "paralleli": {
       "type": "string",
       "title": "Parallel sessions",
