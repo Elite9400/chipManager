@@ -1261,7 +1261,6 @@ const es: Dizionario = {
   "modo.cQualita": "Calidad",
   "modo.catenaGiri": "Rondas de revisión",
   "modo.catenaRuoli": "Escritor {scrittore}: {cs} · revisor {revisore}: {cr} · aplicador Claude: plan",
-  "cat.scrittoreAssente": "el escritor {provider} no está disponible en esta versión",
   "v.destinazionePadre": "{destinazione} no es donde trabaja su chip directora: una hija solo trabaja allí",
   "v.dirigenteTetto": "el árbol de la chip directora alcanzó su tope de ${tetto} (gastado ${speso}): no arranca ninguna otra chip suya",
   "v.catenaApi": "un paso de cadena no corre en el carril API: el mandato perdería las referencias de la cadena y la entrega del artefacto",

@@ -1263,7 +1263,6 @@ const en = {
   "modo.cQualita": "Quality",
   "modo.catenaGiri": "Review rounds",
   "modo.catenaRuoli": "Writer {scrittore}: {cs} · reviewer {revisore}: {cr} · applier Claude: plan",
-  "cat.scrittoreAssente": "the writer {provider} is not available in this version",
   "v.destinazionePadre": "{destinazione} is not where its director chip runs: a child runs only there",
   "v.dirigenteTetto": "the director chip's tree reached its ${tetto} cap (spent ${speso}): no further chip of it starts",
   "v.catenaApi": "a chain step does not run on the API lane: its mandate would lose the chain's references and the artefact delivery",

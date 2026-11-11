@@ -4,7 +4,7 @@ import type { Azione, BoardProgetto, Chiamante, Consumo, ControlloEsecuzione, Co
 import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { GRIGIO, LIVELLO, STATO } from './tema'
-import { baseDi, impostazioniCompatibiliDa, livelliCompatibiliDa, MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
+import { baseDi, impostazioniCompatibiliDa, livelliCompatibiliDa, MODELLO_COMPATIBILE, scrittoreAmmesso, voceCompatibile } from './compatibili'
 import { rigaSkill, SKILL_BASE, skillAttive } from './skill-base'
 import type { RuoloSkill } from './skill-base'
 
@@ -1446,9 +1446,6 @@ export function normalizza(x: unknown): Azione | Msg {
   if (!['claude', 'codex', 'freellmapi', 'compatibile'].includes(a.esecutore as string) || !['claude', 'codex', 'nessuno'].includes(a.revisore as string) ||
       (a.esecutore === 'compatibile') !== (a.provider !== undefined) || (a.provider !== undefined && !voceCompatibile(a.provider)))
     return msg('rec.campo', { campo: 'esecutore/revisore' })
-  // F13a↔F13b: `provider` solo (e sempre) con l'esecutore `compatibile`, nella forma degli id del registro.
-  if ((a.esecutore === 'compatibile') !== (a.provider !== undefined) || (a.provider !== undefined && !(typeof a.provider === 'string' && /^[a-z0-9-]{1,40}$/.test(a.provider))))
-    return msg('rec.campo', { campo: 'provider' })
   if (!Number.isFinite(a.ordine)) return msg('rec.campo', { campo: 'ordine' })
   if (a.dipende !== undefined && !(Array.isArray(a.dipende) && a.dipende.every(d => typeof d === 'string' && ID_RE.test(d))))
     return msg('rec.campo', { campo: 'dipende' })
@@ -1591,14 +1588,12 @@ export function passiCatena(base: Azione, p: PipelineEfficace, idCatena: string,
 }
 
 /**
- * F13a↔F13b: perché lo scrittore di una catena non si può usare (undefined = si può). Claude: un modello ammesso;
- * FreeLLMAPI: abilitato nel progetto (il resto lo controllano le guardie all'avvio). Gli altri fornitori sono di F13b
- * (`scrittoreAmmesso` del suo registro): questo è l'unico punto dove entra alla fusione; fino ad allora si rifiutano.
+ * F13a↔F13b: perché lo scrittore di una catena non si può usare (undefined = si può). Claude: un modello ammesso; ogni
+ * altro fornitore (FreeLLMAPI e il registro) lo decide `scrittoreAmmesso` di F13b: abilitato, connesso, modello valido.
  */
 export function scrittoreCatena(s: Scrittore, regole: Regole): Msg | undefined {
   if (s.provider === 'claude') return regole.modelli.claude.includes(s.modello) ? undefined : msg('v.modelloNonAmmesso', { modello: s.modello, esecutore: 'claude' })
-  if (s.provider === 'freellmapi') return regole.risorse.fornitori.includes('freellmapi') ? undefined : msg('v.fornitoreNonAbilitato', { fornitore: 'freellmapi' })
-  return msg('cat.scrittoreAssente', { provider: s.provider })
+  return scrittoreAmmesso(s, regole) as Msg | undefined
 }
 
 /** F13.6: quello che costa un passo, coi tipi distinti: piano (abbonamento), stimato, osservato, ignoto o gratuito. */

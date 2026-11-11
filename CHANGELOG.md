@@ -82,8 +82,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   step stops with the reason when it does not. Only the applier, always Claude, changes the repository; a Codex reviewer
   works read-only. Presets Director + local writer, Economy and Quality; the cost of each role (plan, estimated,
   observed, unknown, free) and an optional soft money cap per chain, with the same rules. Chain steps run
-  locally only, not on the API lane or in the cloud. Writers from the new provider registry plug in at one point;
-  until then the chain refuses them with the reason. Sensitive work never goes into a chain.
+  locally only, not on the API lane or in the cloud. A writer can be Claude, FreeLLMAPI or an OpenAI-compatible
+  provider (`esecutore: "compatibile"` with its `provider`), admitted by the registry's checks; non-Claude writers get
+  the confirmed full text and their output becomes the artefact. Sensitive work never goes into a chain.
 - **Work mode** (Settings, Account group): default effort per lane, the Codex sandbox when Codex executes, sessions
   started together (1–8, over the host option), a suggested auditor in the Recommended preset, and cross review on
   R0–R2. Set for all projects, with a per-project override field by field; presets Recommended, Economy and Quality.

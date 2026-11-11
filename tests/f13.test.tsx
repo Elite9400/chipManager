@@ -216,8 +216,8 @@ test('F13a↔F13b: lo scrittore {provider, modello} nella chip: claude e freellm
   expect([scrittore('ollama').esecutore, scrittore('ollama').provider]).toEqual(['compatibile', 'ollama'])
   expect([scrittore('freellmapi').esecutore, scrittore('freellmapi').provider]).toEqual(['freellmapi', undefined])
   expect(REGOLE_DEFAULT.modelli.compatibile).toEqual([])
-  // Fino alla fusione con F13b un esecutore compatibile non parte (nel dubbio si blocca).
-  expect(violazioni(scrittore('ollama'), REGOLE_DEFAULT).map(x => x.k)).toContain('cat.scrittoreAssente')
+  // Dopo la fusione con F13b decidono le guardie del registro: senza l'adesione del progetto un compatibile non parte.
+  expect(violazioni(scrittore('ollama'), REGOLE_DEFAULT).map(x => x.k)).toContain('v.fornitoreNonAbilitato')
   // Nel record `provider` va solo, e sempre, con `compatibile`.
   expect('k' in normalizza({ ...base, esecutore: 'compatibile' })).toBe(true)
   expect('k' in normalizza({ ...base, provider: 'ollama' })).toBe(true)

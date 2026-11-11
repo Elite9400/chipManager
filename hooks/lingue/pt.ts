@@ -1261,7 +1261,6 @@ const pt: Dizionario = {
   "modo.cQualita": "Qualidade",
   "modo.catenaGiri": "Rondas de revisão",
   "modo.catenaRuoli": "Escritor {scrittore}: {cs} · revisor {revisore}: {cr} · aplicador Claude: plano",
-  "cat.scrittoreAssente": "o escritor {provider} não está disponível nesta versão",
   "v.destinazionePadre": "{destinazione} não é onde roda a sua chip diretora: uma filha só roda lá",
   "v.dirigenteTetto": "a árvore da chip diretora atingiu o teto de ${tetto} (gasto ${speso}): nenhuma outra chip dela arranca",
   "v.catenaApi": "um passo de cadeia não roda na faixa API: o mandato perderia as referências da cadeia e a entrega do artefacto",

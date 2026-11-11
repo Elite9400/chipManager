@@ -901,12 +901,24 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
     const blocchi = violazioni(a, r, await carica($, { completa: true }))
     if (blocchi.length) return aggiorna($, a.id, x => x.tentativo === a.tentativo ? { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', msg('err.regoleCambiate')) } : null)
     if (a.lanciatore === 'compatibile') {
+      const fallisce = (m: Msg) => aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo ? { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', m) } : null)
+      // F13a↔F13b: il testo è testoScrittore (per un passo di catena anche bozza e feedback), lo stesso confermato; il
+      // filtro dei dati di rete locale e il limite valgono sull'intero, e un artefatto cambiato nel frattempo ferma il passo.
+      const composto = await testoCatena($, a)
+      if ('motivo' in composto) return fallisce(composto.motivo)
+      if (confermato !== undefined && composto.testo !== confermato) return fallisce(msg('err.cambiataPrimaInvio'))
       // F13.3b: exactly the confirmed text, nothing from the repository; the helper re-checks provider, lane and catalogue.
       const risultato = await chiamaCompatibile($, options, 'completa', { provider: a.provider, imp: r.risorse.account.compatibili?.[a.provider ?? ''],
-        livello: r.risorse.compatibili[a.provider ?? ''] ?? 'niente', soloLocale: r.risorse.soloLocale, modello: a.modello, testo: `${a.titolo}\n\n${a.brief}` }) as { risultato?: unknown }
+        livello: r.risorse.compatibili[a.provider ?? ''] ?? 'niente', soloLocale: r.risorse.soloLocale, modello: a.modello, testo: composto.testo }) as { risultato?: unknown }
       if (typeof risultato.risultato !== 'string' || risultato.risultato.length > 30000) throw new Error('invalid answer')
+      // F13.6: l'uscita di uno scrittore di catena diventa il suo artefatto (helper, sotto il lock); senza, il passo non consegna.
+      if (a.catena) {
+        const esito = await helper($, ['artefatto', await cartella($)], JSON.stringify({ catena: a.catena, rif: rifConsegna(a.catena), testo: risultato.risultato }))
+        if (esito.codice !== 0) return fallisce(msg('cat.artefattoMancante'))
+      }
       return aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo
-        ? { ...transizione(x, 'consegnata', ora()), risultato: risultato.risultato as string, avviataIl: ora(), ...salvato('errore', 'errore', msg('rec.bozzaFree')),
+        ? { ...transizione(x, 'consegnata', ora()), risultato: risultato.risultato as string, avviataIl: ora(), ...(a.catena && { artefatto: fileArtefatto(a.catena) }),
+            ...salvato('errore', 'errore', msg('rec.bozzaFree')),
             // F13a↔F13b: a local server is free; a remote provider's price is not read, so its cost is unknown.
             costo: { tipo: voceCompatibile(a.provider)?.locale ? 'gratuito' : 'ignoto' } } : null)
     }

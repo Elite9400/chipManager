@@ -4337,3 +4337,31 @@ test('Revisione F13a, giro 2, punto 3c: con un tetto la scheda della dirigente d
   expect(await ui.find({ type: 'Text', text: /tetto \$2,00, morbido: l'ultima chip può superarlo/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('F13a↔F13b: una catena con scrittore compatibile (Ollama): la riscrittura riceve bozza v1 e feedback, confermati, e l\'uscita è l\'artefatto v2', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { compatibili: { ollama: 'R1' },
+    modoLavoro: { pipeline: { scrittore: { provider: 'ollama', modello: 'qwen3:8b' } } } } } }))
+  mock.clock(on)
+  const viste: string[] = []
+  conferme(on, testo => ((viste.push(testo)), 'Invia testo'))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const r = await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Guida', brief: 'Scrivi la guida.', corsia: 'R1', catena: true } as never) as { result?: string; deny?: string }
+  expect(String(r.deny ?? r.result)).toMatch(/^Chain c-/)
+  const [w1, r1, w2] = amb.azione().sort((x, y) => x.ordine - y.ordine) as [Azione, Azione, Azione]
+  expect([w1.esecutore, w1.provider, w1.modello, w2.esecutore]).toEqual(['compatibile', 'ollama', 'qwen3:8b', 'compatibile'])
+  const c = w1.catena!.id
+  amb.disco.set(`X:/orch/azioni/artefatti/${c}/1-scrittore.md`, `<!-- chipManager artefatto catena=${c} giro=1 ruolo=scrittore rif=- -->\nPrimo paragrafo.\n\nSecondo paragrafo, con un errore.`)
+  amb.disco.set(`X:/orch/azioni/artefatti/${c}/1-revisore.md`, `<!-- chipManager artefatto catena=${c} giro=1 ruolo=revisore rif=1-scrittore.md -->\nCorreggi il secondo paragrafo.`)
+  for (const [x, f] of [[w1, '1-scrittore.md'], [r1, '1-revisore.md']] as const)
+    amb.disco.set(`X:/orch/azioni/${x.id}.json`, JSON.stringify({ ...x, versione: x.versione + 1, stato: 'consegnata', artefatto: f }))
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: `avvia-${w2.id}` })
+  const posta = amb.processi.filter(p => p.argv[1]?.endsWith('/compatibili.cjs') && p.argv[2] === 'completa')
+  expect(posta.length).toBe(1)
+  for (const t of [JSON.parse(posta[0]!.stdin!).testo as string, viste.at(-1)!])
+    for (const x of ['Secondo paragrafo, con un errore.', 'Correggi il secondo paragrafo.', 'Write draft v2']) expect([x, t.includes(x)]).toEqual([x, true])
+  expect(amb.azione().find(a => a.id === w2.id)).toMatchObject({ stato: 'consegnata', artefatto: '2-scrittore.md', costo: { tipo: 'gratuito' } })
+  expect(amb.disco.get(`X:/orch/azioni/artefatti/${c}/2-scrittore.md`)).toBe(`<!-- chipManager artefatto catena=${c} giro=2 ruolo=scrittore rif=1-revisore.md -->\nTesto scritto.`)
+  await ui.unmount()
+})

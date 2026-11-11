@@ -1261,7 +1261,6 @@ const fr: Dizionario = {
   "modo.cQualita": "Qualité",
   "modo.catenaGiri": "Rondes de relecture",
   "modo.catenaRuoli": "Rédacteur {scrittore} : {cs} · relecteur {revisore} : {cr} · applicateur Claude : forfait",
-  "cat.scrittoreAssente": "le rédacteur {provider} n'est pas disponible dans cette version",
   "v.destinazionePadre": "{destinazione} n'est pas là où tourne sa chip directrice : un enfant ne tourne que là",
   "v.dirigenteTetto": "l'arbre de la chip directrice a atteint son plafond de ${tetto} (dépensé ${speso}) : aucune autre de ses chips ne démarre",
   "v.catenaApi": "une étape de chaîne ne tourne pas sur la voie API : le mandat perdrait les références de la chaîne et la remise de l'artefact",

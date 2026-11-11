@@ -1261,7 +1261,6 @@ const de: Dizionario = {
   "modo.cQualita": "Qualität",
   "modo.catenaGiri": "Prüfrunden",
   "modo.catenaRuoli": "Schreiber {scrittore}: {cs} · Prüfer {revisore}: {cr} · Anwender Claude: Abo",
-  "cat.scrittoreAssente": "der Schreiber {provider} ist in dieser Version nicht verfügbar",
   "v.destinazionePadre": "{destinazione} ist nicht, wo sein Leitungs-Chip läuft: ein Kind läuft nur dort",
   "v.dirigenteTetto": "der Baum des Leitungs-Chips hat seine Grenze von ${tetto} erreicht (ausgegeben ${speso}): kein weiterer Chip davon startet",
   "v.catenaApi": "ein Kettenschritt läuft nicht auf der API-Spur: der Auftrag verlöre die Verweise der Kette und die Abgabe des Artefakts",
