@@ -94,13 +94,18 @@ function righeHook(conf, fonte) {
  * a refusal, never a shortened line.
  */
 const riga = t => {
-  // RC 2.2.0, point 1: C0 controls become spaces; C1 controls, DEL, zero-width and bidirectional marks and the BOM are
-  // shown as `\u{..}`, so nothing in a line can hide or reorder what the owner reads.
-  const r = t.replace(/[\x00-\x1f]/g, ' ').replace(/[\x7f-\x9f​-‏‪-‮⁦-⁩﻿]/g, c => `\\u{${c.codePointAt(0).toString(16)}}`)
+  // RC 2.2.0, points 1 and B4: nothing in a line can hide or reorder what the owner reads (INVISIBILI).
+  const r = t.replace(INVISIBILI, c => `\\u{${c.codePointAt(0).toString(16)}}`)
   if (r.length > MAX_RIGA) throw new Rifiuto('skill.err.troppi')
   return r
 }
 const MAX_RIGA = 1000
+/**
+ * RC 2.2.0, review B4: what a line must never hide. Every control (Cc), format (Cf, zero-width and bidirectional marks,
+ * the BOM among them), line and paragraph separator, plus the Arabic letter mark, the Mongolian vowel separator, the
+ * invisible operators and the Hangul filler: shown as `\u{..}`.
+ */
+const INVISIBILI = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u061c\u180e\u2060-\u2064\u3164\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/gu
 /** Keys a hooks file may carry next to its events. */
 const CHIAVI_HOOK = new Set(['hooks', 'modules', 'description', '_comment', 'version'])
 
@@ -140,21 +145,19 @@ const CAMPI_INERTI = new Set(['$schema', 'name', 'displayName', 'version', 'desc
   'metadata', 'icon', 'documentationUrl', 'supportUrl', 'privacyPolicyUrl', 'termsOfServiceUrl', 'defaultEnabled',
   'commands', 'agents', 'skills', 'outputStyles', 'types', 'userConfig', 'settings'])
 /**
- * RC 2.2.0, point 5: the frontmatter `hooks` block of a skill or command file, as its own lines (key line and indented
- * lines, trimmed); [] when the file has no frontmatter or no `hooks` key. YAML is not parsed: the raw lines are shown.
+ * RC 2.2.0, review B2: the raw frontmatter of a skill, command or agent file, every non-empty line between the opening and
+ * the closing `---`; [] when the file does not start with one. What is not certainly delimited (an opening without a
+ * closing, a `---` after a BOM or blank lines) is a refusal: YAML is never parsed, the lines are shown as they are.
  */
-function hookFrontmatter(t) {
-  const m = /^﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/.exec(t)
-  if (!m) return []
-  const righe = m[1].split(/\r?\n/)
-  const i = righe.findIndex(r => /^["']?hooks["']?\s*:/.test(r))
-  if (i < 0) return []
-  const out = [righe[i].trim()]
-  for (const r of righe.slice(i + 1)) {
-    if (/^\S/.test(r)) break
-    if (r.trim()) out.push(r.trim())
+function frontmatter(t) {
+  if (!/^---[ \t]*\r?(\n|$)/.test(t)) {
+    if (/^(\ufeff|\s)*---/.test(t)) throw new Rifiuto('skill.err.hook')
+    return []
   }
-  return out
+  const righe = t.split('\n').map(r => r.replace(/\r$/, ''))
+  const fine = righe.findIndex((r, i) => i > 0 && /^---[ \t]*$/.test(r))
+  if (fine < 0) throw new Rifiuto('skill.err.hook')
+  return righe.slice(1, fine).filter(r => r.trim())
 }
 /** What runs on its own: the manifest field, the conventional file, and how one configuration reads. */
 const COMPONENTI = [
@@ -175,12 +178,10 @@ const COMPONENTI = [
  * fingerprint. Every line is returned (the panel shows them all, a page at a time); over MAX_RIGHE it is a refusal.
  */
 function hookDa(v, esiste, testo, voce, elenca = () => null) {
-  // The approval covers the full content (manifest, every component file and module, line endings normalised), never the preview.
-  const impronta = require('node:crypto').createHash('sha256')
+  // RC 2.2.0, review A: this is the preview only; what the approval covers is the whole tree (alberoImpronta).
   const grezzo = p => {
     const t = testo(p)
     if (t === null) throw new Rifiuto('skill.err.hook')
-    impronta.update(`${p}\0${t.replace(/\r\n/g, '\n')}\0`)
     return t
   }
   const leggi = p => {
@@ -196,14 +197,12 @@ function hookDa(v, esiste, testo, voce, elenca = () => null) {
     return r
   }
   const righe = []
-  const manifest = esiste('.claude-plugin/plugin.json') ? leggi('.claude-plugin/plugin.json') : (impronta.update('no-manifest\0'), null)
+  const manifest = esiste('.claude-plugin/plugin.json') ? leggi('.claude-plugin/plugin.json') : null
   if (manifest !== null && (typeof manifest !== 'object' || Array.isArray(manifest))) throw new Rifiuto('skill.err.hook')
   if (manifest && typeof manifest.name === 'string' && manifest.name !== K.nomePlugin(v)) throw new Rifiuto('skill.err.nome')
   if (manifest && !Object.keys(manifest).every(k => CAMPI_INERTI.has(k) || COMPONENTI.some(c => c.campo === k))) throw new Rifiuto('skill.err.hook')
   if (voce !== undefined) {
     if (!oggettoPuro(voce) || !Object.keys(voce).every(k => CAMPI_VOCE.has(k) || CAMPI_INERTI.has(k) || COMPONENTI.some(c => c.campo === k))) throw new Rifiuto('skill.err.hook')
-    const { defaultEnabled: _spento, ...resto } = voce
-    impronta.update(`marketplace-entry\0${JSON.stringify(resto)}\0`)
   }
   for (const c of COMPONENTI) {
     const dichiaratiDa = (m, fonte) => {
@@ -239,10 +238,12 @@ function hookDa(v, esiste, testo, voce, elenca = () => null) {
     if (!Array.isArray(l) || !l.every(x => typeof x === 'string' && !x.includes('\\'))) throw new Rifiuto('skill.err.hook')
     return [...l].sort()
   }
+  const agenti = []
   for (const [conf, fonte] of [[manifest?.settings, 'plugin.json'], [voce?.settings, 'marketplace.json'], ...(esiste('settings.json') ? [[leggi('settings.json'), 'settings.json']] : [])]) {
     if (conf === undefined) continue
     if (!oggettoPuro(conf)) throw new Rifiuto('skill.err.hook')
     for (const [k, x] of Object.entries(conf)) righe.push(riga(`${fonte} · settings ${k}: ${JSON.stringify(x)}`))
+    if (Object.hasOwn(conf, 'agent')) agenti.push(conf.agent)
   }
   for (const f of tutti('bin')) {
     grezzo(f)
@@ -254,18 +255,74 @@ function hookDa(v, esiste, testo, voce, elenca = () => null) {
     const percorsi = dichiarate.map(x => dentro('', x))
     return aggiunge || !percorsi.length ? [predefinita, ...percorsi] : percorsi
   }
+  // RC 2.2.0, review B1 and B2: the root skill (`SKILL.md` at the plugin root) too, and every frontmatter whole.
   const visti = new Set()
+  const fileSkill = [...(esiste('SKILL.md') ? ['SKILL.md'] : [])]
   for (const [dir, nome] of [...cartelle([manifest?.skills, voce?.skills], 'skills', true).map(d => [d, /(^|\/)SKILL\.md$/]),
-    ...cartelle([manifest?.commands, voce?.commands], 'commands', false).map(d => [d, /\.md$/])]) {
-    for (const f of tutti(dir)) {
-      if (!nome.test(f) || visti.has(f)) continue
-      visti.add(f)
-      for (const r of hookFrontmatter(grezzo(f))) righe.push(riga(`${f} · ${r}`))
-    }
+    ...cartelle([manifest?.commands, voce?.commands], 'commands', false).map(d => [d, /\.md$/])])
+    for (const f of tutti(dir)) if (nome.test(f)) fileSkill.push(f)
+  for (const f of fileSkill) {
+    if (visti.has(f)) continue
+    visti.add(f)
+    for (const r of frontmatter(grezzo(f))) righe.push(riga(`${f} · ${r}`))
   }
-  // `righe` is the whole preview for the confirmation; `impronta` (full content) is what the record keeps and compares.
+  // RC 2.2.0, review B1: the agent `settings.agent` makes the main thread is shown whole (every non-empty line of its
+  // file). It is found by file name, by its path under an agents folder (`a/b.md` = `a:b`) or by its frontmatter `name`;
+  // an agent the plugin does not contain is a refusal.
+  const fileAgenti = cartelle([manifest?.agents, voce?.agents], 'agents', false).flatMap(d => tutti(d).filter(f => f.endsWith('.md')).map(f => [d, f]))
+  for (const nomeAgente of agenti) {
+    if (typeof nomeAgente !== 'string' || !nomeAgente.trim()) throw new Rifiuto('skill.err.hook')
+    const scelti = fileAgenti.filter(([d, f]) => {
+      const rel = f.slice(d.length + 1, -3)
+      const dichiarato = frontmatter(grezzo(f)).map(r => /^name\s*:\s*["']?(.*?)["']?\s*$/.exec(r)?.[1]).find(x => x !== undefined)
+      return path.posix.basename(rel) === nomeAgente || rel.replace(/\//g, ':') === nomeAgente || dichiarato === nomeAgente
+    })
+    if (!scelti.length) throw new Rifiuto('skill.err.hook')
+    for (const [, f] of scelti) for (const r of grezzo(f).split('\n')) if (r.trim()) righe.push(riga(`${f} · ${r.replace(/\r$/, '')}`))
+  }
+  // `righe` is the whole preview for the confirmation.
   if (righe.length > MAX_RIGHE) throw new Rifiuto('skill.err.troppi')
-  return { righe, impronta: impronta.digest('hex') }
+  return { righe }
+}
+
+/** Entries the host adds at the root of an installed plugin (`.in_use/<pid>`, the orphan mark): never the plugin's. */
+const DELL_HOST = new Set(['.git', '.in_use', '.orphaned_at'])
+/**
+ * RC 2.2.0, review A: the integrity fingerprint, sha256 of the whole plugin tree on disk, raw bytes: every regular file by
+ * its relative path (sorted), size and content, nothing decoded or normalised. `.git` and the host's own marks at the
+ * root are left out. A link anywhere, an entry that is neither file nor folder, or a file that cannot be read is a
+ * refusal. Both sides are checkouts made by git on this machine (the approved revision here, the host's install there),
+ * so line-ending conversion is the same on both (test with core.autocrlf and .gitattributes). `voce`, TokenEconomizer's
+ * marketplace entry, is added without `defaultEnabled` (the mod's only edit).
+ */
+function alberoImpronta(root, voce) {
+  const h = require('node:crypto').createHash('sha256')
+  const file = []
+  const giro = (abs, rel) => {
+    const s = fs.lstatSync(abs)
+    if (s.isSymbolicLink()) throw new Rifiuto('skill.err.percorso')
+    if (s.isDirectory()) {
+      for (const n of fs.readdirSync(abs)) if (rel || !DELL_HOST.has(n)) giro(path.join(abs, n), rel ? `${rel}/${n}` : n)
+    } else if (s.isFile()) file.push([rel, abs])
+    else throw new Rifiuto('skill.err.percorso')
+  }
+  try {
+    giro(path.resolve(root), '')
+    file.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    for (const [rel, abs] of file) {
+      const b = fs.readFileSync(abs)
+      h.update(`f\0${rel}\0${b.length}\0`)
+      h.update(b)
+      h.update('\0')
+    }
+  } catch (e) {
+    throw e instanceof Rifiuto ? e : new Rifiuto('skill.err.percorso')
+  }
+  if (voce !== undefined) {
+    const { defaultEnabled: _spento, ...resto } = voce
+    h.update(`marketplace-entry\0${JSON.stringify(resto)}\0`)
+  }
+  return h.digest('hex')
 }
 /** The most preview lines the owner is asked to read (a page at a time); more is a refusal, never a cut preview. */
 const MAX_RIGHE = 400
@@ -284,14 +341,9 @@ function hookDellaRevisione(v, sha, dm, deps) {
   const git = (...a) => deps.esegui(['git', '-C', dir, ...a], { timeoutMs: 120_000 })
   if (!fs.existsSync(path.join(dir, '.git')) && deps.esegui(['git', 'init', '-q', dir]).status !== 0) throw new Rifiuto('skill.err.git')
   if (git('fetch', '-q', '--depth', '1', '--no-tags', urlDi(v), sha).status !== 0) throw new Rifiuto('skill.err.git')
-  return hookDa(v, p => git('cat-file', '-e', `${sha}:${p}`).status === 0, p => {
-    const r = git('show', `${sha}:${p}`)
-    return r.status === 0 ? r.stdout : null
-  }, undefined, p => {
-    // The files under `p` at the approved revision (none when it is absent); null = cannot be listed.
-    const r = git('ls-tree', '-r', '--name-only', sha, '--', p)
-    return r.status === 0 ? r.stdout.split(/\r?\n/).filter(Boolean) : null
-  })
+  // RC 2.2.0, review A: checked out like the host checks it out, then read and fingerprinted like the installed copy.
+  if (git('checkout', '-q', '--detach', '--force', sha).status !== 0) throw new Rifiuto('skill.err.git')
+  return leggiPlugin(v, dir)
 }
 
 /**
@@ -321,8 +373,12 @@ function scriviSenzaLink(radice, rel, testo) {
 }
 
 /** The hooks of the installed copy (its `installPath`, read from disk, no links); undefined = cannot be read (counts as different). */
-function hookInstallati(v, installPath, voce) {
-  if (typeof installPath !== 'string' || !path.isAbsolute(installPath)) return undefined
+/**
+ * The preview and the whole-tree fingerprint of a plugin on disk (a checked-out revision or an installed copy), or a
+ * refusal that names what failed.
+ */
+function leggiPlugin(v, installPath, voce) {
+  if (typeof installPath !== 'string' || !path.isAbsolute(installPath)) throw new Rifiuto('skill.err.percorso')
   const dentro = p => {
     const f = path.resolve(installPath, p)
     return f.startsWith(path.resolve(installPath) + path.sep) ? f : null
@@ -348,10 +404,16 @@ function hookInstallati(v, installPath, voce) {
       return null
     }
   }
+  const impronta = alberoImpronta(installPath, voce)
+  const { righe } = hookDa(v, p => !!dentro(p) && fs.existsSync(dentro(p)), p => {
+    try { return dentro(p) ? fs.readFileSync(fileSenzaLink(installPath, p), 'utf8') : null } catch { return null }
+  }, voce, elenca)
+  return { righe, impronta }
+}
+/** The same, for a copy whose content is only compared: undefined = cannot be read (counts as different). */
+function hookInstallati(v, installPath, voce) {
   try {
-    return hookDa(v, p => !!dentro(p) && fs.existsSync(dentro(p)), p => {
-      try { return dentro(p) ? fs.readFileSync(fileSenzaLink(installPath, p), 'utf8') : null } catch { return null }
-    }, voce, elenca)
+    return leggiPlugin(v, installPath, voce)
   } catch (e) {
     // Too much to show is its own refusal; anything else is «cannot be read» (counts as different).
     if (e instanceof Rifiuto && e.motivo === 'skill.err.troppi') throw e
@@ -581,8 +643,7 @@ function preparaClone(v, dm, deps) {
   const sha = revisione({ ...v, pin: 'ls-remote' }, deps)
   const { dir, git } = cloneA(dm, urlDi(v), sha, deps)
   if (!cloneIntegro(dir, git, sha, v)) throw new Rifiuto('skill.err.git')
-  const h = hookInstallati(v, path.join(dir, 'plugin'), voceClone(dir, v))
-  if (!h) throw new Rifiuto('skill.err.hook')
+  const h = leggiPlugin(v, path.join(dir, 'plugin'), voceClone(dir, v))
   return { id: v.id, url: urlDi(v), sha, hook: h.righe, impronta: h.impronta }
 }
 
@@ -757,4 +818,4 @@ if (require.main === module) {
   process.exitCode = codice
 }
 
-module.exports = { main, prepara, installa, abilita, controlla, pulisci, prerequisiti, dirClone, fileSenzaLink, marketplace, hookInstallati, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }
+module.exports = { main, prepara, installa, abilita, controlla, pulisci, prerequisiti, dirClone, fileSenzaLink, marketplace, hookInstallati, alberoImpronta, hookDellaRevisione, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }

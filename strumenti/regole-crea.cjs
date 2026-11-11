@@ -39,10 +39,20 @@ function crea(input, fsx = fs) {
   // RC 2.2.0, point 2: a folder's real name (8.3 short names and trailing dots resolved by the system) is never `.git`.
   const reale = d => (fsx.realpathSync ?? fs.realpathSync).native(d)
   const eGit = d => path.basename(reale(d)).toLowerCase() === '.git'
+  // RC 2.2.0, review C: the real root is fixed before every check (real path and dev+ino) and never computed again, so a
+  // root swapped later cannot move the target.
+  let radice
+  let idRadice
+  try {
+    radice = reale(base)
+    idRadice = (fsx.statSync ?? fs.statSync)(radice)
+  } catch {
+    return 6
+  }
   // Links above the root are allowed (a repository reached through a junction): the file lands where the reader looks.
   const st = fsx.lstatSync(base)
   if (st.isSymbolicLink() || !st.isDirectory()) return 6
-  if (reale(base).split(/[\\/]+/).some(p => p.toLowerCase() === '.git')) return 6
+  if (radice.split(/[\\/]+/).some(p => p.toLowerCase() === '.git')) return 6
   let dir = base
   for (const p of pezzi.slice(0, -1)) {
     dir = path.join(dir, p)
@@ -71,14 +81,19 @@ function crea(input, fsx = fs) {
     if (e.code === 'EEXIST') return 4
     throw e
   }
-  // RC 2.2.0, point 3: between the checks above and the open a folder may have been swapped. The open file must be the
-  // one at the name (same dev+ino) and really under the root; otherwise close it, remove it only if it is ours, refuse.
+  // RC 2.2.0, point 3 and review C: between the checks above and the open a folder (or the root) may have been swapped.
+  // The open file must be the one at the name (same dev+ino), its real path under the root fixed at the start (still the
+  // same dev+ino), and no folder between them named `.git` (any case); otherwise close it, remove it only if it is ours.
   let mio
   let ok = false
   try {
     mio = fsx.fstatSync(fd)
     const qui = fsx.lstatSync(file)
-    ok = qui.dev === mio.dev && qui.ino === mio.ino && reale(file).startsWith(reale(base) + path.sep)
+    const vero = reale(file)
+    const ora = (fsx.statSync ?? fs.statSync)(radice)
+    const sotto = vero.startsWith(radice + path.sep) ? vero.slice(radice.length + 1).split(/[\\/]+/).slice(0, -1) : null
+    ok = qui.dev === mio.dev && qui.ino === mio.ino && ora.dev === idRadice.dev && ora.ino === idRadice.ino &&
+      !!sotto && !sotto.some(p => p.toLowerCase() === '.git')
   } catch {
     /* the name is gone or unreadable: refused below */
   }
