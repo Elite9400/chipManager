@@ -44,8 +44,11 @@ export const STATO = {
   consegnata: '#8277B4',
 } as const
 
-/** Solo sul segno ◆ del motore. */
-export const MOTORE = { claude: '#C06547', codex: '#0D9070', freellmapi: '#B662A1' } as const
+/** Didascalie e velo neutro. */
+export const GRIGIO = '#808080'
+
+/** Solo sul segno ◆ del motore. Il fornitore compatibile (un motore generico, non un prodotto) prende il neutro. */
+export const MOTORE = { claude: '#C06547', codex: '#0D9070', freellmapi: '#B662A1', compatibile: GRIGIO } as const
 
 /** F9.2: la famiglia del modello, un punto colorato distinto dal colore del motore. */
 export const FAMIGLIA = { opus: '#BE682F', sonnet: '#1B8B9E', haiku: '#5D8C23', fable: '#A662CA', gpt: '#3282D1' } as const
@@ -72,9 +75,6 @@ export const MARCHIO = { glifo: '▣', colore: ACCENTO, nome: ['chip', 'Manager'
 
 /** `ok` non ha colore. */
 export const LIVELLO = { ok: undefined, attenzione: STATO.attesa, critica: STATO.errore } as const
-
-/** Didascalie e velo neutro. */
-export const GRIGIO = '#808080'
 
 /** Sfondi su cui si misura il contrasto: tema chiaro e scuro, del desktop e del terminale. */
 export const SFONDI = { chiaro: ['#FFFFFF', '#FAF9F5'], scuro: ['#000000', '#262624'] } as const

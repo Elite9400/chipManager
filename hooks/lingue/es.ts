@@ -253,6 +253,7 @@ const es: Dizionario = {
   "sessione.ferma": "Detenida",
   "sessione.inCorso": "En curso",
   "motore.nessuno": "Ninguno",
+  "motore.compatibile": "Compatible con OpenAI",
   "sintesi.alLavoro": "{n} trabajando",
   "sintesi.aspettano": { one: "1 te espera", other: "{n} te esperan" },
   "sintesi.daAvviare": "{n} por iniciar",

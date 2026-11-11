@@ -527,7 +527,7 @@ export function punteggio(a: Azione, r: Regole, limiti: readonly Limite[], lista
   // Oltre la soglia critica il margine scende a un residuo: la scelta va altrove se un'alternativa ammessa c'è,
   // e se tutti sono oltre, il residuo tiene ancora l'ordine fra di loro.
   const libero = pieno === undefined ? 0.25 : Math.max(0, 1 - pieno / 100)
-  const margine = pieno !== undefined && livelloDi(pieno, sogliaDi(r.risorse, a.esecutore)) === 'critica' ? libero * 0.001 : libero
+  const margine = pieno !== undefined && a.esecutore !== 'compatibile' && livelloDi(pieno, sogliaDi(r.risorse, a.esecutore)) === 'critica' ? libero * 0.001 : libero
   const attivi = lista.filter(x => occupa(x) && x.esecutore === a.esecutore && modelloDi(x, r) === modelloDi(a, r)).length
   return peso * margine / (1 + attivi)
 }
@@ -861,7 +861,7 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
   // F13.3b: a registry provider is enabled by the project's own opt-in (`compatibili`), connected by its key or by needing none.
   const compatibile = a.esecutore === 'compatibile'
   const livelloEsterno = compatibile ? (politica.compatibili ?? {})[a.provider ?? ''] ?? 'niente' : politica.freellmapi.livello
-  if (compatibile) {
+  if (a.esecutore === 'compatibile') {
     if (!voceCompatibile(a.provider)) v.push(msg('cmp.ignoto', { provider: String(a.provider ?? '—') }))
     else if (livelloEsterno === 'niente') v.push(msg('v.fornitoreNonAbilitato', { fornitore: a.provider! }))
     else if (!(regole.compatibiliConnessi ?? []).includes(a.provider!)) v.push(msg('v.nonConnesso', { fornitore: a.provider! }))

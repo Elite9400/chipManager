@@ -521,7 +521,7 @@ export function presetChi(a: Azione, preset: PresetChi, r: Regole, limiti: reado
     auditor = ['opus', 'fable'].find(x => !motivoAuditor(modello, x) && rangoModello(idAuditor(x)!) > rangoModello(modello) &&
       violazioni({ ...candidata, auditor: x }, r).every(m => senza.includes(JSON.stringify(m))))
   }
-  const campi: Pick<Azione, 'esecutore' | 'modello' | 'effort' | 'auditor'> = { esecutore: s.esecutore, modello: s.modello, effort: s.effort, auditor }
+  const campi: Pick<Azione, 'esecutore' | 'modello' | 'effort' | 'auditor' | 'provider'> ={ esecutore: s.esecutore, modello: s.modello, effort: s.effort, auditor }
   return { campi, ...(auditorTolto && { auditorTolto }) }
 }
 

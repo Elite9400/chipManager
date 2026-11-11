@@ -132,7 +132,8 @@ export type EsitoApplica = {
 }
 
 const MOTORI = ['claude', 'codex', 'freellmapi'] as const
-const NOMI_MOTORI: Record<Motore, string> = { claude: 'Claude', codex: 'Codex', freellmapi: 'FreeLLMAPI' }
+/** Product names stay as they are; the generic `compatibile` executor is named in the owner's language. */
+const NOMI_MOTORI: Record<Exclude<Motore, 'compatibile'>, string> = { claude: 'Claude', codex: 'Codex', freellmapi: 'FreeLLMAPI' }
 
 /** Dati e pezzi comuni alle viste, letti una volta per disegno. */
 async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, colonne: number) {
@@ -146,7 +147,7 @@ async function comuni($: Eng, el: ElementTable, surface: RenderSurface, c: Ctx, 
   const T = traduttore(await read($, lingua))
   const ui = componenti(el, surface, T.lingua)
 
-  const motore = (m: Motore | 'nessuno') => (m === 'nessuno' ? T('motore.nessuno') : NOMI_MOTORI[m])
+  const motore = (m: Motore | 'nessuno') => (m === 'nessuno' ? T('motore.nessuno') : m === 'compatibile' ? T('motore.compatibile') : NOMI_MOTORI[m])
   const io = await read($, contesto)
   const lette = await read($, azioni)
   // Solo le azioni di questo progetto: quelle senza progetto non si mostrano più da nessuna parte.

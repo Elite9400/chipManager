@@ -253,6 +253,7 @@ const it: Dizionario = {
   "sessione.ferma": "Ferma",
   "sessione.inCorso": "In corso",
   "motore.nessuno": "Nessuno",
+  "motore.compatibile": "Compatibile OpenAI",
   "sintesi.alLavoro": "{n} al lavoro",
   "sintesi.aspettano": { one: "1 aspetta te", other: "{n} aspettano te" },
   "sintesi.daAvviare": "{n} da avviare",

@@ -253,6 +253,7 @@ const pt: Dizionario = {
   "sessione.ferma": "Parada",
   "sessione.inCorso": "Em andamento",
   "motore.nessuno": "Nenhum",
+  "motore.compatibile": "Compatível com OpenAI",
   "sintesi.alLavoro": "{n} trabalhando",
   "sintesi.aspettano": { one: "{n} aguardando você", other: "{n} aguardando você" },
   "sintesi.daAvviare": "{n} para iniciar",

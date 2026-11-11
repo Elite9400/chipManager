@@ -1057,6 +1057,8 @@ async function avviaTutte($: Eng, options: Record<string, unknown>) {
   const limiti = (await read($, risorse)).limiti
   // Anche le accodate partono da questo comando: contano per l'avviso come quelle che partono subito.
   const oltre = [...new Set([...piano.avvia, ...piano.coda.map(c => c.a)].map(a => a.esecutore))].flatMap(f => {
+    // A registry provider has no plan limits or thresholds of its own.
+    if (f === 'compatibile') return []
     const l = piuPieno(limiti, f)
     const s = sogliaDi(r.risorse, f)
     return l && s && livelloDi(l.percentuale!, s) === 'critica' ? [T('pop.limiteCritico', { nome: nomeLimiteIn(l, T.lingua), pct: l.percentuale!, critica: s.critica })] : []

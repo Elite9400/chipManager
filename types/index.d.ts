@@ -48,6 +48,8 @@ export type ModoLavoroEfficace = {
   parallelo?: number
   auditorSuggerito: boolean
   revisioneIncrociata: boolean
+  /** F13.7: baseline skills on or off by id, account and project combined (absent = every entry's default). */
+  skillBase?: Record<string, boolean>
 }
 /**
  * F10: i campi del progetto che si combinano con l'account, come stanno nel config (nessun valore efficace): le soglie e
@@ -299,7 +301,8 @@ export type Messaggio = { k: string; p?: Record<string, unknown> } | string
 export type Regole = {
   /** false: routing.json non letto → nessun avvio (mai regole allentate in silenzio). */
   lette: boolean
-  modelli: { claude: string[]; codex: string[]; freellmapi: string[] }
+  /** Per executor; `compatibile` is empty here (its models come from the provider's catalogue at run time). */
+  modelli: Record<Motore, string[]>
   effort: string[]
   tetto: Record<string, string>
   /** autore → revisori ammessi (`motore:codex` per Codex). */

@@ -113,7 +113,7 @@ const GIORNO = 86_400_000
 /** Giorno con l'anno e ora, nella lingua della board. */
 const data = (T: T, iso: string | undefined) =>
   !iso || !Number.isFinite(Date.parse(iso)) ? T('board.ignoto') : `${giorno(T.lingua, iso)}, ${ora(T.lingua, iso)}`
-const motore = (T: T, m: string) => (m === 'nessuno' ? T('motore.nessuno') : ({ claude: 'Claude', codex: 'Codex', freellmapi: 'FreeLLMAPI' } as Record<string, string>)[m] ?? m)
+const motore = (T: T, m: string) => (m === 'nessuno' || m === 'compatibile' ? T(`motore.${m}`) : ({ claude: 'Claude', codex: 'Codex', freellmapi: 'FreeLLMAPI' } as Record<string, string>)[m] ?? m)
 const voce = (k: string, v: string) => `<dt>${esc(k)}</dt><dd>${v}</dd>`
 
 const SEGNI = {

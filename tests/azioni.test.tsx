@@ -3967,6 +3967,36 @@ test('F13b rilievo 5: passando da compatibile a Claude o con un preset, provider
   expect(campi.provider).toBeUndefined()
 })
 
+test('F13b tipi: una chip compatibile ha il segno del motore colorato e il nome del motore, nel terminale e sul desktop', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { compatibili: { ollama: 'R1' } } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Bozza', brief: 'Riassumi.', esecutore: 'compatibile', provider: 'ollama', modello: 'qwen3:8b', corsia: 'R1' } as never)
+  const a = amb.azione()[0]!
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount({ ...PANE(surface) })
+    if (!(await ui.find({ key: `chi-dettagli-${a.id}` }))) await ui.press({ key: `mod-${a.id}` })
+    await ui.press({ key: `chi-dettagli-${a.id}` })
+    const segni: unknown[] = []
+    let testo = ''
+    const visita = (n: unknown): void => {
+      if (!n || typeof n !== 'object') return
+      if (Array.isArray(n)) return n.forEach(visita)
+      const x = n as { type?: string; props?: Record<string, unknown>; children?: unknown }
+      if (typeof x.children === 'string') testo += `${x.children}\n`
+      if (Array.isArray(x.children)) for (const c of x.children) if (typeof c === 'string') testo += `${c}\n`
+      const propri = typeof x.children === 'string' ? [x.children] : Array.isArray(x.children) ? x.children.filter(c => typeof c === 'string') : []
+      if (x.type === 'Text' && propri.some(c => c.includes('◆'))) segni.push(x.props?.color)
+      visita(x.children)
+    }
+    visita(await ui.drawn())
+    expect([surface, segni.length > 0, segni.every(c => typeof c === 'string')]).toEqual([surface, true, true])
+    expect([surface, /Compatibile OpenAI/.test(testo), /undefined/.test(testo)]).toEqual([surface, true, false])
+    await ui.unmount()
+  }
+})
+
 test('F13b rilievo 6: se il progetto diventa solo locale mentre la conferma è aperta, l\'installazione di un plugin con flusso esterno non parte', async ($, on) => {
   const chiamate: string[] = []
   const amb = ambiente(on, {

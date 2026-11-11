@@ -255,6 +255,7 @@ const en = {
   "sessione.ferma": "Stopped",
   "sessione.inCorso": "Running",
   "motore.nessuno": "None",
+  "motore.compatibile": "OpenAI-compatible",
   "sintesi.alLavoro": "{n} working",
   "sintesi.aspettano": { one: "1 waiting for you", other: "{n} waiting for you" },
   "sintesi.daAvviare": "{n} to start",
