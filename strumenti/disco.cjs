@@ -325,20 +325,24 @@ async function ripristinaConfig(file, richiesta) {
 }
 
 /**
- * Il doctor sposta i dati di un progetto (cartella in un repository o con link interni) nella cartella sicura `a`, solo
- * su conferma. Tiene GLI STESSI lock degli scrittori (config, azioni, corsia API e ogni esecuzione) dall'inizio fino al
- * cambio del config compreso; con CAS sui byte del config. Copia in una cartella di staging esclusiva accanto alla
- * destinazione, ricontrollando la catena (e il percorso reale del genitore) prima di ogni scrittura; verifica ogni copia
- * con sha256; rinomina atomicamente lo staging in `a`; poi scrive `progetti[repo].cartella = a`. La vecchia cartella resta
- * intatta. I link non si copiano: senza un «accetta» esplicito di quei nomi (`accettaSaltati`) il config non cambia e lo
- * staging si toglie. Una pulizia tocca solo lo staging. stdin `{ impronta, accettaSaltati? }`: 0 fatto; 4 cambiato,
- * destinazione non vuota o omissioni da accettare (`saltati`); 2 richiesta non valida; 3 occupato; 6 percorso non sicuro.
- * `deps` (solo le prove): `dopoCopia`, `primaDelConfig`.
+ * The doctor moves a project's data (folder inside a repository or with links inside) to the safe folder `a`, only on
+ * confirmation. It holds THE SAME locks as the writers (config, actions, API lane and every execution) from the start to
+ * the config change included, with a CAS on the config bytes. The executions are counted under the actions mutex
+ * (launchers create their records holding it), locked, then counted again: a different set stops the move. The copy goes
+ * to an exclusive staging folder next to the destination; before every write the chain of the path being written and the
+ * real path of the parent are checked again; every copy is verified with sha256; the staging folder is renamed atomically
+ * to `a`; then `progetti[repo].cartella = a` is written. The old folder stays untouched. Links are not copied: unless
+ * `accettaSaltati` is exactly the set of skipped names, the config does not change and the staging folder is removed.
+ * Cleanup removes only the staging folder created here (same physical parent, same dev+ino); otherwise it leaves it and
+ * says so. stdin `{ impronta, accettaSaltati? }`: 0 done; 4 config changed (empty stdout), destination not empty
+ * (`motivo`) or skipped names to accept (`saltati`); 2 invalid request; 3 busy; 6 unsafe path or staging left in place.
+ * `deps` (tests only): `dopoLock`, `dopoCopia`, `primaDelConfig`.
  */
 async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
   if (!oggetto(richiesta) || !(richiesta.impronta === null || (typeof richiesta.impronta === 'string' && /^[0-9a-f]{64}$/.test(richiesta.impronta)))) return [2, '']
   const accettati = richiesta.accettaSaltati ?? []
-  if (!Array.isArray(accettati) || accettati.length > 200 || !accettati.every(x => typeof x === 'string' && x.length < 400)) return [2, '']
+  // The panel sends back the whole list the copier reported: the bounds reject absurd input, never a real list.
+  if (!Array.isArray(accettati) || accettati.length > 100_000 || !accettati.every(x => typeof x === 'string' && x.length <= 4096)) return [2, '']
   if (typeof repo !== 'string' || !/^[^/\s]+\/[^/\s]+$/.test(repo) || ![config, da, a].every(x => typeof x === 'string' && path.isAbsolute(x))) return [2, '']
   const DA = path.resolve(da)
   const A = path.resolve(a)
@@ -355,23 +359,33 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
   if (fs.existsSync(A) && fs.readdirSync(A).length) return [4, JSON.stringify({ motivo: 'destinazione non vuota' })]
   const azioni = path.join(DA, 'azioni')
   const esecuzioni = path.join(azioni, 'esecuzioni')
-  let registri = []
-  try {
-    registri = fs.readdirSync(esecuzioni).filter(n => n.endsWith('.json'))
-  } catch {
-    registri = []
+  const censisci = () => {
+    try {
+      return fs.readdirSync(esecuzioni).filter(n => n.endsWith('.json')).sort()
+    } catch {
+      return []
+    }
   }
-  // Gli stessi lock degli scrittori. Config, azioni e corsia API si aspettano (li tengono per poco); un'esecuzione
-  // tenuta dal suo supervisore vuol dire un lavoro in corso: lo spostamento non parte (occupato).
+  // The writers' own locks. Config, actions and API lane are waited for (held briefly); an execution held by its
+  // supervisor means work in progress: the move does not start (busy).
   const API = require('./api-claude.cjs')
-  const lock = [mutexConfig(config), MUTEX_AZIONI(azioni), API.MUTEX_API,
-    ...registri.flatMap(n => [mutexEsecuzione('cli', path.join(esecuzioni, n)), mutexEsecuzione('api', path.join(esecuzioni, n))])]
-  const tieni = async (i, fn) => {
-    if (i === lock.length) return fn()
-    const r = await conMutex(lock[i], i < 3 ? 8000 : 0, () => tieni(i + 1, fn))
+  const tieni = async (lock, attesa, fn) => {
+    if (!lock.length) return fn()
+    const r = await conMutex(lock[0], attesa, () => tieni(lock.slice(1), attesa, fn))
     return r.occupato ? [3, ''] : r.valore
   }
-  return tieni(0, async () => {
+  return tieni([mutexConfig(config), MUTEX_AZIONI(azioni), API.MUTEX_API], 8000, async () => {
+    // Counted under the actions mutex, never before it: a record created in between, with its supervisor already
+    // running, would stay unlocked and the copy would freeze a state the supervisor keeps changing at the source.
+    const registri = censisci()
+    return tieni(registri.flatMap(n => [mutexEsecuzione('cli', path.join(esecuzioni, n)), mutexEsecuzione('api', path.join(esecuzioni, n))]), 0, async () => {
+      await deps.dopoLock?.()
+      if (censisci().join('|') !== registri.join('|')) return [3, JSON.stringify({ motivo: 'esecuzioni cambiate' })]
+      return copiaSottoLock()
+    })
+  })
+
+  async function copiaSottoLock() {
     const ora = fs.existsSync(config) ? fs.readFileSync(config) : null
     if ((ora === null ? null : improntaByte(ora)) !== richiesta.impronta) return [4, '']
     let c = {}
@@ -384,19 +398,37 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
       if (!configValido(c)) return [2, '']
     }
     let staging
+    let identita
+    let realeSopra
+    // Removes the staging folder only if it is still the one created here: same physical parent and same dev+ino. A
+    // re-pointed alias above the root could otherwise lead to someone else's folder with the same name.
+    const togli = () => {
+      try {
+        percorsoSicuro(staging)
+        const st = fs.lstatSync(staging, { bigint: true })
+        if (!st.isDirectory() || st.dev !== identita.dev || st.ino !== identita.ino || !stessoPercorso(fs.realpathSync.native(sopra), realeSopra)) return false
+        fs.rmSync(staging, { recursive: true, force: true })
+        return true
+      } catch {
+        return false
+      }
+    }
+    const rimasto = () => [6, `helper.stagingNonRimosso: ${staging}`]
     try {
       percorsoSicuro(sopra)
       fs.mkdirSync(sopra, { recursive: true })
       percorsoSicuro(sopra)
-      const realeSopra = fs.realpathSync.native(sopra)
-      // Prima di ogni scrittura: catena senza link dalla radice in giù e genitore REALE invariato (nessun antenato sostituito).
-      const controlla = () => {
-        percorsoSicuro(staging)
+      realeSopra = fs.realpathSync.native(sopra)
+      // Before every write: no link from the root down along the very path being written (a folder of the staging tree
+      // swapped for a link would carry the copy elsewhere), and the same REAL parent (no ancestor re-pointed).
+      const controlla = dove => {
+        percorsoSicuro(dove)
         if (!stessoPercorso(fs.realpathSync.native(sopra), realeSopra)) throw new Rifiuto(6, `helper.percorsoReale: ${sopra}`)
       }
       staging = path.join(sopra, `.${path.basename(A)}.staging-${crypto.randomBytes(6).toString('hex')}`)
-      // Creata in modo esclusivo: se esiste già (di qualcun altro) mkdir fallisce e non la si tocca.
+      // Created exclusively: if it already exists (someone else's) mkdir fails and it is not touched.
       fs.mkdirSync(staging)
+      identita = fs.lstatSync(staging, { bigint: true })
       const copiati = []
       const saltati = []
       const relativo = x => path.relative(DA, x).replace(/\\/g, '/')
@@ -407,25 +439,31 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
           const st = fs.lstatSync(x)
           if (st.isSymbolicLink() || (!st.isDirectory() && !st.isFile())) saltati.push(relativo(x))
           else if (st.isDirectory()) {
-            controlla()
+            controlla(y)
             fs.mkdirSync(y)
             copia(x, y)
           } else {
-            controlla()
+            controlla(y)
             fs.copyFileSync(x, y, fs.constants.COPYFILE_EXCL)
             copiati.push([x, y])
           }
         }
       }
       copia(DA, staging)
-      for (const [x, y] of copiati) if (improntaByte(fs.readFileSync(x)) !== improntaByte(fs.readFileSync(y))) throw new Error('copia non verificata')
-      if (saltati.some(x => !accettati.includes(x))) {
-        fs.rmSync(staging, { recursive: true, force: true })
+      // The chain again while verifying: a link slipped in between a check and its write is still caught here.
+      for (const [x, y] of copiati) {
+        controlla(y)
+        if (improntaByte(fs.readFileSync(x)) !== improntaByte(fs.readFileSync(y))) throw new Error('copia non verificata')
+      }
+      // Exactly the skipped set, no more and no less: a partial or stale confirmation moves nothing.
+      const confermati = new Set(accettati)
+      if (new Set(saltati).size !== confermati.size || saltati.some(x => !confermati.has(x))) {
+        if (!togli()) return rimasto()
         return [4, JSON.stringify({ saltati })]
       }
       await deps.dopoCopia?.()
-      controlla()
-      // La destinazione: assente, o vuota com'era all'inizio (rmdir fallisce se qualcuno vi ha messo qualcosa).
+      controlla(staging)
+      // The destination: absent, or empty as it was at the start (rmdir fails if someone put something in it).
       if (fs.existsSync(A)) fs.rmdirSync(A)
       fs.renameSync(staging, A)
       staging = undefined
@@ -435,19 +473,11 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
       scriviConfig(config, JSON.stringify(nuovo, null, 2))
       return [0, JSON.stringify({ da: DA, a: A, copiati: copiati.length, saltati })]
     } catch (e) {
-      // Solo il proprio staging, e solo se il genitore è ancora quello reale di prima (mai attraverso un link nuovo).
-      if (staging) {
-        try {
-          percorsoSicuro(staging)
-          fs.rmSync(staging, { recursive: true, force: true })
-        } catch {
-          // genitore cambiato: lo staging resta dov'è, non si segue un link per toglierlo
-        }
-      }
+      if (staging && identita && !togli()) return rimasto()
       if (e instanceof Rifiuto) return [e.codice ?? 6, e.message]
       return [1, String(e?.code ?? 'errore')]
     }
-  })
+  }
 }
 
 function scriviAtomico(file, testo) {

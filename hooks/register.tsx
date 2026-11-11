@@ -1276,18 +1276,26 @@ async function rimedioDoctor($: Eng, opz: Record<string, unknown>, r: Rilievo) {
     const saltati = (() => {
       try {
         const v = (JSON.parse(e.testo || '{}') as { saltati?: unknown }).saltati
-        return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(0, 50) : []
+        return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
       } catch {
         return []
       }
     })()
     if (e.codice === 4 && saltati.length) {
       const ancora = T('doc.spostaComunque')
-      if ((await $.ui.ask(T('doc.chiediSaltati', { saltati: saltati.join(', ').slice(0, 400) }), { options: [ancora, T('comune.annulla')], header: 'chipManager' }).catch(() => '')) !== ancora)
-        return void $.ui.toast(T('doc.nonSpostati'))
+      // Every name is shown, a page at a time, and the whole list is sent back: the helper moves only when the confirmed
+      // set is exactly the set it skips.
+      const pagine = Math.ceil(saltati.length / 20)
+      for (let i = 0; i < pagine; i++) {
+        const pagina = saltati.slice(i * 20, (i + 1) * 20).join(', ') + (pagine > 1 ? ` (${i + 1}/${pagine})` : '')
+        if ((await $.ui.ask(T('doc.chiediSaltati', { saltati: pagina }), { options: [ancora, T('comune.annulla')], header: 'chipManager' }).catch(() => '')) !== ancora)
+          return void $.ui.toast(T('doc.nonSpostati'))
+      }
       e = await helper($, argomenti, JSON.stringify({ impronta, accettaSaltati: saltati }))
     }
-    $.ui.toast(e.codice === 0 ? T('doc.spostati', { verso: r.verso, da: r.da }) : T(e.codice === 4 ? 'errore.configCambiata' : 'doc.nonRiuscito'))
+    // Only the CAS refusal (exit 4 with nothing on stdout) means the config changed elsewhere; any other 4 (destination
+    // not empty, a different set of skipped links) moved nothing and changed nothing.
+    $.ui.toast(e.codice === 0 ? T('doc.spostati', { verso: r.verso, da: r.da }) : T(e.codice !== 4 ? 'doc.nonRiuscito' : e.testo ? 'doc.nonSpostati' : 'errore.configCambiata'))
     if (e.codice === 0) await aggiornaRisorse($, opz)
   } else if (r.codice === 'registro.sviluppo' || r.codice === 'config.illeggibile') {
     const si = T('doc.applica')

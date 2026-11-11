@@ -2927,3 +2927,110 @@ test('Percorsi, rilievo 4: link saltati = config invariato e omissioni dette; so
   assert.strictEqual(c2, 0, u2)
   assert.strictEqual(JSON.parse(fs.readFileSync(x.config, 'utf8')).progetti['owner/prova'].cartella, x.a.replace(/\\/g, '/'))
 })
+
+// --- Path fix, review round 2 ------------------------------------------------------------------------------------------
+
+const togliLink = p => (process.platform === 'win32' ? fs.rmdirSync(p) : fs.unlinkSync(p))
+
+test('Paths, round 2 finding 1: a staging subfolder swapped for a link during the copy: nothing written outside, no success', async () => {
+  const x = datiDaSpostare()
+  const testo = await configuraDa(x)
+  const altrove = fuori()
+  fs.writeFileSync(path.join(altrove, 'sentinella'), 's')
+  // Right after the copy creates `<staging>/azioni`, it becomes a junction to a foreign folder.
+  const mkdir = fs.mkdirSync
+  fs.mkdirSync = function (p, ...resto) {
+    const r = mkdir.call(this, p, ...resto)
+    if (typeof p === 'string' && path.basename(p) === 'azioni' && path.basename(path.dirname(p)).includes('.staging-')) {
+      fs.rmdirSync(p)
+      giunzione(altrove, p)
+    }
+    return r
+  }
+  let r
+  try {
+    r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
+  } finally {
+    fs.mkdirSync = mkdir
+  }
+  assert.notStrictEqual(r[0], 0, r[1])
+  assert.match(r[1], /helper\.collegamento/)
+  assert.deepStrictEqual(fs.readdirSync(altrove), ['sentinella'])
+  assert.strictEqual(fs.existsSync(x.a), false)
+  assert.deepStrictEqual(fs.readdirSync(path.dirname(x.a)).filter(n => n.includes('staging')), [])
+  assert.deepStrictEqual(fs.readFileSync(x.config), testo)
+})
+
+test('Paths, round 2 finding 1: an alias above the root re-pointed during the move: a foreign staging folder with the same name is not deleted', async () => {
+  const fisico1 = fuori()
+  const fisico2 = fuori()
+  const ponte = path.join(fuori(), 'ponte')
+  giunzione(fisico1, ponte)
+  const x = { ...datiDaSpostare(), config: path.join(ponte, 'chipmanager', 'config.json'), a: path.join(ponte, 'chipmanager', 'progetti', 'owner__prova') }
+  const testo = await configuraDa(x)
+  let estranea
+  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+    dopoCopia: () => {
+      const nome = fs.readdirSync(path.join(fisico1, 'chipmanager', 'progetti')).find(n => n.includes('.staging-'))
+      estranea = path.join(fisico2, 'chipmanager', 'progetti', nome)
+      fs.mkdirSync(estranea, { recursive: true })
+      fs.writeFileSync(path.join(estranea, 'di-altri.txt'), 'x')
+      togliLink(ponte)
+      giunzione(fisico2, ponte)
+    },
+  })
+  assert.strictEqual(fs.existsSync(path.join(estranea, 'di-altri.txt')), true)
+  assert.strictEqual(r[0], 6, r[1])
+  assert.match(r[1], /helper\.stagingNonRimosso: /)
+  assert.deepStrictEqual(fs.readFileSync(path.join(fisico1, 'chipmanager', 'config.json')), testo)
+})
+
+test('Paths, round 2 finding 2: executions are counted under the actions mutex: a record created while the move waits, with its supervisor running, stops it', async () => {
+  const x = datiDaSpostare()
+  const testo = await configuraDa(x)
+  const fileEs = path.join(x.da, 'azioni', 'esecuzioni', 'az-tardi001.json')
+  let rilascia
+  const tenuto = await D.conMutex(D.MUTEX_AZIONI(path.join(x.da, 'azioni')), 0, async () => {
+    const sposta = D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
+    await new Promise(ok => setTimeout(ok, 150))
+    // A launcher writes the record under the actions mutex; its supervisor then holds the record's own lock.
+    fs.writeFileSync(fileEs, JSON.stringify({ id: 'a-tardi0001', tentativo: 'az-tardi001', stato: 'avviata' }))
+    await new Promise(ok => { D.conMutex(D.mutexEsecuzione('cli', fileEs), 0, () => new Promise(fine => { rilascia = fine; ok() })) })
+    return { sposta }
+  })
+  const esito = await tenuto.valore.sposta
+  rilascia()
+  assert.strictEqual(esito[0], 3, esito[1])
+  assert.strictEqual(fs.existsSync(x.a), false)
+  assert.deepStrictEqual(fs.readFileSync(x.config), testo)
+  // A set that changes between the count and the locks: counted again, the move stops cleanly.
+  const y = datiDaSpostare()
+  const testoY = await configuraDa(y)
+  const r = await D.spostaDati(y.config, 'owner/prova', y.da, y.a, { impronta: impronta(testoY) }, {
+    dopoLock: () => fs.writeFileSync(path.join(y.da, 'azioni', 'esecuzioni', 'az-nuova001.json'), '{}'),
+  })
+  assert.deepStrictEqual([r[0], JSON.parse(r[1]).motivo], [3, 'esecuzioni cambiate'])
+  assert.strictEqual(fs.existsSync(y.a), false)
+  assert.deepStrictEqual(fs.readFileSync(y.config), testoY)
+})
+
+test('Paths, round 2 finding 3: the confirmed names must be exactly the skipped set, however long; a superset or a subset moves nothing', async () => {
+  const x = datiDaSpostare()
+  const altrove = fuori()
+  const nomi = Array.from({ length: 201 }, (_, i) => `link-${String(i).padStart(3, '0')}`)
+  for (const n of nomi) giunzione(altrove, path.join(x.da, n))
+  const testo = await configuraDa(x)
+  const [c0, u0] = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
+  assert.strictEqual(c0, 4)
+  const saltati = JSON.parse(u0).saltati
+  assert.deepStrictEqual([...saltati].sort(), nomi)
+  for (const accettaSaltati of [saltati.slice(1), [...saltati, 'non-saltato']]) {
+    const [c, u] = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo), accettaSaltati })
+    assert.deepStrictEqual([c, JSON.parse(u).saltati.length], [4, 201])
+    assert.strictEqual(fs.existsSync(x.a), false)
+    assert.deepStrictEqual(fs.readFileSync(x.config), testo)
+  }
+  const [c2, u2] = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo), accettaSaltati: saltati })
+  assert.strictEqual(c2, 0, u2)
+  assert.strictEqual(JSON.parse(fs.readFileSync(x.config, 'utf8')).progetti['owner/prova'].cartella, x.a.replace(/\\/g, '/'))
+})

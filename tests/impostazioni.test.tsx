@@ -362,8 +362,9 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
     if (cmd === 'archivia-registro') return fine(0, '{"archiviato":true}')
     if (cmd === 'sposta-dati') {
       esec.spostati.push(String(e.init?.stdin ?? ''))
-      // Come l'helper: con link da saltare non accettati, il config non cambia e i nomi tornano indietro.
-      if (esec.saltati.length && !(JSON.parse(String(e.init?.stdin ?? '{}')) as { accettaSaltati?: unknown }).accettaSaltati)
+      // Like the helper: unless the confirmed names are exactly the skipped set, the config does not change and the names come back.
+      const accettati = new Set((JSON.parse(String(e.init?.stdin ?? '{}')) as { accettaSaltati?: string[] }).accettaSaltati ?? [])
+      if (accettati.size !== new Set(esec.saltati).size || esec.saltati.some(x => !accettati.has(x)))
         return fine(4, JSON.stringify({ saltati: esec.saltati }))
       return fine(0, JSON.stringify({ da: e.argv[5], a: e.argv[6], copiati: 3, saltati: esec.saltati }))
     }
@@ -2341,4 +2342,35 @@ test('Percorsi, rilievo 4: link saltati nello spostamento: nomi detti, Annulla n
   amb.popup.risposta = q => (q.startsWith('These are links') ? 'Move without them' : 'Apply fix')
   await ui.press({ key: 'doctor-rimedio-0' })
   expect(amb.esec.spostati.at(-1)).toBe(JSON.stringify({ impronta: 'e'.repeat(64), accettaSaltati: ['board'] }))
+})
+
+test('Paths, round 2 finding 3: 51 skipped links: every name shown a page at a time, the whole set confirmed; a changed set never reads as a config change', async ($, on) => {
+  const amb = ambiente(on, { cartella: 'X:/repo/dati' })
+  amb.disco.lingua = 'en'
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { cartella: 'X:/repo/dati' } } }))
+  amb.variabili.CHIPMANAGER_DIR = ''
+  const nomi = Array.from({ length: 51 }, (_, i) => `link-${String(i).padStart(2, '0')}`)
+  amb.esec.saltati = nomi
+  amb.esec.diagnosi = () => JSON.stringify({ trovati: [{ codice: 'percorso.dati', motivo: 'helper.collegamento: X:/repo/dati/link-00' }], versione: '2.2.0', impronta: 'f'.repeat(64) })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  amb.popup.risposta = q => (q.startsWith('These are links') ? 'Move without them' : 'Apply fix')
+  await ui.press({ key: 'doctor-rimedio-0' })
+  const pagine = amb.domande.filter(q => q.startsWith('These are links'))
+  expect(pagine.length).toBe(3)
+  for (const n of nomi) expect(pagine.some(q => q.includes(n))).toBe(true)
+  expect(amb.esec.spostati.at(-1)).toBe(JSON.stringify({ impronta: 'f'.repeat(64), accettaSaltati: nomi }))
+  expect(amb.toast.some(t => t.startsWith('Data copied to'))).toBe(true)
+  // The set changes between the question and the move: the helper refuses, and the message says nothing moved.
+  amb.toast.length = 0
+  amb.popup.risposta = q => {
+    if (q.startsWith('These are links')) amb.esec.saltati = [...nomi, 'link-nuovo']
+    return q.startsWith('These are links') ? 'Move without them' : 'Apply fix'
+  }
+  amb.esec.saltati = nomi
+  await ui.press({ key: 'doctor-rimedio-0' })
+  expect(amb.toast).toContain('Data not moved: nothing changed')
+  expect(amb.toast.some(t => t.startsWith('Settings changed elsewhere'))).toBe(false)
 })
