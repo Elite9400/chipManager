@@ -61,6 +61,7 @@ import {
   pianifica,
   REGOLE_DEFAULT,
   regoleDa,
+  CORSIE,
   repoGithub,
   sensibile,
   causaSensibile,
@@ -1501,16 +1502,43 @@ test('2.0: politica default, opt-in isolato per progetto e configurazione fail-c
   expect(progettoDa(config, 'acme/progetto')).toMatchObject({ risorse: { fornitori: ['claude', 'codex'] } })
 })
 
-test('2.0: terzi vietati su R4/R5, dati locali e oltre il livello; vale anche sul revisore', () => {
-  const a = base('a-free0001', 1, { repo: AUTORE.repo!, esecutore: 'freellmapi', revisore: 'claude', modello: 'testo-compatto', effort: 'low', corsia: 'R1' })
+// F13a↔F13b (master's constraint 2): `compatibile` inherits every FreeLLMAPI guard, so this test runs on both executors.
+const TERZI = [
+  {
+    nome: 'freellmapi',
+    a: base('a-free0001', 1, { repo: AUTORE.repo!, esecutore: 'freellmapi', revisore: 'claude', modello: 'testo-compatto', effort: 'low', corsia: 'R1' }),
+    r: () => RF, spento: () => ({ ...RF, risorse: RISORSE_DEFAULT }),
+    r2: () => ({ ...RF, risorse: { ...RF.risorse, freellmapi: { ...RF.risorse.freellmapi, livello: 'R2' as const } } }),
+  },
+  {
+    nome: 'compatibile',
+    a: base('a-cmpter01', 1, { repo: AUTORE.repo!, esecutore: 'compatibile', provider: 'ollama', revisore: 'claude', modello: 'qwen3:8b', effort: 'low', corsia: 'R1' }),
+    r: (): Regole => ({ ...R, compatibiliConnessi: ['ollama'], risorse: { ...R.risorse, compatibili: { ollama: 'R1' } } }),
+    spento: (): Regole => ({ ...R, compatibiliConnessi: ['ollama'], risorse: { ...R.risorse, compatibili: {} } }),
+    r2: (): Regole => ({ ...R, compatibiliConnessi: ['ollama'], risorse: { ...R.risorse, compatibili: { ollama: 'R2' } } }),
+  },
+]
+for (const caso of TERZI) test(`2.0/F13.3b (${caso.nome}): terzi vietati su R3–R5 e su testo sensibile, dati locali e oltre il livello; revisore Claude obbligatorio`, () => {
+  const { a } = caso
+  const RF = caso.r()
   expect(violazioni(a, RF)).toEqual([])
-  expect(violazioni(a, { ...RF, risorse: RISORSE_DEFAULT }).map(m => m.k).join()).toContain('v.fornitoreNonAbilitato')
-  for (const corsia of ['R2', 'R4', 'R5'] as const) expect(violazioni({ ...a, corsia }, RF).length).toBeGreaterThan(0)
-  expect(violazioni({ ...a, corsia: 'R2' }, { ...RF, risorse: { ...RF.risorse, freellmapi: { ...RF.risorse.freellmapi, livello: 'R2' } } })).toEqual([])
+  expect(violazioni(a, caso.spento()).map(m => m.k).join()).toContain('v.fornitoreNonAbilitato')
+  for (const corsia of ['R2', 'R3', 'R4', 'R5'] as const) expect(violazioni({ ...a, corsia }, RF).length).toBeGreaterThan(0)
+  expect(violazioni({ ...a, corsia: 'R2' }, caso.r2())).toEqual([])
+  expect(violazioni({ ...a, corsia: 'R3' }, caso.r2()).map(m => m.k)).toContain('v.freeCorsia')
+  // Testo sensibile su una corsia ammessa: diventa R4 e si ferma (autore Claude, corsia fuori livello).
+  for (const brief of ['Rivedi il login.', 'Cambia la password.', 'Gestisci i permessi.'])
+    expect(violazioni({ ...a, brief }, RF).map(m => m.k)).toEqual(expect.arrayContaining(['v.r4Autore', 'v.freeCorsia']))
+  // Il revisore dell'altro motore è obbligatorio: Claude, mai Codex o nessuno.
+  for (const revisore of ['codex', 'nessuno'] as const) expect(violazioni({ ...a, revisore }, RF).map(m => m.k)).toContain('v.freeRevisione')
   for (const brief of ['RSSMRA80A01H501U', 'nome@example.org', '10.2.3.4', 'storage/x', 'leggi .env'])
     expect(violazioni({ ...a, brief }, RF).map(m => m.k).join()).toContain('v.datiLan')
+  expect(violazioni({ ...a, brief: 'x'.repeat(1600) }, RF).map(m => m.k)).toContain('v.freeTesto')
   expect(violazioni({ ...a, background: 'Leggi .env' }, RF).length).toBeGreaterThan(0)
   expect(violazioni(a, { ...RF, background: 'Leggi .env' }).length).toBeGreaterThan(0)
+})
+
+test('2.0: terzi, revisore R4 e fornitore del revisore non abilitato', () => {
   expect(violazioni(base('a-r400001', 1, { corsia: 'R4' }), R).map(m => m.k).join()).toContain('v.r4Revisore')
   expect(violazioni(base('a-norev01', 1), { ...R, risorse: { ...RISORSE_DEFAULT, fornitori: ['claude'] } }).map(m => m.k).join()).toContain('v.revisoreNonAbilitato')
 })
@@ -3633,8 +3661,16 @@ test('F13.3b guardie: abilitato per progetto e connesso, corsie R0–R1 (R2 col 
 })
 
 test('F13.3b il bilanciamento non sceglie mai un fornitore esterno; il record vuole il provider giusto', () => {
-  const a = base('a-cmp00002', 1, { repo: AUTORE.repo!, corsia: 'R1' })
-  expect(bilancia(a, {}, RC, [], [a], AUTORE).esecutore).not.toBe('compatibile')
+  // Constraint 3: no models for `compatibile` in the rules, whatever routing.json says.
+  expect(REGOLE_DEFAULT.modelli.compatibile).toEqual([])
+  expect(regoleDa({ ...ROUTING, modelli_ammessi: [...ROUTING.modelli_ammessi, 'qwen3:8b'] }, 'routing.json').modelli.compatibile).toEqual([])
+  // Every lane and profile, provider enabled at R2 and connected, nothing explicit: never `compatibile`.
+  for (const profilo of ['automatico', 'risparmio', 'qualita', 'velocita'] as const)
+    for (const corsia of CORSIE) {
+      const r: Regole = { ...RC, risorse: { ...RC.risorse, profilo, compatibili: { ollama: 'R2', mistral: 'R2' } } }
+      const a = base('a-cmp00002', 1, { repo: AUTORE.repo!, corsia, effort: undefined })
+      expect([profilo, corsia, bilancia(a, {}, r, [], [a], AUTORE).esecutore]).not.toEqual([profilo, corsia, 'compatibile'])
+    }
   const esplicita = CMP()
   expect(bilancia(esplicita, { esecutore: 'compatibile', provider: 'ollama', modello: 'qwen3:8b', effort: 'low', revisore: 'claude' }, RC, [], [esplicita], AUTORE)).toMatchObject({ esecutore: 'compatibile', provider: 'ollama' })
   expect(normalizza({ ...CMP(), stato: 'proposta' })).toMatchObject({ provider: 'ollama' })
@@ -3667,6 +3703,9 @@ test('F13.3b suggerisci_azione: provider solo con compatibile, modello esplicito
   expect(await deny({ provider: 'ollama' })).toContain('provider:')
   expect(await deny({ esecutore: 'compatibile', provider: 'altro', modello: 'qwen3:8b' })).toContain('registry')
   expect(await deny({ esecutore: 'compatibile', provider: 'ollama' })).toContain('modello')
+  // Constraint 1: missing or unknown provider is a refusal, never a default provider; nothing was recorded.
+  expect(await deny({ esecutore: 'compatibile', provider: '', modello: 'qwen3:8b' })).toContain('provider:')
+  expect(amb.azione()).toHaveLength(0)
   await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Bozza', brief: 'Riassumi.', esecutore: 'compatibile', provider: 'ollama', modello: 'qwen3:8b', corsia: 'R1' } as never)
   expect(amb.azione()[0]).toMatchObject({ esecutore: 'compatibile', provider: 'ollama', modello: 'qwen3:8b', revisore: 'claude' })
 })
@@ -3784,5 +3823,41 @@ test('F13.7 consenso: attivare un plugin con effetti esterni chiede un consenso 
   await finche(() => !!amb.disco)
   expect(domande.length).toBe(2)
   expect(comandi().length).toBe(1)
+  await ui2.unmount()
+})
+
+test('F13.7 consenso: la politica si rilegge dopo la domanda (solo locale nel frattempo = niente) e regole illeggibili valgono come solo locale', async ($, on) => {
+  const elenco = [{ id: 'superpowers@claude-plugins-official', scope: 'user', enabled: false }]
+  const amb = ambiente(on, { fonte: cmd => (cmd === 'claude plugin list --json' ? elenco : cmd.startsWith('claude plugin ') ? {} : undefined) })
+  mock.clock(on)
+  let domande = 0
+  // Mentre la domanda è aperta il progetto diventa solo locale: il sì non deve bastare.
+  conferme(on, () => {
+    domande++
+    amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { soloLocale: true } } }))
+    return 'Attiva · superpowers'
+  })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const comandi = () => amb.processi.filter(p => p.argv[0] === 'claude' && p.argv[2] !== 'list').map(p => p.argv.join(' '))
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
+  await ui.press({ key: 'skill-cambia-superpowers' })
+  await finche(() => domande === 1)
+  await finche(() => !!amb.disco)
+  expect(comandi()).toEqual([])
+  await ui.unmount()
+  // Regole illeggibili (routing.json assente): nessuna domanda, nessun comando.
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': {} } }))
+  amb.disco.delete('X:/repo/.claude/routing.json')
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui2 = await $.ui.mount({ ...PANE('desktop') })
+  await ui2.press({ key: 'impostazioni' })
+  await ui2.press({ key: 'sezione-modo-premi' })
+  const pulsante = await ui2.find({ key: 'skill-cambia-superpowers' })
+  if (pulsante) await ui2.press({ key: 'skill-cambia-superpowers' })
+  expect(domande).toBe(1)
+  expect(comandi()).toEqual([])
   await ui2.unmount()
 })

@@ -3214,6 +3214,8 @@ test('F13.3b parità: opt-in del progetto, impostazioni dell\'account e scrittor
     [{ provider: 'ollama', modello: 'qwen3:8b' }, regole()], [{ provider: 'ollama', modello: 'a b' }, regole()], [{ provider: 'groq', modello: 'x' }, regole()],
     [{ provider: 'qwen', modello: 'qwen-plus' }, regole()], [{ provider: 'freellmapi', modello: 'testo' }, regole()], [{ provider: 'freellmapi', modello: 'altro' }, regole()],
     [{ provider: 'claude', modello: 'claude-opus-5-5' }, regole()], [{ provider: 'ollama', modello: 'x' }, regole({ soloLocale: true })],
+    // Constraint 1 of the F13a↔F13b interface: a missing or empty provider is refused in both twins, never defaulted.
+    [{ modello: 'qwen3:8b' }, regole()], [{ provider: '', modello: 'qwen3:8b' }, regole()],
   ]
   const ts = compatibiliTs(`console.log(JSON.stringify({
     livelli: ${JSON.stringify(livelli)}.map(v => c.livelliCompatibiliDa(v) ?? 'NO'),
@@ -3223,6 +3225,7 @@ test('F13.3b parità: opt-in del progetto, impostazioni dell\'account e scrittor
   assert.deepStrictEqual(ts.imp, imp.map(v => C.impostazioniCompatibiliDa(v) ?? 'NO'))
   assert.deepStrictEqual(ts.scrittori, scrittori.map(([s, r]) => C.scrittoreAmmesso(s, r) ?? 'OK'))
   assert.deepStrictEqual(ts.livelli.slice(3, 5), [{ ollama: 'R1', mistral: 'R2' }, 'NO'])
+  assert.deepStrictEqual(ts.scrittori.slice(-2).map(x => x.k), ['cmp.ignoto', 'cmp.ignoto'])
   assert.deepStrictEqual(ts.scrittori.slice(0, 5), ['OK', { k: 'v.modelloNonAmmesso', p: { modello: 'a b', esecutore: 'ollama' } }, { k: 'v.fornitoreNonAbilitato', p: { fornitore: 'groq' } },
     { k: 'cmp.configurazione', p: { provider: 'qwen', motivo: 'Qwen US: needs a workspace host' } }, 'OK'])
 })

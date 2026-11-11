@@ -131,7 +131,7 @@ export function scrittoreAmmesso(
   regole: { risorse: { soloLocale: boolean; fornitori: readonly string[]; freellmapi: { livello: string }; compatibili: Record<string, string>; account: { compatibili?: Record<string, ImpostazioneCompatibile> } }; connessi?: readonly string[]; compatibiliConnessi?: readonly string[]; modelli: Record<string, readonly string[]> },
 ): { k: string; p?: Record<string, string> } | undefined {
   const { provider, modello } = scrittore
-  if (!ESECUTORI_TESTO.includes(provider)) return { k: 'cmp.ignoto', p: { provider } }
+  if (!ESECUTORI_TESTO.includes(provider)) return { k: 'cmp.ignoto', p: { provider: String(provider ?? '') } }
   if (regole.risorse.soloLocale) return { k: 'v.soloLocale' }
   if (provider === 'freellmapi') {
     if (!regole.risorse.fornitori.includes('freellmapi') || regole.risorse.freellmapi.livello === 'niente') return { k: 'v.fornitoreNonAbilitato', p: { fornitore: provider } }

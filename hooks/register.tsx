@@ -2599,7 +2599,11 @@ export const register: Register = (on, options) => {
       leggiPlugin: () => leggiPlugin($),
       cambiaPlugin: async (id, attiva) => {
         const T = await lingue($)
-        const soloLocale = (await leggiRegole($)).risorse.soloLocale
+        // Fail closed: rules that cannot be read count as local-only; read again after the consent question.
+        const soloLocale = async () => {
+          const r = await leggiRegole($)
+          return !r.lette || r.risorse.soloLocale
+        }
         try {
           await cambiaPlugin($, id, attiva, soloLocale, async nota =>
             (await $.ui.ask(T('skill.consenso', { nome: id, nota }), { options: [T('skill.abilita', { nome: id }), T('comune.annulla')], header: 'chipManager' })
