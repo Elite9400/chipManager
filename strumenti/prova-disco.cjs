@@ -3709,6 +3709,51 @@ test('F13b r2 rilievo 3: known_marketplaces.json malformato si rifiuta prima di 
   assert.ok(b.comandi.some(c => c.startsWith('claude plugin marketplace add')))
 })
 
+test('F13b r3 rilievo 1: in installed_plugins.json ogni campo noto presente ha il suo tipo, anche quelli non usati; le forme reali restano accettate', () => {
+  const S = require('./skill-installa.cjs')
+  const P = 'ponytail@chipmanager-base'
+  const corto = SHA_A.slice(0, 12)
+  const f = path.join(tmp(), 'installed_plugins.json')
+  const sha = u => { fs.writeFileSync(f, JSON.stringify({ version: 2, plugins: { [P]: [u] } })); return S.shaInstallato(P, { installati: f }) }
+  const base = { scope: 'user', installPath: '/x/cache/ponytail', installedAt: '2026-11-01T00:00:00.000Z', lastUpdated: '2026-11-01T00:00:00.000Z' }
+  for (const version of ['4.9.0', '1.0.0-b', corto]) assert.deepStrictEqual(sha({ ...base, version, gitCommitSha: SHA_A }), { pieno: SHA_A }, version)
+  assert.deepStrictEqual(sha({ ...base, gitCommitSha: SHA_A }), { pieno: SHA_A })
+  assert.deepStrictEqual(sha({ ...base, version: corto }), { corto })
+  assert.deepStrictEqual(sha({ ...base, version: corto, isLocal: false }), { corto })
+  for (const [nome, u] of Object.entries({
+    versioneArray: { ...base, version: [corto], gitCommitSha: SHA_A },
+    versioneNumero: { ...base, version: 4, gitCommitSha: SHA_A },
+    percorsoNumero: { ...base, installPath: 5, gitCommitSha: SHA_A },
+    dataOggetto: { ...base, installedAt: {}, gitCommitSha: SHA_A },
+    aggiornataNull: { ...base, lastUpdated: null, gitCommitSha: SHA_A },
+    localeStringa: { ...base, isLocal: 'no', gitCommitSha: SHA_A },
+  })) assert.strictEqual(sha(u), undefined, nome)
+  // Every record of the plugin is checked, not only the user one.
+  fs.writeFileSync(f, JSON.stringify({ version: 2, plugins: { [P]: [{ scope: 'project', version: 7 }, { ...base, gitCommitSha: SHA_A }] } }))
+  assert.strictEqual(S.shaInstallato(P, { installati: f }), undefined)
+})
+
+test('F13b r3 rilievo 2: known_marketplaces.json valida il tipo di sorgente contro quelli noti, con i campi obbligatori, in ogni voce', () => {
+  const S = require('./skill-installa.cjs')
+  const cattivi = [{ altro: { source: { source: 'github' } } }, { altro: { source: { source: 'github', repo: 5 } } }, { altro: { source: { source: 'git', url: 42 } } },
+    { altro: { source: { source: 'git' } } }, { altro: { source: { source: 'url' } } }, { altro: { source: { source: 'file', path: [] } } }, { altro: { source: { source: 'npm', package: 'x' } } }]
+  for (const id of ['ponytail', 'tokeneconomizer']) {
+    for (const note of cattivi) {
+      const b = banco()
+      const ap = approvato(S, b, id)
+      fs.writeFileSync(b.deps.marketplaceNote, JSON.stringify(note))
+      b.comandi.length = 0
+      assert.throws(() => S.installa(id, ap, b.dir, b.deps), e => e.motivo === 'skill.err.marketplace', `${id} ${JSON.stringify(note)}`)
+      assert.deepStrictEqual(b.comandi, [], `${id} ${JSON.stringify(note)}`)
+    }
+  }
+  // Well-formed entries of other marketplaces: ours is just missing, so it is added and the install goes on.
+  const b = banco({ marketplace: { a: { source: { source: 'github', repo: 'org/repo' } }, b: { source: { source: 'git', url: 'https://example.com/m.git' } },
+    c: { source: { source: 'url', url: 'https://example.com/marketplace.json' } }, d: { source: { source: 'file', path: '/x/marketplace.json' } }, e: { source: { source: 'directory', path: '/x' } } } })
+  assert.deepStrictEqual(S.installa('ponytail', approvato(S, b, 'ponytail'), b.dir, b.deps), { id: 'ponytail', plugin: 'ponytail@chipmanager-base', sha: SHA_A })
+  assert.ok(b.comandi.some(c => c.startsWith('claude plugin marketplace add')))
+})
+
 test('F13b rilievo 7: il modello si verifica sull\'intero catalogo validato; solo la visualizzazione del rilevamento è troncata', async () => {
   const C = require('./compatibili.cjs')
   const catalogo = { data: Array.from({ length: 250 }, (_, i) => ({ id: `modello-${i}` })) }

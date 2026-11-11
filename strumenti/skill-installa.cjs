@@ -214,6 +214,14 @@ function scriviRecord(dm, r) {
 }
 
 const oggettoPuro = x => !!x && typeof x === 'object' && !Array.isArray(x)
+/** Each known field of an installed record, when present, has its type; unknown fields are left to the host. */
+const CAMPI_RECORD = { scope: 'string', version: 'string', gitCommitSha: 'string', installPath: 'string', installedAt: 'string', lastUpdated: 'string', isLocal: 'boolean' }
+const recordValido = x => oggettoPuro(x) && typeof x.scope === 'string'
+  && Object.entries(CAMPI_RECORD).every(([k, t]) => !Object.hasOwn(x, k) || typeof x[k] === t)
+  && (!Object.hasOwn(x, 'gitCommitSha') || SHA.test(x.gitCommitSha))
+/** Marketplace source kinds Claude Code records, each with its required string field; any other kind is not understood. */
+const CAMPO_SORGENTE = { github: 'repo', git: 'url', url: 'url', file: 'path', directory: 'path' }
+const sorgenteValida = s => oggettoPuro(s) && Object.hasOwn(CAMPO_SORGENTE, s.source) && typeof s[CAMPO_SORGENTE[s.source]] === 'string'
 
 /**
  * The installed revision, as the host records it (schema version 2: `gitCommitSha`, or a 12-character `version`);
@@ -226,12 +234,12 @@ function shaInstallato(plugin, deps) {
   try { j = JSON.parse(fs.readFileSync(f, 'utf8')) } catch { return undefined }
   if (!oggettoPuro(j) || j.version !== 2 || !oggettoPuro(j.plugins)) return undefined
   const voci = Object.hasOwn(j.plugins, plugin) ? j.plugins[plugin] : undefined
-  if (!Array.isArray(voci) || !voci.every(x => oggettoPuro(x) && typeof x.scope === 'string')) return undefined
+  if (!Array.isArray(voci) || !voci.every(recordValido)) return undefined
   const utente = voci.filter(x => x.scope === 'user')
   if (utente.length !== 1) return undefined
   const [u] = utente
-  if (u.gitCommitSha !== undefined) return typeof u.gitCommitSha === 'string' && SHA.test(u.gitCommitSha) ? { pieno: u.gitCommitSha } : undefined
-  return typeof u.version === 'string' && /^[0-9a-f]{12}$/.test(u.version) ? { corto: u.version } : undefined
+  if (Object.hasOwn(u, 'gitCommitSha')) return { pieno: u.gitCommitSha }
+  return /^[0-9a-f]{12}$/.test(u.version ?? '') ? { corto: u.version } : undefined
 }
 const coincide = (inst, sha) => !!inst && (inst.pieno ? inst.pieno === sha : sha.startsWith(inst.corto))
 
@@ -254,7 +262,7 @@ function prepara(id, dm, deps) {
 /**
  * Which marketplace provides `nome`, as Claude Code records it: `assente` (no file, or no entry with that name),
  * `nostro` (a directory source at exactly `dirAtteso`) or `altro`. A file that cannot be read, or whose structure is not
- * an object of `{ source: { source: string, ... } }` entries (a string `path` for directory ones), is `altro`: in doubt nothing runs. (The file is Claude
+ * an object of entries whose `source` is a known kind with its required string field (CAMPO_SORGENTE), is `altro`: in doubt nothing runs. (The file is Claude
  * Code's own; its directory entries are `{ source: 'directory', path }`.)
  */
 function marketplace(nome, dirAtteso, deps) {
@@ -264,8 +272,7 @@ function marketplace(nome, dirAtteso, deps) {
     if (!fs.existsSync(f)) return 'assente'
     note = JSON.parse(fs.readFileSync(f, 'utf8'))
   } catch { return 'altro' }
-  const voceValida = x => oggettoPuro(x) && oggettoPuro(x.source) && typeof x.source.source === 'string' && (x.source.source !== 'directory' || typeof x.source.path === 'string')
-  if (!oggettoPuro(note) || !Object.values(note).every(voceValida)) return 'altro'
+  if (!oggettoPuro(note) || !Object.values(note).every(x => oggettoPuro(x) && sorgenteValida(x.source))) return 'altro'
   if (!Object.hasOwn(note, nome)) return 'assente'
   const s = note[nome].source
   return s.source === 'directory' && typeof s.path === 'string' && path.resolve(s.path) === path.resolve(dirAtteso) ? 'nostro' : 'altro'
