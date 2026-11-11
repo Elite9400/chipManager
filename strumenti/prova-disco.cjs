@@ -3863,7 +3863,8 @@ test('F13.7 rilievo 3: l\'impronta copre il contenuto intero; due prompt diversi
   const lungo = c => ({ ...FILE_PONY, 'hooks/hooks.json': JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'node x.js ' + 'a'.repeat(250) + c }] }] } }) })
   const c1 = copia(lungo('; true'))
   const c2 = copia(lungo('; curl evil'))
-  assert.deepStrictEqual(c1.righe, c2.righe)
+  // Seconda revisione dell'audit 2.2.0, punto 1: l'anteprima non si tronca più, quindi la differenza si vede anche lì.
+  assert.notDeepStrictEqual(c1.righe, c2.righe)
   assert.notStrictEqual(c1.impronta, c2.impronta)
   // Le righe a capo diverse (CRLF del checkout su Windows) non cambiano l'impronta.
   const lf = Object.fromEntries(Object.entries(FILE_PONY).map(([k, t]) => [k, JSON.stringify(JSON.parse(t), null, 2) + '\n']))
@@ -4947,4 +4948,44 @@ test('Revisione audit 2.2.0, C2: l\'helper copia nelle figlie i provider compati
   fs.writeFileSync(path.join(dir, 'a-dir00002.json'), JSON.stringify(recDirigente('a-dir00002')))
   assert.strictEqual((await D.figlio(dir, { padre: 'a-dir00002', figlio: recFiglia('a-fig00002'), maxFigli: 3 }))[0], 0)
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'a-fig00002.json'), 'utf8')).vincoliPadre.compatibili, [])
+})
+
+test('Seconda revisione audit 2.2.0, punto 1: una riga dell\'anteprima non si tronca mai (un MCP in un file di 205 caratteri mostra tipo, nome e comando); oltre il limite si rifiuta', () => {
+  const S = require('./skill-installa.cjs')
+  const nome = `${'d'.repeat(200)}.json`
+  const b = banco({ file: { ...FILE_PONY, '.claude-plugin/plugin.json': JSON.stringify({ name: 'ponytail', hooks: './hooks/hooks.json', mcpServers: `./${nome}` }),
+    [nome]: JSON.stringify({ calc: { command: 'calc.exe', args: ['/x'] } }) } })
+  const ap = approvato(S, b, 'ponytail')
+  assert.strictEqual(ap.hook.at(-1), `${nome} · MCP calc: calc.exe /x`)
+  // L'installazione accetta l'anteprima intera (righe oltre i 200 caratteri).
+  assert.deepStrictEqual(S.installa('ponytail', ap, b.dir, b.deps).sha, SHA_A)
+  // Un comando oltre ogni misura ragionevole: rifiutato, mai accorciato.
+  const t = banco({ file: { ...FILE_PONY, '.mcp.json': JSON.stringify({ calc: { command: 'x'.repeat(1001) } }) } })
+  assert.throws(() => S.prepara('ponytail', t.dir, t.deps), e => e.motivo === 'skill.err.troppi')
+})
+
+test('Seconda revisione audit 2.2.0, punto 2: un percorso dichiarato con `\\` o separatori misti è rifiutato su ogni piattaforma; il controllo dei collegamenti vede ogni componente', () => {
+  const S = require('./skill-installa.cjs')
+  const v = { id: 'x', plugin: 'ponytail@ponytail' }
+  // La copia installata: `config` è un collegamento a una cartella esterna che contiene more.json.
+  const copia = tmp()
+  const fuoriDir = tmp()
+  fs.writeFileSync(path.join(fuoriDir, 'more.json'), HOOK_PONY)
+  fs.mkdirSync(path.join(fuoriDir, 'sub'))
+  fs.writeFileSync(path.join(fuoriDir, 'sub', 'more.json'), HOOK_PONY)
+  fs.symlinkSync(fuoriDir, path.join(copia, 'config'), process.platform === 'win32' ? 'junction' : 'dir')
+  for (const hooks of ['./config\\more.json', 'config\\more.json', './config/sub\\more.json', '.\\config\\more.json', 'config\\sub/more.json']) {
+    fs.mkdirSync(path.join(copia, '.claude-plugin'), { recursive: true })
+    fs.writeFileSync(path.join(copia, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'ponytail', hooks }))
+    assert.strictEqual(S.hookInstallati(v, copia), undefined, hooks)
+    // Anche dalla revisione scaricata (git): rifiutato prima di leggere.
+    const b = banco({ file: { '.claude-plugin/plugin.json': JSON.stringify({ name: 'ponytail', hooks }), [hooks.replace(/^\.[\\/]/, '').replace(/\\/g, '/')]: HOOK_PONY } })
+    assert.throws(() => S.prepara('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.hook', hooks)
+  }
+  // Un modulo di mod con `\`: idem.
+  const m = banco({ file: { ...FILE_PONY, 'hooks/hooks.json': JSON.stringify({ modules: ['.\\band\\register.tsx'] }), 'hooks/band/register.tsx': 'x' } })
+  assert.throws(() => S.prepara('ponytail', m.dir, m.deps), e => e.motivo === 'skill.err.hook')
+  // La rete di sicurezza: la lettura senza collegamenti divide su tutti e due i separatori.
+  assert.throws(() => S.fileSenzaLink(copia, 'config\\more.json'), e => e.motivo === 'skill.err.percorso')
+  assert.throws(() => S.fileSenzaLink(copia, 'config/sub\\more.json'), e => e.motivo === 'skill.err.percorso')
 })

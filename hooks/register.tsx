@@ -2918,7 +2918,9 @@ export const register: Register = (on, options) => {
             // Revisione dell'audit 2.2.0, S1: every component is shown, RIGHE_PER_PAGINA lines a page, and every page needs a yes.
             const pagine = Math.max(1, Math.ceil(hook.length / RIGHE_PER_PAGINA))
             for (let i = 0; i < pagine; i++) {
-              const righe = hook.slice(i * RIGHE_PER_PAGINA, (i + 1) * RIGHE_PER_PAGINA).map(h => `· ${h}`).join('\n') + (pagine > 1 ? `\n(${i + 1}/${pagine})` : '')
+              // Seconda revisione dell'audit 2.2.0, punto 1: each line whole, wrapped at 60 columns (never cut).
+              const aCapo = (t: string) => [t.slice(0, 60), ...Array.from({ length: Math.ceil(Math.max(0, t.length - 60) / 58) }, (_, k) => `  ${t.slice(60 + k * 58, 118 + k * 58)}`)].join('\n')
+              const righe = hook.slice(i * RIGHE_PER_PAGINA, (i + 1) * RIGHE_PER_PAGINA).map(h => aCapo(`· ${h}`)).join('\n') + (pagine > 1 ? `\n(${i + 1}/${pagine})` : '')
               const domanda = T('skill.conferma', { nome: id, url, sha, nota: v?.nota ?? '', hook: hook.length ? righe : T('skill.nessunHook') })
                 + (v?.pin === 'clone' ? `\n\n${T('skill.setupClone')}` : '')
               if ((await $.ui.ask(domanda, { options: [T('skill.installa', { nome: id }), T('comune.annulla')], header: 'chipManager' }).catch(() => '')) !== T('skill.installa', { nome: id })) return false

@@ -86,7 +86,17 @@ function righeHook(conf, fonte) {
   }
   return { righe, moduli }
 }
-const riga = t => t.replace(/[\x00-\x1f]/g, ' ').slice(0, 200)
+/**
+ * One preview line, whole (the panel wraps it): never cut, so type, name and command always show in full. Seconda
+ * revisione dell'audit 2.2.0, punto 1: a line longer than MAX_RIGA (a path or a command beyond any reasonable size) is
+ * a refusal, never a shortened line.
+ */
+const riga = t => {
+  const r = t.replace(/[\x00-\x1f]/g, ' ')
+  if (r.length > MAX_RIGA) throw new Rifiuto('skill.err.troppi')
+  return r
+}
+const MAX_RIGA = 1000
 /** Keys a hooks file may carry next to its events. */
 const CHIAVI_HOOK = new Set(['hooks', 'modules', 'description', '_comment', 'version'])
 
@@ -156,6 +166,9 @@ function hookDa(v, esiste, testo, voce) {
     try { return JSON.parse(t) } catch { throw new Rifiuto('skill.err.hook') }
   }
   const dentro = (base, p) => {
+    // Seconda revisione dell'audit 2.2.0, punto 2: a declared path uses `/` only, on every platform. A backslash would be
+    // a separator for Windows and not for the link check, so a linked folder could be skipped: it is a refusal.
+    if (typeof p !== 'string' || p.includes('\\')) throw new Rifiuto('skill.err.hook')
     const r = path.posix.normalize(path.posix.join(base, p.replace(/^\.\//, '')))
     if (path.posix.isAbsolute(p) || r.startsWith('..') || !esiste(r)) throw new Rifiuto('skill.err.hook')
     return r
@@ -229,7 +242,8 @@ function hookDellaRevisione(v, sha, dm, deps) {
 function fileSenzaLink(radice, rel) {
   let x = path.resolve(radice)
   if (fs.lstatSync(x).isSymbolicLink()) throw new Rifiuto('skill.err.percorso')
-  for (const parte of rel.split('/')) {
+  // Both separators, so no component of the path escapes the check (a backslash is refused earlier, this is the backstop).
+  for (const parte of rel.split(/[\\/]/)) {
     x = path.join(x, parte)
     // lstat, not exists: a dangling link is still a link.
     if (fs.lstatSync(x, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Rifiuto('skill.err.percorso')
@@ -556,7 +570,7 @@ function installa(id, input, dm, deps) {
   if (marketplace(nomeMarketplace(v), dirDellaVoce(v, dm), deps) === 'altro') throw new Rifiuto('skill.err.marketplace')
   // The preview the owner saw (kept for the panel) and the digest of the full content (what is compared).
   const hook = input.hook
-  if (!Array.isArray(hook) || hook.length > MAX_RIGHE || !hook.every(x => typeof x === 'string' && x.length <= 200)) throw new Rifiuto('skill.err.fonte')
+  if (!Array.isArray(hook) || hook.length > MAX_RIGHE || !hook.every(x => typeof x === 'string' && x.length <= MAX_RIGA)) throw new Rifiuto('skill.err.fonte')
   if (v.pin === 'clone') return installaClone(v, input, dm, deps)
   const dir = dirMarketplace(dm)
   const f = path.join(dir, '.claude-plugin', 'marketplace.json')

@@ -4771,3 +4771,28 @@ test('Audit 2.2.0, punto 3 (dopo il rebase): un valore rifiutato di routing.json
   const regole = (JSON.parse(String(r.result)) as { regole: { lette: boolean; fonte: string } }).regole
   expect([regole.lette, regole.fonte.includes('invalid model or effort in modelli_ammessi'), regole.fonte.includes('gpt-6 -c')]).toEqual([false, true, false])
 })
+
+test('Seconda revisione audit 2.2.0, punto 1: nella conferma ogni riga dell\'anteprima resta intera, a capo entro 60 colonne', async ($, on) => {
+  const lunga = `${'d'.repeat(205)}.json · MCP calc: calc.exe /x`
+  const amb = ambiente(on, {
+    fonte: (cmd, input) => {
+      if (cmd === 'claude plugin list --json') return []
+      if (cmd === 'skill-prepara') return { id: input.id, url: 'https://github.com/DietrichGebert/ponytail.git', sha: 'c'.repeat(40), impronta: 'e'.repeat(64), hook: [lunga] }
+      if (cmd === 'skill-pulisci') return { tolte: 1 }
+      return undefined
+    },
+  })
+  mock.clock(on)
+  const domande: string[] = []
+  conferme(on, testo => (domande.push(testo), 'Annulla'))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
+  await ui.press({ key: 'skill-installa-ponytail' })
+  await finche(() => domande.length === 1)
+  const blocco = domande[0]!.split('\n').filter(r => r.startsWith('· ') || r.startsWith('  '))
+  expect([blocco.length > 1, blocco.every(r => r.length <= 60), blocco.map((r, i) => (i ? r.slice(2) : r)).join('') === `· ${lunga}`]).toEqual([true, true, true])
+  await ui.unmount()
+})
