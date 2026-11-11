@@ -428,7 +428,9 @@ function salvaConArtefatto($: Eng, testo: string) {
     if (r.codice === 4 && motivo === 'cambiata') throw new Conflitto(msg('err.cambiataAltrove', { titolo: a.titolo }))
     if (r.codice === 4) throw new ArtefattoRifiutato(motivo === 'accettata' ? 'this version of the artefact was already delivered and accepted' : 'the step it refers to has not delivered its artefact')
     if (r.codice === 3) throw errore('err.altraScrive')
-    if (r.codice !== 0) throw new ArtefattoRifiutato('invalid request')
+    if (r.codice === 2) throw new ArtefattoRifiutato('invalid request')
+    // Any other failure (a lock that cannot be created, code 7, among them) is a write error with its detail, as in `salva`.
+    if (r.codice !== 0) throw errore('err.scrittura', { dettaglio: chiaveOTesto('en', r.errore || r.testo).slice(0, 160) })
     await update($, azioni, l => l.map(x => (x.id === a.id ? nuova : x)))
     return nuova
   }
