@@ -37,7 +37,7 @@ export async function helperSkill($: EngineInterface, argv: string[], stdin?: st
  * Install at the approved revision, only on the owner's click: the helper resolves the revision and reads the hooks it
  * declares; `conferma` shows source, commit, data flow and hooks and must say yes; then the install, which arrives disabled.
  */
-export async function installaSkill($: EngineInterface, id: string, conferma: (d: { url: string; sha: string; hook: string[] }) => Promise<boolean>,
+export async function installaSkill($: EngineInterface, id: string, conferma: (d: { url: string; sha: string; hook: string[]; skills: string[] }) => Promise<boolean>,
   /** Re-read right before installing: a policy that changed while the confirmation was open stops it (reason as a code). */
   ancoraAmmessa: () => Promise<string | undefined> = async () => undefined) {
   const v = voceSkill(id)
@@ -54,12 +54,15 @@ export async function installaSkill($: EngineInterface, id: string, conferma: (d
   // Revisione dell'audit 2.2.0, S1: every line the helper read is shown (a page at a time); a preview that is not all
   // strings, or longer than the helper's own limit, is never cut down to what fits: nothing is asked or installed.
   const hook = Array.isArray(p.dati.hook) && p.dati.hook.every(x => typeof x === 'string') ? (p.dati.hook as string[]) : null
-  if (!hook || hook.length > MAX_RIGHE_SKILL) {
+  // F14.2: the skill names the helper read from the approved revision (none for TokenEconomizer's own procedure).
+  const skills = p.dati.skills === undefined ? [] : Array.isArray(p.dati.skills) && p.dati.skills.length <= MAX_RIGHE_SKILL &&
+    p.dati.skills.every(x => typeof x === 'string' && /^[\w.-]{1,100}$/.test(x)) ? (p.dati.skills as string[]) : null
+  if (!hook || !skills || hook.length > MAX_RIGHE_SKILL) {
     await pulisci()
-    throw new Error(hook ? 'skill.err.troppi' : 'skill.err.inatteso')
+    throw new Error(hook && skills ? 'skill.err.troppi' : 'skill.err.inatteso')
   }
   const impronta = typeof p.dati.impronta === 'string' && /^[0-9a-f]{64}$/.test(p.dati.impronta) ? p.dati.impronta : ''
-  if (!(await conferma({ url, sha, hook }))) {
+  if (!(await conferma({ url, sha, hook, skills }))) {
     await pulisci()
     return false
   }

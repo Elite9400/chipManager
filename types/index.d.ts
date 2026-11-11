@@ -249,6 +249,11 @@ export type Azione = {
   dopoConsegna?: string[]
   artefatto?: string
   costo?: Costo
+  /**
+   * F14.3: the baseline entry (registry id) whose per-repository setup this chip runs. The chip is the project's setup
+   * record: fixed id per entry and project, Claude, local and interactive, lane R2 or above, re-checked at every start.
+   */
+  setup?: string
   id: string
   /** Contatore di scrittura: il CAS dell'helper rifiuta chi scrive su una versione vecchia. */
   versione: number

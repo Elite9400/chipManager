@@ -81,17 +81,17 @@ const statoSkill = atom({ plugin: 'chip-manager', key: 'skill' } as const, {} as
 /** I codici che la pagina sa dire: un codice fuori elenco non si mostra (e non entra mai in un rapporto). */
 export { RILIEVI } from './rapporto'
 /** Gli avvisi (!): il resto blocca qualcosa (✗). */
-const AVVISI = ['config.senzaCopie', 'config.campoIgnoto', 'config.modoNonValido', 'chiavi.residue', 'azioni.orfane', 'azioni.progettiIgnoti', 'host.advisor', 'host.versione', 'host.claudeCode', 'connessione']
+const AVVISI = ['config.senzaCopie', 'config.campoIgnoto', 'config.modoNonValido', 'chiavi.residue', 'azioni.orfane', 'azioni.progettiIgnoti', 'host.advisor', 'host.versione', 'host.claudeCode', 'connessione', 'skill.setup']
 /** Il pulsante del rimedio, dove c'è: gli altri rilievi si riportano soltanto. */
 const RIMEDIO = (r: Rilievo): Chiave | undefined =>
   r.codice.startsWith('accesso.') ? 'doc.accedi' : r.codice === 'lock.api' ? 'doc.libera' : r.codice === 'registro.sviluppo' ? 'doc.archivia'
     : r.codice === 'percorso.dati' && r.spostabile === true ? 'doc.sposta'
-    : r.codice === 'config.illeggibile' && Number(r.copie) > 0 ? 'doc.ripristina' : undefined
+    : r.codice === 'config.illeggibile' && Number(r.copie) > 0 ? 'doc.ripristina' : r.codice === 'skill.setup' ? 'doc.riproponi' : undefined
 /** Il testo di un rilievo, con i soli dettagli che il codice prevede (numeri e nomi di campo della mod). */
 export const testoRilievo = (T: T, r: Rilievo) => {
   const dove = r.strato === 'account' ? T('doc.account') : r.progetto === false ? T('doc.altro') : T('doc.questo')
   const p = { n: Number(r.n ?? 0), minuti: Number(r.minuti ?? 0), copie: Number(r.copie ?? 0), campo: String(r.campo ?? ''), dove,
-    fonte: String(r.fonte ?? ''), fonti: Array.isArray(r.fonti) ? r.fonti.join(', ') : '', fornitore: String(r.fornitore ?? ''), versione: String(r.versione ?? '') }
+    fonte: String(r.fonte ?? ''), fonti: Array.isArray(r.fonti) ? r.fonti.join(', ') : '', fornitore: String(r.fornitore ?? ''), versione: String(r.versione ?? ''), nome: String(r.voce ?? '') }
   return { titolo: T(`doc.r.${r.codice}` as Chiave, p), rimedio: T(`doc.f.${r.codice}` as Chiave, p), avviso: AVVISI.includes(r.codice) }
 }
 

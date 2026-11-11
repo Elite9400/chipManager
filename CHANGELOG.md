@@ -116,6 +116,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   is set to `toolprune=propose` and `loopguard=off` and read back, and `status` runs from the installed copy. Any failure
   leaves it disabled with the reason; only a second consent enables it. A TokenEconomizer you installed yourself is
   never touched. Not in this build: the plugin-overhead measure.
+- **More baseline skills** (F14). **caveman** (`JuliusBrussee/caveman`) is pinned by its annotated tag `v4.1.0`: a new
+  `tag` pin reads exactly `refs/tags/v4.1.0` and its peeled ref with `git ls-remote`, and both the tag object and the
+  commit must match the registry (an entry with a tag object never falls back to a lightweight tag); the check runs
+  again right before install, and the download is always the pinned commit, never the tag name. The mod's local
+  marketplace points at it as a `github` source with that sha, `defaultEnabled: false`, `--scope user`. Its data flow is
+  external (caveman-compress sends file text to your model provider), so a local-only project neither installs nor
+  enables it, checked again after each consent. Its hooks run Node at every session, subagent and prompt and change the
+  answer style in every session of your user: the enable consent says so and lists what they need (`node`, `sh`, `sed`,
+  `printf`). Never its CLI or installers. **mattpocock-skills** is the full set: the install confirmation lists the
+  skills read from the approved revision's manifest (27 at today's official pin), not a fixed list. **Per-repository
+  setup**: with mattpocock-skills installed, enabled and its command loaded, the mod proposes once in each repository
+  (a new one included) a chip that runs `/mattpocock-skills:setup-matt-pocock-skills`. The chip is the record: its id is
+  fixed per project and written with a create-only CAS, so concurrent sessions never duplicate it; dismissed stays
+  dismissed, done means the chip was completed (not started or delivered), and a dismissed or failed one can be proposed
+  again from the doctor. It runs only on Claude, locally, in an interactive session, on lane R2 or above, re-checked at
+  every start together with the plugin (installed, enabled, command loaded); otherwise it is blocked with the reason.
+  The registry keeps each entry's identity (pin kind, pinned commit and tag object, marketplace, channel, flow), with
+  TS/CJS parity. Project install scope stays for 2.3.
 
 - **Fable 5.2** (`claude-fable-5-2`) in the Claude model list, with its name, family colour, rank and effort cap; Fable
   5.1 stays selectable. It may author sensitive R4/R5 work; the adversarial reviewer is Opus 5.5 for a Fable author and

@@ -5,8 +5,8 @@ import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { GRIGIO, LIVELLO, STATO } from './tema'
 import { baseDi, impostazioniCompatibiliDa, livelliCompatibiliDa, MODELLO_COMPATIBILE, scrittoreAmmesso, voceCompatibile } from './compatibili'
-import { rigaSkill, SKILL_BASE, skillAttive } from './skill-base'
-import type { RuoloSkill } from './skill-base'
+import { comandoSetup, idSetup, rigaSkill, SKILL_BASE, skillAttive, voceSkill } from './skill-base'
+import type { RuoloSkill, VoceSkill } from './skill-base'
 
 // --- regole (routing.json) ---------------------------------------------------------------------
 
@@ -1233,8 +1233,54 @@ export function violazioni(azione: Azione, regole: Regole, lista: readonly Azion
     if (a.esecutore === 'claude' && !AUTORI_R4.includes(modello)) v.push(msg('v.r4Modello', { modello: nomeModello(modello) }))
     if (regole.effort.indexOf(effort) < regole.effort.indexOf('high')) v.push(msg('v.r4Effort'))
   }
+  // F14.3, correction round 2, point 2: the setup chip runs only on Claude, locally, on lane R2 or above; checked at every
+  // start, so a chip the owner edited afterwards is blocked with the reason.
+  if (a.setup !== undefined && (!setupNoto(a.setup) || a.esecutore !== 'claude' || modo !== 'local' || ordineCorsia(corsia) < ordineCorsia('R2')))
+    v.push(msg('v.setupVincoli', { nome: a.setup }))
   v.push(...dipendenze(a, lista).problemi)
   return v
+}
+
+/** F14.3: a registry entry with a per-repository setup command. */
+const setupNoto = (id: unknown) => {
+  const v = voceSkill(id)
+  return v && comandoSetup(v) ? v : undefined
+}
+
+/**
+ * F14.3: the setup chip of a registry entry for one project, built like an agent's proposal: the mandate runs the setup
+ * command, the lane is the risk detector's raised to R2 (it edits CLAUDE.md or AGENTS.md, writes docs/agents/* and may
+ * create tracker labels), Claude, local, review as the work mode says for that lane. Its id is fixed (idSetup).
+ */
+export function chipSetup(v: VoceSkill, repo: string, regole: Regole, ordine: number, quando: string): Azione {
+  const comando = comandoSetup(v)!
+  const a: Azione = {
+    id: idSetup(v, repo),
+    versione: 0,
+    repo,
+    setup: v.id,
+    titolo: `Set up ${v.id} in this repository`,
+    brief: `Run /${comando} in this repository and follow it to the end. It is interactive: it explores the repository, ` +
+      'presents what it found and asks the owner one section at a time before writing (docs/agents/*, a section in CLAUDE.md ' +
+      'or AGENTS.md, possibly issue-tracker labels on GitHub or GitLab). Never answer for the owner; when unsure, ask.',
+    ordine,
+    dipende: [],
+    esecutore: 'claude',
+    revisore: 'codex',
+    stato: 'proposta', // record nuovo, non una transizione
+    creata: quando,
+    aggiornata: quando,
+  }
+  const corsia = conMinimo(corsiaDi(a, regole), 'R2')
+  const incrociata = (regole.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).revisioneIncrociata !== false
+  return { ...a, corsia, revisore: incrociata || ordineCorsia(corsia) > ordineCorsia('R2') ? 'codex' : 'nessuno' }
+}
+
+/** F14.3: the per-repository setup record, read from its chip alone: done only once the chip is completed. */
+export function statoSetup(a: Azione | undefined): 'assente' | 'proposto' | 'in-corso' | 'fallito' | 'scartato' | 'fatto' {
+  if (!a) return 'assente'
+  return a.stato === 'completata' ? 'fatto' : a.stato === 'scartata' ? 'scartato' : a.stato === 'fallita' ? 'fallito'
+    : a.stato === 'proposta' || a.stato === 'accodata' ? 'proposto' : 'in-corso'
 }
 
 /**
@@ -1270,6 +1316,8 @@ export function violazioniAvvio(a: Azione, regole: Regole, lista: readonly Azion
     return v
   }
   if (!qui && chi.lanciatore === 'ignoto') v.push(msg('v.lanciatoreIgnoto'))
+  // F14.3: the setup asks the owner as it goes: never through the CLI lane (`claude -p`, nobody to answer).
+  if (a.setup !== undefined && !qui && (chi.lanciatore === 'cli' || dirigenteSuCli(a, regole, chi))) v.push(msg('v.setupInterattiva'))
   if (!qui && (chi.lanciatore === 'cli' || dirigenteSuCli(a, regole, chi))) {
     if (a.contesto === 'fork' || a.destinazione === 'cloud' || a.worktree === false) v.push(msg('v.cliWorktree'))
     if (a.permessi === 'bypassPermissions' || a.permessi === 'auto') v.push(msg('v.cliPermessi'))
@@ -1554,6 +1602,8 @@ export function normalizza(x: unknown): Azione | Msg {
   for (const k of ['motivoParametri', 'erroreParametri'])
     if (a[k] !== undefined && (!a[k] || typeof a[k] !== 'object' || Array.isArray(a[k]) || JSON.stringify(a[k]).length > 20000)) return msg('rec.campo', { campo: k })
   if (a.piano !== undefined && pianoValido(a.piano)) return msg('rec.campo', { campo: 'piano' })
+  // F14.3: only a registry entry with a setup command.
+  if (a.setup !== undefined && !setupNoto(a.setup)) return msg('rec.campo', { campo: 'setup' })
   // F13.2: ruolo e legame con la dirigente; i vincoli si leggono solo nella forma che scrive l'helper.
   if (!tra('ruolo', ['dirigente', 'lavoro']) || (a.padre !== undefined && !(typeof a.padre === 'string' && ID_RE.test(a.padre))) ||
       (a.vincoliPadre !== undefined && !vincoliValidi(a.vincoliPadre)) || (a.vincoliPropri !== undefined && !vincoliValidi(a.vincoliPropri)) ||

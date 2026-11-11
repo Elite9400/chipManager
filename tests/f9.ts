@@ -5,6 +5,7 @@ import { expect } from 'claude-code/testing'
 
 import { NUOVI_F11 } from './f11-nuovi'
 import { NUOVI_F13B } from './f13b-nuovi'
+import { NUOVI_F14 } from './f14-nuovi'
 import { PRIMA } from './f9-prima'
 
 export type ControlloF9 = { tipo?: string; chiave?: unknown; label?: unknown; hotkey?: unknown; variant?: unknown; value?: unknown; options?: unknown; gestori: string[] }
@@ -42,6 +43,9 @@ export const nuovoF11 = (k: unknown) => typeof k === 'string' && /^(sezione-modo
 
 /** I controlli di una vista: quelli di prima contro la fotografia di F9, i nuovi contro quella di F11; una vista nuova tutta in F11. */
 export function confrontaControlli(chiave: string, c: ControlloF9[]) {
+  // F14: the controls of the baseline entries F14 adds (caveman) have their own snapshot; the older ones never see them.
+  confrontaF9(chiave, c.filter(x => nuovoF14(x.chiave)), NUOVI_F14)
+  c = c.filter(x => !nuovoF14(x.chiave))
   // F13b: provider rows, Help and the relabelled Help tab go to their own snapshot, before the F9 and F11 ones.
   confrontaF9(chiave, c.filter(x => nuovoF13b(x.chiave)), NUOVI_F13B)
   c = c.filter(x => !nuovoF13b(x.chiave))
@@ -51,6 +55,9 @@ export function confrontaControlli(chiave: string, c: ControlloF9[]) {
   confrontaF9(chiave, c.filter(x => !nuovoF11(x.chiave)), senza(PRIMA))
   confrontaF9(chiave, c.filter(x => nuovoF11(x.chiave)), senza(NUOVI_F11))
 }
+
+/** F14: the controls of the registry entries F14 adds (caveman's row in the baseline skills). */
+export const nuovoF14 = (k: unknown) => typeof k === 'string' && /^skill-.*caveman/.test(k)
 
 /** F13b: the controls added (cmp-*, aiuto-*) or relabelled (the Help tab, formerly Legend) by F13b. */
 export const nuovoF13b = (k: unknown) => typeof k === 'string' && /^(cmp-|aiuto-|skill-|sezione-legenda-premi$)/.test(k)

@@ -5,7 +5,7 @@
 /** I codici che il doctor sa dire (gli stessi della pagina Doctor). */
 export const RILIEVI = ['config.illeggibile', 'config.senzaCopie', 'config.campoIgnoto', 'config.nonValido', 'config.restrizioneLarga', 'config.modoNonValido',
   'percorso.config', 'percorso.dati', 'percorso.macchina', 'percorso.registro', 'registro.sviluppo', 'lock.api', 'lock.apiIlleggibile', 'chiavi.residue',
-  'azioni.orfane', 'azioni.progettiIgnoti', 'accesso.claude', 'accesso.codex', 'accesso.github', 'host.impostazioniApi', 'host.advisor', 'host.versione', 'host.claudeCode', 'connessione']
+  'azioni.orfane', 'azioni.progettiIgnoti', 'accesso.claude', 'accesso.codex', 'accesso.github', 'host.impostazioniApi', 'host.advisor', 'host.versione', 'host.claudeCode', 'connessione', 'skill.setup']
 const CAMPI_ACCOUNT = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi', 'modoLavoro', 'compatibili']
 const CAMPI_PROGETTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere',
   'restrizioni', 'modoLavoro', 'compatibili']

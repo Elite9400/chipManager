@@ -417,7 +417,7 @@ test('codex senza corsia, o routing senza la regola: bloccato', () => {
 // --- il pannello contro un engine finto --------------------------------------------------------------
 
 /** Engine finto: disco in memoria, helper (lock/CAS) e `gh` emulati, servizio di sessione scriptabile. */
-function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown; attesa?: (cmd: string) => Promise<void> | undefined; api?: (cmd: string, a: string[], stdin: string | undefined) => [number, string] | undefined; impostazioni?: (source?: string) => unknown; apriRifiuta?: () => unknown } = {}) {
+function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: boolean; nascosto?: boolean; strumenti?: string[]; fonte?: (cmd: string, input: Record<string, unknown>) => unknown; mcp?: (server: string, tool: string, args: unknown) => unknown; modello?: (e: { prompt: string }) => unknown; attesa?: (cmd: string) => Promise<void> | undefined; api?: (cmd: string, a: string[], stdin: string | undefined) => [number, string] | undefined; impostazioni?: (source?: string) => unknown; apriRifiuta?: () => unknown; remote?: () => string } = {}) {
   // Come un disco vero: la data è quella della scrittura, al millisecondo; due scritture nello stesso istante la condividono.
   class Disco extends DiscoIt {
     mtime = new Map<string, number>()
@@ -445,7 +445,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   const elenchiStrumenti: number[] = []
   on('tool.list', () => (elenchiStrumenti.push(1), { value: [...(opz.cli ? [] : [{ name: 'mcp__ccd_session__start_session' }]), ...(opz.strumenti ?? []).map(name => ({ name }))] as never }))
-  on('session.repo', () => ({ value: { root: 'X:/repo', remote: 'https://github.com/acme/progetto.git', internal: false, repo: null } as never }))
+  on('session.repo', () => ({ value: { root: 'X:/repo', remote: opz.remote?.() ?? 'https://github.com/acme/progetto.git', internal: false, repo: null } as never }))
   on('fs.exists', (_, e) => ({ value: [...disco.keys()].some(k => k === p(e.path) || k.startsWith(`${p(e.path)}/`)) }))
   const elenchi: string[] = []
   on('fs.list', (_, e) => (elenchi.push(p(e.path)), {
@@ -4897,6 +4897,7 @@ test('RC 2.2.0, terzo giro, punto 3: se l\'apertura rifiuta con un valore strano
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const r = await $.command.run({ command: 'chipmanager' } as never) as { text?: unknown }
   expect([t('it', 'comando.erroreGenerico'), "Could not read the mod's data. Opened the doctor."]).toContain(String(r.text))
+})
 
 // --- F14: caveman, the full Matt Pocock set, per-repository setup -----------------------------------------------------
 
@@ -4906,10 +4907,11 @@ const CMD_SETUP = 'mattpocock-skills:setup-matt-pocock-skills'
 const SOLO_LOCALE = JSON.stringify({ progetti: { 'acme/progetto': { soloLocale: true } } })
 
 /** A desktop session with the plugin CLI, the install helper and the loaded commands scriptable by the test. */
-function ambienteF14(on: Parameters<TestBody>[1], opz: { elenco?: () => object[]; comandi?: () => string[]; helper?: (cmd: string, input: Record<string, unknown>) => unknown; cli?: boolean } = {}) {
+function ambienteF14(on: Parameters<TestBody>[1], opz: { elenco?: () => object[]; comandi?: () => string[]; helper?: (cmd: string, input: Record<string, unknown>) => unknown; cli?: boolean; remote?: () => string } = {}) {
   const helper: { cmd: string; id?: unknown; stdin?: unknown }[] = []
   const amb = ambiente(on, {
     cli: opz.cli,
+    remote: opz.remote,
     fonte: (cmd, input) => {
       if (cmd === 'claude plugin list --json') return opz.elenco?.() ?? [{ id: POCOCK_MOD, scope: 'user', enabled: true }]
       if (cmd.startsWith('skill-')) return (helper.push({ cmd, id: input.id, stdin: input.stdin }), opz.helper?.(cmd, input) ?? (cmd === 'skill-controlla' ? { spenti: [] } : {}))
@@ -4967,10 +4969,10 @@ test('F14.1 caveman: un progetto solo locale non lo installa né lo attiva; la p
     await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
     return ui
   }
-  // Solo locale dall'inizio: né la preparazione né la domanda.
+  // Solo locale dall'inizio: nessun pulsante Installa, né la preparazione né la domanda.
   amb.disco.set('X:/casa/.claude/chipmanager/config.json', SOLO_LOCALE)
   let ui = await apri()
-  await ui.press({ key: 'skill-installa-caveman' })
+  expect(await ui.find({ key: 'skill-installa-caveman' })).toBeUndefined()
   await assesta()
   expect([domande.length, amb.helper.map(h => h.cmd).filter(c => c !== 'skill-controlla')]).toEqual([0, []])
   await ui.unmount()
@@ -5074,8 +5076,7 @@ test('F14.3 setup: proposto solo col plugin installato, attivo e caricato; una v
 
 test('F14.3 setup: un repository nuovo col plugin già installato ha la sua proposta, con un altro id', async ($, on) => {
   let remote = 'https://github.com/acme/progetto.git'
-  const amb = ambienteF14(on, { elenco: () => [{ id: 'mattpocock-skills@claude-plugins-official', scope: 'user', enabled: true }] })
-  on('session.repo', () => ({ value: { root: 'X:/repo', remote, internal: false, repo: null } as never }))
+  const amb = ambienteF14(on, { elenco: () => [{ id: 'mattpocock-skills@claude-plugins-official', scope: 'user', enabled: true }], remote: () => remote })
   mock.clock(on)
   const v = voceSkill('mattpocock-skills')!
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -5162,10 +5163,10 @@ test('F14.3 setup: all\'avvio si ricontrollano plugin e vincoli; spento dopo la 
   }
   // Spento dopo la proposta; poi attivo ma il comando non è più caricato.
   elenco = [{ id: POCOCK_MOD, scope: 'user', enabled: false }]
-  await prova(/mattpocock-skills/)
+  await prova(/installato, attivo e caricato/)
   elenco = [{ id: POCOCK_MOD, scope: 'user', enabled: true }]
   comandi = []
-  await prova(/mattpocock-skills/)
+  await prova(/installato, attivo e caricato/)
   comandi = [CMD_SETUP]
   // L'utente cambia l'esecutore dall'editor: bloccata.
   let ui = await $.ui.mount({ ...PANE('desktop') })
@@ -5175,12 +5176,12 @@ test('F14.3 setup: all\'avvio si ricontrollano plugin e vincoli; spento dopo la 
   await ui.select({ key: `esec-${id}`, value: 'codex' })
   await finche(() => record().esecutore === 'codex')
   await ui.unmount()
-  await prova(/Claude/)
+  await prova(/parte solo con Claude/)
   // Di nuovo Claude, poi la destinazione cambiata (cloud o crediti API): bloccata.
   amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...record(), esecutore: 'claude', revisore: 'codex', versione: record().versione + 1 }))
   for (const destinazione of ['cloud', 'api-claude'] as const) {
     amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...record(), destinazione, versione: record().versione + 1 }))
-    await prova(/locale/)
+    await prova(/parte solo con Claude, in locale/)
   }
   amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...record(), destinazione: undefined, versione: record().versione + 1 }))
   // Tutto in regola: parte, in una sessione desktop interattiva.
@@ -5203,6 +5204,6 @@ test('F14.3 setup: dal terminale (avvio non interattivo `claude -p`) la chip di 
   await ui.press({ key: `avvia-${id}` }).catch(() => undefined)
   await assesta()
   expect([amb.processi.some(p => p.argv[2] === 'lancia-cli'), amb.setup()[0]!.stato]).toEqual([false, 'proposta'])
-  expect(await ui.find({ type: 'Text', text: /interattiv/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /mai con claude -p/ })).toBeDefined()
   await ui.unmount()
 })

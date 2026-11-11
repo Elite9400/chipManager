@@ -56,11 +56,57 @@ function revisioneUfficiale(v, deps) {
 /** The approved revision: the official entry's sha, or the head of the registry repo. TokenEconomizer is not handled here. */
 function revisione(v, deps) {
   if (v.pin === 'ufficiale') return revisioneUfficiale(v, deps)
+  if (v.pin === 'tag') return revisioneTag(v, deps)
   if (v.pin !== 'ls-remote') throw new Rifiuto('skill.err.nonInstallabile')
   const r = deps.esegui(['git', 'ls-remote', urlDi(v), 'HEAD'], { timeoutMs: 30_000 })
   const sha = r.status === 0 ? r.stdout.trim().split(/\s+/)[0] : ''
   if (!SHA.test(sha)) throw new Rifiuto('skill.err.git')
   return sha
+}
+
+/**
+ * F14.1: the commit of the registry's tag, read with the two exact refs `refs/tags/<nome>` and its peeled `^{}`. With an
+ * expected tag object (annotated) the simple ref must be that object and the peeled ref that commit; without one
+ * (lightweight) the simple ref must be the commit and there must be no peeled ref. Correction round 2, point 1: no
+ * fallback from annotated to lightweight, not even on the same commit. A line for any other ref, a repeated ref or a value
+ * that is not a sha is a refusal. The result is always the registry's commit: the download never uses the tag name.
+ */
+function revisioneTag(v, deps) {
+  const t = v.tag
+  if (!t || !SHA.test(t.commit) || (t.oggetto !== undefined && !SHA.test(t.oggetto))) throw new Rifiuto('skill.err.nonInstallabile')
+  const ref = `refs/tags/${t.nome}`
+  const r = deps.esegui(['git', 'ls-remote', urlDi(v), ref, `${ref}^{}`], { timeoutMs: 30_000 })
+  if (r.status !== 0) throw new Rifiuto('skill.err.git')
+  const righe = r.stdout.split(/\r?\n/).filter(Boolean).map(x => x.split('\t'))
+  if (!righe.every(x => x.length === 2 && SHA.test(x[0]) && (x[1] === ref || x[1] === `${ref}^{}`))) throw new Rifiuto('skill.err.tag')
+  const di = n => righe.filter(x => x[1] === n).map(x => x[0])
+  const semplice = di(ref)
+  const pelato = di(`${ref}^{}`)
+  const ok = semplice.length === 1 && (t.oggetto !== undefined
+    ? pelato.length === 1 && semplice[0] === t.oggetto && pelato[0] === t.commit
+    : pelato.length === 0 && semplice[0] === t.commit)
+  if (!ok) throw new Rifiuto('skill.err.tag')
+  return t.commit
+}
+
+/**
+ * F14.2: the skills a revision provides, by name: the folders the manifest lists under `skills`, else the default
+ * `skills/<name>/SKILL.md` folders (one level). Read from the checked-out revision; a name outside [\w.-] is a refusal.
+ */
+function skillDa(dir) {
+  let manifest = null
+  try { manifest = JSON.parse(fs.readFileSync(fileSenzaLink(dir, '.claude-plugin/plugin.json'), 'utf8')) } catch { /* none: the default folders */ }
+  const dichiarate = manifest && typeof manifest === 'object' && manifest.skills !== undefined ? [manifest.skills].flat() : null
+  let nomi
+  if (dichiarate) {
+    if (!dichiarate.every(x => typeof x === 'string')) throw new Rifiuto('skill.err.hook')
+    nomi = dichiarate.map(x => path.posix.basename(x.replace(/\/+$/, '')))
+  } else {
+    const base = path.join(dir, 'skills')
+    nomi = fs.existsSync(base) ? fs.readdirSync(base).filter(n => fs.existsSync(path.join(base, n, 'SKILL.md'))).sort() : []
+  }
+  if (nomi.length > MAX_RIGHE || !nomi.every(n => /^[\w.-]{1,100}$/.test(n))) throw new Rifiuto('skill.err.hook')
+  return nomi
 }
 
 /**
@@ -556,7 +602,8 @@ function prepara(id, dm, deps) {
   if (v.pin === 'clone') return preparaClone(v, dm, deps)
   const sha = revisione(v, deps)
   const h = hookDellaRevisione(v, sha, dm, deps)
-  return { id, url: urlDi(v), sha, hook: h.righe, impronta: h.impronta }
+  // F14.2: the list the owner reads before installing comes from this revision, never from the registry.
+  return { id, url: urlDi(v), sha, hook: h.righe, impronta: h.impronta, skills: skillDa(dirRevisione(dm, v.id, sha)) }
 }
 
 /**
@@ -758,6 +805,9 @@ function installa(id, input, dm, deps) {
   const hook = input.hook
   if (!Array.isArray(hook) || hook.length > MAX_RIGHE || !hook.every(x => typeof x === 'string' && x.length <= MAX_RIGA)) throw new Rifiuto('skill.err.fonte')
   if (v.pin === 'clone') return installaClone(v, input, dm, deps)
+  // F14.1: the tag is resolved again right before anything is written: moved, re-annotated or gone since the owner's
+  // confirmation stops here; so does an approval of any commit other than the pinned one.
+  if (v.pin === 'tag' && revisioneTag(v, deps) !== input.sha) throw new Rifiuto('skill.err.tag')
   const dir = dirMarketplace(dm)
   const f = path.join(dir, '.claude-plugin', 'marketplace.json')
   const d = require('./disco.cjs')
@@ -765,7 +815,9 @@ function installa(id, input, dm, deps) {
   let m
   try { m = JSON.parse(fs.readFileSync(f, 'utf8')) } catch { m = null }
   const altri = (Array.isArray(m?.plugins) ? m.plugins : []).filter(p => p?.name !== K.nomePlugin(v) && K.SKILL_BASE.some(x => K.nomePlugin(x) === p?.name))
-  const entry = { name: K.nomePlugin(v), source: { source: 'url', url: input.url, sha: input.sha }, defaultEnabled: false, description: `Baseline skill ${v.id}, approved revision` }
+  // F14.4: the channel decides the entry's source kind; both name the approved sha, never a branch or a tag.
+  const fonte = v.canale === 'github' ? { source: 'github', repo: v.repo, sha: input.sha } : { source: 'url', url: input.url, sha: input.sha }
+  const entry = { name: K.nomePlugin(v), source: fonte, defaultEnabled: false, description: `Baseline skill ${v.id}, approved revision` }
   fs.mkdirSync(path.dirname(f), { recursive: true })
   d.scriviAtomico(f, JSON.stringify({ name: K.MARKETPLACE_BASE, owner: { name: 'chipManager' }, plugins: [...altri, entry] }, null, 1))
   // Every command must succeed; a marketplace with our name that is not our folder stops everything.
@@ -863,4 +915,4 @@ if (require.main === module) {
   process.exitCode = codice
 }
 
-module.exports = { main, prepara, installa, abilita, controlla, pulisci, prerequisiti, dirClone, fileSenzaLink, marketplace, hookInstallati, alberoImpronta, bitEseguibile, hookDellaRevisione, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }
+module.exports = { main, prepara, installa, revisione, skillDa, abilita, controlla, pulisci, prerequisiti, dirClone, fileSenzaLink, marketplace, hookInstallati, alberoImpronta, bitEseguibile, hookDellaRevisione, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }

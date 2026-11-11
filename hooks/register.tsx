@@ -89,12 +89,15 @@ import {
   nomeModello,
   violazioniAvvio,
   motivoCorsiaCodex,
+  chipSetup,
+  statoSetup,
 } from './logica'
 import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
 import { MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
 import { chiamaCompatibile, connessiCompatibili, rilevaLocali, verificaCompatibile } from './compatibili-host'
 import { cambiaPlugin, controllaApprovate, installaSkill, leggiPlugin, RIGHE_PER_PAGINA } from './skill-base-host'
-import { voceSkill } from './skill-base'
+import { comandoSetup, eDellaVoce, idSetup, SKILL_BASE, voceSkill } from './skill-base'
+import type { VoceSkill } from './skill-base'
 import { campoRegoleMancante, testoRegoleIniziali } from './regole-iniziali'
 import type { Chiave } from './lingua'
 /** F13.7: a refusal code from the install helper, shown in the panel as is (one of the dictionary keys skill.err.*). */
@@ -815,6 +818,56 @@ type Decisione = { avvia?: Azione; coda?: Msg; blocchi?: Msg[]; nulla?: Azione; 
  * violazioni della configurazione effettiva; prenota con il controllo atomico su TUTTI i record letti.
  * Se un record è cambiato fra la lettura e la prenotazione, ridecide da capo (fino a 3 volte).
  */
+// --- F14.3: the per-repository setup of a baseline entry -------------------------------------------------------------
+
+/** Installed and enabled (either identity) and its setup command loaded in this session. Unknown counts as not. */
+async function setupDisponibile($: Eng, v: VoceSkill, installati?: StatoSkill['installati']) {
+  const elenco = installati !== undefined ? installati : await leggiPlugin($)
+  const comandi = await $.command.list().catch(() => null)
+  return !!elenco?.some(p => eDellaVoce(v, p.id) && p.attivo) && !!comandi?.some(c => c.name === comandoSetup(v))
+}
+
+/** Why a setup chip cannot start now (its plugin not installed, enabled and loaded), or undefined. */
+async function setupNonPronto($: Eng, id: string): Promise<Msg | undefined> {
+  const v = voceSkill(id)
+  const comando = v && comandoSetup(v)
+  if (!v || !comando) return msg('v.setupVincoli', { nome: id })
+  return (await setupDisponibile($, v)) ? undefined : msg('v.setupPlugin', { nome: v.id, comando: `/${comando}` })
+}
+
+/**
+ * Proposes each registry entry's setup once per project, only with its plugin installed, enabled and loaded. Correction
+ * round 2, point 3: the chip is the record; its id is fixed per entry and project and it is written with a create-only
+ * CAS, so concurrent sessions never duplicate it. Any existing record (proposed, dismissed, failed, done) means no new
+ * proposal: the doctor offers «Propose again» for a dismissed or failed one.
+ */
+async function proponiSetup($: Eng) {
+  const voci = SKILL_BASE.filter(v => comandoSetup(v))
+  const chi = await chiSonoIo($)
+  const repo = chi.repo
+  if (!voci.length || !repo) return
+  const installati = (await read($, statoSkill)).installati
+  if (!installati) return
+  const [lista, r] = await Promise.all([carica($), leggiRegole($)])
+  for (const v of voci) {
+    if (lista.some(a => a.id === idSetup(v, repo)) || !(await setupDisponibile($, v, installati))) continue
+    const ultimo = attive(delProgetto(lista, chi)).reduce((n, a) => Math.max(n, a.ordine), 0)
+    // A conflict means another session wrote it first (or a record we cannot read holds the id): nothing to do.
+    const fatta = await salva($, chipSetup(v, repo, r, ultimo + 1, ora()), { nuova: true }).catch(() => undefined)
+    if (fatta) $.ui.toast((await lingue($))('skill.setupProposto', { nome: v.id }))
+  }
+}
+
+/** Doctor «Propose again»: this project's dismissed or failed setup chip back to proposed, with a CAS on its record. */
+async function riproponiSetup($: Eng, voce: string) {
+  const v = voceSkill(voce)
+  const repo = (await chiSonoIo($)).repo
+  if (!v || !comandoSetup(v) || !repo) return
+  await aggiorna($, idSetup(v, repo), x => (x.stato === 'scartata' || x.stato === 'fallita'
+    ? { ...transizione(x, 'proposta', ora()), statoPrima: undefined, incerto: undefined, tentativo: undefined, sessione: undefined, ...salvato('errore', 'errore', undefined) }
+    : null))
+}
+
 async function decidi(
   $: Eng,
   options: Record<string, unknown>,
@@ -829,6 +882,11 @@ async function decidi(
     const a = trovata && conVincoliPadre(trovata, tutte, r)
     const ammessi = opz.qui ? ['proposta'] : ['proposta', 'accodata', 'fallita']
     if (!a || !ammessi.includes(a.stato)) return { nulla: a }
+    // F14.3, correction round 2, point 2: the setup's plugin must still be installed, enabled and its command loaded.
+    if (a.setup !== undefined) {
+      const no = await setupNonPronto($, a.setup)
+      if (no) return { blocchi: [no] }
+    }
     if (opz.approvata !== undefined && a.versione !== opz.approvata) throw errore('err.cambiataDopoConferma', { titolo: a.titolo })
     if (modalitaDi(a) === 'esterno' && opz.terzoApprovato !== a.versione && !opz.soloCoda) return { blocchi: [msg('v.freeConferma')] }
     // Il cloud parte solo con il consenso dato al testo di QUESTA versione (letto per intero nella
@@ -1430,6 +1488,13 @@ async function diagnosiDoctor($: Eng) {
       if (t.codice === 'percorso.dati' && /^helper\.(dentroWorkingTree|collegamento)/.test(String(t.motivo ?? '')) && !daEnv && verso && base && base !== verso)
         Object.assign(t, { spostabile: true, da: base, verso })
     if (typeof v.versione === 'string' && v.versione !== VERSIONE_MOD) trovati.push({ codice: 'host.versione' })
+    // F14.3: a dismissed or failed setup chip of this project can be proposed again from here.
+    const repo = chi?.repo
+    const lista = repo ? await carica($, { fresca: true }).catch(() => null) : null
+    for (const s of repo && lista ? SKILL_BASE.filter(x => comandoSetup(x)) : []) {
+      const stato = statoSetup(lista!.find(a => a.id === idSetup(s, repo!)))
+      if (stato === 'scartato' || stato === 'fallito') trovati.push({ codice: 'skill.setup', voce: s.id })
+    }
     // F13.1: Fable 5.2 vuole Claude Code ≥ 2.1.321. Una versione ignota non si giudica (niente avviso inventato).
     const host = await $.session.version().then(x => x.base ?? x.version).catch(() => undefined)
     const numeri = (s: string) => (/^(\d+)\.(\d+)\.(\d+)/.exec(s) ?? []).slice(1).map(Number)
@@ -1520,6 +1585,8 @@ async function rimedioDoctor($: Eng, opz: Record<string, unknown>, r: Rilievo) {
     // not empty, a different set of skipped links) moved nothing and changed nothing.
     $.ui.toast(e.codice === 0 ? T('doc.spostati', { verso: r.verso, da: r.da }) : T(e.codice !== 4 ? 'doc.nonRiuscito' : e.testo ? 'doc.nonSpostati' : 'errore.configCambiata'))
     if (e.codice === 0) await aggiornaRisorse($, opz)
+  } else if (r.codice === 'skill.setup' && typeof r.voce === 'string') {
+    await riproponiSetup($, r.voce)
   } else if (r.codice === 'registro.sviluppo' || r.codice === 'config.illeggibile') {
     const si = T('doc.applica')
     const domanda = T(r.codice === 'registro.sviluppo' ? 'doc.chiediArchivia' : 'doc.chiediRipristina')
@@ -2499,6 +2566,8 @@ export const register: Register = (on, options) => {
     // F13.7 r3: a mod-installed plugin enabled without the owner's approval record is disabled again, and the owner told.
     void controllaApprovate($).then(async spenti => {
       if (spenti.length) $.ui.toast((await lingue($))('skill.spentiAvvio', { nomi: spenti.join(', ') }))
+      // F14.3: after the approval check (the listing is fresh), the per-repository setup chips, once per project.
+      await proponiSetup($)
     }).catch(() => undefined)
     await $.command.register({ name: 'chipmanager', description: 'Opens the chipManager panel of suggested actions' })
     await $.tool.register({
@@ -2974,8 +3043,11 @@ export const register: Register = (on, options) => {
         try {
           // Audit 2.2.0, point 2: the second consent is where TokenEconomizer's setup runs; the question says so.
           const setup = voceSkill(id)?.pin === 'clone' ? `\n\n${T('skill.setupClone')}` : ''
+          // F14.1: hooks that run in every session and change the style everywhere are said so, with what they need.
+          const avvio = voceSkill(id)?.avvio
+          const ovunque = avvio ? `\n\n${T('skill.avvio', { nome: id, requisiti: avvio.requisiti.join(', ') })}` : ''
           await cambiaPlugin($, id, attiva, soloLocale, async nota =>
-            (await $.ui.ask(`${T('skill.consenso', { nome: id, nota })}${setup}`, { options: [T('skill.abilita', { nome: id }), T('comune.annulla')], header: 'chipManager' })
+            (await $.ui.ask(`${T('skill.consenso', { nome: id, nota })}${ovunque}${setup}`, { options: [T('skill.abilita', { nome: id }), T('comune.annulla')], header: 'chipManager' })
               .catch(() => '')) === T('skill.abilita', { nome: id }))
         } catch (e) {
           if ((e as Error)?.message === 'local-only project') throw errore('skill.bloccatoLocale', { nome: id })
@@ -2990,7 +3062,7 @@ export const register: Register = (on, options) => {
         const r = await leggiRegole($)
         if (v && v.flusso !== 'locale' && (!r.lette || r.risorse.soloLocale)) throw errore('skill.bloccatoLocale', { nome: id })
         try {
-          const fatto = await installaSkill($, id, async ({ url, sha, hook }) => {
+          const fatto = await installaSkill($, id, async ({ url, sha, hook, skills }) => {
             // Revisione dell'audit 2.2.0, S1: every component is shown, RIGHE_PER_PAGINA lines a page, and every page needs a yes.
             const pagine = Math.max(1, Math.ceil(hook.length / RIGHE_PER_PAGINA))
             for (let i = 0; i < pagine; i++) {
@@ -2999,6 +3071,8 @@ export const register: Register = (on, options) => {
               const righe = hook.slice(i * RIGHE_PER_PAGINA, (i + 1) * RIGHE_PER_PAGINA).map(h => aCapo(`· ${h}`)).join('\n') + (pagine > 1 ? `\n(${i + 1}/${pagine})` : '')
               const domanda = T('skill.conferma', { nome: id, url, sha, nota: v?.nota ?? '', hook: hook.length ? righe : T('skill.nessunHook') })
                 + (v?.pin === 'clone' ? `\n\n${T('skill.setupClone')}` : '')
+                // F14.2: the skills of the approved revision, by name, on the first page.
+                + (i === 0 && skills.length ? `\n\n${aCapo(T('skill.elenco', { n: skills.length, nomi: skills.join(', ') }))}` : '')
               if ((await $.ui.ask(domanda, { options: [T('skill.installa', { nome: id }), T('comune.annulla')], header: 'chipManager' }).catch(() => '')) !== T('skill.installa', { nome: id })) return false
             }
             return true

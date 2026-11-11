@@ -595,8 +595,8 @@ risulta gratuito; il costo di un fornitore remoto la mod non lo conosce.
 ## Skill di base
 
 La mod consiglia alcuni plugin e nomina quelli attivi nei mandati Claude, per ruolo: **ponytail** per chi scrive codice,
-**superpowers** (piani e revisione) per chi rivede; **mattpocock-skills** (handoff, grill-me, grilling) lo invochi tu e
-non viene mai nominato; **TokenEconomizer** è sperimentale e spento di serie. Impostazioni → Modo di lavoro mostra
+**superpowers** (piani e revisione) per chi rivede; **mattpocock-skills** (il set completo) lo invochi tu e
+non viene mai nominato; **caveman** comprime le risposte di chi lavora; **TokenEconomizer** è sperimentale e spento di serie. Impostazioni → Modo di lavoro mostra
 ognuno (installato, attivo, flusso dei dati, fonte) con un interruttore che decide solo se la mod lo nomina — «Spento»
 non disattiva mai un plugin che hai installato — e i pulsanti **Attiva**/**Disattiva**, che eseguono `claude plugin
 enable|disable <id> --scope user` al tuo clic (un plugin gestito dalla policy appare bloccato). In un progetto solo
@@ -613,6 +613,18 @@ spento di serie) segue una sequenza sua: prima Python 3.10+ (e `sh` di Git su Wi
 `defaultEnabled: false` nel suo manifest, installazione e disattivazione immediata, `toolprune=propose` e `loopguard=off`
 scritti e riletti, `status` dalla copia installata; si attiva solo con un secondo consenso. Uno installato da te non
 viene mai toccato.
+
+**caveman** è fissato dal suo tag annotato `v4.1.0`: oggetto del tag e commit devono coincidere, controllati prima del
+download e di nuovo subito prima dell'installazione, e si scarica solo il commit fissato. Il suo flusso dei dati è
+esterno (caveman-compress manda il testo dei file al tuo fornitore di modelli), quindi un progetto solo locale non lo
+installa né lo attiva. I suoi hook eseguono Node a ogni sessione, sottoagente e prompt e cambiano lo stile delle
+risposte in tutte le tue sessioni: il consenso all'attivazione lo dice ed elenca che cosa serve (`node`, `sh`, `sed`,
+`printf`). La mod non usa mai la sua CLI né i suoi installer. Per **mattpocock-skills** la conferma d'installazione
+elenca le skill lette dalla revisione approvata. Una volta installato, attivo e caricato, ogni repository riceve una
+chip, **Set up mattpocock-skills in this repository**, che esegue `/mattpocock-skills:setup-matt-pocock-skills`: una
+chip ordinaria che avvii tu, su Claude, in locale e interattiva, corsia R2 o superiore, ricontrollata all'avvio.
+Scartata, non torna da sola; il doctor offre **Proponi di nuovo** per una scartata o fallita. Conta come fatta solo
+quando la chip è completata.
 
 ## Lingue
 

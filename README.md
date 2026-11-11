@@ -578,8 +578,8 @@ unknown to the mod.
 ## Baseline skills
 
 The mod recommends a few plugins and names the enabled ones in Claude mandates, by role: **ponytail** for whoever writes
-code, **superpowers** (planning and review) for reviewers; **mattpocock-skills** (handoff, grill-me, grilling) is yours
-to invoke and is never named; **TokenEconomizer** is experimental and off by default. Settings → Work mode shows each
+code, **superpowers** (planning and review) for reviewers; **mattpocock-skills** (the full set) is yours
+to invoke and is never named; **caveman** compresses answers for workers; **TokenEconomizer** is experimental and off by default. Settings → Work mode shows each
 one (installed, enabled, data flow, source) with a switch that only decides whether the mod names it — «Off» never
 disables a plugin you installed — and **Enable**/**Disable** buttons that run `claude plugin enable|disable <id> --scope
 user` on your click (a plugin managed by policy is shown as locked). In a local-only project, skills that send data off
@@ -594,6 +594,17 @@ at session start without your approval is disabled again. **TokenEconomizer** (e
 its own sequence: Python 3.10+ (and Git's `sh` on Windows) checked first, the approved commit cloned, its manifest set to
 `defaultEnabled: false`, install and immediate disable, `toolprune=propose` and `loopguard=off` set and read back, `status`
 from the installed copy; it is enabled only with a second consent. One you installed yourself is never touched.
+
+**caveman** is pinned by its annotated tag `v4.1.0`: the tag object and the commit must both match, checked before the
+download and again right before install, and only the pinned commit is downloaded. Its data flow is external
+(caveman-compress sends file text to your model provider), so a local-only project never installs or enables it. Its
+hooks run Node at every session, subagent and prompt and change the answer style in all your sessions: the enable
+consent says so and lists what they need (`node`, `sh`, `sed`, `printf`). The mod never uses its CLI or installers.
+For **mattpocock-skills** the install confirmation lists the skills read from the approved revision. Once it is
+installed, enabled and loaded, each repository gets one chip, **Set up mattpocock-skills in this repository**, that
+runs `/mattpocock-skills:setup-matt-pocock-skills`: an ordinary chip you start, on Claude, local and interactive, lane
+R2 or above, re-checked at start. Dismissed, it is not proposed again by itself; the doctor offers **Propose again**
+for a dismissed or failed one. It counts as done only once the chip is completed.
 
 ## Languages
 
