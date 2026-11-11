@@ -5026,7 +5026,7 @@ test('F14.2 Pocock: la conferma d\'installazione elenca le skill lette dalla rev
 
 test('F14.3 vincoli puri: la chip di setup è Claude, locale, corsia ≥ R2; cambiarli la blocca col motivo; lo stato del record viene dalla sola chip', () => {
   const v = voceSkill('mattpocock-skills')!
-  const a = chipSetup(v, 'acme/progetto', R, 3, '2026-11-11T10:00:00.000Z')
+  const a = chipSetup(v, 'acme/progetto', R, 3, '2026-11-11T10:00:00.000Z', { chi: AUTORE, limiti: [], lista: [] })
   expect([a.id, a.setup, a.repo, a.stato, a.esecutore, a.destinazione ?? 'local', a.ordine]).toEqual([idSetup(v, 'acme/progetto'), 'mattpocock-skills', 'acme/progetto', 'proposta', 'claude', 'local', 3])
   expect(CORSIE.indexOf(corsiaDi(a, R)!) >= CORSIE.indexOf('R2')).toBe(true)
   expect(a.brief).toContain(`/${CMD_SETUP}`)
@@ -5041,6 +5041,19 @@ test('F14.3 vincoli puri: la chip di setup è Claude, locale, corsia ≥ R2; cam
     ['fallita', 'fallito'], ['scartata', 'scartato'], ['completata', 'fatto']]
   for (const [stato, atteso] of stati) expect([stato, statoSetup({ ...a, stato })]).toEqual([stato, atteso])
   expect(statoSetup(undefined)).toBe('assente')
+})
+
+test('F14.3 revisione Codex, P2: in un progetto con «AGENTS» fra i termini sensibili la chip di setup nasce R4, con revisore Claude, valida e senza violazioni', () => {
+  const v = voceSkill('mattpocock-skills')!
+  // Routing that admits an R4 pair (Fable 5.2 author, Opus reviewer) and a session that may open it, as for any R4 chip.
+  const RS = { ...regoleDa(ROUTING_F13, 'routing.json'), sensibili: ['AGENTS'] }
+  const chi = { ...AUTORE, modello: 'claude-fable-5-2' }
+  const a = chipSetup(v, 'acme/progetto', RS, 1, '2026-11-11T10:00:00.000Z', { chi, limiti: [], lista: [] })
+  expect([corsiaDi(a, RS), a.esecutore, a.revisore]).toEqual(['R4', 'claude', 'claude'])
+  expect(violazioni(a, RS)).toEqual([])
+  expect(violazioniAvvio(a, RS, [a], chi)).toEqual([])
+  // Senza termini sensibili resta la scelta di sempre: Codex rivede una chip Claude su R2.
+  expect(chipSetup(v, 'acme/progetto', R, 1, '2026-11-11T10:00:00.000Z', { chi: AUTORE, limiti: [], lista: [] }).revisore).toBe('codex')
 })
 
 test('F14.3 setup: proposto solo col plugin installato, attivo e caricato; una volta per repository, anche con due sessioni insieme', async ($, on) => {

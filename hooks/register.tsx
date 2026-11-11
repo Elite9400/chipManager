@@ -853,7 +853,8 @@ async function proponiSetup($: Eng) {
     if (lista.some(a => a.id === idSetup(v, repo)) || !(await setupDisponibile($, v, installati))) continue
     const ultimo = attive(delProgetto(lista, chi)).reduce((n, a) => Math.max(n, a.ordine), 0)
     // A conflict means another session wrote it first (or a record we cannot read holds the id): nothing to do.
-    const fatta = await salva($, chipSetup(v, repo, r, ultimo + 1, ora()), { nuova: true }).catch(() => undefined)
+    const chip = chipSetup(v, repo, r, ultimo + 1, ora(), { chi, limiti: (await read($, risorse)).limiti, lista })
+    const fatta = await salva($, chip, { nuova: true }).catch(() => undefined)
     if (fatta) $.ui.toast((await lingue($))('skill.setupProposto', { nome: v.id }))
   }
 }

@@ -1250,9 +1250,12 @@ const setupNoto = (id: unknown) => {
 /**
  * F14.3: the setup chip of a registry entry for one project, built like an agent's proposal: the mandate runs the setup
  * command, the lane is the risk detector's raised to R2 (it edits CLAUDE.md or AGENTS.md, writes docs/agents/* and may
- * create tracker labels), Claude, local, review as the work mode says for that lane. Its id is fixed (idSetup).
+ * create tracker labels), Claude, local. Reviewer, model and effort come from the ordinary choice of an agent's chip: the
+ * default reviewer (none on R0–R2 without cross review), then `bilancia` on Claude only, which keeps the first candidate the
+ * start guard accepts (on a sensitive lane a Claude reviewer, an R4 author and a high effort). Its id is fixed (idSetup).
  */
-export function chipSetup(v: VoceSkill, repo: string, regole: Regole, ordine: number, quando: string): Azione {
+export function chipSetup(v: VoceSkill, repo: string, regole: Regole, ordine: number, quando: string,
+  ctx: { chi: Chiamante; limiti: readonly Limite[]; lista: readonly Azione[] }): Azione {
   const comando = comandoSetup(v)!
   const a: Azione = {
     id: idSetup(v, repo),
@@ -1272,8 +1275,11 @@ export function chipSetup(v: VoceSkill, repo: string, regole: Regole, ordine: nu
     aggiornata: quando,
   }
   const corsia = conMinimo(corsiaDi(a, regole), 'R2')
+  // Like valida(): Codex reviews a Claude chip unless cross review is off on R0–R2. A sensitive lane needs a Claude reviewer
+  // (v.r4Revisore); it is set here too, so the chip is right even when no candidate below passes the session's guards.
   const incrociata = (regole.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro).revisioneIncrociata !== false
-  return { ...a, corsia, revisore: incrociata || ordineCorsia(corsia) > ordineCorsia('R2') ? 'codex' : 'nessuno' }
+  const base: Azione = { ...a, corsia, revisore: sensibile({ ...a, corsia }, regole) ? 'claude' : incrociata || ordineCorsia(corsia) > ordineCorsia('R2') ? 'codex' : 'nessuno' }
+  return bilancia(base, { esecutore: 'claude' }, regole, ctx.limiti, ctx.lista, ctx.chi)
 }
 
 /** F14.3: the per-repository setup record, read from its chip alone: done only once the chip is completed. */
