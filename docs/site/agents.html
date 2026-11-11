@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="The owner decides what starts. Give each proposed chip enough context to succeed in a fresh session.">
+  <title>For agents · chipManager</title>
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="masthead frame">
+  <a class="brand" href="index.html" aria-label="chipManager home"><span class="glyph" aria-hidden="true">▣</span>chip<strong>Manager</strong></a>
+  <nav aria-label="Quick links"><a href="quick-start.html">Quick start</a><a href="models.html">Models &amp; cost</a><a href="faq.html">Help</a></nav>
+</header>
+<div class="shell frame">
+  <aside class="sidebar" aria-label="Guide navigation">
+    <nav class="desktop-chapters" aria-label="Chapters"><ul><li><a href="index.html">Overview</a></li><li><a href="quick-start.html">Quick start</a></li><li><a href="panel.html">The panel</a></li><li><a href="chips.html">Chips & destinations</a></li><li><a href="lanes.html">Lanes R0–R5</a></li><li><a href="models.html">Models & cost</a></li><li><a href="settings.html">Settings</a></li><li><a href="doctor.html">Doctor & reports</a></li><li><a href="board.html">Project board</a></li><li><a href="agents.html" aria-current="page">For agents</a></li><li><a href="faq.html">Troubleshooting</a></li></ul></nav>
+    <details class="chapter-nav"><summary>Browse the guide</summary><nav aria-label="Chapters"><ul><li><a href="index.html">Overview</a></li><li><a href="quick-start.html">Quick start</a></li><li><a href="panel.html">The panel</a></li><li><a href="chips.html">Chips & destinations</a></li><li><a href="lanes.html">Lanes R0–R5</a></li><li><a href="models.html">Models & cost</a></li><li><a href="settings.html">Settings</a></li><li><a href="doctor.html">Doctor & reports</a></li><li><a href="board.html">Project board</a></li><li><a href="agents.html" aria-current="page">For agents</a></li><li><a href="faq.html">Troubleshooting</a></li></ul></nav></details>
+    <p class="sidebar-note">You approve the work.<br>Project rules check the start.</p>
+  </aside>
+  <main id="main" tabindex="-1">
+    <header class="intro"><h1>Propose. Report. Repeat.</h1><p class="lead">The owner decides what starts. Give each proposed chip enough context to succeed in a fresh session.</p><nav class="on-page" aria-label="On this page"><a href="#rules">The five rules</a><a href="#references">Read the tool contract</a></nav></header><section id="rules" aria-labelledby="rules-title"><h2 id="rules-title">The five rules</h2><ol><li><strong>Propose; do not self-start.</strong> Use <code>suggerisci_azione</code>, one reviewable result per chip. Never start, merge, or close on your own.</li><li><strong>Write a self-contained brief.</strong> Include goal, files to read, scope, constraints, a checkable finish, and verification commands. No “as discussed”. Put spec paths in the brief, not only in <code>piano</code>.</li><li><strong>Respect lanes and data boundaries.</strong> Set the lane; explicitly mark sensitive work R4/R5 and <code>sensibile: true</code>. It stays local, Claude-authored and Claude-reviewed. Never include secrets or personal data in a brief.</li><li><strong>Read resources before a batch.</strong> Call <code>risorse_agenti</code>; <code>regole.lette: false</code> means no starts. Use allowed models and efforts. Leave choices out when balancing should decide. Depend only on work that must complete first.</li><li><strong>Report delivery and review.</strong> Use <code>aggiorna_azione</code> with the exact action ID and current attempt token. Delivery is not completion. Propose settings or weights only when the user asks; owner review still applies.</li></ol></section><section id="references" aria-labelledby="references-title"><h2 id="references-title">Read the tool contract</h2><p><a href="https://github.com/Elite9400/chipManager/blob/main/docs/GUIDE-FOR-AGENTS.md">GUIDE-FOR-AGENTS.md</a> explains schemas, choices, reporting, and platform differences. <a href="https://github.com/Elite9400/chipManager/blob/main/docs/AGENTS-SNIPPET.md">AGENTS-SNIPPET.md</a> is the short block for a project’s <code>CLAUDE.md</code> or <code>AGENTS.md</code>. These source links open GitHub.</p><p>Codex and external writers do not have the mod’s tools. A Claude coordinator handles Codex chips. API Claude runs commit locally without pushing, and the launcher records delivery. External writers return text only.</p></section>
+    <p class="sources">Checked against source (GitHub): <a href="https://github.com/Elite9400/chipManager/blob/main/docs/GUIDE-FOR-AGENTS.md">docs/GUIDE-FOR-AGENTS.md</a>, <a href="https://github.com/Elite9400/chipManager/blob/main/docs/AGENTS-SNIPPET.md">docs/AGENTS-SNIPPET.md</a>, <a href="https://github.com/Elite9400/chipManager/blob/main/hooks/logica.ts">hooks/logica.ts</a>.</p>
+    <nav class="next" aria-label="Previous and next page"><a href="board.html">← Project board</a><a href="faq.html">Next: Troubleshooting →</a></nav>
+  </main>
+</div>
+<footer class="footer frame"><span>▣ chipManager · A guide to work you control.</span><span>Static pages · No scripts or trackers · <a href="https://github.com/Elite9400/chipManager/blob/main/README.md">Project README</a></span></footer>
+</body>
+</html>
