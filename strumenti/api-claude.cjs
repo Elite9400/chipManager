@@ -55,6 +55,15 @@ function percorsiAccount(dm, altri = []) {
 }
 const motivoPercorso = e => String(e?.message ?? e).slice(0, 300)
 /**
+ * RC 2.2.0 (bug del committente): le radici di un comando della corsia API, registrate prima di ogni controllo come fanno
+ * gli altri comandi dell'helper: la cartella delle azioni, la cartella della macchina e quella del config. Senza, una
+ * cartella dei dati fuori da `dm` risultava fuori da ogni radice e una `.claude` collegata sopra di lei era rifiutata.
+ */
+function registraRadiciApi(dir, dm, input) {
+  const config = typeof input?.config === 'string' && path.isAbsolute(input.config) ? path.dirname(path.resolve(input.config)) : undefined
+  d.registraRadici(typeof dir === 'string' && path.isAbsolute(dir) ? dir : undefined, dm, config)
+}
+/**
  * Giro 2, rilievo 1: la catena di OGNI file del tentativo (file-chiave e consegna) prima di accedervi: un link al posto
  * della consegna non deve dare un istante finto e liberare il lock. Il motivo, o null se vale.
  */
@@ -600,6 +609,9 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
   if (!d.idValido(id) || !d.tentativoValido(tentativo) || !ingressoValido(input)) return [2, '']
   const dm = deps.dirMacchina ?? dirPredefinita()
   // Prima di leggere il lock, cancellare chiavi o toccare la cartella delle azioni: tutte le catene, config compreso.
+  // RC 2.2.0: prima ancora le radici di questo comando (cartella delle azioni, cartella della macchina, cartella del
+  // config): un link SOPRA di loro (una `.claude` spostata con una junction) è ammesso, uno dentro no.
+  registraRadiciApi(dir, dm, input)
   try {
     percorsiAccount(dm, [dir, d.fileEsecuzione(dir, tentativo), input.config])
   } catch (e) {
@@ -724,6 +736,7 @@ async function eseguiApi(dir, id, tentativo, input, deps = {}) {
   const dm = deps.dirMacchina ?? dirPredefinita()
   const file = d.fileEsecuzione(dir, tentativo)
   // Il supervisore ricontrolla le catene prima di leggere il segno o il lock (un percorso cambiato dopo il lancio).
+  registraRadiciApi(dir, dm, input)
   percorsiAccount(dm, [dir, file])
   const segno = JSON.parse(fs.readFileSync(file, 'utf8'))
   if (segno.id !== id || segno.tentativo !== tentativo || segno.stato !== 'in-avvio') throw new Error('tentativo non valido')

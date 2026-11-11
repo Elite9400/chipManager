@@ -43,6 +43,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Fixed
 
+- **API lane with a linked `.claude`.** Starting an API chip no longer fails with «the mod's data must be outside any
+  repository» when `.claude` (or the home) is a junction above the data folders: the API lane's commands now register
+  their roots (actions folder, machine folder, config folder) before any check, like the other commands; the baseline
+  skill installer checks its own files against its data folder. A link inside a data folder is still refused.
 - **`/chipmanager` never fails silently.** If the mod's data cannot be read (or anything else in the command fails), the
   panel opens on the doctor anyway, the reason shows, and the command answers in the user's language, suggesting
   `/reload-plugins` after an update.

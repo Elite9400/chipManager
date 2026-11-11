@@ -499,7 +499,8 @@ function leggiRecord(dm) {
 }
 function scriviRecord(dm, r) {
   const d = require('./disco.cjs')
-  d.percorsoSicuro(fileRecord(dm))
+  // RC 2.2.0: la radice è la cartella dei dati (una `.claude` collegata sopra di lei è ammessa, un link dentro no).
+  d.percorsoSicuro(fileRecord(dm), [dm])
   d.scriviAtomico(fileRecord(dm), JSON.stringify(r, null, 1))
 }
 
@@ -754,7 +755,7 @@ function installa(id, input, dm, deps) {
   const dir = dirMarketplace(dm)
   const f = path.join(dir, '.claude-plugin', 'marketplace.json')
   const d = require('./disco.cjs')
-  d.percorsoSicuro(f)
+  d.percorsoSicuro(f, [dm])
   let m
   try { m = JSON.parse(fs.readFileSync(f, 'utf8')) } catch { m = null }
   const altri = (Array.isArray(m?.plugins) ? m.plugins : []).filter(p => p?.name !== K.nomePlugin(v) && K.SKILL_BASE.some(x => K.nomePlugin(x) === p?.name))

@@ -5227,3 +5227,31 @@ test('RC 2.2.0, secondo giro, punto 2: su POSIX il bit eseguibile entra nell\'im
   if (process.platform === 'win32') assert.strictEqual(dopo, prima)
   else assert.notStrictEqual(dopo, prima)
 })
+
+test('RC 2.2.0, bug del committente: con `.claude` collegata sopra le radici, lancia-api parte; un link DENTRO la cartella dei dati resta rifiutato', async () => {
+  const tipo = process.platform === 'win32' ? 'junction' : 'dir'
+  // La casa simulata: `.claude` è una junction verso un'altra cartella (come sulla macchina del committente).
+  const casa = tmp()
+  fs.symlinkSync(tmp(), path.join(casa, '.claude'), tipo)
+  const dm = path.join(casa, '.claude', 'chipmanager')
+  fs.mkdirSync(dm, { recursive: true })
+  const config = path.join(dm, 'config.json')
+  fs.writeFileSync(config, JSON.stringify({ account: { apiClaude: { budgetUsd: 5, tetto: 2 } }, progetti: { [PROGETTO_PROVA]: {} } }))
+  const root = tmp()
+  const deps = { dirMacchina: dm, fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) }
+  // La cartella dei dati del progetto FUORI da `dm`, sotto la stessa `.claude` collegata.
+  const dir = path.join(casa, '.claude', 'dati', 'progetto')
+  fs.mkdirSync(dir, { recursive: true })
+  recordApi(dir, 'a-giun0001', 'az-giun0001')
+  assert.deepStrictEqual(await API.lanciaApi(dir, 'a-giun0001', 'az-giun0001', ingressoApi(root, config), deps), [0, ''])
+  fs.rmSync(API.fileLock(dm), { force: true })
+  // Un link dentro la cartella dei dati (le esecuzioni portate altrove): rifiutato, niente scritto fuori.
+  const dir2 = path.join(casa, '.claude', 'dati', 'altro')
+  fs.mkdirSync(dir2, { recursive: true })
+  const altrove = tmp()
+  fs.symlinkSync(altrove, path.join(dir2, 'esecuzioni'), tipo)
+  recordApi(dir2, 'a-giun0002', 'az-giun0002')
+  const [codice, testo] = await API.lanciaApi(dir2, 'a-giun0002', 'az-giun0002', ingressoApi(root, config), deps)
+  assert.deepStrictEqual([codice, /helper\.collegamento/.test(JSON.parse(testo).percorso)], [6, true])
+  assert.deepStrictEqual(fs.readdirSync(altrove), [])
+})
