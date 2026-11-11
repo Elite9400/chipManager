@@ -221,7 +221,7 @@ const recordValido = x => oggettoPuro(x) && typeof x.scope === 'string'
   && (!Object.hasOwn(x, 'gitCommitSha') || SHA.test(x.gitCommitSha))
 /** Marketplace source kinds Claude Code records, each with its required string field; any other kind is not understood. */
 const CAMPO_SORGENTE = { github: 'repo', git: 'url', url: 'url', file: 'path', directory: 'path' }
-const sorgenteValida = s => oggettoPuro(s) && Object.hasOwn(CAMPO_SORGENTE, s.source) && typeof s[CAMPO_SORGENTE[s.source]] === 'string'
+const sorgenteValida = s => oggettoPuro(s) && typeof s.source === 'string' && Object.hasOwn(CAMPO_SORGENTE, s.source) && typeof s[CAMPO_SORGENTE[s.source]] === 'string'
 
 /**
  * The installed revision, as the host records it (schema version 2: `gitCommitSha`, or a 12-character `version`);
@@ -229,9 +229,12 @@ const sorgenteValida = s => oggettoPuro(s) && Object.hasOwn(CAMPO_SORGENTE, s.so
  * that is not valid refuses, with no fallback to another field.
  */
 function shaInstallato(plugin, deps) {
+  // Nothing thrown leaves the parser: any unexpected shape is «cannot verify».
+  try { return leggiShaInstallato(plugin, deps) } catch { return undefined }
+}
+function leggiShaInstallato(plugin, deps) {
   const f = deps.installati ?? path.join(process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR ?? path.join(os.homedir(), '.claude', 'plugins'), 'installed_plugins.json')
-  let j
-  try { j = JSON.parse(fs.readFileSync(f, 'utf8')) } catch { return undefined }
+  const j = JSON.parse(fs.readFileSync(f, 'utf8'))
   if (!oggettoPuro(j) || j.version !== 2 || !oggettoPuro(j.plugins)) return undefined
   const voci = Object.hasOwn(j.plugins, plugin) ? j.plugins[plugin] : undefined
   if (!Array.isArray(voci) || !voci.every(recordValido)) return undefined
@@ -266,12 +269,13 @@ function prepara(id, dm, deps) {
  * Code's own; its directory entries are `{ source: 'directory', path }`.)
  */
 function marketplace(nome, dirAtteso, deps) {
+  // Nothing thrown leaves the parser: any unexpected shape is `altro`.
+  try { return leggiMarketplace(nome, dirAtteso, deps) } catch { return 'altro' }
+}
+function leggiMarketplace(nome, dirAtteso, deps) {
   const f = deps.marketplaceNote ?? path.join(process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR ?? path.join(os.homedir(), '.claude', 'plugins'), 'known_marketplaces.json')
-  let note
-  try {
-    if (!fs.existsSync(f)) return 'assente'
-    note = JSON.parse(fs.readFileSync(f, 'utf8'))
-  } catch { return 'altro' }
+  if (!fs.existsSync(f)) return 'assente'
+  const note = JSON.parse(fs.readFileSync(f, 'utf8'))
   if (!oggettoPuro(note) || !Object.values(note).every(x => oggettoPuro(x) && sorgenteValida(x.source))) return 'altro'
   if (!Object.hasOwn(note, nome)) return 'assente'
   const s = note[nome].source

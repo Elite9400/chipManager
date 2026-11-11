@@ -3754,6 +3754,24 @@ test('F13b r3 rilievo 2: known_marketplaces.json valida il tipo di sorgente cont
   assert.ok(b.comandi.some(c => c.startsWith('claude plugin marketplace add')))
 })
 
+test('F13b r4: il tipo di sorgente di known_marketplaces.json dev\'essere una stringa; nessuna forma inattesa fa uscire un\'eccezione dal parser', () => {
+  const S = require('./skill-installa.cjs')
+  const cattivi = [{ altro: { source: { source: ['github'], repo: 'org/repo' } } }, { altro: { source: { toString: null } } }, { altro: { source: { source: {} } } }]
+  for (const note of cattivi) {
+    const f = path.join(tmp(), 'known_marketplaces.json')
+    fs.writeFileSync(f, JSON.stringify(note))
+    assert.strictEqual(S.marketplace('chipmanager-base', '/x', { marketplaceNote: f }), 'altro', JSON.stringify(note))
+    for (const id of ['ponytail', 'tokeneconomizer']) {
+      const b = banco()
+      const ap = approvato(S, b, id)
+      fs.writeFileSync(b.deps.marketplaceNote, JSON.stringify(note))
+      b.comandi.length = 0
+      assert.throws(() => S.installa(id, ap, b.dir, b.deps), e => e.motivo === 'skill.err.marketplace', `${id} ${JSON.stringify(note)}`)
+      assert.deepStrictEqual(b.comandi, [], `${id} ${JSON.stringify(note)}`)
+    }
+  }
+})
+
 test('F13b rilievo 7: il modello si verifica sull\'intero catalogo validato; solo la visualizzazione del rilevamento è troncata', async () => {
   const C = require('./compatibili.cjs')
   const catalogo = { data: Array.from({ length: 250 }, (_, i) => ({ id: `modello-${i}` })) }
