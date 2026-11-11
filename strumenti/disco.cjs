@@ -449,6 +449,7 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
       fs.mkdirSync(staging)
       identita = fs.lstatSync(staging, { bigint: true })
       const copiati = []
+      const cartelle = []
       const saltati = []
       const relativo = x => path.relative(DA, x).replace(/\\/g, '/')
       const copia = (s, d) => {
@@ -460,6 +461,7 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
           else if (st.isDirectory()) {
             controlla(y)
             fs.mkdirSync(y)
+            cartelle.push(y)
             copia(x, y)
           } else {
             controlla(y)
@@ -488,6 +490,22 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
       // Right before the rename: the folder about to be published is still the one verified, not one swapped in.
       controlla(staging)
       if (!nostro()) throw new Rifiuto(6, `helper.stagingCambiato: ${staging}`)
+      // ...and it holds exactly what was copied and verified: an entry added in place (same folder, same ino), one
+      // missing, or one that is neither a regular file nor a folder (links included) would be published unverified.
+      const atteso = new Map([...cartelle.map(y => [y, 'd']), ...copiati.map(([, y]) => [y, 'f'])])
+      let trovati = 0
+      const rileggi = d => {
+        for (const n of fs.readdirSync(d)) {
+          const y = path.join(d, n)
+          const st = fs.lstatSync(y)
+          const tipo = st.isSymbolicLink() ? 'l' : st.isDirectory() ? 'd' : st.isFile() ? 'f' : 'x'
+          if (atteso.get(y) !== tipo) throw new Rifiuto(6, `helper.stagingCambiato: ${staging}`)
+          trovati++
+          if (tipo === 'd') rileggi(y)
+        }
+      }
+      rileggi(staging)
+      if (trovati !== atteso.size) throw new Rifiuto(6, `helper.stagingCambiato: ${staging}`)
       fs.renameSync(staging, A)
       staging = undefined
       await deps.primaDelConfig?.()

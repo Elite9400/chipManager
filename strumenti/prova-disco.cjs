@@ -3060,6 +3060,24 @@ test('Paths, round 3 finding 2a: the alias above the root re-pointed before the 
   assert.deepStrictEqual(fs.readFileSync(path.join(fisico1, 'chipmanager', 'config.json')), testo)
 })
 
+test('Paths, round 4: a file added inside the original staging folder (same ino) before the rename: nothing unverified is published', async () => {
+  const x = datiDaSpostare()
+  const testo = await configuraDa(x)
+  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+    dopoCopia: () => {
+      const sopra = path.dirname(x.a)
+      const nome = fs.readdirSync(sopra).find(n => n.includes('.staging-'))
+      fs.writeFileSync(path.join(sopra, nome, 'azioni', 'non-verificato.txt'), 'x')
+    },
+  })
+  assert.strictEqual(fs.existsSync(path.join(x.a, 'azioni', 'non-verificato.txt')), false)
+  assert.strictEqual(r[0], 6, r[1])
+  assert.match(r[1], /helper\.stagingCambiato: /)
+  assert.strictEqual(fs.existsSync(x.a), false)
+  assert.deepStrictEqual(fs.readdirSync(path.dirname(x.a)).filter(n => n.includes('staging')), [])
+  assert.deepStrictEqual(fs.readFileSync(x.config), testo)
+})
+
 test('Paths, round 3 finding 2b: a staging folder swapped for another one with the same name before the rename: nothing unverified is published', async () => {
   const x = datiDaSpostare()
   const testo = await configuraDa(x)
