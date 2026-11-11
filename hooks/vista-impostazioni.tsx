@@ -79,6 +79,7 @@ const AVVISI = ['config.senzaCopie', 'config.campoIgnoto', 'config.modoNonValido
 /** Il pulsante del rimedio, dove c'è: gli altri rilievi si riportano soltanto. */
 const RIMEDIO = (r: Rilievo): Chiave | undefined =>
   r.codice.startsWith('accesso.') ? 'doc.accedi' : r.codice === 'lock.api' ? 'doc.libera' : r.codice === 'registro.sviluppo' ? 'doc.archivia'
+    : r.codice === 'percorso.dati' && r.spostabile === true ? 'doc.sposta'
     : r.codice === 'config.illeggibile' && Number(r.copie) > 0 ? 'doc.ripristina' : undefined
 /** Il testo di un rilievo, con i soli dettagli che il codice prevede (numeri e nomi di campo della mod). */
 export const testoRilievo = (T: T, r: Rilievo) => {

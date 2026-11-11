@@ -2183,16 +2183,15 @@ test('F10 configura: progetto, account e lingua in un solo CAS; null toglie; le 
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), c)
 })
 
-test('F10 percorsi: config e dati rifiutati sotto una junction sopra la base, con un .git come file, o dentro un repository', () => {
-  // Junction sopra la base che porta fuori da git: il percorso dichiarato passa per un link.
+test('F10 percorsi: config e dati rifiutati con un .git come file o dentro un repository; una junction SOPRA la radice dati vale', () => {
+  // Junction sopra la radice dati («chipmanager»), fuori da git: ammessa (home o .claude spostati); i dati vanno nella cartella vera.
   const vero = fuori()
   const ponte = path.join(fuori(), 'ponte')
   fs.symlinkSync(vero, ponte, process.platform === 'win32' ? 'junction' : 'dir')
   const sottoPonte = path.join(ponte, 'chipmanager', 'config.json')
-  assert.throws(() => D.percorsoSicuro(sottoPonte), /helper\.collegamento/)
   let r = esegui(['configura', sottoPonte], JSON.stringify({ atteso: null, repo: 'owner/prova', campi: { soloLocale: true } }))
-  assert.strictEqual(r.status, 6, r.stdout)
-  assert.deepStrictEqual(fs.readdirSync(vero), [])
+  assert.strictEqual(r.status, 0, r.stdout)
+  assert.ok(fs.existsSync(path.join(vero, 'chipmanager', 'config.json')))
   // Un `.git` file (worktree) in un antenato: dentro un albero di lavoro.
   const conGit = fuori()
   fs.writeFileSync(path.join(conGit, '.git'), 'gitdir: altrove')
@@ -2671,4 +2670,93 @@ test('F11 giro 2, rilievo 1: una copia con il progetto null riparte dai contator
   assert.strictEqual(await imposta(b, 'accesa'), 6)
   for (const g of [1, 3, 4, 5]) assert.strictEqual(bc(b, 'board-scrivi', g, [`v${g}`], HTML).status, 4)
   assert.strictEqual(bc(b, 'board-scrivi', 6, ['v6'], HTML).status, 0)
+})
+
+// --- Fix percorsi: link ammessi SOPRA la radice dati, mai dalla radice in giù -------------------------------------
+
+const giunzione = (verso, dove) => fs.symlinkSync(verso, dove, process.platform === 'win32' ? 'junction' : 'dir')
+
+test('Percorsi: .claude spostata (junction sopra la radice dati): config e azioni si scrivono nella cartella vera', () => {
+  const vero = fuori()
+  const casa = fuori()
+  giunzione(vero, path.join(casa, '.claude'))
+  const config = path.join(casa, '.claude', 'chipmanager', 'config.json')
+  assert.strictEqual(esegui(['configura', config], JSON.stringify({ atteso: null, repo: 'owner/prova', campi: { soloLocale: true } })).status, 0)
+  assert.ok(fs.existsSync(path.join(vero, 'chipmanager', 'config.json')))
+  const dati = path.join(casa, '.claude', 'chipmanager', 'progetti', 'owner__prova', 'azioni')
+  const r = esegui(['prenota', dati], JSON.stringify({ scrivi: { 'a-uno.json': { versione: 1 } } }))
+  assert.strictEqual(r.status, 0, r.stdout)
+  assert.ok(fs.existsSync(path.join(vero, 'chipmanager', 'progetti', 'owner__prova', 'azioni', 'a-uno.json')))
+  // Il percorso reale restituito è quello della cartella vera.
+  assert.strictEqual(D.percorsoSicuro(dati).toLowerCase(), fs.realpathSync.native(path.join(vero, 'chipmanager', 'progetti', 'owner__prova', 'azioni')).toLowerCase())
+})
+
+test('Percorsi: radice dati reale dentro un repository (anche attraverso una junction) o sotto un .git file: rifiutata con il percorso', () => {
+  const repo = fuori()
+  fs.mkdirSync(path.join(repo, '.git'))
+  const casa = fuori()
+  giunzione(repo, path.join(casa, '.claude'))
+  assert.throws(() => D.percorsoSicuro(path.join(casa, '.claude', 'chipmanager', 'config.json')), /helper\.dentroWorkingTree: .+/)
+  const conGit = fuori()
+  fs.writeFileSync(path.join(conGit, '.git'), 'gitdir: altrove')
+  const altra = fuori()
+  giunzione(conGit, path.join(altra, 'casa'))
+  assert.throws(() => D.percorsoSicuro(path.join(altra, 'casa', 'chipmanager', 'azioni')), /helper\.dentroWorkingTree/)
+})
+
+test('Percorsi: junction dalla radice dati in giù rifiutata (la radice stessa, «progetti», «azioni», «esecuzioni», «board»)', () => {
+  const altrove = fuori()
+  for (const sotto of ['chipmanager', path.join('chipmanager', 'progetti'), path.join('dati', 'azioni'), path.join('dati', 'esecuzioni'), path.join('dati', 'board')]) {
+    const base = fuori()
+    fs.mkdirSync(path.dirname(path.join(base, sotto)), { recursive: true })
+    giunzione(altrove, path.join(base, sotto))
+    assert.throws(() => D.percorsoSicuro(path.join(base, sotto, 'x.json')), /helper\.collegamento: .+/, sotto)
+  }
+})
+
+test('Percorsi: la radice dati è la stessa nel pannello e nell\'helper (parità)', () => {
+  const R = require('./regole.cjs')
+  const casi = ['C:/Users/u/.claude/chipmanager/config.json', 'C:/Users/u/.claude/chipmanager/progetti/acme__x/azioni', 'D:/orch/azioni/a-1.json',
+    'D:/progetti/dati/esecuzioni/az-1/stato.json', 'D:/dati', '/home/u/.claude/chipmanager', '/srv/cm/board/x/index.html', 'X:/azioni', '/azioni',
+    'C:\\Users\\u\\.claude\\chipmanager\\chiavi-api\\az-1.key', 'D:/developerHOME/chipManager/.claude/chipmanager/x']
+  const ts = conLogica(`console.log(JSON.stringify(ingresso.map(p => nuova.radiceDati(p))))`, casi)
+  assert.deepStrictEqual(casi.map(R.radiceDati), ts)
+  assert.deepStrictEqual(ts.slice(0, 5), ['C:/Users/u/.claude/chipmanager', 'C:/Users/u/.claude/chipmanager', 'D:/orch', 'D:/progetti/dati', 'D:/dati'])
+  assert.deepStrictEqual(ts.slice(7, 9), ['X:/', '/'])
+})
+
+test('Percorsi, doctor: «Sposta i dati» copia e verifica, poi punta il config alla cartella sicura con un CAS; la vecchia resta intatta', async () => {
+  const repo = fuori()
+  fs.mkdirSync(path.join(repo, '.git'))
+  const da = path.join(repo, 'dati')
+  fs.mkdirSync(path.join(da, 'azioni'), { recursive: true })
+  fs.writeFileSync(path.join(da, 'azioni', 'a-uno.json'), '{"versione":1}')
+  fs.mkdirSync(path.join(da, 'esecuzioni', 'az-1'), { recursive: true })
+  fs.writeFileSync(path.join(da, 'esecuzioni', 'az-1', 'stato.json'), Buffer.from([0x7b, 0x80, 0x7d]))
+  giunzione(fuori(), path.join(da, 'board'))
+  const casa = fuori()
+  const config = path.join(casa, 'chipmanager', 'config.json')
+  assert.strictEqual(await D.configura(config, { atteso: null, repo: 'owner/prova', campi: { soloLocale: true } }), 0)
+  const testo = fs.readFileSync(config)
+  const a = path.join(casa, 'chipmanager', 'progetti', 'owner__prova')
+  // CAS sui byte del config, destinazione non vuota, cartelle annidate o uguali, destinazione dentro un repository: niente.
+  assert.deepStrictEqual(await D.spostaDati(config, 'owner/prova', da, a, { impronta: impronta(Buffer.from('altro')) }), [4, ''])
+  assert.deepStrictEqual((await D.spostaDati(config, 'owner/prova', da, path.join(da, 'sotto'), { impronta: impronta(testo) }))[0], 2)
+  assert.deepStrictEqual((await D.spostaDati(config, 'owner/prova', da, da, { impronta: impronta(testo) }))[0], 2)
+  assert.throws(() => D.percorsoSicuro(path.join(repo, 'altrove')), /helper\.dentroWorkingTree/)
+  assert.strictEqual(esegui(['sposta-dati', config, 'owner/prova', da, path.join(repo, 'altrove')], JSON.stringify({ impronta: impronta(testo) })).status, 6)
+  const pieno = fuori()
+  fs.writeFileSync(path.join(pieno, 'x'), 'x')
+  assert.strictEqual((await D.spostaDati(config, 'owner/prova', da, pieno, { impronta: impronta(testo) }))[0], 4)
+  assert.deepStrictEqual(fs.readFileSync(config), testo)
+  // Lo spostamento vero: file identici, il link saltato e detto, il config aggiornato, la vecchia cartella intatta.
+  const [codice, uscita] = await D.spostaDati(config, 'owner/prova', da, a, { impronta: impronta(testo) })
+  assert.strictEqual(codice, 0, uscita)
+  const esito = JSON.parse(uscita)
+  assert.deepStrictEqual([esito.copiati, esito.saltati], [2, ['board']])
+  assert.strictEqual(fs.readFileSync(path.join(a, 'azioni', 'a-uno.json'), 'utf8'), '{"versione":1}')
+  assert.deepStrictEqual(fs.readFileSync(path.join(a, 'esecuzioni', 'az-1', 'stato.json')), Buffer.from([0x7b, 0x80, 0x7d]))
+  assert.strictEqual(fs.existsSync(path.join(a, 'board')), false)
+  assert.strictEqual(JSON.parse(fs.readFileSync(config, 'utf8')).progetti['owner/prova'].cartella, a.replace(/\\/g, '/'))
+  assert.strictEqual(fs.readFileSync(path.join(da, 'azioni', 'a-uno.json'), 'utf8'), '{"versione":1}')
 })

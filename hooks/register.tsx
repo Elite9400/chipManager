@@ -6,6 +6,7 @@ import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Desti
 import { alLavoroDa, cambiatiAltrove, campoNonValido, conBozza, contestoPerModello, impostazioniCorrenti, percorsiTolti, perStrato, propostaDa, propostaImpostazioniDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
 import {
   connesso,
+  radiceDati,
   attive,
   bilancia,
   causaSensibile,
@@ -133,13 +134,18 @@ const casa = async ($: Eng) => ((await $.env.get('USERPROFILE')) ?? (await $.env
 const fileConfig = async ($: Eng) => (await $.env.get('CHIPMANAGER_CONFIG')) ?? `${await casa($)}/.claude/chipmanager/config.json`
 
 /**
- * F10 rilievo 2: il gemello nel pannello di `percorsoSicuro` dell'helper, con le letture dell'host. La parte esistente
- * del percorso non passa per link (`isLink`), il suo percorso reale è quello dichiarato (una junction lo cambia) e
- * nessun antenato del percorso reale ha `.git`, cartella o file. Il motivo se non vale; undefined se vale.
+ * Il gemello nel pannello di `percorsoSicuro` dell'helper, con le letture dell'host. Sopra la radice dati (`radiceDati`)
+ * i link sono ammessi: home o `.claude` spostati dall'utente. Dalla radice in giù nessun link (`isLink` su ogni
+ * componente). Il percorso REALE e i suoi antenati non hanno `.git`, cartella o file. Fonte illeggibile = blocco.
+ * La causa precisa (chiave del messaggio e percorso) se non vale; undefined se vale.
  */
-async function percorsoNonSicuro($: Eng, p: string): Promise<string | undefined> {
+async function percorsoNonSicuro($: Eng, p: string): Promise<{ chiave: 'err.percorsoLink' | 'err.percorsoRepo' | 'err.percorsoIlleggibile'; percorso: string } | undefined> {
   const norm = p.replace(/\\/g, '/').replace(/\/+$/, '')
   const parti = norm.split('/')
+  const windows = (await $.env.get('OS')) === 'Windows_NT' || /^[A-Za-z]:/.test(norm)
+  const uguale = (a: string) => { const x = a.replace(/\\/g, '/').replace(/\/+$/, ''); return windows ? x.toLowerCase() : x }
+  const radice = uguale(radiceDati(norm))
+  const daRadice = (q: string) => uguale(q) === radice || uguale(q).startsWith(radice.endsWith('/') ? radice : `${radice}/`)
   let esistente: string | undefined
   let reale: string | undefined
   for (let i = 1; i <= parti.length; i++) {
@@ -151,19 +157,15 @@ async function percorsoNonSicuro($: Eng, p: string): Promise<string | undefined>
     } catch {
       // Una stat che rifiuta: si ferma la catena solo se il percorso manca davvero; ogni altro esito blocca.
       if ((await $.fs.exists(q).catch(() => true)) === false) break
-      return `unreadable: ${q}`
+      return { chiave: 'err.percorsoIlleggibile', percorso: q }
     }
-    if (st.isLink) return `link: ${q}`
+    if (st.isLink && daRadice(q)) return { chiave: 'err.percorsoLink', percorso: q }
     esistente = q
     reale = st.realPath
   }
-  if (!esistente || !reale) return `unreadable: ${norm}`
-  const windows = (await $.env.get('OS')) === 'Windows_NT' || /^[A-Za-z]:/.test(norm)
-  const uguale = (a: string) => a.replace(/\\/g, '/').replace(/\/+$/, '')
-  const pari = (a: string, b: string) => (windows ? uguale(a).toLowerCase() === uguale(b).toLowerCase() : uguale(a) === uguale(b))
-  if (!pari(reale, esistente)) return `realpath: ${esistente}`
-  for (let d = uguale(reale); ; d = d.replace(/\/[^/]*$/, '')) {
-    if (await $.fs.exists(`${d || ''}/.git`).catch(() => true)) return `git: ${d || '/'}`
+  if (!esistente || !reale) return { chiave: 'err.percorsoIlleggibile', percorso: norm }
+  for (let d = reale.replace(/\\/g, '/').replace(/\/+$/, ''); ; d = d.replace(/\/[^/]*$/, '')) {
+    if (await $.fs.exists(`${d || ''}/.git`).catch(() => true)) return { chiave: 'err.percorsoRepo', percorso: d || '/' }
     if (!d.includes('/') || /^[A-Za-z]:$/.test(d)) break
   }
   return undefined
@@ -172,7 +174,7 @@ async function percorsoNonSicuro($: Eng, p: string): Promise<string | undefined>
 /** Il testo di un file dei dati della mod (config, registro della spesa), solo dopo averne controllato il percorso; null se non c'è. */
 async function leggiDati($: Eng, f: string): Promise<string | null> {
   const motivo = await percorsoNonSicuro($, f)
-  if (motivo) throw errore('err.percorsoDati', { motivo: motivo.slice(0, 300) })
+  if (motivo) throw errore(motivo.chiave, { percorso: motivo.percorso.slice(0, 300) })
   return (await $.fs.exists(f)) ? ((await $.fs.read(f)) as string) : null
 }
 
@@ -1208,6 +1210,14 @@ async function diagnosiDoctor($: Eng) {
     // Solo i codici noti, con i soli dettagli attesi: niente testo libero dall'helper.
     const trovati: Rilievo[] = (Array.isArray(v.trovati) ? v.trovati : []).filter((x): x is Rilievo => !!x && typeof x === 'object' && RILIEVI.includes((x as Rilievo).codice))
     for (const f of r?.risorse.fornitori ?? []) if (!connesso(r!, f)) trovati.push({ codice: 'connessione', fornitore: f })
+    // Dati in un repository o con link interni: si possono spostare nella cartella sicura predefinita, ma solo se la
+    // cartella la decide il config (non CHIPMANAGER_DIR) e la destinazione è un'altra.
+    const daEnv = !!(await $.env.get('CHIPMANAGER_DIR'))
+    const verso = chi?.repo ? cartellaDati({}, chi.repo, await casa($)) : null
+    const base = await baseOrch($).catch(() => '')
+    for (const t of trovati)
+      if (t.codice === 'percorso.dati' && /^helper\.(dentroWorkingTree|collegamento)/.test(String(t.motivo ?? '')) && !daEnv && verso && base && base !== verso)
+        Object.assign(t, { spostabile: true, da: base, verso })
     if (typeof v.versione === 'string' && v.versione !== VERSIONE_MOD) trovati.push({ codice: 'host.versione' })
     const quando = new Date(await $.clock.now()).toISOString()
     const impronta = typeof v.impronta === 'string' && /^[0-9a-f]{64}$/.test(v.impronta) ? v.impronta : null
@@ -1246,6 +1256,13 @@ async function rimedioDoctor($: Eng, opz: Record<string, unknown>, r: Rilievo) {
   else if (r.codice === 'lock.api') {
     await aggiornaLockApi($)
     await decidiLockApi($, 'libera')
+  } else if (r.codice === 'percorso.dati' && r.spostabile && typeof r.da === 'string' && typeof r.verso === 'string') {
+    const si = T('doc.applica')
+    if ((await $.ui.ask(T('doc.chiediSposta', { da: r.da, verso: r.verso }), { options: [si, T('comune.annulla')], header: 'chipManager' }).catch(() => '')) !== si) return
+    const chi = await chiSonoIo($)
+    const e = await helper($, ['sposta-dati', await fileConfig($), chi.repo ?? '', r.da, r.verso], JSON.stringify({ impronta: (await read($, statoDoctor)).impronta ?? null }))
+    $.ui.toast(e.codice === 0 ? T('doc.spostati', { verso: r.verso, da: r.da }) : T(e.codice === 4 ? 'errore.configCambiata' : 'doc.nonRiuscito'))
+    if (e.codice === 0) await aggiornaRisorse($, opz)
   } else if (r.codice === 'registro.sviluppo' || r.codice === 'config.illeggibile') {
     const si = T('doc.applica')
     const domanda = T(r.codice === 'registro.sviluppo' ? 'doc.chiediArchivia' : 'doc.chiediRipristina')

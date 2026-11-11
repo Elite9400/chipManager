@@ -200,6 +200,8 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
     /** F11.3: l'uscita di `diagnosi` (null = l'helper fallisce) e gli esiti dei rimedi. */
     diagnosi: (): string | null => JSON.stringify({ trovati: [], versione: '2.2.0' }),
     ripristina: (_stdin: string): [number, string] => [0, '{"copia":1}'],
+    /** Gli stdin ricevuti da `sposta-dati`. */
+    spostati: [] as string[],
     accedi: (_tipo: string): [number, string] => [0, '{}'],
     /** Le fonti di impostazioni dell'host (`$.settings.read`); null = non si legge. */
     impostazioni: (_source: string): unknown => ({}),
@@ -356,6 +358,10 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
     }
     if (cmd === 'ripristina-config') return fine(...esec.ripristina(String(e.init?.stdin ?? '')))
     if (cmd === 'archivia-registro') return fine(0, '{"archiviato":true}')
+    if (cmd === 'sposta-dati') {
+      esec.spostati.push(String(e.init?.stdin ?? ''))
+      return fine(0, JSON.stringify({ da: e.argv[5], a: e.argv[6], copiati: 3, saltati: [] }))
+    }
     if (cmd === 'apri-url') return fine(0)
     if (cmd === 'segnala-gh') return fine(0, '{"url":"https://github.com/Elite9400/chipManager/issues/1"}')
     if (cmd === 'accedi') {
@@ -1891,27 +1897,31 @@ test('F10 Impostazioni: gruppi Account e Progetto; le restrizioni del progetto s
   await ui.unmount()
 })
 
-test('F10 rilievo 2: il pannello controlla il percorso del config prima di leggerlo: un link o un .git sopra fermano tutto, con il motivo', async ($, on) => {
+test('Percorsi nel pannello: un link SOPRA la radice dati (.claude spostata) vale; un link dalla radice in giù o un .git sopra fermano tutto, con la causa', async ($, on) => {
   const amb = ambiente(on, {}, { apiClaude: { budgetUsd: 20, tetto: 2 } })
+  const errori = /contains a link|contiene un link|inside the repository|dentro il repository|cannot be read|non si legge/
+  // .claude spostata su un altro disco (una junction): il pannello legge il config e lavora.
   amb.collegati.add('X:/casa/.claude')
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE('desktop') })
-  expect(await ui.find({ type: 'Text', text: /outside any repository and any link: link: X:\/casa\/\.claude/ })).toBeDefined()
-  // Niente si scrive: le Impostazioni non hanno regole lette su cui applicare.
+  expect(await ui.find({ type: 'Text', text: errori })).toBeUndefined()
+  // Un link sulla radice dati stessa («chipmanager»): fermo, con il percorso e che cosa fare.
+  amb.collegati.add('X:/casa/.claude/chipmanager')
+  await clock.advance(60_000)
+  expect(await ui.find({ type: 'Text', text: /contains a link: X:\/casa\/\.claude\/chipmanager\. .*--doctor/ })).toBeDefined()
   expect(amb.configure()).toBe(0)
-  // Un `.git` (anche un file) sopra il config: dentro un albero di lavoro.
-  amb.collegati.delete('X:/casa/.claude')
+  // Un `.git` (anche un file) sopra il config: dentro un repository, con il suo percorso.
+  amb.collegati.delete('X:/casa/.claude/chipmanager')
   amb.disco.set('X:/casa/.git', 'gitdir: altrove')
   await clock.advance(60_000)
-  expect(await ui.find({ type: 'Text', text: /outside any repository and any link: git: X:\/casa/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /inside the repository X:\/casa: .*--doctor/ })).toBeDefined()
   // Tolto, il pannello torna a leggere.
   amb.disco.delete('X:/casa/.git')
   await clock.advance(60_000)
-  expect(await ui.find({ type: 'Text', text: /outside any repository and any link/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: errori })).toBeUndefined()
   await ui.unmount()
 })
-
 test('F10 rilievo 4: lingua scelta it→de, un\'altra sessione salva fr prima della lettura del CAS: conflitto, niente scritto; Riapplica sceglie de', async ($, on) => {
   const amb = ambiente(on, {}, { soglie: {} })
   mock.clock(on)
@@ -2279,4 +2289,30 @@ test('F12 setup e doctor: una sola scheda, azioni in ordine, bozza e scope invar
     await ui.press({ key: 'doctor-indietro' })
     await ui.unmount()
   }
+})
+
+test('Percorsi, doctor: la cartella dati in un repository offre «Sposta i dati…» solo su conferma; con CHIPMANAGER_DIR no', async ($, on) => {
+  const amb = ambiente(on, { cartella: 'X:/repo/dati' })
+  amb.disco.lingua = 'en'
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { cartella: 'X:/repo/dati' } } }))
+  amb.variabili.CHIPMANAGER_DIR = ''
+  amb.esec.diagnosi = () => JSON.stringify({ trovati: [{ codice: 'percorso.dati', motivo: 'helper.dentroWorkingTree: X:/repo' }], versione: '2.2.0', impronta: 'd'.repeat(64) })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  expect((await ui.find({ key: 'doctor-rimedio-0' }))?.props).toMatchObject({ label: 'Move data…' })
+  amb.popup.risposta = () => 'Cancel'
+  await ui.press({ key: 'doctor-rimedio-0' })
+  expect(amb.processi.filter(p => p[2] === 'sposta-dati').length).toBe(0)
+  amb.popup.risposta = () => 'Apply fix'
+  await ui.press({ key: 'doctor-rimedio-0' })
+  const p = amb.processi.find(x => x[2] === 'sposta-dati')!
+  expect(p.slice(3)).toEqual([CONFIG, 'esempio/demo', 'X:/repo/dati', 'X:/casa/.claude/chipmanager/progetti/esempio__demo'])
+  expect(amb.esec.spostati).toEqual([JSON.stringify({ impronta: 'd'.repeat(64) })])
+  expect(amb.domande.some(q => q.includes('X:/repo/dati') && q.includes('X:/casa/.claude/chipmanager/progetti/esempio__demo'))).toBe(true)
+  // Con la cartella decisa da CHIPMANAGER_DIR il config non la cambia: nessun pulsante.
+  amb.variabili.CHIPMANAGER_DIR = 'X:/repo/dati'
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  expect(await ui.find({ key: 'doctor-rimedio-0' })).toBeUndefined()
 })

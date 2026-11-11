@@ -610,11 +610,11 @@ const es: Dizionario = {
   "board.legenda": "Leyenda: {segni}. La revisión es el resultado informado por la sesión indicada.",
   // Helper answers on board, plans and git
   "helper.mutex": "bloqueo ocupado",
-  "helper.collegamento": "ruta no segura: es un enlace o no es una carpeta",
+  "helper.collegamento": "enlace dentro de la carpeta de datos del mod (solo se admiten por encima): quítalo o mueve los datos con /chipmanager --doctor",
   "helper.gitNonRisponde": "git no respondió: no se puede descartar un working tree",
   "helper.gitWorkingTree": "git no puede decir si la carpeta está en un working tree",
   "helper.cartellaNonAssoluta": "carpeta no absoluta",
-  "helper.dentroWorkingTree": "la carpeta de datos está dentro de un working tree de git: cambia «cartella» en la configuración del proyecto",
+  "helper.dentroWorkingTree": "la carpeta de datos está dentro de un repositorio git: muévela con /chipmanager --doctor o cambia «cartella» en el config",
   "helper.destinazione": "ruta no segura: el destino no está donde debería",
   "helper.senzaMarcatore": "carpeta de la board sin marcador: no se ha tocado",
   "helper.marcatoreAltrui": "el marcador pertenece a otro proyecto",
@@ -959,7 +959,7 @@ const es: Dizionario = {
   "car.apiLimiteProgetto": "Este proyecto: como máximo {limite} USD al mes",
   "err.apiRegistroSviluppo": "Hay un registro de gasto de una compilación de desarrollo en {cartella}: archívalo (sácalo de esa carpeta) y vuelve a iniciar",
   "err.apiLimiteProgetto": "API Claude: este proyecto ha usado {speso} USD de su límite de {limite} USD al mes; una ejecución reserva {tetto} USD",
-  "err.percorsoDati": "Los datos del mod deben quedar fuera de cualquier repositorio y de cualquier enlace: {motivo}",
+  "err.percorsoDati": "Los datos del mod deben quedar fuera de todo repositorio, sin enlaces dentro de su carpeta: {motivo}",
   "imp.gruppoAccount": "Cuenta · todos los proyectos",
   "imp.gruppoProgetto": "Proyecto · {repo}",
   "imp.valeTuttiProgetti": "Ajuste de la cuenta: vale para todos los proyectos.",
@@ -1122,6 +1122,12 @@ const es: Dizionario = {
   "rap.creato": "Issue creado",
   "rap.aperto": "GitHub abierto en el navegador",
   "rap.nonRiuscito": "No enviado: copia el texto y envíalo a mano",
+  "err.percorsoRepo": "Los datos del mod están dentro del repositorio {percorso}: deben quedar fuera de todo repositorio. Ejecuta /chipmanager --doctor para moverlos a la carpeta predeterminada, o cambia «cartella» en el config.",
+  "err.percorsoLink": "La carpeta de datos del mod contiene un enlace: {percorso}. Los enlaces solo se admiten por encima de la carpeta de datos (home o .claude movidas). Quita el enlace o ejecuta /chipmanager --doctor para mover los datos.",
+  "err.percorsoIlleggibile": "La ruta de datos del mod no se puede leer: {percorso}. No se lee ni se escribe nada hasta que se pueda.",
+  "doc.sposta": "Mover los datos…",
+  "doc.chiediSposta": "¿Copiar los datos de este proyecto de {da} a la carpeta segura predeterminada {verso}, verificar cada archivo y luego apuntar el config allí? La carpeta antigua queda intacta.",
+  "doc.spostati": "Datos copiados en {verso}; el config apunta allí. La carpeta antigua {da} está intacta: bórrala tú cuando estés seguro.",
   // ‹fine›
 }
 

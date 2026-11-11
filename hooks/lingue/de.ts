@@ -610,11 +610,11 @@ const de: Dizionario = {
   "board.legenda": "Legende: {segni}. Die Prüfung ist das Ergebnis, das die gezeigte Sitzung gemeldet hat.",
   // Helper answers on board, plans and git
   "helper.mutex": "Sperre belegt",
-  "helper.collegamento": "unsicherer Pfad: ist ein Link oder kein Ordner",
+  "helper.collegamento": "Link im Datenordner der Mod (nur oberhalb erlaubt): entfernen oder Daten mit /chipmanager --doctor verschieben",
   "helper.gitNonRisponde": "git hat nicht geantwortet: ein Working Tree ist nicht auszuschließen",
   "helper.gitWorkingTree": "git kann nicht sagen, ob der Ordner in einem Working Tree liegt",
   "helper.cartellaNonAssoluta": "Ordner nicht absolut",
-  "helper.dentroWorkingTree": "der Datenordner liegt in einem git-Working-Tree: ändere „cartella“ in der Projektkonfiguration",
+  "helper.dentroWorkingTree": "der Datenordner liegt in einem Git-Repository: mit /chipmanager --doctor verschieben oder „cartella“ in der Config ändern",
   "helper.destinazione": "unsicherer Pfad: das Ziel ist nicht dort, wo es sein sollte",
   "helper.senzaMarcatore": "Board-Ordner ohne Markierung: unverändert gelassen",
   "helper.marcatoreAltrui": "die Markierung gehört zu einem anderen Projekt",
@@ -959,7 +959,7 @@ const de: Dizionario = {
   "car.apiLimiteProgetto": "Dieses Projekt: höchstens {limite} USD pro Monat",
   "err.apiRegistroSviluppo": "In {cartella} liegt ein Ausgabenregister eines Entwicklungs-Builds: archiviere es (verschiebe es aus dem Ordner) und starte dann neu",
   "err.apiLimiteProgetto": "API Claude: dieses Projekt hat {speso} USD seines Monatslimits von {limite} USD verbraucht; ein Lauf reserviert {tetto} USD",
-  "err.percorsoDati": "Die Daten der Mod müssen außerhalb jedes Repositorys und jedes Links liegen: {motivo}",
+  "err.percorsoDati": "Die Daten der Mod müssen außerhalb jedes Repositorys liegen, ohne Links in ihrem Ordner: {motivo}",
   "imp.gruppoAccount": "Konto · alle Projekte",
   "imp.gruppoProgetto": "Projekt · {repo}",
   "imp.valeTuttiProgetti": "Kontoeinstellung: gilt für alle Projekte.",
@@ -1122,6 +1122,12 @@ const de: Dizionario = {
   "rap.creato": "Issue erstellt",
   "rap.aperto": "GitHub im Browser geöffnet",
   "rap.nonRiuscito": "Nicht gesendet: Text kopieren und von Hand einreichen",
+  "err.percorsoRepo": "Die Daten der Mod liegen im Repository {percorso}: Sie müssen außerhalb jedes Repositorys liegen. Mit /chipmanager --doctor in den Standardordner verschieben oder „cartella“ in der Config ändern.",
+  "err.percorsoLink": "Der Datenordner der Mod enthält einen Link: {percorso}. Links sind nur oberhalb des Datenordners erlaubt (verschobenes Home oder .claude). Link entfernen oder mit /chipmanager --doctor die Daten verschieben.",
+  "err.percorsoIlleggibile": "Der Datenpfad der Mod ist nicht lesbar: {percorso}. Nichts wird gelesen oder geschrieben, bis er lesbar ist.",
+  "doc.sposta": "Daten verschieben…",
+  "doc.chiediSposta": "Die Daten dieses Projekts von {da} in den sicheren Standardordner {verso} kopieren, jede Datei prüfen und die Config dorthin zeigen lassen? Der alte Ordner bleibt unverändert.",
+  "doc.spostati": "Daten nach {verso} kopiert; die Config zeigt dorthin. Der alte Ordner {da} ist unverändert: löschen Sie ihn selbst, wenn Sie sicher sind.",
   // ‹fine›
 }
 

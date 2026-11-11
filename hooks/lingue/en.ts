@@ -612,11 +612,11 @@ const en = {
   "board.legenda": "Legend: {segni}. The review is the outcome reported by the session shown.",
   // Helper answers on board, plans and git
   "helper.mutex": "lock busy",
-  "helper.collegamento": "unsafe path: it is a link or not a folder",
+  "helper.collegamento": "link inside the mod's data folder (links are allowed only above it): remove it or move the data with /chipmanager --doctor",
   "helper.gitNonRisponde": "git did not answer: a working tree cannot be ruled out",
   "helper.gitWorkingTree": "git cannot tell whether the folder is in a working tree",
   "helper.cartellaNonAssoluta": "folder not absolute",
-  "helper.dentroWorkingTree": "the data folder is inside a git working tree: change “cartella” in the project configuration",
+  "helper.dentroWorkingTree": "the data folder is inside a git repository: move it with /chipmanager --doctor or change “cartella” in the config",
   "helper.destinazione": "unsafe path: the destination is not where it should be",
   "helper.senzaMarcatore": "board folder without a marker: left untouched",
   "helper.marcatoreAltrui": "the marker belongs to another project",
@@ -961,7 +961,7 @@ const en = {
   "car.apiLimiteProgetto": "This project: at most {limite} USD a month",
   "err.apiRegistroSviluppo": "A spend register from a development build is in {cartella}: archive it (move it out of that folder), then start again",
   "err.apiLimiteProgetto": "API Claude: this project has used {speso} USD of its {limite} USD month limit; a run reserves {tetto} USD",
-  "err.percorsoDati": "The mod's data must stay outside any repository and any link: {motivo}",
+  "err.percorsoDati": "The mod's data must stay outside every repository, with no links inside its folder: {motivo}",
   "imp.gruppoAccount": "Account · all projects",
   "imp.gruppoProgetto": "Project · {repo}",
   "imp.valeTuttiProgetti": "Account setting: it applies to all projects.",
@@ -1124,6 +1124,12 @@ const en = {
   "rap.creato": "Issue created",
   "rap.aperto": "GitHub opened in the browser",
   "rap.nonRiuscito": "Not sent: copy the text and file it by hand",
+  "err.percorsoRepo": "The mod's data is inside the repository {percorso}: it must stay outside every repository. Run /chipmanager --doctor to move it to the default folder, or change “cartella” in the config.",
+  "err.percorsoLink": "The mod's data folder contains a link: {percorso}. Links are allowed only above the data folder (a moved home or .claude). Remove the link or run /chipmanager --doctor to move the data.",
+  "err.percorsoIlleggibile": "The mod's data path cannot be read: {percorso}. Nothing is read or written until it can.",
+  "doc.sposta": "Move data…",
+  "doc.chiediSposta": "Copy this project's data from {da} to the safe default folder {verso}, check every file, then point the config there? The old folder is left untouched.",
+  "doc.spostati": "Data copied to {verso}; the config points there. The old folder {da} is untouched: delete it yourself when you are sure.",
   // ‹fine›
 } satisfies Record<string, Voce>
 

@@ -292,6 +292,77 @@ async function ripristinaConfig(file, richiesta) {
   return r.occupato ? [3, ''] : r.valore
 }
 
+/**
+ * Il doctor sposta i dati di un progetto (cartella in un repository o con link interni) nella cartella sicura `a`,
+ * solo su conferma. Sotto il mutex del config e quello della cartella dati, con CAS sui byte del config: copia
+ * cartelle e file normali (i link si saltano e si dicono), verifica ogni copia con sha256, poi scrive nel config
+ * `progetti[repo].cartella = a` con una sola scrittura. La vecchia cartella resta intatta. `a` deve essere sicura e
+ * vuota (o assente), diversa da `da` e non annidata. stdin `{ impronta }`: 0 fatto, 4 cambiato o destinazione non
+ * vuota, 2 richiesta non valida, 3 occupato; una destinazione non sicura esce con 6 (percorsoSicuro).
+ */
+async function spostaDati(config, repo, da, a, richiesta) {
+  if (!oggetto(richiesta) || !(richiesta.impronta === null || (typeof richiesta.impronta === 'string' && /^[0-9a-f]{64}$/.test(richiesta.impronta)))) return [2, '']
+  if (typeof repo !== 'string' || !/^[^/\s]+\/[^/\s]+$/.test(repo) || ![config, da, a].every(x => typeof x === 'string' && path.isAbsolute(x))) return [2, '']
+  const DA = path.resolve(da)
+  const A = path.resolve(a)
+  const fuoriDa = (x, y) => {
+    const r = path.relative(x, y)
+    return r !== '' && (r.startsWith('..') || path.isAbsolute(r))
+  }
+  if (!fuoriDa(DA, A) || !fuoriDa(A, DA)) return [2, '']
+  percorsoSicuro(A)
+  const esisteva = fs.existsSync(A)
+  if (esisteva && fs.readdirSync(A).length) return [4, JSON.stringify({ motivo: 'destinazione non vuota' })]
+  const r = await conMutex(mutexConfig(config), 8000, async () => {
+    const ora = fs.existsSync(config) ? fs.readFileSync(config) : null
+    if ((ora === null ? null : improntaByte(ora)) !== richiesta.impronta) return [4, '']
+    let c = {}
+    if (ora !== null) {
+      try {
+        c = JSON.parse(ora.toString('utf8'))
+      } catch {
+        return [2, '']
+      }
+      if (!configValido(c)) return [2, '']
+    }
+    const dentro = await conMutex(MUTEX_AZIONI(DA), 8000, () => {
+      const copiati = []
+      const saltati = []
+      const copia = (s, d) => {
+        fs.mkdirSync(d, { recursive: true })
+        for (const n of fs.readdirSync(s)) {
+          const x = path.join(s, n)
+          const y = path.join(d, n)
+          const st = fs.lstatSync(x)
+          if (st.isSymbolicLink()) saltati.push(path.relative(DA, x).replace(/\\/g, '/'))
+          else if (st.isDirectory()) copia(x, y)
+          else if (st.isFile()) {
+            fs.copyFileSync(x, y, fs.constants.COPYFILE_EXCL)
+            copiati.push([x, y])
+          }
+        }
+      }
+      try {
+        copia(DA, A)
+        for (const [x, y] of copiati) if (improntaByte(fs.readFileSync(x)) !== improntaByte(fs.readFileSync(y))) throw new Error('copia non verificata')
+        percorsoSicuro(A)
+      } catch (e) {
+        // Niente a metà: la destinazione torna com'era (assente o vuota); la sorgente non si è mai toccata.
+        if (esisteva) for (const n of fs.readdirSync(A)) fs.rmSync(path.join(A, n), { recursive: true, force: true })
+        else fs.rmSync(A, { recursive: true, force: true })
+        throw e
+      }
+      return { copiati: copiati.length, saltati }
+    })
+    if (dentro.occupato) return [3, '']
+    const prog = oggetto(c.progetti?.[repo]) ? c.progetti[repo] : {}
+    const nuovo = { ...c, progetti: { ...(oggetto(c.progetti) ? c.progetti : {}), [repo]: { ...prog, cartella: A.replace(/\\/g, '/') } } }
+    scriviConfig(config, JSON.stringify(nuovo, null, 2))
+    return [0, JSON.stringify({ da: DA, a: A, ...dentro.valore })]
+  })
+  return r.occupato ? [3, ''] : r.valore
+}
+
 function scriviAtomico(file, testo) {
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`
   fs.writeFileSync(tmp, testo, { mode: 0o600 })
@@ -640,6 +711,13 @@ function percorsoSicuro(p) {
     catena.unshift(x)
     if (path.dirname(x) === x) break
   }
+  // Sopra la radice dati i link sono ammessi (home o `.claude` spostati dall'utente); dalla radice in giù nessuno, con
+  // lstat su ogni componente: una junction dentro i dati porterebbe le scritture altrove.
+  const radice = path.resolve(regole.radiceDati(path.resolve(p)))
+  const daRadice = x => {
+    const r = path.relative(radice, x)
+    return r === '' || (!r.startsWith('..') && !path.isAbsolute(r))
+  }
   let esistente
   for (const x of catena) {
     let st
@@ -649,7 +727,7 @@ function percorsoSicuro(p) {
       if (e.code === 'ENOENT') break
       throw new Rifiuto(6, `helper.percorsoIlleggibile: ${x}`)
     }
-    if (st.isSymbolicLink()) throw new Rifiuto(6, `helper.collegamento: ${x}`)
+    if (st.isSymbolicLink() && daRadice(x)) throw new Rifiuto(6, `helper.collegamento: ${x}`)
     esistente = x
   }
   if (!esistente) throw new Rifiuto(6, `helper.percorsoIlleggibile: ${p}`)
@@ -659,7 +737,7 @@ function percorsoSicuro(p) {
   } catch {
     throw new Rifiuto(6, `helper.percorsoIlleggibile: ${esistente}`)
   }
-  if (!stessoPercorso(path.resolve(reale), esistente)) throw new Rifiuto(6, `helper.percorsoReale: ${esistente}`)
+  // Il percorso REALE (e ogni suo antenato reale) non ha `.git`, cartella o file: mai dentro un repository.
   for (let x = reale; ; x = path.dirname(x)) {
     try {
       fs.lstatSync(path.join(x, '.git'))
@@ -1503,6 +1581,7 @@ async function comandoHelper(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {
   if (cmd === 'diagnosi' && a.length === 4) return esci(0, JSON.stringify(require('./diagnosi.cjs').diagnosi(...a, { dm: dirMacchina })))
   if (cmd === 'archivia-registro' && a.length === 1) return esci(...(await require('./diagnosi.cjs').archiviaRegistro(a[0])))
   if (cmd === 'apri-url' && a.length === 1) return esci(...apriUrl(a[0]))
+  if (cmd === 'sposta-dati' && a.length === 4) return esci(...(await spostaDati(...a, stdin())))
   if (cmd === 'segnala-gh' && !a.length) return esci(...segnalaGh(stdin()))
   if (cmd === 'lancia-cli' && a.length === 3) return esci(await lanciaCli(...a, stdin()))
   if (cmd === 'esegui-cli' && a.length === 3) return esci(await eseguiCli(...a, stdin()))
@@ -1540,7 +1619,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, configValido, apriUrl, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))
