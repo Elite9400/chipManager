@@ -2885,6 +2885,58 @@ test('default rules helper: exclusive creation only; never over a file, through 
   assert.deepStrictEqual(fs.readdirSync(vuota), [])
 })
 
+test('default rules helper: a repository reached through a junction is written where the reader reads (links above the root are allowed)', () => {
+  const { crea } = require('./regole-crea.cjs')
+  const vera = fuori()
+  fs.mkdirSync(path.join(vera, 'repo'))
+  const ponte = path.join(fuori(), 'ponte')
+  fs.symlinkSync(vera, ponte, process.platform === 'win32' ? 'junction' : 'dir')
+  const root = path.join(ponte, 'repo')
+  const testo = '{"versione":1}\n'
+  assert.strictEqual(crea({ root, relativo: '.claude/routing.json', testo }), 0)
+  // The reader joins root and routing with `/` (register.tsx percorsoRegole): same file, in the real repository.
+  const letto = `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/.claude/routing.json`
+  const reale = path.join(vera, 'repo', '.claude', 'routing.json')
+  assert.strictEqual(fs.readFileSync(reale, 'utf8'), testo)
+  assert.strictEqual(fs.realpathSync(letto), fs.realpathSync(reale))
+})
+
+test('default rules helper: one normal form for the routing path, shared with the reader (normalizzaRouting); others refused', () => {
+  const { crea, percorso } = require('./regole-crea.cjs')
+  const ingressi = ['.claude/routing.json', 'regole/routing.json', './regole//routing.json', 'regole/./routing.json', 'regole\\routing.json', 'a\\b/c.json',
+    '../routing.json', 'a/../b.json', '/abs.json', 'C:/abs.json', 'c:rel.json', '', '.', 'regole/', 'x'.repeat(401)]
+  const normali = conLogica('console.log(JSON.stringify(ingresso.map(x => nuova.normalizzaRouting(x) ?? null)))', ingressi)
+  const root = fuori()
+  for (const [i, x] of ingressi.entries()) {
+    // The helper takes exactly the strings the reader would produce, and nothing else.
+    assert.strictEqual(percorso(root, x) !== null, normali[i] === x, `${JSON.stringify(x)} -> ${JSON.stringify(normali[i])}`)
+    if (normali[i] !== null) assert.ok(percorso(root, normali[i]), `${normali[i]}`)
+  }
+  assert.deepStrictEqual(normali.slice(0, 5), ['.claude/routing.json', 'regole/routing.json', 'regole/routing.json', 'regole/routing.json', null])
+  // A backslash is ambiguous (separator on Windows, file-name character on POSIX): refused on both sides, nothing written.
+  assert.strictEqual(crea({ root, relativo: 'regole\\routing.json', testo: '{}' }), 2)
+  assert.deepStrictEqual(fs.readdirSync(root), [])
+})
+
+test('default rules helper: a failed or partial write leaves no file of its own (same dev+ino), and never removes someone else\'s', () => {
+  const { crea } = require('./regole-crea.cjs')
+  const testo = '{"versione":1,"lungo":true}\n'
+  const root = fuori()
+  const file = path.join(root, '.claude', 'routing.json')
+  // One byte written, then the disk fails: the truncated `{` is removed, so the next attempt creates the whole file.
+  const parziale = { ...fs, writeFileSync: fd => { fs.writeSync(fd, '{'); throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }) } }
+  assert.throws(() => crea({ root, relativo: '.claude/routing.json', testo }, parziale), /disk full/)
+  assert.strictEqual(fs.existsSync(file), false)
+  assert.strictEqual(crea({ root, relativo: '.claude/routing.json', testo }), 0)
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), testo)
+  // The name holds another file (different inode) when the write fails: that file stays.
+  const altra = fuori()
+  const suo = path.join(altra, '.claude', 'routing.json')
+  const scambiato = { ...fs, writeFileSync: () => { fs.renameSync(suo, `${suo}.vecchio`); fs.writeFileSync(suo, 'altro'); throw new Error('disk full') } }
+  assert.throws(() => crea({ root: altra, relativo: '.claude/routing.json', testo }, scambiato), /disk full/)
+  assert.strictEqual(fs.readFileSync(suo, 'utf8'), 'altro')
+})
+
 test('F11.3 archivia il registro per cartella: rinomina reversibile, mai sovrascritto; poi la diagnosi non lo trova più', async () => {
   const dati = path.join(fuori(), 'dati')
   fs.mkdirSync(dati)

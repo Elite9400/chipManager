@@ -136,6 +136,17 @@ const ROUTING_PREDEFINITO = '.claude/routing.json'
 const PROGETTO_PREDEFINITO: Progetto = { routing: ROUTING_PREDEFINITO, sensibili: [], background: BACKGROUND_GENERICO, risorse: RISORSE_DEFAULT }
 
 /**
+ * The one normal form of a project's `routing` path, used to read, to confirm and to write it: relative, `/`-separated,
+ * no empty or `.` segments. A backslash is refused (a separator on Windows, a file-name character on POSIX), as are
+ * `..`, absolute paths and drives. strumenti/regole-crea.cjs accepts only paths already in this form (parity test).
+ */
+export function normalizzaRouting(v: unknown): string | undefined {
+  if (typeof v !== 'string' || !v || v.length > 400 || v.includes('\\') || v.startsWith('/') || /^[a-z]:/i.test(v)) return undefined
+  const pezzi = v.split('/').filter(s => s !== '' && s !== '.')
+  return pezzi.length && !pezzi.includes('..') ? pezzi.join('/') : undefined
+}
+
+/**
  * `config` = il JSON della configurazione (`null` se il file non c'è). Restituisce la sezione del progetto o il
  * motivo per cui la configurazione non vale: chi chiama tratta il motivo come regole non lette (nessun avvio).
  */
@@ -153,9 +164,9 @@ export function progettoDa(config: unknown, repo: string | null): Progetto | Msg
     return eMsg(risorse) ? risorse : { ...PROGETTO_PREDEFINITO, risorse }
   }
   if (!oggetto(p)) return msg('cfg.progetto', { repo: repo ?? '' })
-  const { routing, sensibili, background } = p
-  if (routing !== undefined && (typeof routing !== 'string' || !routing || /^([a-z]:)?[\\/]/i.test(routing) || /(^|[\\/])\.\.([\\/]|$)/.test(routing)))
-    return msg('cfg.routing')
+  const { sensibili, background } = p
+  const routing = p.routing === undefined ? undefined : normalizzaRouting(p.routing)
+  if (p.routing !== undefined && routing === undefined) return msg('cfg.routing')
   if (sensibili !== undefined && (!Array.isArray(sensibili) || !sensibili.every(t => typeof t === 'string' && t.length > 0 && t.length <= 200)))
     return msg('cfg.sensibili')
   for (const t of (sensibili ?? []) as string[]) {
@@ -172,7 +183,7 @@ export function progettoDa(config: unknown, repo: string | null): Progetto | Msg
   const risorse = risorseDa(p, config.account)
   if (eMsg(risorse)) return risorse
   return {
-    routing: (routing as string | undefined) ?? ROUTING_PREDEFINITO,
+    routing: routing ?? ROUTING_PREDEFINITO,
     sensibili: (sensibili as string[] | undefined) ?? [],
     background: (background as string | undefined) ?? BACKGROUND_GENERICO,
     risorse,

@@ -7,13 +7,16 @@ const path = require('node:path')
 
 const MAX_TESTO = 64 * 1024
 
-/** `relativo` as the config allows it (logica.ts progettoDa): relative, no `..`; plus no `.git` component anywhere. */
+/**
+ * `relativo` only in the normal form of normalizzaRouting (hooks/logica.ts), the one the panel reads and confirms:
+ * this side never normalizes, it refuses anything else (parity test). Plus no `.git` component anywhere.
+ */
 function percorso(root, relativo) {
   if (typeof root !== 'string' || !path.isAbsolute(root) || typeof relativo !== 'string' || !relativo || relativo.length > 400) return null
-  if (/^([a-z]:)?[\\/]/i.test(relativo) || /(^|[\\/])\.\.([\\/]|$)/.test(relativo)) return null
-  const pezzi = relativo.split(/[\\/]+/).filter(Boolean)
-  const tutti = [...path.resolve(root).split(/[\\/]+/), ...pezzi]
-  if (!pezzi.length || tutti.some(p => p.toLowerCase() === '.git')) return null
+  if (relativo.includes('\\') || relativo.startsWith('/') || /^[a-z]:/i.test(relativo)) return null
+  const pezzi = relativo.split('/')
+  if (pezzi.some(p => p === '' || p === '.' || p === '..')) return null
+  if ([...path.resolve(root).split(/[\\/]+/), ...pezzi].some(p => p.toLowerCase() === '.git')) return null
   return pezzi
 }
 
@@ -28,6 +31,7 @@ function crea(input, fsx = fs) {
     return 2
   }
   const base = path.resolve(root)
+  // Links above the root are allowed (a repository reached through a junction): the file lands where the reader looks.
   const st = fsx.lstatSync(base)
   if (st.isSymbolicLink() || !st.isDirectory()) return 6
   let dir = base
@@ -58,11 +62,29 @@ function crea(input, fsx = fs) {
     if (e.code === 'EEXIST') return 4
     throw e
   }
+  // writeFileSync on the descriptor writes every byte (writeSync may stop short); a failed write removes the file this
+  // call created, and only that one (same dev+ino), so the next attempt does not find a truncated file «already there».
+  let nostro
   try {
-    fsx.writeSync(fd, testo)
+    nostro = fsx.fstatSync(fd)
+    fsx.writeFileSync(fd, testo)
     fsx.fsyncSync(fd)
+  } catch (e) {
+    try {
+      fsx.closeSync(fd)
+    } catch {
+      /* the cleanup below still runs */
+    }
+    fd = undefined
+    try {
+      const ora = fsx.lstatSync(file)
+      if (nostro && ora.dev === nostro.dev && ora.ino === nostro.ino) fsx.unlinkSync(file)
+    } catch {
+      /* already gone: nothing to remove */
+    }
+    throw e
   } finally {
-    fsx.closeSync(fd)
+    if (fd !== undefined) fsx.closeSync(fd)
   }
   return 0
 }

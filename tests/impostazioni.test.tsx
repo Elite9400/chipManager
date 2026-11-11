@@ -22,7 +22,7 @@ import {
   profiloDi,
   simula,
 } from '../hooks/bilanciamento'
-import { bilancia, regoleDa, REGOLE_DEFAULT, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
+import { bilancia, progettoDa, regoleDa, REGOLE_DEFAULT, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
 import { campoRegoleMancante, regoleIniziali, testoRegoleIniziali } from '../hooks/regole-iniziali'
 import { LEGENDA, LINGUE, t } from '../hooks/lingua'
 import { PAGINE_AIUTO, urlAiuto } from '../hooks/aiuto'
@@ -2189,6 +2189,27 @@ test('default rules: a file that appeared meanwhile is never overwritten; a path
   await ui.press({ key: 'regole-guida-crea' })
   expect(amb.disco.has('X:/repo/.claude/routing.json')).toBe(false)
   expect(testi(await ui.drawn()).join('\n')).toContain('goes through a link or junction')
+  await ui.unmount()
+})
+
+test('default rules: the configured routing path has one normal form for confirmation, writing and reading; a backslash is refused', async ($, on) => {
+  expect(progettoDa({ progetti: { 'esempio/demo': { routing: './regole//routing.json' } } }, 'esempio/demo')).toMatchObject({ routing: 'regole/routing.json' })
+  expect(progettoDa({ progetti: { 'esempio/demo': { routing: 'regole\\routing.json' } } }, 'esempio/demo')).toEqual({ k: 'cfg.routing' })
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.disco.delete('X:/repo/.claude/routing.json')
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { routing: './regole//routing.json' } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--setup' } as never)
+  const ui = await $.ui.mount({ ...PANE('terminal', 60) })
+  await ui.press({ key: 'setup-riepilogo-vai' })
+  amb.popup.risposta = () => 'Create default rules'
+  await ui.press({ key: 'regole-guida-crea' })
+  // The confirmation, the helper and the reader all use X:/repo/regole/routing.json.
+  expect(amb.domande.at(-1)).toContain('Create X:/repo/regole/routing.json with this content?')
+  expect(amb.processi.some(x => x[1]?.endsWith('/regole-crea.cjs'))).toBe(true)
+  expect([amb.disco.get('X:/repo/regole/routing.json'), !!(await ui.find({ key: 'regole-guida' }))]).toEqual([testoRegoleIniziali(), false])
   await ui.unmount()
 })
 
