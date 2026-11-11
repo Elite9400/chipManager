@@ -227,25 +227,18 @@ function applicaPatch(prima, patch, togli = []) {
 }
 
 /**
- * La radice dei dati della mod per un percorso: sopra di essa i link sono ammessi (home o `.claude` spostati); dalla
- * radice in giù no. È la cartella `chipmanager` più esterna (la disposizione predefinita); altrimenti la cartella sopra
- * l'ultimo gruppo di cartelle che crea la mod (`progetti`, `azioni`, `esecuzioni`, `board`, `chiavi-api`); altrimenti il
- * percorso stesso. Barre in avanti, senza barra finale (salvo la radice del disco). Gemello: `radiceDati` in hooks/logica.ts.
+ * `x` è la radice `r` o sta sotto di essa? Solo stringhe (barre in avanti, niente barra finale); `insensibile` sui file
+ * system che non distinguono maiuscole (Windows). Un figlio che si chiama «..cache» è DENTRO: conta solo il separatore.
+ * Gemello: `dentroRadice` in hooks/logica.ts (test di parità).
  */
-const CARTELLE_MOD = ['progetti', 'azioni', 'esecuzioni', 'board', 'chiavi-api']
-function radiceDati(p) {
-  const norm = String(p).replace(/\\/g, '/').replace(/\/+$/, '')
-  const parti = norm.split('/')
-  const disco = q => (q === '' ? '/' : /^[A-Za-z]:$/.test(q) ? `${q}/` : q)
-  const i = parti.findIndex((x, k) => k > 0 && x === 'chipmanager')
-  if (i > 0) return disco(parti.slice(0, i + 1).join('/'))
-  let j = -1
-  for (let k = parti.length - 1; k > 0; k--) if (CARTELLE_MOD.includes(parti[k].toLowerCase())) { j = k; break }
-  if (j > 0) {
-    while (j > 1 && CARTELLE_MOD.includes(parti[j - 1].toLowerCase())) j--
-    return disco(parti.slice(0, j).join('/'))
+function dentroRadice(r, x, insensibile) {
+  const n = s => {
+    const t = String(s).replace(/\\/g, '/').replace(/\/+$/, '')
+    return insensibile ? t.toLowerCase() : t
   }
-  return disco(norm)
+  const R = n(r) || '/'
+  const X = n(x) || '/'
+  return X === R || X.startsWith(R.endsWith('/') ? R : `${R}/`)
 }
 
-module.exports = { regoleEfficaci, radiceDati, restrizioneLarga, accountDa, restrizioniDa, applicaPatch, modoNonValido, modoEfficace, NonValido, FORNITORI }
+module.exports = { regoleEfficaci, dentroRadice, restrizioneLarga, accountDa, restrizioniDa, applicaPatch, modoNonValido, modoEfficace, NonValido, FORNITORI }

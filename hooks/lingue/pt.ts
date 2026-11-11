@@ -1128,6 +1128,9 @@ const pt: Dizionario = {
   "doc.sposta": "Mover os dados…",
   "doc.chiediSposta": "Copiar os dados deste projeto de {da} para a pasta segura padrão {verso}, verificar cada arquivo e então apontar o config para lá? A pasta antiga fica intacta.",
   "doc.spostati": "Dados copiados para {verso}; o config aponta para lá. A pasta antiga {da} está intacta: apague-a você quando tiver certeza.",
+  "doc.chiediSaltati": "Estes são links e não foram copiados: {saltati}. O config não mudou. Mover mesmo assim, sem eles?",
+  "doc.spostaComunque": "Mover sem eles",
+  "doc.nonSpostati": "Dados não movidos: nada mudou",
   // ‹fine›
 }
 

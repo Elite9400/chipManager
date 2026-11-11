@@ -6,7 +6,7 @@ import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Desti
 import { alLavoroDa, cambiatiAltrove, campoNonValido, conBozza, contestoPerModello, impostazioniCorrenti, percorsiTolti, perStrato, propostaDa, propostaImpostazioniDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
 import {
   connesso,
-  radiceDati,
+  dentroRadice,
   attive,
   bilancia,
   causaSensibile,
@@ -134,18 +134,16 @@ const casa = async ($: Eng) => ((await $.env.get('USERPROFILE')) ?? (await $.env
 const fileConfig = async ($: Eng) => (await $.env.get('CHIPMANAGER_CONFIG')) ?? `${await casa($)}/.claude/chipmanager/config.json`
 
 /**
- * Il gemello nel pannello di `percorsoSicuro` dell'helper, con le letture dell'host. Sopra la radice dati (`radiceDati`)
+ * Il gemello nel pannello di `percorsoSicuro` dell'helper, con le letture dell'host. Sopra la radice dati effettiva (passata da chi chiama)
  * i link sono ammessi: home o `.claude` spostati dall'utente. Dalla radice in giù nessun link (`isLink` su ogni
  * componente). Il percorso REALE e i suoi antenati non hanno `.git`, cartella o file. Fonte illeggibile = blocco.
  * La causa precisa (chiave del messaggio e percorso) se non vale; undefined se vale.
  */
-async function percorsoNonSicuro($: Eng, p: string): Promise<{ chiave: 'err.percorsoLink' | 'err.percorsoRepo' | 'err.percorsoIlleggibile'; percorso: string } | undefined> {
+async function percorsoNonSicuro($: Eng, p: string, radiceData: string): Promise<{ chiave: 'err.percorsoLink' | 'err.percorsoRepo' | 'err.percorsoIlleggibile'; percorso: string } | undefined> {
   const norm = p.replace(/\\/g, '/').replace(/\/+$/, '')
   const parti = norm.split('/')
   const windows = (await $.env.get('OS')) === 'Windows_NT' || /^[A-Za-z]:/.test(norm)
-  const uguale = (a: string) => { const x = a.replace(/\\/g, '/').replace(/\/+$/, ''); return windows ? x.toLowerCase() : x }
-  const radice = uguale(radiceDati(norm))
-  const daRadice = (q: string) => uguale(q) === radice || uguale(q).startsWith(radice.endsWith('/') ? radice : `${radice}/`)
+  const daRadice = (q: string) => dentroRadice(radiceData, q, windows)
   let esistente: string | undefined
   let reale: string | undefined
   for (let i = 1; i <= parti.length; i++) {
@@ -173,7 +171,8 @@ async function percorsoNonSicuro($: Eng, p: string): Promise<{ chiave: 'err.perc
 
 /** Il testo di un file dei dati della mod (config, registro della spesa), solo dopo averne controllato il percorso; null se non c'è. */
 async function leggiDati($: Eng, f: string): Promise<string | null> {
-  const motivo = await percorsoNonSicuro($, f)
+  // La radice di un file dei dati (config, registro della spesa) è la cartella che lo contiene: la sua posizione configurata.
+  const motivo = await percorsoNonSicuro($, f, f.replace(/\\/g, '/').replace(/\/[^/]*$/, ''))
   if (motivo) throw errore(motivo.chiave, { percorso: motivo.percorso.slice(0, 300) })
   return (await $.fs.exists(f)) ? ((await $.fs.read(f)) as string) : null
 }
@@ -255,9 +254,19 @@ const strumenti = ($: Eng): Strumenti => ({ disco: `${$.plugin.root.replace(/\\/
 const ora = () => new Date().toISOString()
 const gettone = () => `az-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 7)}`
 
+/**
+ * Le radici dei dati EFFETTIVE, per l'helper: cartella del config, cartella della macchina e cartella dati configurata
+ * (se il config si legge). Sopra di esse i link sono ammessi; dalla radice in giù no. Mai dedotte dai nomi.
+ */
+async function radiciDati($: Eng): Promise<string[]> {
+  const cfg = (await fileConfig($)).replace(/\\/g, '/').replace(/\/[^/]*$/, '')
+  const base = await baseOrch($).catch(() => undefined)
+  return [cfg, `${await casa($)}/.claude/chipmanager`, ...(base ? [base] : [])].filter(x => /^([A-Za-z]:\/|\/)/.test(x))
+}
+
 async function helper($: Eng, args: string[], stdin?: string) {
   conta({ processi: 1 }, args[0])
-  const r = await $.process.run(['node', strumenti($).disco, ...args], { stdin, timeoutMs: 20_000 })
+  const r = await $.process.run(['node', strumenti($).disco, ...args], { stdin, timeoutMs: 20_000, env: { CHIPMANAGER_RADICI: JSON.stringify(await radiciDati($)) } })
   return { codice: r.exitCode, testo: r.stdout.trim(), errore: r.stderr.trim() }
 }
 
@@ -1260,7 +1269,24 @@ async function rimedioDoctor($: Eng, opz: Record<string, unknown>, r: Rilievo) {
     const si = T('doc.applica')
     if ((await $.ui.ask(T('doc.chiediSposta', { da: r.da, verso: r.verso }), { options: [si, T('comune.annulla')], header: 'chipManager' }).catch(() => '')) !== si) return
     const chi = await chiSonoIo($)
-    const e = await helper($, ['sposta-dati', await fileConfig($), chi.repo ?? '', r.da, r.verso], JSON.stringify({ impronta: (await read($, statoDoctor)).impronta ?? null }))
+    const argomenti = ['sposta-dati', await fileConfig($), chi.repo ?? '', r.da, r.verso]
+    const impronta = (await read($, statoDoctor)).impronta ?? null
+    let e = await helper($, argomenti, JSON.stringify({ impronta }))
+    // Link non copiati: il config non è cambiato. Si dicono per nome e si sposta solo con un sì esplicito su quei nomi.
+    const saltati = (() => {
+      try {
+        const v = (JSON.parse(e.testo || '{}') as { saltati?: unknown }).saltati
+        return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(0, 50) : []
+      } catch {
+        return []
+      }
+    })()
+    if (e.codice === 4 && saltati.length) {
+      const ancora = T('doc.spostaComunque')
+      if ((await $.ui.ask(T('doc.chiediSaltati', { saltati: saltati.join(', ').slice(0, 400) }), { options: [ancora, T('comune.annulla')], header: 'chipManager' }).catch(() => '')) !== ancora)
+        return void $.ui.toast(T('doc.nonSpostati'))
+      e = await helper($, argomenti, JSON.stringify({ impronta, accettaSaltati: saltati }))
+    }
     $.ui.toast(e.codice === 0 ? T('doc.spostati', { verso: r.verso, da: r.da }) : T(e.codice === 4 ? 'errore.configCambiata' : 'doc.nonRiuscito'))
     if (e.codice === 0) await aggiornaRisorse($, opz)
   } else if (r.codice === 'registro.sviluppo' || r.codice === 'config.illeggibile') {

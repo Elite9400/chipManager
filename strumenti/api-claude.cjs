@@ -50,6 +50,7 @@ const fileConsegna = (dm, t) => path.join(dirChiavi(dm), `${t}.consegna`)
  * sopra. Lancia il Rifiuto dell'helper con il motivo.
  */
 function percorsiAccount(dm, altri = []) {
+  d.registraRadici(dm)
   for (const p of [dm, fileLock(dm), fileSpesa(dm), dirChiavi(dm), ...altri]) d.percorsoSicuro(p)
 }
 const motivoPercorso = e => String(e?.message ?? e).slice(0, 300)
@@ -189,6 +190,7 @@ async function contaSpesa(dm, tentativo, costo, deps = {}) {
  * blocca. Restituisce le regole o `[codice, dettaglio]`.
  */
 function regoleApi(dir, dm, input) {
+  d.registraRadici(dir, dm, typeof input?.config === 'string' && path.isAbsolute(input.config) ? path.dirname(path.resolve(input.config)) : undefined)
   const sviluppo = path.join(dir, 'spesa-api.json')
   if (fs.existsSync(sviluppo)) return [5, JSON.stringify({ registroSviluppo: path.dirname(path.resolve(sviluppo)) })]
   try {
@@ -752,6 +754,6 @@ async function comando(cmd, a, stdin, opz = {}) {
 }
 
 module.exports = {
-  comando, dirPredefinita, lanciaApi, eseguiApi, booleano, worktreeInvariato, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
+  comando, dirPredefinita, MUTEX_API, lanciaApi, eseguiApi, booleano, worktreeInvariato, advisorNelWorktree, statoAdvisor, filtraStderr, statoApi, liberaApi, terminaApi, statoEsecuzione, accedi, hostGit, blocchiImpostazioni, fontiImpostazioni, impostazioniVietate, chiaviVietate, prenotaSpesa, contaSpesa,
   leggiSpesa, spesoNelMese, fileSpesa, regoleApi, percorsiAccount, estraiEsito, ambienteFiglio, leggiLock, fileLock, fileChiave, fileConsegna, TTL_MS, VIETATE,
 }

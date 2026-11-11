@@ -1128,6 +1128,9 @@ const it: Dizionario = {
   "doc.sposta": "Sposta i dati…",
   "doc.chiediSposta": "Copiare i dati di questo progetto da {da} nella cartella sicura predefinita {verso}, verificare ogni file e poi puntarvi il config? La vecchia cartella resta intatta.",
   "doc.spostati": "Dati copiati in {verso}; il config punta lì. La vecchia cartella {da} è intatta: cancellala tu quando sei sicuro.",
+  "doc.chiediSaltati": "Questi sono link e non sono stati copiati: {saltati}. Il config non è cambiato. Spostare comunque, senza di loro?",
+  "doc.spostaComunque": "Sposta senza di loro",
+  "doc.nonSpostati": "Dati non spostati: niente cambiato",
   // ‹fine›
 }
 

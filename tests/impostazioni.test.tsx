@@ -202,6 +202,8 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
     ripristina: (_stdin: string): [number, string] => [0, '{"copia":1}'],
     /** Gli stdin ricevuti da `sposta-dati`. */
     spostati: [] as string[],
+    /** I link che `sposta-dati` dice di aver saltato. */
+    saltati: [] as string[],
     accedi: (_tipo: string): [number, string] => [0, '{}'],
     /** Le fonti di impostazioni dell'host (`$.settings.read`); null = non si legge. */
     impostazioni: (_source: string): unknown => ({}),
@@ -360,7 +362,10 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
     if (cmd === 'archivia-registro') return fine(0, '{"archiviato":true}')
     if (cmd === 'sposta-dati') {
       esec.spostati.push(String(e.init?.stdin ?? ''))
-      return fine(0, JSON.stringify({ da: e.argv[5], a: e.argv[6], copiati: 3, saltati: [] }))
+      // Come l'helper: con link da saltare non accettati, il config non cambia e i nomi tornano indietro.
+      if (esec.saltati.length && !(JSON.parse(String(e.init?.stdin ?? '{}')) as { accettaSaltati?: unknown }).accettaSaltati)
+        return fine(4, JSON.stringify({ saltati: esec.saltati }))
+      return fine(0, JSON.stringify({ da: e.argv[5], a: e.argv[6], copiati: 3, saltati: esec.saltati }))
     }
     if (cmd === 'apri-url') return fine(0)
     if (cmd === 'segnala-gh') return fine(0, '{"url":"https://github.com/Elite9400/chipManager/issues/1"}')
@@ -2315,4 +2320,25 @@ test('Percorsi, doctor: la cartella dati in un repository offre «Sposta i dati�
   amb.variabili.CHIPMANAGER_DIR = 'X:/repo/dati'
   await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
   expect(await ui.find({ key: 'doctor-rimedio-0' })).toBeUndefined()
+})
+
+test('Percorsi, rilievo 4: link saltati nello spostamento: nomi detti, Annulla non cambia niente, il sì riprova solo con quei nomi accettati', async ($, on) => {
+  const amb = ambiente(on, { cartella: 'X:/repo/dati' })
+  amb.disco.lingua = 'en'
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': { cartella: 'X:/repo/dati' } } }))
+  amb.variabili.CHIPMANAGER_DIR = ''
+  amb.esec.saltati = ['board']
+  amb.esec.diagnosi = () => JSON.stringify({ trovati: [{ codice: 'percorso.dati', motivo: 'helper.collegamento: X:/repo/dati/board' }], versione: '2.2.0', impronta: 'e'.repeat(64) })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  amb.popup.risposta = q => (q.startsWith('These are links') ? 'Cancel' : 'Apply fix')
+  await ui.press({ key: 'doctor-rimedio-0' })
+  expect(amb.esec.spostati).toEqual([JSON.stringify({ impronta: 'e'.repeat(64) })])
+  expect(amb.domande.some(q => q.startsWith('These are links') && q.includes('board'))).toBe(true)
+  expect(amb.toast).toContain('Data not moved: nothing changed')
+  amb.popup.risposta = q => (q.startsWith('These are links') ? 'Move without them' : 'Apply fix')
+  await ui.press({ key: 'doctor-rimedio-0' })
+  expect(amb.esec.spostati.at(-1)).toBe(JSON.stringify({ impronta: 'e'.repeat(64), accettaSaltati: ['board'] }))
 })

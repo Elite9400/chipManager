@@ -1130,6 +1130,9 @@ const en = {
   "doc.sposta": "Move data…",
   "doc.chiediSposta": "Copy this project's data from {da} to the safe default folder {verso}, check every file, then point the config there? The old folder is left untouched.",
   "doc.spostati": "Data copied to {verso}; the config points there. The old folder {da} is untouched: delete it yourself when you are sure.",
+  "doc.chiediSaltati": "These are links and were not copied: {saltati}. The config has not changed. Move anyway, without them?",
+  "doc.spostaComunque": "Move without them",
+  "doc.nonSpostati": "Data not moved: nothing changed",
   // ‹fine›
 } satisfies Record<string, Voce>
 

@@ -1529,24 +1529,17 @@ export const corrisponde = (a: Azione, filtro: string, regole: Regole = REGOLE_D
  * `null` = una cartella configurata non è un percorso assoluto o con ~: chi chiama non legge né scrive (fail-closed).
  */
 /**
- * La radice dei dati della mod per un percorso: sopra di essa i link sono ammessi (home o `.claude` spostati); dalla
- * radice in giù no. È la cartella `chipmanager` più esterna; altrimenti la cartella sopra l'ultimo gruppo di cartelle che
- * crea la mod; altrimenti il percorso stesso. Gemello: `radiceDati` in strumenti/regole.cjs (test di parità).
+ * `x` è la radice `r` o sta sotto di essa? Solo stringhe; `insensibile` dove il file system non distingue maiuscole.
+ * Un figlio «..cache» è dentro: conta solo il separatore. Gemello: `dentroRadice` in strumenti/regole.cjs (parità).
  */
-const CARTELLE_MOD = ['progetti', 'azioni', 'esecuzioni', 'board', 'chiavi-api']
-export function radiceDati(p: string): string {
-  const norm = String(p).replace(/\\/g, '/').replace(/\/+$/, '')
-  const parti = norm.split('/')
-  const disco = (q: string) => (q === '' ? '/' : /^[A-Za-z]:$/.test(q) ? `${q}/` : q)
-  const i = parti.findIndex((x, k) => k > 0 && x === 'chipmanager')
-  if (i > 0) return disco(parti.slice(0, i + 1).join('/'))
-  let j = -1
-  for (let k = parti.length - 1; k > 0; k--) if (CARTELLE_MOD.includes(parti[k]!.toLowerCase())) { j = k; break }
-  if (j > 0) {
-    while (j > 1 && CARTELLE_MOD.includes(parti[j - 1]!.toLowerCase())) j--
-    return disco(parti.slice(0, j).join('/'))
+export function dentroRadice(r: string, x: string, insensibile: boolean): boolean {
+  const n = (s: string) => {
+    const t = String(s).replace(/\\/g, '/').replace(/\/+$/, '')
+    return insensibile ? t.toLowerCase() : t
   }
-  return disco(norm)
+  const R = n(r) || '/'
+  const X = n(x) || '/'
+  return X === R || X.startsWith(R.endsWith('/') ? R : `${R}/`)
 }
 
 export function cartellaDati(config: unknown, repo: string | null, home: string): string | null {

@@ -192,10 +192,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **A moved home or `.claude` no longer blocks the mod.** Links and junctions above the mod's data folder (for example
   `C:\Users\<you>\.claude` moved to another disk) are allowed. The real path must still be outside every repository (no
   `.git`, folder or file, above it), and no link is allowed from the data folder down. The error now names the path and
-  the cause (inside which repository, or which link) and what to do. `/chipmanager --doctor` can move a project's data
-  out of a repository or away from inner links into the default folder: verified copy, one config write, the old folder
-  left as it was, only after you confirm. Locks use the real path, so a path through a junction and the physical path
-  take the same lock: two runs of the same task can no longer start through different spellings.
+  the cause (inside which repository, or which link) and what to do. The data folders are the ones actually configured
+  (config folder, data folder, machine folder), never guessed from folder names; outside them no link is allowed.
+  `/chipmanager --doctor` can move a project's data out of a repository or away from inner links into the default
+  folder, only after you confirm: it holds the same locks as the mod's writers until the config is updated, copies into
+  a private staging folder that it renames into place, checks every file, and leaves the old folder as it was. Links it
+  cannot copy are named, and the config changes only if you accept moving without them. Locks use the real path (case
+  folded only on Windows), so a path through a junction and the physical path take the same lock.
 - Claude plan limits show again on the desktop app, from the current shape of `ccd_session_mgmt.get_usage`; when
   they do not apply or cannot be read, the panel says why.
 - Actions saved without a project by an earlier version no longer appear in every project: a one-time pop-up offers

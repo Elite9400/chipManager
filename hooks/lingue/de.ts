@@ -1128,6 +1128,9 @@ const de: Dizionario = {
   "doc.sposta": "Daten verschieben…",
   "doc.chiediSposta": "Die Daten dieses Projekts von {da} in den sicheren Standardordner {verso} kopieren, jede Datei prüfen und die Config dorthin zeigen lassen? Der alte Ordner bleibt unverändert.",
   "doc.spostati": "Daten nach {verso} kopiert; die Config zeigt dorthin. Der alte Ordner {da} ist unverändert: löschen Sie ihn selbst, wenn Sie sicher sind.",
+  "doc.chiediSaltati": "Das sind Links und sie wurden nicht kopiert: {saltati}. Die Config ist unverändert. Trotzdem verschieben, ohne sie?",
+  "doc.spostaComunque": "Ohne sie verschieben",
+  "doc.nonSpostati": "Daten nicht verschoben: nichts geändert",
   // ‹fine›
 }
 

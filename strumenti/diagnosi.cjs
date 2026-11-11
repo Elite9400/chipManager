@@ -45,6 +45,7 @@ function diagnosi(config, cartella, root, repo, deps = {}) {
     }
   }
   const dm = deps.dm ?? api.dirPredefinita()
+  d.registraRadici(path.isAbsolute(String(config)) ? path.dirname(path.resolve(config)) : undefined, cartella, dm)
 
   // --- config ---------------------------------------------------------------------------------------------------
   let c = {}
@@ -164,6 +165,7 @@ function diagnosi(config, cartella, root, repo, deps = {}) {
  * reversibile (si rinomina indietro). Sotto il mutex delle azioni della cartella.
  */
 async function archiviaRegistro(cartella) {
+  d.registraRadici(cartella)
   d.percorsoSicuro(cartella)
   const file = path.join(cartella, 'spesa-api.json')
   const r = await d.conMutex(d.MUTEX_AZIONI(cartella), 8000, () => {

@@ -26,17 +26,29 @@ const MUTEX_AZIONI = dir => `azioni:${percorsoCanonico(dir)}`
  * junction ammesse sopra la radice dati, l'alias e il percorso fisico devono prendere lo stesso lock (stesso record,
  * stessa cartella), altrimenti due supervisori lavorerebbero insieme sullo stesso stato.
  */
-function percorsoCanonico(p) {
+function percorsoCanonico(p, piattaforma = process.platform) {
+  // Il minuscolo solo dove il file system non distingue (Windows); altrove `/srv/Alpha` e `/srv/alpha` sono due cartelle.
+  const caso = s => (piattaforma === 'win32' ? s.toLowerCase() : s)
   const assoluto = path.resolve(p)
   const resto = []
   for (let x = assoluto; ; x = path.dirname(x)) {
     try {
-      return path.join(fs.realpathSync.native(x), ...resto).toLowerCase()
+      return caso(path.join(fs.realpathSync.native(x), ...resto))
     } catch {
-      if (path.dirname(x) === x) return assoluto.toLowerCase()
+      if (path.dirname(x) === x) return caso(assoluto)
       resto.unshift(path.basename(x))
     }
   }
+}
+
+/**
+ * Le radici dei dati EFFETTIVE (cartella del config, cartella dati configurata, cartella della macchina): le passa il
+ * pannello (`CHIPMANAGER_RADICI`) e le aggiunge ogni comando dai propri argomenti. Mai dedotte dai nomi delle cartelle.
+ * Sopra una radice i link sono ammessi; dalla radice in giù no. Un percorso fuori da ogni radice nota: nessun link.
+ */
+const RADICI = new Set()
+function registraRadici(...ps) {
+  for (const p of ps) if (typeof p === 'string' && p && path.isAbsolute(p)) RADICI.add(path.resolve(p))
 }
 /** Il mutex del supervisore di un'esecuzione (`cli`, `api`): uno per record, qualunque percorso lo nomini. */
 const mutexEsecuzione = (tipo, file) => `${tipo}:${percorsoCanonico(file)}`
@@ -262,6 +274,7 @@ function scriviConfig(file, testo) {
  * 4 il file è cambiato, 5 nessuna copia valida (non fa niente), 3 occupato.
  */
 async function ripristinaConfig(file, richiesta) {
+  registraRadici(path.dirname(path.resolve(file)))
   if (!oggetto(richiesta) || !(richiesta.impronta === null || (typeof richiesta.impronta === 'string' && /^[0-9a-f]{64}$/.test(richiesta.impronta)))) return [2, '']
   const r = await conMutex(mutexConfig(file), 8000, () => {
     const ora = fs.existsSync(file) ? fs.readFileSync(file) : null
@@ -312,27 +325,53 @@ async function ripristinaConfig(file, richiesta) {
 }
 
 /**
- * Il doctor sposta i dati di un progetto (cartella in un repository o con link interni) nella cartella sicura `a`,
- * solo su conferma. Sotto il mutex del config e quello della cartella dati, con CAS sui byte del config: copia
- * cartelle e file normali (i link si saltano e si dicono), verifica ogni copia con sha256, poi scrive nel config
- * `progetti[repo].cartella = a` con una sola scrittura. La vecchia cartella resta intatta. `a` deve essere sicura e
- * vuota (o assente), diversa da `da` e non annidata. stdin `{ impronta }`: 0 fatto, 4 cambiato o destinazione non
- * vuota, 2 richiesta non valida, 3 occupato; una destinazione non sicura esce con 6 (percorsoSicuro).
+ * Il doctor sposta i dati di un progetto (cartella in un repository o con link interni) nella cartella sicura `a`, solo
+ * su conferma. Tiene GLI STESSI lock degli scrittori (config, azioni, corsia API e ogni esecuzione) dall'inizio fino al
+ * cambio del config compreso; con CAS sui byte del config. Copia in una cartella di staging esclusiva accanto alla
+ * destinazione, ricontrollando la catena (e il percorso reale del genitore) prima di ogni scrittura; verifica ogni copia
+ * con sha256; rinomina atomicamente lo staging in `a`; poi scrive `progetti[repo].cartella = a`. La vecchia cartella resta
+ * intatta. I link non si copiano: senza un «accetta» esplicito di quei nomi (`accettaSaltati`) il config non cambia e lo
+ * staging si toglie. Una pulizia tocca solo lo staging. stdin `{ impronta, accettaSaltati? }`: 0 fatto; 4 cambiato,
+ * destinazione non vuota o omissioni da accettare (`saltati`); 2 richiesta non valida; 3 occupato; 6 percorso non sicuro.
+ * `deps` (solo le prove): `dopoCopia`, `primaDelConfig`.
  */
-async function spostaDati(config, repo, da, a, richiesta) {
+async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
   if (!oggetto(richiesta) || !(richiesta.impronta === null || (typeof richiesta.impronta === 'string' && /^[0-9a-f]{64}$/.test(richiesta.impronta)))) return [2, '']
+  const accettati = richiesta.accettaSaltati ?? []
+  if (!Array.isArray(accettati) || accettati.length > 200 || !accettati.every(x => typeof x === 'string' && x.length < 400)) return [2, '']
   if (typeof repo !== 'string' || !/^[^/\s]+\/[^/\s]+$/.test(repo) || ![config, da, a].every(x => typeof x === 'string' && path.isAbsolute(x))) return [2, '']
   const DA = path.resolve(da)
   const A = path.resolve(a)
-  const fuoriDa = (x, y) => {
-    const r = path.relative(x, y)
-    return r !== '' && (r.startsWith('..') || path.isAbsolute(r))
+  const ins = process.platform === 'win32'
+  if (regole.dentroRadice(DA, A, ins) || regole.dentroRadice(A, DA, ins)) return [2, '']
+  registraRadici(path.dirname(path.resolve(config)), DA)
+  const sopra = path.dirname(A)
+  try {
+    percorsoSicuro(A)
+  } catch (e) {
+    if (e instanceof Rifiuto) return [e.codice ?? 6, e.message]
+    throw e
   }
-  if (!fuoriDa(DA, A) || !fuoriDa(A, DA)) return [2, '']
-  percorsoSicuro(A)
-  const esisteva = fs.existsSync(A)
-  if (esisteva && fs.readdirSync(A).length) return [4, JSON.stringify({ motivo: 'destinazione non vuota' })]
-  const r = await conMutex(mutexConfig(config), 8000, async () => {
+  if (fs.existsSync(A) && fs.readdirSync(A).length) return [4, JSON.stringify({ motivo: 'destinazione non vuota' })]
+  const azioni = path.join(DA, 'azioni')
+  const esecuzioni = path.join(azioni, 'esecuzioni')
+  let registri = []
+  try {
+    registri = fs.readdirSync(esecuzioni).filter(n => n.endsWith('.json'))
+  } catch {
+    registri = []
+  }
+  // Gli stessi lock degli scrittori. Config, azioni e corsia API si aspettano (li tengono per poco); un'esecuzione
+  // tenuta dal suo supervisore vuol dire un lavoro in corso: lo spostamento non parte (occupato).
+  const API = require('./api-claude.cjs')
+  const lock = [mutexConfig(config), MUTEX_AZIONI(azioni), API.MUTEX_API,
+    ...registri.flatMap(n => [mutexEsecuzione('cli', path.join(esecuzioni, n)), mutexEsecuzione('api', path.join(esecuzioni, n))])]
+  const tieni = async (i, fn) => {
+    if (i === lock.length) return fn()
+    const r = await conMutex(lock[i], i < 3 ? 8000 : 0, () => tieni(i + 1, fn))
+    return r.occupato ? [3, ''] : r.valore
+  }
+  return tieni(0, async () => {
     const ora = fs.existsSync(config) ? fs.readFileSync(config) : null
     if ((ora === null ? null : improntaByte(ora)) !== richiesta.impronta) return [4, '']
     let c = {}
@@ -344,42 +383,71 @@ async function spostaDati(config, repo, da, a, richiesta) {
       }
       if (!configValido(c)) return [2, '']
     }
-    const dentro = await conMutex(MUTEX_AZIONI(DA), 8000, () => {
+    let staging
+    try {
+      percorsoSicuro(sopra)
+      fs.mkdirSync(sopra, { recursive: true })
+      percorsoSicuro(sopra)
+      const realeSopra = fs.realpathSync.native(sopra)
+      // Prima di ogni scrittura: catena senza link dalla radice in giù e genitore REALE invariato (nessun antenato sostituito).
+      const controlla = () => {
+        percorsoSicuro(staging)
+        if (!stessoPercorso(fs.realpathSync.native(sopra), realeSopra)) throw new Rifiuto(6, `helper.percorsoReale: ${sopra}`)
+      }
+      staging = path.join(sopra, `.${path.basename(A)}.staging-${crypto.randomBytes(6).toString('hex')}`)
+      // Creata in modo esclusivo: se esiste già (di qualcun altro) mkdir fallisce e non la si tocca.
+      fs.mkdirSync(staging)
       const copiati = []
       const saltati = []
+      const relativo = x => path.relative(DA, x).replace(/\\/g, '/')
       const copia = (s, d) => {
-        fs.mkdirSync(d, { recursive: true })
         for (const n of fs.readdirSync(s)) {
           const x = path.join(s, n)
           const y = path.join(d, n)
           const st = fs.lstatSync(x)
-          if (st.isSymbolicLink()) saltati.push(path.relative(DA, x).replace(/\\/g, '/'))
-          else if (st.isDirectory()) copia(x, y)
-          else if (st.isFile()) {
+          if (st.isSymbolicLink() || (!st.isDirectory() && !st.isFile())) saltati.push(relativo(x))
+          else if (st.isDirectory()) {
+            controlla()
+            fs.mkdirSync(y)
+            copia(x, y)
+          } else {
+            controlla()
             fs.copyFileSync(x, y, fs.constants.COPYFILE_EXCL)
             copiati.push([x, y])
           }
         }
       }
-      try {
-        copia(DA, A)
-        for (const [x, y] of copiati) if (improntaByte(fs.readFileSync(x)) !== improntaByte(fs.readFileSync(y))) throw new Error('copia non verificata')
-        percorsoSicuro(A)
-      } catch (e) {
-        // Niente a metà: la destinazione torna com'era (assente o vuota); la sorgente non si è mai toccata.
-        if (esisteva) for (const n of fs.readdirSync(A)) fs.rmSync(path.join(A, n), { recursive: true, force: true })
-        else fs.rmSync(A, { recursive: true, force: true })
-        throw e
+      copia(DA, staging)
+      for (const [x, y] of copiati) if (improntaByte(fs.readFileSync(x)) !== improntaByte(fs.readFileSync(y))) throw new Error('copia non verificata')
+      if (saltati.some(x => !accettati.includes(x))) {
+        fs.rmSync(staging, { recursive: true, force: true })
+        return [4, JSON.stringify({ saltati })]
       }
-      return { copiati: copiati.length, saltati }
-    })
-    if (dentro.occupato) return [3, '']
-    const prog = oggetto(c.progetti?.[repo]) ? c.progetti[repo] : {}
-    const nuovo = { ...c, progetti: { ...(oggetto(c.progetti) ? c.progetti : {}), [repo]: { ...prog, cartella: A.replace(/\\/g, '/') } } }
-    scriviConfig(config, JSON.stringify(nuovo, null, 2))
-    return [0, JSON.stringify({ da: DA, a: A, ...dentro.valore })]
+      await deps.dopoCopia?.()
+      controlla()
+      // La destinazione: assente, o vuota com'era all'inizio (rmdir fallisce se qualcuno vi ha messo qualcosa).
+      if (fs.existsSync(A)) fs.rmdirSync(A)
+      fs.renameSync(staging, A)
+      staging = undefined
+      await deps.primaDelConfig?.()
+      const prog = oggetto(c.progetti?.[repo]) ? c.progetti[repo] : {}
+      const nuovo = { ...c, progetti: { ...(oggetto(c.progetti) ? c.progetti : {}), [repo]: { ...prog, cartella: A.replace(/\\/g, '/') } } }
+      scriviConfig(config, JSON.stringify(nuovo, null, 2))
+      return [0, JSON.stringify({ da: DA, a: A, copiati: copiati.length, saltati })]
+    } catch (e) {
+      // Solo il proprio staging, e solo se il genitore è ancora quello reale di prima (mai attraverso un link nuovo).
+      if (staging) {
+        try {
+          percorsoSicuro(staging)
+          fs.rmSync(staging, { recursive: true, force: true })
+        } catch {
+          // genitore cambiato: lo staging resta dov'è, non si segue un link per toglierlo
+        }
+      }
+      if (e instanceof Rifiuto) return [e.codice ?? 6, e.message]
+      return [1, String(e?.code ?? 'errore')]
+    }
   })
-  return r.occupato ? [3, ''] : r.valore
 }
 
 function scriviAtomico(file, testo) {
@@ -393,6 +461,7 @@ function scriviAtomico(file, testo) {
  * `elenco`, se l'insieme dei record è ancora quello letto (una proposta nuova cambia la decisione).
  */
 async function prenota(dir, richiesta) {
+  registraRadici(dir)
   // La cartella può non esistere ancora (prima azione, o CHIPMANAGER_DIR nuovo).
   fs.mkdirSync(dir, { recursive: true })
   const r = await conMutex(MUTEX_AZIONI(dir), 8_000, () => {
@@ -588,6 +657,7 @@ function comandoReale(comando) {
  * incrementa `pesiRevisione` e segna l'origine manuale: nessuno dei due si scrive da fuori.
  */
 async function configura(file, richiesta) {
+  registraRadici(path.dirname(path.resolve(file)))
   if (!richiesta || typeof richiesta.repo !== 'string' || !richiesta.repo || !richiesta.campi || typeof richiesta.campi !== 'object' || Array.isArray(richiesta.campi) ||
       Object.keys(richiesta.campi).some(k => !CAMPI_PROGETTO.includes(k))) return 2
   // F10: nella stessa scrittura anche lo strato Account e la lingua (un solo CAS: niente allentamenti intermedi).
@@ -666,6 +736,7 @@ const CAMPI_UTENTE = { lingua: v => ['en', 'it', 'es', 'fr', 'de', 'pt'].include
  * (funziona anche fuori da un repository). Scrive solo i campi di `CAMPI_UTENTE`, validati; i progetti restano intatti.
  */
 async function configuraUtente(file, richiesta) {
+  registraRadici(path.dirname(path.resolve(file)))
   const campi = richiesta?.campi
   if (!campi || typeof campi !== 'object' || Array.isArray(campi) || !Object.keys(campi).length ||
       Object.entries(campi).some(([k, v]) => !Object.hasOwn(CAMPI_UTENTE, k) || !CAMPI_UTENTE[k](v))) return 2
@@ -723,7 +794,7 @@ function senzaLink(...percorsi) {
  * coincide con quello dichiarato; nessun antenato del percorso reale contiene `.git`, cartella o file. Ogni errore di
  * lettura blocca. Restituisce la parte esistente del percorso, reale; lancia un Rifiuto(6) con il motivo.
  */
-function percorsoSicuro(p) {
+function percorsoSicuro(p, radici = []) {
   if (typeof p !== 'string' || !path.isAbsolute(p)) throw new Rifiuto(6, 'helper.percorsoNonAssoluto')
   const catena = []
   for (let x = path.resolve(p); ; x = path.dirname(x)) {
@@ -731,12 +802,12 @@ function percorsoSicuro(p) {
     if (path.dirname(x) === x) break
   }
   // Sopra la radice dati i link sono ammessi (home o `.claude` spostati dall'utente); dalla radice in giù nessuno, con
-  // lstat su ogni componente: una junction dentro i dati porterebbe le scritture altrove.
-  const radice = path.resolve(regole.radiceDati(path.resolve(p)))
-  const daRadice = x => {
-    const r = path.relative(radice, x)
-    return r === '' || (!r.startsWith('..') && !path.isAbsolute(r))
-  }
+  // lstat su ogni componente: una junction dentro i dati porterebbe le scritture altrove. La radice è la più esterna fra
+  // quelle effettive che contengono il percorso (la regola più severa); fuori da ogni radice nota, nessun link ammesso.
+  const ins = process.platform === 'win32'
+  const assoluto = path.resolve(p)
+  const radice = [...RADICI, ...radici.map(r => path.resolve(r))].filter(r => regole.dentroRadice(r, assoluto, ins)).sort((a, b) => a.length - b.length)[0]
+  const daRadice = x => radice === undefined || regole.dentroRadice(radice, x, ins)
   let esistente
   for (const x of catena) {
     let st
@@ -974,6 +1045,7 @@ const fileEsecuzione = (dir, t) => path.join(dir, 'esecuzioni', `${t}.json`)
 
 /** Il segno nasce PRIMA del processo: un esito perso non permette un secondo spawn. */
 async function lanciaCli(dir, id, tentativo, input) {
+  registraRadici(dir)
   if (!idValido(id) || !tentativoValido(tentativo)) return 2
   const r = await conMutex(MUTEX_AZIONI(dir), 8000, async () => {
     const a = JSON.parse(fs.readFileSync(path.join(dir, `${id}.json`), 'utf8'))
@@ -1031,6 +1103,7 @@ const parametriValidi = input =>
 
 /** Worktree unico; mai rimozione automatica. stdout/stderr del modello non diventano log della mod. */
 async function eseguiCli(dir, id, tentativo, input, deps = {}) {
+  registraRadici(dir)
   if (!idValido(id) || !tentativoValido(tentativo)) throw new Error('identità non valida')
   const file = fileEsecuzione(dir, tentativo)
   // Giro 2, rilievo 2: la catena delle esecuzioni prima di leggere il segno, creare il worktree o avviare il processo.
@@ -1570,6 +1643,26 @@ async function pesiAnnulla(file, repo, idVoce, idAnnullamento, opz = {}) {
 
 /** Il punto d'ingresso: un percorso dei dati rifiutato in qualunque comando (anche a metà, in una scrittura) esce con 6 e il motivo. */
 async function main(argv, opz = {}) {
+  // Le radici effettive dal pannello: un array di percorsi assoluti; una forma diversa blocca il comando.
+  const dalPannello = process.env.CHIPMANAGER_RADICI
+  if (dalPannello !== undefined) {
+    let lista
+    try {
+      lista = JSON.parse(dalPannello)
+    } catch {
+      return esci(2, 'CHIPMANAGER_RADICI')
+    }
+    if (!Array.isArray(lista) || lista.length > 8 || !lista.every(x => typeof x === 'string' && x.length < 500 && path.isAbsolute(x))) return esci(2, 'CHIPMANAGER_RADICI')
+    registraRadici(...lista)
+  }
+  // E quelle che ogni comando nomina nei propri argomenti.
+  const [cmd, ...a] = argv
+  const cartellaDi = f => (typeof f === 'string' && path.isAbsolute(f) ? path.dirname(path.resolve(f)) : undefined)
+  if (/^(configura|configura-utente|ripristina-config|pesi-[a-z]+|impostazioni-[a-z]+)$/.test(cmd ?? '')) registraRadici(cartellaDi(a[0]))
+  else if (/^(prenota|lancia-cli|esegui-cli|stato-cli|archivia-registro)$/.test(cmd ?? '')) registraRadici(a[0])
+  else if (cmd === 'cas') registraRadici(cartellaDi(a[0]))
+  else if (/^board-[a-z]+$/.test(cmd ?? '') || cmd === 'diagnosi') registraRadici(cartellaDi(a[0]), a[1])
+  else if (cmd === 'sposta-dati') registraRadici(cartellaDi(a[0]), a[2])
   try {
     return await comandoHelper(argv, opz)
   } catch (e) {
@@ -1638,7 +1731,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, percorsoCanonico, mutexEsecuzione, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, percorsoCanonico, mutexEsecuzione, registraRadici, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

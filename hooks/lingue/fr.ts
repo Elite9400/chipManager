@@ -1128,6 +1128,9 @@ const fr: Dizionario = {
   "doc.sposta": "Déplacer les données…",
   "doc.chiediSposta": "Copier les données de ce projet de {da} vers le dossier sûr par défaut {verso}, vérifier chaque fichier, puis y pointer le config ? L'ancien dossier reste intact.",
   "doc.spostati": "Données copiées dans {verso} ; le config y pointe. L'ancien dossier {da} est intact : supprimez-le vous-même quand vous êtes sûr.",
+  "doc.chiediSaltati": "Ce sont des liens et ils n'ont pas été copiés : {saltati}. Le config n'a pas changé. Déplacer quand même, sans eux ?",
+  "doc.spostaComunque": "Déplacer sans eux",
+  "doc.nonSpostati": "Données non déplacées : rien n'a changé",
   // ‹fine›
 }
 

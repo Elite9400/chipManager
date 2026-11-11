@@ -2688,7 +2688,7 @@ test('Percorsi: .claude spostata (junction sopra la radice dati): config e azion
   assert.strictEqual(r.status, 0, r.stdout)
   assert.ok(fs.existsSync(path.join(vero, 'chipmanager', 'progetti', 'owner__prova', 'azioni', 'a-uno.json')))
   // Il percorso reale restituito è quello della cartella vera.
-  assert.strictEqual(D.percorsoSicuro(dati).toLowerCase(), fs.realpathSync.native(path.join(vero, 'chipmanager', 'progetti', 'owner__prova', 'azioni')).toLowerCase())
+  assert.strictEqual(D.percorsoSicuro(dati, [path.join(casa, '.claude', 'chipmanager')]).toLowerCase(), fs.realpathSync.native(path.join(vero, 'chipmanager', 'progetti', 'owner__prova', 'azioni')).toLowerCase())
 })
 
 test('Percorsi: radice dati reale dentro un repository (anche attraverso una junction) o sotto un .git file: rifiutata con il percorso', () => {
@@ -2696,12 +2696,12 @@ test('Percorsi: radice dati reale dentro un repository (anche attraverso una jun
   fs.mkdirSync(path.join(repo, '.git'))
   const casa = fuori()
   giunzione(repo, path.join(casa, '.claude'))
-  assert.throws(() => D.percorsoSicuro(path.join(casa, '.claude', 'chipmanager', 'config.json')), /helper\.dentroWorkingTree: .+/)
+  assert.throws(() => D.percorsoSicuro(path.join(casa, '.claude', 'chipmanager', 'config.json'), [path.join(casa, '.claude', 'chipmanager')]), /helper\.dentroWorkingTree: .+/)
   const conGit = fuori()
   fs.writeFileSync(path.join(conGit, '.git'), 'gitdir: altrove')
   const altra = fuori()
   giunzione(conGit, path.join(altra, 'casa'))
-  assert.throws(() => D.percorsoSicuro(path.join(altra, 'casa', 'chipmanager', 'azioni')), /helper\.dentroWorkingTree/)
+  assert.throws(() => D.percorsoSicuro(path.join(altra, 'casa', 'chipmanager', 'azioni'), [path.join(altra, 'casa', 'chipmanager')]), /helper\.dentroWorkingTree/)
 })
 
 test('Percorsi: junction dalla radice dati in giù rifiutata (la radice stessa, «progetti», «azioni», «esecuzioni», «board»)', () => {
@@ -2710,21 +2710,19 @@ test('Percorsi: junction dalla radice dati in giù rifiutata (la radice stessa, 
     const base = fuori()
     fs.mkdirSync(path.dirname(path.join(base, sotto)), { recursive: true })
     giunzione(altrove, path.join(base, sotto))
-    assert.throws(() => D.percorsoSicuro(path.join(base, sotto, 'x.json')), /helper\.collegamento: .+/, sotto)
+    assert.throws(() => D.percorsoSicuro(path.join(base, sotto, 'x.json'), [path.join(base, sotto.split(path.sep)[0])]), /helper\.collegamento: .+/, sotto)
   }
 })
 
-test('Percorsi: la radice dati è la stessa nel pannello e nell\'helper (parità)', () => {
+test('Percorsi: «dentro la radice» è lo stesso nel pannello e nell\'helper (parità), anche per un figlio «..cache»', () => {
   const R = require('./regole.cjs')
-  const casi = ['C:/Users/u/.claude/chipmanager/config.json', 'C:/Users/u/.claude/chipmanager/progetti/acme__x/azioni', 'D:/orch/azioni/a-1.json',
-    'D:/progetti/dati/esecuzioni/az-1/stato.json', 'D:/dati', '/home/u/.claude/chipmanager', '/srv/cm/board/x/index.html', 'X:/azioni', '/azioni',
-    'C:\\Users\\u\\.claude\\chipmanager\\chiavi-api\\az-1.key', 'D:/developerHOME/chipManager/.claude/chipmanager/x']
-  const ts = conLogica(`console.log(JSON.stringify(ingresso.map(p => nuova.radiceDati(p))))`, casi)
-  assert.deepStrictEqual(casi.map(R.radiceDati), ts)
-  assert.deepStrictEqual(ts.slice(0, 5), ['C:/Users/u/.claude/chipmanager', 'C:/Users/u/.claude/chipmanager', 'D:/orch', 'D:/progetti/dati', 'D:/dati'])
-  assert.deepStrictEqual(ts.slice(7, 9), ['X:/', '/'])
+  const casi = [['/a', '/a', false], ['/a', '/a/..cache', false], ['/a', '/a/../b', false], ['/a', '/ab', false], ['/a', '/a/b/c', false], ['/', '/x', false],
+    ['C:/Users/u/.claude/chipmanager', 'c:/users/u/.claude/chipmanager/azioni', true], ['C:/Users/u/.claude/chipmanager', 'c:/users/u/.claude/chipmanager/azioni', false],
+    ['C:/', 'C:/x', true], ['C:\\a', 'C:\\a\\..cache\\x', true], ['/srv/Alpha', '/srv/alpha/x', false], ['/srv/Alpha', '/srv/alpha/x', true]]
+  const ts = conLogica(`console.log(JSON.stringify(ingresso.map(([r, x, i]) => nuova.dentroRadice(r, x, i))))`, casi)
+  assert.deepStrictEqual(casi.map(([r, x, i]) => R.dentroRadice(r, x, i)), ts)
+  assert.deepStrictEqual(ts, [true, true, true, false, true, true, true, false, true, true, false, true])
 })
-
 test('Percorsi, doctor: «Sposta i dati» copia e verifica, poi punta il config alla cartella sicura con un CAS; la vecchia resta intatta', async () => {
   const repo = fuori()
   fs.mkdirSync(path.join(repo, '.git'))
@@ -2750,7 +2748,11 @@ test('Percorsi, doctor: «Sposta i dati» copia e verifica, poi punta il config 
   assert.strictEqual((await D.spostaDati(config, 'owner/prova', da, pieno, { impronta: impronta(testo) }))[0], 4)
   assert.deepStrictEqual(fs.readFileSync(config), testo)
   // Lo spostamento vero: file identici, il link saltato e detto, il config aggiornato, la vecchia cartella intatta.
-  const [codice, uscita] = await D.spostaDati(config, 'owner/prova', da, a, { impronta: impronta(testo) })
+  // Il link (board) non si copia: prima la richiesta di accettarlo (config invariato), poi lo spostamento con l'«accetta».
+  const [c0, u0] = await D.spostaDati(config, 'owner/prova', da, a, { impronta: impronta(testo) })
+  assert.deepStrictEqual([c0, JSON.parse(u0).saltati], [4, ['board']])
+  assert.deepStrictEqual(fs.readFileSync(config), testo)
+  const [codice, uscita] = await D.spostaDati(config, 'owner/prova', da, a, { impronta: impronta(testo), accettaSaltati: ['board'] })
   assert.strictEqual(codice, 0, uscita)
   const esito = JSON.parse(uscita)
   assert.deepStrictEqual([esito.copiati, esito.saltati], [2, ['board']])
@@ -2811,4 +2813,117 @@ test('Percorsi, N5: identità canoniche (realpath) per mutex delle azioni, del c
   }
   // Il config passa dallo stesso mutex della sua cartella, anche con un file che non esiste ancora.
   assert.strictEqual(D.mutexEsecuzione('x', path.join(alias, 'manca', 'config.json')), D.mutexEsecuzione('x', path.join(fisico, 'manca', 'config.json')))
+})
+
+// --- Fix percorsi, revisione Codex -----------------------------------------------------------------------------------
+
+test('Percorsi, rilievo 1: la radice è quella configurata, mai dedotta dai nomi: CHIPMANAGER in maiuscolo con una junction su «progetti»', () => {
+  const base = fuori()
+  const radice = path.join(base, 'CHIPMANAGER')
+  fs.mkdirSync(radice)
+  const altrove = fuori()
+  giunzione(altrove, path.join(radice, 'progetti'))
+  const dati = path.join(radice, 'progetti', 'a', 'azioni')
+  // Dal pannello: la radice effettiva arriva con CHIPMANAGER_RADICI; la junction è sotto, la scrittura non va altrove.
+  const r = spawnSync(process.execPath, [ENTRATA, 'prenota', dati], { input: JSON.stringify({ scrivi: { 'a-uno.json': { versione: 1 } } }), encoding: 'utf8',
+    env: { ...process.env, CHIPMANAGER_RADICI: JSON.stringify([radice]) } })
+  assert.strictEqual(r.status, 6, r.stdout)
+  assert.match(r.stdout, /helper\.collegamento: .*progetti/i)
+  assert.deepStrictEqual(fs.readdirSync(altrove), [])
+  assert.throws(() => D.scriviDati(path.join(dati, 'x.json'), '{}'), /helper\.collegamento/)
+  // Radici non valide nell'ambiente: rifiutate, niente scritto.
+  const r2 = spawnSync(process.execPath, [ENTRATA, 'prenota', dati], { input: '{}', encoding: 'utf8', env: { ...process.env, CHIPMANAGER_RADICI: '["relativa"]' } })
+  assert.strictEqual(r2.status, 2)
+})
+
+test('Percorsi, rilievo 6: il minuscolo dell\'identità solo dove il file system non distingue (Windows)', () => {
+  assert.notStrictEqual(D.percorsoCanonico('/srv/Alpha/x', 'linux'), D.percorsoCanonico('/srv/alpha/x', 'linux'))
+  assert.strictEqual(D.percorsoCanonico('/srv/Alpha/x', 'win32'), D.percorsoCanonico('/srv/alpha/x', 'win32'))
+})
+
+/** Una cartella dati in un repository con azioni, un'esecuzione e un config che la indica, per gli spostamenti. */
+function datiDaSpostare() {
+  const repo = fuori()
+  fs.mkdirSync(path.join(repo, '.git'))
+  const da = path.join(repo, 'dati')
+  fs.mkdirSync(path.join(da, 'azioni', 'esecuzioni'), { recursive: true })
+  fs.writeFileSync(path.join(da, 'azioni', 'a-uno.json'), '{"versione":1}')
+  const casa = fuori()
+  const config = path.join(casa, 'chipmanager', 'config.json')
+  return { repo, da, casa, config, a: path.join(casa, 'chipmanager', 'progetti', 'owner__prova') }
+}
+const configuraDa = async x => {
+  assert.strictEqual(await D.configura(x.config, { atteso: null, repo: 'owner/prova', campi: { soloLocale: true } }), 0)
+  return fs.readFileSync(x.config)
+}
+
+test('Percorsi, rilievo 2: spostamento in staging esclusivo; un file estraneo comparso nella destinazione non si tocca; antenato sostituito = fermo', async () => {
+  const x = datiDaSpostare()
+  const testo = await configuraDa(x)
+  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+    dopoCopia: () => {
+      fs.mkdirSync(x.a, { recursive: true })
+      fs.writeFileSync(path.join(x.a, 'estraneo.txt'), 'di qualcun altro')
+    },
+  })
+  assert.notStrictEqual(r[0], 0)
+  assert.strictEqual(fs.readFileSync(path.join(x.a, 'estraneo.txt'), 'utf8'), 'di qualcun altro')
+  assert.deepStrictEqual(fs.readdirSync(path.dirname(x.a)).filter(n => n.includes('staging')), [])
+  assert.deepStrictEqual(fs.readFileSync(x.config), testo)
+  // Un antenato della destinazione sostituito da una junction durante la copia: nessuno spostamento.
+  const y = datiDaSpostare()
+  const testoY = await configuraDa(y)
+  const altrove = fuori()
+  const r2 = await D.spostaDati(y.config, 'owner/prova', y.da, y.a, { impronta: impronta(testoY) }, {
+    dopoCopia: () => {
+      const progetti = path.dirname(y.a)
+      fs.renameSync(progetti, `${progetti}-vero`)
+      giunzione(altrove, progetti)
+    },
+  })
+  assert.notStrictEqual(r2[0], 0)
+  assert.deepStrictEqual(fs.readdirSync(altrove), [])
+  assert.deepStrictEqual(fs.readFileSync(y.config), testoY)
+})
+
+test('Percorsi, rilievo 3: lo spostamento tiene gli stessi lock degli scrittori (azioni, config, corsia API ed esecuzioni) fino al cambio del config', async () => {
+  const x = datiDaSpostare()
+  fs.writeFileSync(path.join(x.da, 'azioni', 'esecuzioni', 'az-in00001.json'), JSON.stringify({ id: 'a-in000001', tentativo: 'az-in00001', stato: 'avviata' }))
+  const testo = await configuraDa(x)
+  const occupati = {}
+  const prova = async (nome, m) => (occupati[nome] = !!(await D.conMutex(m, 0, () => true)).occupato)
+  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+    primaDelConfig: async () => {
+      await prova('azioni', D.MUTEX_AZIONI(path.join(x.da, 'azioni')))
+      await prova('config', D.MUTEX_AZIONI(path.dirname(x.config)) + ':config')
+      await prova('api', require('./api-claude.cjs').MUTEX_API)
+      await prova('cli', D.mutexEsecuzione('cli', path.join(x.da, 'azioni', 'esecuzioni', 'az-in00001.json')))
+      await prova('apiEsecuzione', D.mutexEsecuzione('api', path.join(x.da, 'azioni', 'esecuzioni', 'az-in00001.json')))
+    },
+  })
+  assert.strictEqual(r[0], 0, r[1])
+  assert.deepStrictEqual(occupati, { azioni: true, config: true, api: true, cli: true, apiEsecuzione: true })
+  // Un supervisore che tiene la sua esecuzione: lo spostamento non parte (occupato), niente cambia.
+  const y = datiDaSpostare()
+  const fileEs = path.join(y.da, 'azioni', 'esecuzioni', 'az-vivo0001.json')
+  fs.writeFileSync(fileEs, '{}')
+  const testoY = await configuraDa(y)
+  const tenuto = await D.conMutex(D.mutexEsecuzione('cli', fileEs), 0, () => D.spostaDati(y.config, 'owner/prova', y.da, y.a, { impronta: impronta(testoY) }))
+  assert.strictEqual(tenuto.valore[0], 3)
+  assert.strictEqual(fs.existsSync(y.a), false)
+  assert.deepStrictEqual(fs.readFileSync(y.config), testoY)
+})
+
+test('Percorsi, rilievo 4: link saltati = config invariato e omissioni dette; solo con «accetta» esplicito il config cambia', async () => {
+  const x = datiDaSpostare()
+  giunzione(fuori(), path.join(x.da, 'board'))
+  const testo = await configuraDa(x)
+  const [codice, uscita] = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
+  assert.strictEqual(codice, 4)
+  assert.deepStrictEqual(JSON.parse(uscita).saltati, ['board'])
+  assert.strictEqual(fs.existsSync(x.a), false)
+  assert.deepStrictEqual(fs.readFileSync(x.config), testo)
+  const [c2, u2] = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo), accettaSaltati: ['board'] })
+  assert.strictEqual(c2, 0, u2)
+  assert.strictEqual(JSON.parse(fs.readFileSync(x.config, 'utf8')).progetti['owner/prova'].cartella, x.a.replace(/\\/g, '/'))
 })
