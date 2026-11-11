@@ -8,8 +8,13 @@ export type VoceSkill = {
   id: string
   /** Full plugin identity as `claude plugin list --json` reports it. */
   plugin: string
-  /** Source repository (`owner/repo`), fixed here: never from settings or from an agent. */
+  /** Source repository of the plugin code (`owner/repo`), fixed here: never from settings or from an agent. */
   repo: string
+  /**
+   * How the approved revision is found: `ls-remote` = the head of `repo`; `ufficiale` = the `source.sha` of the official
+   * marketplace entry (its url must be `repo`); `clone` = TokenEconomizer's own procedure (not installed by the mod yet).
+   */
+  pin: 'ls-remote' | 'ufficiale' | 'clone'
   marketplace: string
   /** The skills it contains (a bundle lists several). */
   skills: readonly string[]
@@ -26,20 +31,28 @@ export type VoceSkill = {
 }
 
 export const SKILL_BASE: readonly VoceSkill[] = [
-  { id: 'ponytail', plugin: 'ponytail@ponytail', repo: 'DietrichGebert/ponytail', marketplace: 'ponytail', skills: ['ponytail'], flusso: 'locale',
+  { id: 'ponytail', plugin: 'ponytail@ponytail', repo: 'DietrichGebert/ponytail', pin: 'ls-remote', marketplace: 'ponytail', skills: ['ponytail'], flusso: 'locale',
     nota: 'Instructions only: a session-start hook prints the working rules. No network, no extra cost.', ruoli: ['lavoro'], utente: false, sperimentale: false, predefinito: true },
-  { id: 'superpowers', plugin: 'superpowers@claude-plugins-official', repo: 'anthropics/claude-plugins-official', marketplace: 'claude-plugins-official',
+  { id: 'superpowers', plugin: 'superpowers@claude-plugins-official', repo: 'obra/superpowers', pin: 'ufficiale', marketplace: 'claude-plugins-official',
     skills: ['writing-plans', 'requesting-code-review'], flusso: 'esterno',
     nota: 'Skills and hooks; its visual companion sends telemetry as its documentation describes.', ruoli: ['dirigente', 'revisore'], utente: false, sperimentale: false, predefinito: true },
-  { id: 'mattpocock-skills', plugin: 'mattpocock-skills@claude-plugins-official', repo: 'anthropics/claude-plugins-official', marketplace: 'claude-plugins-official',
+  { id: 'mattpocock-skills', plugin: 'mattpocock-skills@claude-plugins-official', repo: 'mattpocock/skills', pin: 'ufficiale', marketplace: 'claude-plugins-official',
     skills: ['handoff', 'grill-me', 'grilling'], flusso: 'ignoto',
     nota: 'A bundle of user-invoked skills (handoff, grill-me, grilling); data flow not verified, so it is never enabled automatically.', ruoli: [], utente: true, sperimentale: false, predefinito: true },
-  { id: 'tokeneconomizer', plugin: 'tokeneconomizer@tokeneconomizer', repo: 'microsoft/TokenEconomizer', marketplace: 'tokeneconomizer', skills: ['tokeneconomizer'],
+  { id: 'tokeneconomizer', plugin: 'tokeneconomizer@tokeneconomizer', repo: 'microsoft/TokenEconomizer', pin: 'clone', marketplace: 'tokeneconomizer', skills: ['tokeneconomizer'],
     flusso: 'esterno', nota: 'Experimental, not verified on your Claude Code version: extra claude -p calls (normally Haiku) with digests of commands, errors and file names, billed to you.',
     ruoli: ['lavoro'], utente: false, sperimentale: true, predefinito: false },
 ]
 
 export const voceSkill = (id: unknown) => SKILL_BASE.find(v => v.id === id)
+
+/** The mod's own local marketplace: plugins installed by the mod at an approved revision get this suffix. */
+export const MARKETPLACE_BASE = 'chipmanager-base'
+/** The plugin name (before `@`) and the id it has when the mod installed it. */
+export const nomePlugin = (v: VoceSkill) => v.plugin.slice(0, v.plugin.indexOf('@'))
+export const pluginDellaMod = (v: VoceSkill) => `${nomePlugin(v)}@${MARKETPLACE_BASE}`
+/** Either identity counts: installed by the user from upstream, or by the mod from its local marketplace. */
+export const eDellaVoce = (v: VoceSkill, id: string) => id === v.plugin || id === pluginDellaMod(v)
 
 /** One installed plugin as `claude plugin list --json` reports it, re-read field by field. */
 export type PluginInstallato = { id: string; versione?: string; scope: 'user' | 'project' | 'local' | 'managed'; attivo: boolean }
@@ -65,7 +78,7 @@ export function pluginDa(json: unknown): PluginInstallato[] | null {
 export function skillAttive(installati: readonly PluginInstallato[] | null, accese: Readonly<Record<string, boolean>> | undefined, ruolo: RuoloSkill, soloLocale: boolean) {
   if (!installati) return []
   return SKILL_BASE.filter(v => !v.utente && v.ruoli.includes(ruolo) && (accese?.[v.id] ?? v.predefinito) && (!soloLocale || v.flusso === 'locale') &&
-    installati.some(p => p.id === v.plugin && p.attivo))
+    installati.some(p => eDellaVoce(v, p.id) && p.attivo))
 }
 
 export const RIGA_SKILL_MAX = 200

@@ -31,9 +31,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   at most 200 characters (ponytail for workers, superpowers for reviewers; never user-invoked skills, never for Codex;
   in a local-only project only local-only skills), and shows them in Settings → Work mode and in the doctor with a
   per-skill switch (`modoLavoro.skillBase`, account with project override) and **Enable**/**Disable** on click with
-  `--scope user` (managed plugins locked). Not in this build: installing from the mod (approved revision pinned through
-  a local marketplace, hooks listed before install, TokenEconomizer's guarded sequence) and the approval-record check at
-  session start; install these plugins yourself for now.
+  `--scope user` (managed plugins locked). **Install on click** for ponytail, superpowers and mattpocock-skills: the
+  approved revision is the official marketplace entry's `source.sha` (superpowers, mattpocock-skills) or the head of the
+  registry repository (ponytail); it is fetched read-only into the data folder to list every hook it declares (manifest
+  and `hooks/hooks.json`; an unreadable hook file blocks the install), and the confirmation shows source, commit, data
+  flow and hooks. The mod then installs it from its own local marketplace (`chipmanager-base`, `source.sha` pinned,
+  `defaultEnabled: false`) with `--scope user`, so it arrives disabled; a revision that differs from the approved one or
+  cannot be verified leaves it disabled. **Enable** on a mod-installed plugin checks the installed revision again and
+  records the approval; at session start a mod-installed plugin found enabled without that record is disabled and the
+  owner is told. A local-only project does not install or enable anything that sends data off the computer. Not in this
+  build: TokenEconomizer's guarded install sequence (it stays experimental and off) and the plugin-overhead measure.
 
 - **Work mode** (Settings, Account group): default effort per lane, the Codex sandbox when Codex executes, sessions
   started together (1–8, over the host option), a suggested auditor in the Recommended preset, and cross review on

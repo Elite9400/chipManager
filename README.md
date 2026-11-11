@@ -583,6 +583,13 @@ disables a plugin you installed — and **Enable**/**Disable** buttons that run 
 user` on your click (a plugin managed by policy is shown as locked). In a local-only project, skills that send data off
 the computer are never named. The mod reads `claude plugin list --json` and stores only identity, scope and state.
 
+**Install** (ponytail, superpowers, mattpocock-skills) asks first: the confirmation shows the source, the exact commit
+(the official marketplace's pinned revision, or the repository head for ponytail), the data flow and every hook the
+plugin declares, read from that commit (hooks run with your user's privileges). The plugin is installed from the mod's
+own local marketplace pinned to that commit and arrives disabled; if the installed revision cannot be verified as the
+approved one, it stays disabled. A plugin the mod installed is enabled only after the same check, and one found enabled
+at session start without your approval is disabled again. TokenEconomizer is not installed by the mod.
+
 ## Languages
 
 The panel, the board, popups and notifications speak six languages:

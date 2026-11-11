@@ -471,6 +471,11 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
     processi.push({ argv: e.argv, stdin: e.init?.stdin, // Only the variable names: the values are credentials and must not reach any recorded state.
     env: Object.fromEntries(Object.keys((e.init as { env?: Record<string, string> } | undefined)?.env ?? {}).map(k => [k, '<set>'])) })
     if (exe === 'docker') return fine(0)
+    // F13.7: the install helper, scriptable by the test; refusals as { motivo } with exit 2.
+    if (e.argv[1]?.endsWith('/skill-installa.cjs')) {
+      const r = opz.fonte?.(`skill-${e.argv[2]}`, { id: e.argv[3], stdin: e.init?.stdin }) as { codice?: number } | undefined
+      return fine(r?.codice ?? 0, JSON.stringify(r ?? {}))
+    }
     // F13.7: the plugin CLI (`claude plugin ...`), scriptable by the test; by default no plugin is installed.
     if (exe === 'claude' && e.argv[1] === 'plugin') {
       const risposta = opz.fonte?.(`claude ${e.argv.slice(1).join(' ')}`, {})
@@ -3860,4 +3865,63 @@ test('F13.7 consenso: la politica si rilegge dopo la domanda (solo locale nel fr
   expect(domande).toBe(1)
   expect(comandi()).toEqual([])
   await ui2.unmount()
+})
+
+test('F13.7 installa dal pannello: conferma con fonte, commit e hook; senza sì nulla; con sì l\'helper riceve solo url e sha approvati', async ($, on) => {
+  const SHA = 'c'.repeat(40)
+  const chiamate: { cmd: string; stdin?: string }[] = []
+  const amb = ambiente(on, {
+    fonte: (cmd, input) => {
+      if (cmd === 'claude plugin list --json') return []
+      if (cmd === 'skill-prepara') return (chiamate.push({ cmd }), { id: input.id, url: 'https://github.com/DietrichGebert/ponytail.git', sha: SHA, hook: ['hooks/hooks.json · SessionStart: node inizio.js'] })
+      if (cmd === 'skill-installa') return (chiamate.push({ cmd, stdin: input.stdin as string }), { id: 'ponytail', plugin: 'ponytail@chipmanager-base', sha: SHA })
+      return undefined
+    },
+  })
+  mock.clock(on)
+  const domande: string[] = []
+  let risposta = 'Annulla'
+  conferme(on, testo => (domande.push(testo), risposta))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
+  // TokenEconomizer non ha il pulsante: la mod non lo installa ancora.
+  expect(await ui.find({ key: 'skill-installa-tokeneconomizer' })).toBeUndefined()
+  await ui.press({ key: 'skill-installa-ponytail' })
+  await finche(() => domande.length === 1)
+  for (const parte of ['https://github.com/DietrichGebert/ponytail.git', SHA, 'SessionStart: node inizio.js', 'privilegi']) expect(domande[0]).toContain(parte)
+  expect(chiamate.map(c => c.cmd)).toEqual(['skill-prepara'])
+  risposta = 'Installa · ponytail'
+  await ui.press({ key: 'skill-installa-ponytail' })
+  await finche(() => chiamate.some(c => c.cmd === 'skill-installa'))
+  expect(JSON.parse(chiamate.find(c => c.cmd === 'skill-installa')!.stdin!)).toEqual({ url: 'https://github.com/DietrichGebert/ponytail.git', sha: SHA })
+  await ui.unmount()
+})
+
+test('F13.7 avvio: il controllo delle approvazioni gira solo con un plugin della mod attivo; un progetto solo locale non installa ciò che invia dati', async ($, on) => {
+  let elenco: object[] = [{ id: 'ponytail@ponytail', scope: 'user', enabled: true }]
+  const controlli: string[] = []
+  const amb = ambiente(on, {
+    fonte: cmd => (cmd === 'claude plugin list --json' ? elenco : cmd === 'skill-controlla' ? (controlli.push(cmd), { spenti: ['ponytail'] }) : undefined),
+  })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
+  expect(controlli).toEqual([])
+  elenco = [{ id: 'ponytail@chipmanager-base', scope: 'user', enabled: true }]
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await finche(() => controlli.length === 1)
+  // Solo locale: superpowers (flusso esterno) senza pulsante d'installazione; ponytail (locale) sì.
+  elenco = []
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { soloLocale: true } } }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  await ui.press({ key: 'skill-rileggi' })
+  expect(await ui.find({ key: 'skill-installa-superpowers' })).toBeUndefined()
+  expect(await ui.find({ key: 'skill-installa-ponytail' })).toBeDefined()
+  await ui.unmount()
 })

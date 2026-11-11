@@ -600,6 +600,14 @@ enable|disable <id> --scope user` al tuo clic (un plugin gestito dalla policy ap
 locale le skill che inviano dati fuori dal computer non vengono mai nominate. La mod legge `claude plugin list --json`
 e conserva solo identità, ambito e stato.
 
+**Installa** (ponytail, superpowers, mattpocock-skills) chiede prima: la conferma mostra la fonte, il commit esatto (la
+revisione fissata dal marketplace ufficiale, o la testa del repository per ponytail), il flusso dei dati e ogni hook che
+il plugin dichiara, letto da quel commit (gli hook girano con i privilegi del tuo utente). Il plugin si installa dal
+marketplace locale della mod, fissato a quel commit, e arriva disattivato; se la revisione installata non risulta quella
+approvata, resta disattivato. Un plugin installato dalla mod si attiva solo dopo lo stesso controllo, e uno trovato
+attivo all'avvio della sessione senza la tua approvazione viene disattivato di nuovo. TokenEconomizer la mod non lo
+installa.
+
 ## Lingue
 
 Il pannello, la board, i popup e le notifiche parlano sei lingue:

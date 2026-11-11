@@ -109,6 +109,8 @@ export type Ctx = {
   /** F13.7: read the installed plugins again; enable or disable one baseline plugin (registry only, --scope user). */
   leggiPlugin: () => Promise<unknown>
   cambiaPlugin: (id: string, attiva: boolean) => Promise<unknown>
+  /** F13.7: install at the approved revision after a confirmation that lists source, commit, data flow and hooks. */
+  installaSkill: (id: string) => Promise<unknown>
   /** F6.2: «Libera» e «Termina» del lock della corsia API, ciascuno con il suo popup. */
   liberaApi: () => Promise<unknown>
   terminaApi: () => Promise<unknown>

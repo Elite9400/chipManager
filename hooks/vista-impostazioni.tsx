@@ -42,7 +42,7 @@ import { urlRapporto } from './rapporto'
 import { PAGINE_AIUTO, SITO_PUBBLICATO, urlAiuto } from './aiuto'
 import { COMPATIBILI } from './compatibili'
 import type { VoceCompatibile } from './compatibili'
-import { SKILL_BASE } from './skill-base'
+import { eDellaVoce, SKILL_BASE } from './skill-base'
 
 type StatoVista = StatoImpostazioni
 type Sezione = StatoVista['sezione']
@@ -847,7 +847,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       didascalia('skill-descrizione', T('skill.descrizione')),
       soloLocale ? didascalia('skill-sololocale', T('skill.soloLocale')) : null,
       ...SKILL_BASE.map(v => {
-        const p = installati?.find(x => x.id === v.plugin)
+        const p = installati?.find(x => eDellaVoce(v, x.id))
         const stato = installati === null || installati === undefined ? 'ignoto' : !p ? 'mancante' : p.scope === 'managed' ? 'gestito' : p.attivo ? 'attivo' : 'disattivo'
         const dettagli = [T(`skill.stato.${stato}` as Chiave), T(`skill.flusso.${v.flusso}` as Chiave), v.sperimentale ? T('skill.sperimentale') : '', v.utente ? T('skill.utente') : '', T('skill.fonte', { repo: v.repo })]
         return (
@@ -859,8 +859,12 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
               azioni: stato === 'attivo' || stato === 'disattivo'
                 ? [<Button key={`skill-cambia-${v.id}`} plain label={T(stato === 'attivo' ? 'skill.disabilita' : 'skill.abilita', { nome: v.id })}
                     onPress={() => void esegui(`skill-${v.id}`, () => c.cambiaPlugin(v.id, stato !== 'attivo'), '')} />]
-                : [],
+                : stato === 'mancante' && v.pin !== 'clone' && !(soloLocale && v.flusso !== 'locale')
+                  ? [<Button key={`skill-installa-${v.id}`} variant="secondary" label={T('skill.installa', { nome: v.id })}
+                      onPress={() => void esegui(`skill-${v.id}`, () => c.installaSkill(v.id), '')} />]
+                  : [],
             })}
+            {stato === 'mancante' && v.pin === 'clone' ? didascalia(`skill-nonInstallabile-${v.id}`, T('skill.nonInstallabile')) : null}
             {usa && !v.utente
               ? u.GruppoChip({
                   chiave: `skill-usa-${v.id}`, etichetta: T('skill.usa', { nome: v.id }), contesto: v.id, modo: 'scelta', valore: (accese?.[v.id] ?? v.predefinito) ? 'si' : 'no',

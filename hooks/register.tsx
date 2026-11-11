@@ -76,7 +76,11 @@ import {
 import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
 import { MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
 import { chiamaCompatibile, connessiCompatibili, rilevaLocali, verificaCompatibile } from './compatibili-host'
-import { cambiaPlugin, leggiPlugin } from './skill-base-host'
+import { cambiaPlugin, controllaApprovate, installaSkill, leggiPlugin } from './skill-base-host'
+import { voceSkill } from './skill-base'
+import type { Chiave } from './lingua'
+/** F13.7: a refusal code from the install helper, shown in the panel as is (one of the dictionary keys skill.err.*). */
+const CODICE_SKILL = /^skill\.err\.\w+$/
 import { board, chiaveRiassunto, hash, improntaBoard, testoRiassunto } from './board'
 import type { Piano as PianoBoard } from './board'
 import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salvato, t, testo, traduttore } from './lingua'
@@ -2226,7 +2230,10 @@ export const register: Register = (on, options) => {
     await ripristinaImpostazioni($, traduttore(await leggiLingua($)))
     await aggiornaRisorse($, opz)
     // F13.7: which baseline plugins are installed and enabled (an unreadable listing = unknown: no skill is named).
-    void leggiPlugin($).catch(() => undefined)
+    // F13.7 r3: a mod-installed plugin enabled without the owner's approval record is disabled again, and the owner told.
+    void controllaApprovate($).then(async spenti => {
+      if (spenti.length) $.ui.toast((await lingue($))('skill.spentiAvvio', { nomi: spenti.join(', ') }))
+    }).catch(() => undefined)
     await $.command.register({ name: 'chipmanager', description: 'Opens the chipManager panel of suggested actions' })
     await $.tool.register({
       name: 'suggerisci_azione',
@@ -2610,6 +2617,24 @@ export const register: Register = (on, options) => {
               .catch(() => '')) === T('skill.abilita', { nome: id }))
         } catch (e) {
           if ((e as Error)?.message === 'local-only project') throw errore('skill.bloccatoLocale', { nome: id })
+          if (CODICE_SKILL.test((e as Error)?.message ?? '')) throw errore((e as Error).message as Chiave)
+          throw e
+        }
+      },
+      installaSkill: async id => {
+        const T = await lingue($)
+        const v = voceSkill(id)
+        // soloLocale (or rules that cannot be read) blocks installing from the mod anything that is not local-only.
+        const r = await leggiRegole($)
+        if (v && v.flusso !== 'locale' && (!r.lette || r.risorse.soloLocale)) throw errore('skill.bloccatoLocale', { nome: id })
+        try {
+          const fatto = await installaSkill($, id, async ({ url, sha, hook }) => {
+            const domanda = T('skill.conferma', { nome: id, url, sha, nota: v?.nota ?? '', hook: hook.length ? hook.map(h => `· ${h}`).join('\n') : T('skill.nessunHook') })
+            return (await $.ui.ask(domanda, { options: [T('skill.installa', { nome: id }), T('comune.annulla')], header: 'chipManager' }).catch(() => '')) === T('skill.installa', { nome: id })
+          })
+          if (fatto) $.ui.toast(T('skill.installato', { nome: id }))
+        } catch (e) {
+          if (CODICE_SKILL.test((e as Error)?.message ?? '')) throw errore((e as Error).message as Chiave)
           throw e
         }
       },

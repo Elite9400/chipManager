@@ -3296,3 +3296,114 @@ console.log(JSON.stringify({ registro: k.SKILL_BASE, letti: elenchi.map(e => k.p
   assert.deepStrictEqual(K.SKILL_BASE.filter(v => v.utente).map(v => v.ruoli.length), [0])
   assert.deepStrictEqual(K.SKILL_BASE.filter(v => v.sperimentale).map(v => [v.id, v.predefinito]), [['tokeneconomizer', false]])
 })
+
+// --- F13.7: install at an approved revision (fake commands only: no network, no real install) -----------------------
+
+const SHA_A = 'a'.repeat(40)
+const SHA_B = 'b'.repeat(40)
+function bancoSkill(opz = {}) {
+  const dir = tmp()
+  const comandi = []
+  const file = opz.file ?? {
+    '.claude-plugin/plugin.json': JSON.stringify({ name: 'ponytail', hooks: './hooks/hooks.json' }),
+    'hooks/hooks.json': JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'node ${CLAUDE_PLUGIN_ROOT}/inizio.js' }] }] } }),
+  }
+  const installati = path.join(dir, 'installed_plugins.json')
+  const esegui = argv => {
+    comandi.push(argv.join(' '))
+    const [exe, ...a] = argv
+    if (exe === 'git' && a[0] === 'ls-remote') return { status: 0, stdout: `${opz.testa ?? SHA_A}\tHEAD\n` }
+    if (exe === 'git' && a[0] === 'init') { fs.mkdirSync(path.join(a[2], '.git'), { recursive: true }); return { status: 0, stdout: '' } }
+    if (exe === 'git' && a[2] === 'fetch') return { status: opz.fetch ?? 0, stdout: '' }
+    if (exe === 'git' && a[2] === 'cat-file') return { status: a[4].split(':')[1] in file ? 0 : 1, stdout: '' }
+    if (exe === 'git' && a[2] === 'show') { const p = a[3].split(':')[1]; return p in file ? { status: 0, stdout: file[p] } : { status: 128, stdout: '' } }
+    if (exe === 'claude' && a[1] === 'install') {
+      if (opz.installato !== null) fs.writeFileSync(installati, JSON.stringify({ version: 2, plugins: { [a[2]]: [{ scope: 'user', version: '4.9.0', gitCommitSha: opz.installato ?? SHA_A }] } }))
+      return { status: 0, stdout: '' }
+    }
+    if (exe === 'claude' && a[1] === 'list') return { status: 0, stdout: JSON.stringify(opz.elenco ?? []) }
+    return { status: 0, stdout: '' }
+  }
+  const deps = { esegui, dir, installati, marketplaceUfficiale: path.join(dir, 'ufficiale.json') }
+  return { dir, comandi, deps, installati }
+}
+
+test('F13.7 prepara: revisione approvata (testa del repo o sha del marketplace ufficiale) e hook letti da quella revisione; argv esatti', () => {
+  const S = require('./skill-installa.cjs')
+  const b = bancoSkill()
+  const r = S.prepara('ponytail', b.dir, b.deps)
+  assert.deepStrictEqual({ url: r.url, sha: r.sha }, { url: 'https://github.com/DietrichGebert/ponytail.git', sha: SHA_A })
+  assert.deepStrictEqual(r.hook, ['hooks/hooks.json · SessionStart: node ${CLAUDE_PLUGIN_ROOT}/inizio.js'])
+  const rev = path.join(b.dir, 'skill', 'revisioni', `ponytail-${SHA_A}`)
+  assert.deepStrictEqual(b.comandi.slice(0, 3), [
+    'git ls-remote https://github.com/DietrichGebert/ponytail.git HEAD', `git init -q ${rev}`,
+    `git -C ${rev} fetch -q --depth 1 --no-tags https://github.com/DietrichGebert/ponytail.git ${SHA_A}`])
+  // Marketplace ufficiale: lo sha della sua voce, solo se l'url è quello del registro.
+  const u = bancoSkill()
+  fs.writeFileSync(u.deps.marketplaceUfficiale, JSON.stringify({ plugins: [{ name: 'superpowers', source: { source: 'url', url: 'https://github.com/obra/superpowers.git', sha: SHA_B } }] }))
+  assert.strictEqual(S.prepara('superpowers', u.dir, { ...u.deps, esegui: (argv) => (u.comandi.push(argv.join(' ')), bancoSkill({ file: { '.claude-plugin/plugin.json': '{"name":"superpowers"}' } }).deps.esegui(argv)) }).sha, SHA_B)
+  assert.ok(!u.comandi.some(c => c.includes('ls-remote')))
+  fs.writeFileSync(u.deps.marketplaceUfficiale, JSON.stringify({ plugins: [{ name: 'superpowers', source: { source: 'url', url: 'https://github.com/altro/superpowers.git', sha: SHA_B } }] }))
+  assert.throws(() => S.prepara('superpowers', u.dir, u.deps), e => e.motivo === 'skill.err.fonte')
+  fs.rmSync(u.deps.marketplaceUfficiale)
+  assert.throws(() => S.prepara('superpowers', u.dir, u.deps), e => e.motivo === 'skill.err.ufficiale')
+  // Un hook dichiarato che non si legge, un nome diverso, un fetch fallito: niente installazione.
+  for (const [opz, motivo] of [
+    [{ file: { '.claude-plugin/plugin.json': JSON.stringify({ name: 'ponytail', hooks: './altro.json' }) } }, 'skill.err.hook'],
+    [{ file: { '.claude-plugin/plugin.json': JSON.stringify({ name: 'ponytail', hooks: './hooks/hooks.json' }), 'hooks/hooks.json': '{rotto' } }, 'skill.err.hook'],
+    [{ file: { '.claude-plugin/plugin.json': JSON.stringify({ name: 'imitazione' }) } }, 'skill.err.nome'],
+    [{ fetch: 128 }, 'skill.err.git'], [{ testa: 'non-uno-sha' }, 'skill.err.git'],
+  ]) {
+    const x = bancoSkill(opz)
+    assert.throws(() => S.prepara('ponytail', x.dir, x.deps), e => e.motivo === motivo, motivo)
+  }
+  // TokenEconomizer ha la sua procedura: qui non si installa.
+  assert.throws(() => S.prepara('tokeneconomizer', b.dir, b.deps), e => e.motivo === 'skill.err.nonInstallabile')
+})
+
+test('F13.7 installa: marketplace locale con source.sha e defaultEnabled false, --scope user, controllo dello sha; diverso o non verificabile = spento', () => {
+  const S = require('./skill-installa.cjs')
+  const b = bancoSkill()
+  const url = 'https://github.com/DietrichGebert/ponytail.git'
+  assert.deepStrictEqual(S.installa('ponytail', { url, sha: SHA_A }, b.dir, b.deps), { id: 'ponytail', plugin: 'ponytail@chipmanager-base', sha: SHA_A })
+  const m = JSON.parse(fs.readFileSync(path.join(S.dirMarketplace(b.dir), '.claude-plugin', 'marketplace.json'), 'utf8'))
+  assert.deepStrictEqual(m.plugins.map(p => [p.name, p.source, p.defaultEnabled]), [['ponytail', { source: 'url', url, sha: SHA_A }, false]])
+  assert.strictEqual(m.name, 'chipmanager-base')
+  assert.deepStrictEqual(b.comandi, [`claude plugin marketplace add ${S.dirMarketplace(b.dir)} --scope user`, 'claude plugin marketplace update chipmanager-base',
+    'claude plugin install ponytail@chipmanager-base --scope user'])
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(S.fileRecord(b.dir), 'utf8')).voci.ponytail.abilitato, false)
+  // Solo ciò che il committente ha approvato: un altro url o uno sha non valido non partono.
+  for (const no of [{ url: 'https://github.com/altro/ponytail.git', sha: SHA_A }, { url, sha: 'main' }])
+    assert.throws(() => S.installa('ponytail', no, b.dir, b.deps), e => e.motivo === 'skill.err.fonte')
+  for (const [installato, motivo] of [[SHA_B, 'skill.err.shaDiverso'], [null, 'skill.err.shaNonVerificabile']]) {
+    const x = bancoSkill({ installato })
+    assert.throws(() => S.installa('ponytail', { url, sha: SHA_A }, x.dir, x.deps), e => e.motivo === motivo)
+    assert.strictEqual(x.comandi.at(-1), 'claude plugin disable ponytail@chipmanager-base --scope user')
+    assert.ok(!fs.existsSync(S.fileRecord(x.dir)))
+  }
+})
+
+test('F13.7 abilita e controllo all\'avvio: solo con il record d\'approvazione e lo sha installato uguale; i plugin dell\'utente non si toccano', () => {
+  const S = require('./skill-installa.cjs')
+  const url = 'https://github.com/DietrichGebert/ponytail.git'
+  const b = bancoSkill({ elenco: [{ id: 'ponytail@chipmanager-base', scope: 'user', enabled: true }, { id: 'superpowers@claude-plugins-official', scope: 'user', enabled: true }] })
+  assert.throws(() => S.abilita('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.nonApprovato')
+  S.installa('ponytail', { url, sha: SHA_A }, b.dir, b.deps)
+  // Abilitato senza il consenso «attiva» registrato (per esempio dopo un crash): l'avvio lo spegne; quello dell'utente resta.
+  b.comandi.length = 0
+  assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: ['ponytail'] })
+  assert.deepStrictEqual(b.comandi, ['claude plugin list --json', 'claude plugin disable ponytail@chipmanager-base --scope user'])
+  b.comandi.length = 0
+  assert.deepStrictEqual(S.abilita('ponytail', b.dir, b.deps), { id: 'ponytail', plugin: 'ponytail@chipmanager-base' })
+  assert.deepStrictEqual(b.comandi, ['claude plugin enable ponytail@chipmanager-base --scope user'])
+  assert.strictEqual(JSON.parse(fs.readFileSync(S.fileRecord(b.dir), 'utf8')).voci.ponytail.abilitato, true)
+  b.comandi.length = 0
+  assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: [] })
+  // La revisione installata cambia dopo l'approvazione: niente abilitazione, e l'avvio lo spegne.
+  fs.writeFileSync(b.installati, JSON.stringify({ plugins: { 'ponytail@chipmanager-base': [{ scope: 'user', gitCommitSha: SHA_B }] } }))
+  assert.throws(() => S.abilita('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.cambiato')
+  assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: ['ponytail'] })
+  // Elenco illeggibile: ignoto, nessun comando.
+  const x = bancoSkill()
+  assert.deepStrictEqual(S.controlla(x.dir, { ...x.deps, esegui: () => ({ status: 1, stdout: '' }) }), { spenti: [], ignoto: true })
+})
