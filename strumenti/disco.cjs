@@ -70,7 +70,11 @@ function ascolta(nome) {
 }
 
 /** Esegue `fn` tenendo il mutex; null se non si ottiene entro `attesa` ms. */
+/** I mutex di produzione della corsia API e dell'accesso: le prove non devono mai chiederli (giro 4 di F13a, punto 2). */
+const PRODUZIONE_MUTEX = nome => nome === 'api-claude:macchina' || /^accesso(-vivo)?:/.test(nome)
 async function conMutex(nome, attesa, fn) {
+  // Le prove (CHIPMANAGER_PROVE=1, impostato da prova-disco) usano solo mutex propri: uno di produzione è un errore.
+  if (process.env.CHIPMANAGER_PROVE === '1' && PRODUZIONE_MUTEX(nome)) throw new Error(`prova: mutex di produzione richiesto (${nome})`)
   const fine = Date.now() + attesa
   for (;;) {
     let server
@@ -400,7 +404,7 @@ async function spostaDati(config, repo, da, a, richiesta, deps = {}) {
     const r = await conMutex(lock[0], attesa, () => tieni(lock.slice(1), attesa, fn))
     return r.occupato ? [3, ''] : r.valore
   }
-  return tieni([mutexConfig(config), MUTEX_AZIONI(azioni), API.MUTEX_API], 8000, async () => {
+  return tieni([mutexConfig(config), MUTEX_AZIONI(azioni), deps.mutexApi ?? API.MUTEX_API], 8000, async () => {
     // Counted under the actions mutex, never before it: a record created in between, with its supervisor already
     // running, would stay unlocked and the copy would freeze a state the supervisor keeps changing at the source.
     const registri = censisci()

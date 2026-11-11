@@ -198,7 +198,9 @@ const voceValida = v => !!v && typeof v === 'object' && !Array.isArray(v) && typ
   (v.gruppi === undefined || (Array.isArray(v.gruppi) && v.gruppi.length <= 2 && v.gruppi.every(g => typeof g === 'string' && GRUPPO_RE.test(g)))) &&
   // Giro 2: la cartella delle azioni (per riconoscere un mancato avvio) e il costo riportato da un esito non pulito.
   (v.dati === undefined || (typeof v.dati === 'string' && path.isAbsolute(v.dati) && v.dati.length <= 1000)) &&
-  (v.riportato === undefined || (typeof v.riportato === 'number' && Number.isFinite(v.riportato) && v.riportato >= 0))
+  (v.riportato === undefined || (typeof v.riportato === 'number' && Number.isFinite(v.riportato) && v.riportato >= 0)) &&
+  // Giro 4: la voce chiusa da un recupero, che un consuntivo tardivo può ancora alzare.
+  (v.recuperato === undefined || v.recuperato === true)
 const GRUPPO_RE = /^(catena:c-[a-z0-9]{6,20}|dirigente:a-[a-z0-9]{6,20})$/
 /** Quanto un gruppo ha già impegnato in tutti i mesi: contato = costo stimato (ignoto = tetto intero), prenotato = tetto. */
 // Revisione F13a, giro 2, punto 3 (tetto morbido): a consuntivo conta sempre il più alto fra costo riportato e
@@ -232,8 +234,17 @@ function prenotaSpesa(dm, tentativo, mese, tetto, budget, progetto, limiteProget
 function contaSpesaQui(dm, tentativo, costo, riportato) {
   const s = leggiSpesa(dm)
   const v = s.voci[tentativo]
-  if (!v || v.stato === 'contato') return
   const numero = x => typeof x === 'number' && Number.isFinite(x) && x >= 0
+  if (!v) return
+  if (v.stato === 'contato') {
+    // Giro 4 di F13a, punto 1: dopo un recupero il consuntivo vero conta ancora la differenza in più (mai in meno);
+    // una voce chiusa dal suo supervisore resta com'è (una seconda contabilizzazione non cambia nulla).
+    const arrivato = Math.max(numero(costo) ? costo : -1, numero(riportato) ? riportato : -1)
+    if (!v.recuperato || arrivato <= (v.riportato ?? -1)) return
+    s.voci[tentativo] = { ...v, riportato: arrivato }
+    d.scriviDati(fileSpesa(dm), JSON.stringify(s))
+    return
+  }
   s.voci[tentativo] = { ...v, stato: 'contato', costo: numero(costo) ? costo : null, ...(numero(riportato) && { riportato }) }
   d.scriviDati(fileSpesa(dm), JSON.stringify(s))
 }
@@ -244,20 +255,24 @@ function contaSpesaQui(dm, tentativo, costo, riportato) {
  * record la spesa è incerta: conta la prenotazione, o il costo salvato nell'esecuzione se più alto. Una voce senza
  * cartella (registri vecchi) resta com'è. Sotto il mutex.
  */
-function recuperaPrenotazioni(dm) {
+async function recuperaPrenotazioni(dm) {
   const s = leggiSpesa(dm)
   let cambiato = false
   const numero = x => typeof x === 'number' && Number.isFinite(x) && x >= 0
   for (const [t, v] of Object.entries(s.voci)) {
     if (v.stato !== 'prenotato' || !v.dati) continue
-    cambiato = true
     const file = d.fileEsecuzione(v.dati, t)
     // Giro 3, punto 1: senza avvio la prenotazione si annulla davvero (mese e gruppo insieme): lo stesso tentativo può
     // prenotare di nuovo passando da tutti i limiti, e il suo consuntivo conterà.
     if (!fs.existsSync(file)) {
       delete s.voci[t]
+      cambiato = true
       continue
     }
+    // Giro 4, punto 1: un supervisore che tiene ancora la sua esecuzione sta chiudendo il conto (processo uscito, stream
+    // aperti): il recupero non lo anticipa. Il supervisore tiene quel lock fino al consuntivo, che prende questo mutex.
+    if ((await d.conMutex(d.mutexEsecuzione('api', file), 0, () => true)).occupato) continue
+    cambiato = true
     // Giro 3, punto 2: con l'avvio la spesa è incerta; un costo già salvato nell'esecuzione (pulito o riportato) conta se
     // supera la prenotazione, altrimenti conta la prenotazione intera.
     let es
@@ -267,9 +282,18 @@ function recuperaPrenotazioni(dm) {
       es = undefined
     }
     const salvato = Math.max(numero(es?.costo) ? es.costo : -1, numero(es?.costoRiportato) ? es.costoRiportato : -1)
-    s.voci[t] = { ...v, stato: 'contato', costo: null, ...(salvato >= 0 && { riportato: salvato }) }
+    s.voci[t] = { ...v, stato: 'contato', costo: null, recuperato: true, ...(salvato >= 0 && { riportato: salvato }) }
   }
   if (cambiato) d.scriviDati(fileSpesa(dm), JSON.stringify(s))
+}
+
+/** Giro 4: una liberazione del lock senza uscita registrata conta la prenotazione intera, ma resta alzabile dal consuntivo. */
+function segnaRecuperata(dm, tentativo) {
+  const s = leggiSpesa(dm)
+  const v = s.voci[tentativo]
+  if (!v || v.stato === 'contato') return
+  s.voci[tentativo] = { ...v, stato: 'contato', costo: null, recuperato: true }
+  d.scriviDati(fileSpesa(dm), JSON.stringify(s))
 }
 
 /** Come `contaSpesaQui`, sotto lo stesso mutex del lock che prenota. Una seconda contabilizzazione non cambia nulla. */
@@ -435,7 +459,7 @@ async function liberaApi(dm, deps = {}) {
     if (c.motivo) return { libero: false, tentativo: rec.tentativo, ...c }
     fs.rmSync(fileLock(dm), { force: true })
     fs.rmSync(fileConsegna(dm, rec.tentativo), { force: true })
-    if (!rec.uscita) contaSpesaQui(dm, rec.tentativo, null)
+    if (!rec.uscita) segnaRecuperata(dm, rec.tentativo)
     return { libero: true, liberato: rec.tentativo }
   })
   return r.occupato ? { libero: false, motivo: 'mutex' } : r.valore
@@ -571,7 +595,7 @@ async function lanciaApi(dir, id, tentativo, input, deps = {}) {
       fs.rmSync(dirChiavi(dm), { recursive: true, force: true })
       // Revisione F13a, giro 2, punto 4: e ogni prenotazione rimasta aperta è di un processo chiuso fra prenotazione e lock.
       try {
-        recuperaPrenotazioni(dm)
+        await recuperaPrenotazioni(dm)
       } catch {
         return [5, JSON.stringify({ registro: 'non valido' })]
       }

@@ -15,6 +15,8 @@ const fuoriDalRepo = []
 const fuori = () => { const d = fs.mkdtempSync(path.join(tmpVero, 'board-')); fuoriDalRepo.push(d); return d }
 fs.mkdirSync(radiceProve, { recursive: true })
 process.env.TMP = process.env.TEMP = process.env.TMPDIR = radiceProve
+// Giro 4 di F13a, punto 2: in queste prove (e nei processi che lanciano) un mutex di produzione è un errore.
+process.env.CHIPMANAGER_PROVE = '1'
 // I collegamenti simbolici lasciati qui fanno fallire `claude plugin install` dalla cartella.
 after(() => { for (const d of [radiceProve, ...fuoriDalRepo]) fs.rmSync(d, { recursive: true, force: true, maxRetries: 3 }) })
 
@@ -1251,26 +1253,8 @@ const API = new Proxy(API_VERA, {
     return (...a) => f(...a.slice(0, f.length), ...Array(Math.max(0, f.length - a.length)).fill(undefined), { ...ISOLA, ...(a[f.length] ?? {}) })
   },
 })
-/**
- * Giro 3 di F13a, punto 3: se la corsia API prende un mutex di produzione dentro una prova (lock della macchina, accesso),
- * la prova fallisce. Le prove che lo prendono apposta lo fanno dal proprio codice, non dalla corsia API.
- */
-const PRODUZIONE = nome => nome === API_VERA.MUTEX_API || /^accesso:/.test(nome)
-const conMutexVero = require(DISCO).conMutex
-let produzioneAmmessa = false
-/** Solo per la prova che mostra apposta che la produzione si ferma sul lock tenuto da un altro processo. */
-const conMutexDiProduzione = async fn => {
-  produzioneAmmessa = true
-  try {
-    return await fn()
-  } finally {
-    produzioneAmmessa = false
-  }
-}
-require(DISCO).conMutex = (nome, ...resto) => {
-  if (!produzioneAmmessa && PRODUZIONE(nome) && /api-claude\.cjs/.test(new Error().stack ?? '')) throw new Error(`prova: mutex di produzione dalla corsia API (${nome})`)
-  return conMutexVero(nome, ...resto)
-}
+/** Giro 4 di F13a, punto 2: spostaDati con il mutex della corsia API delle prove (mai quello di produzione). */
+const spostaIsolata = (config, repo, da, a, richiesta, deps = {}) => require(DISCO).spostaDati(config, repo, da, a, richiesta, { mutexApi: ISOLA.mutexApi, ...deps })
 const CHIAVE_PROVA = 'sk-ant-prova-0123456789'
 /** Una voce del registro senza la cartella delle azioni (giro 2 di F13a), che cambia a ogni prova. */
 const senzaDati = v => {
@@ -1465,7 +1449,8 @@ test('F6.2 lock: senza uscita registrata nessuna liberazione automatica; «Liber
   assert.deepStrictEqual(await API.liberaApi(dm, { elenco: () => [], adesso: dopo }), { libero: true, liberato: 'az-api0005' })
   assert.strictEqual(fs.existsSync(API.fileChiave(dm, 'az-api0005')), false)
   // Il costo di un tentativo liberato a mano è ignoto: conta il tetto intero.
-  assert.deepStrictEqual(senzaDati(API.leggiSpesa(dm).voci['az-api0005']), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 2, stato: 'contato', costo: null })
+  // Giro 4 di F13a: la liberazione la segna recuperata, così un consuntivo tardivo può ancora alzarla.
+  assert.deepStrictEqual(senzaDati(API.leggiSpesa(dm).voci['az-api0005']), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 2, stato: 'contato', costo: null, recuperato: true })
 })
 
 test('F6.2 lock: uscita registrata ma un discendente vivo: resta bloccato finché «Termina» o «Libera»', async () => {
@@ -1960,9 +1945,9 @@ test('F8.3 nessun colore né opacità scritti a mano nelle viste: solo tema.ts (
 // --- corsia API isolata nelle prove -------------------------------------------------------------------------------------
 
 test('corsia API: le prove usano mutex propri; il lock della macchina tenuto da un altro processo non le ferma', async () => {
-  // Un altro processo (un pannello vero, un'altra prova) tiene il mutex di produzione della corsia API.
+  // Un altro processo tiene un mutex della corsia API (qui uno esclusivo di questa prova, al posto di quello di produzione).
   const tenitore = spawn(process.execPath, ['-e',
-    `require(${JSON.stringify(DISCO)}).conMutex('api-claude:macchina', 1000, () => { process.stdout.write('preso'); return new Promise(() => {}) })`])
+    `require(${JSON.stringify(DISCO)}).conMutex(${JSON.stringify(`prova:contesa-${process.pid}`)}, 1000, () => { process.stdout.write('preso'); return new Promise(() => {}) })`])
   await new Promise(r => tenitore.stdout.once('data', r))
   try {
     const dir = tmp()
@@ -1972,8 +1957,8 @@ test('corsia API: le prove usano mutex propri; il lock della macchina tenuto da 
     const [codice] = await API.lanciaApi(dir, 'a-iso00001', 'az-iso00001', ingressoApi(root), { dirMacchina: tmp(), fonti: fontiPulite(root), env: {}, supervisore: supervisoreFinto([]) })
     assert.deepStrictEqual([codice, Date.now() - inizio < 4000], [0, true])
     assert.strictEqual((await API.statoApi(tmp())).libero, true)
-    // La produzione no: senza i mutex delle prove lo stesso lock la ferma (stesso nome di sempre).
-    assert.strictEqual((await conMutexDiProduzione(() => API_VERA.statoApi(tmp(), { adesso: () => Date.now() }))).motivo, 'mutex')
+    // Simulata la contesa: chi usa il mutex tenuto dall'altro processo si ferma (come la produzione col suo).
+    assert.strictEqual((await API.statoApi(tmp(), { mutexApi: `prova:contesa-${process.pid}`, adesso: () => Date.now() })).motivo, 'mutex')
   } finally {
     tenitore.kill('SIGKILL')
     await new Promise(r => tenitore.on('exit', r))
@@ -2785,21 +2770,21 @@ test('Percorsi, doctor: «Sposta i dati» copia e verifica, poi punta il config 
   const testo = fs.readFileSync(config)
   const a = path.join(casa, 'chipmanager', 'progetti', 'owner__prova')
   // CAS sui byte del config, destinazione non vuota, cartelle annidate o uguali, destinazione dentro un repository: niente.
-  assert.deepStrictEqual(await D.spostaDati(config, 'owner/prova', da, a, { impronta: impronta(Buffer.from('altro')) }), [4, ''])
-  assert.deepStrictEqual((await D.spostaDati(config, 'owner/prova', da, path.join(da, 'sotto'), { impronta: impronta(testo) }))[0], 2)
-  assert.deepStrictEqual((await D.spostaDati(config, 'owner/prova', da, da, { impronta: impronta(testo) }))[0], 2)
+  assert.deepStrictEqual(await spostaIsolata(config, 'owner/prova', da, a, { impronta: impronta(Buffer.from('altro')) }), [4, ''])
+  assert.deepStrictEqual((await spostaIsolata(config, 'owner/prova', da, path.join(da, 'sotto'), { impronta: impronta(testo) }))[0], 2)
+  assert.deepStrictEqual((await spostaIsolata(config, 'owner/prova', da, da, { impronta: impronta(testo) }))[0], 2)
   assert.throws(() => D.percorsoSicuro(path.join(repo, 'altrove')), /helper\.dentroWorkingTree/)
   assert.strictEqual(esegui(['sposta-dati', config, 'owner/prova', da, path.join(repo, 'altrove')], JSON.stringify({ impronta: impronta(testo) })).status, 6)
   const pieno = fuori()
   fs.writeFileSync(path.join(pieno, 'x'), 'x')
-  assert.strictEqual((await D.spostaDati(config, 'owner/prova', da, pieno, { impronta: impronta(testo) }))[0], 4)
+  assert.strictEqual((await spostaIsolata(config, 'owner/prova', da, pieno, { impronta: impronta(testo) }))[0], 4)
   assert.deepStrictEqual(fs.readFileSync(config), testo)
   // Lo spostamento vero: file identici, il link saltato e detto, il config aggiornato, la vecchia cartella intatta.
   // Il link (board) non si copia: prima la richiesta di accettarlo (config invariato), poi lo spostamento con l'«accetta».
-  const [c0, u0] = await D.spostaDati(config, 'owner/prova', da, a, { impronta: impronta(testo) })
+  const [c0, u0] = await spostaIsolata(config, 'owner/prova', da, a, { impronta: impronta(testo) })
   assert.deepStrictEqual([c0, JSON.parse(u0).saltati], [4, ['board']])
   assert.deepStrictEqual(fs.readFileSync(config), testo)
-  const [codice, uscita] = await D.spostaDati(config, 'owner/prova', da, a, { impronta: impronta(testo), accettaSaltati: ['board'] })
+  const [codice, uscita] = await spostaIsolata(config, 'owner/prova', da, a, { impronta: impronta(testo), accettaSaltati: ['board'] })
   assert.strictEqual(codice, 0, uscita)
   const esito = JSON.parse(uscita)
   assert.deepStrictEqual([esito.copiati, esito.saltati], [2, ['board']])
@@ -2909,7 +2894,7 @@ const configuraDa = async x => {
 test('Percorsi, rilievo 2: spostamento in staging esclusivo; un file estraneo comparso nella destinazione non si tocca; antenato sostituito = fermo', async () => {
   const x = datiDaSpostare()
   const testo = await configuraDa(x)
-  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+  const r = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
     dopoCopia: () => {
       fs.mkdirSync(x.a, { recursive: true })
       fs.writeFileSync(path.join(x.a, 'estraneo.txt'), 'di qualcun altro')
@@ -2923,7 +2908,7 @@ test('Percorsi, rilievo 2: spostamento in staging esclusivo; un file estraneo co
   const y = datiDaSpostare()
   const testoY = await configuraDa(y)
   const altrove = fuori()
-  const r2 = await D.spostaDati(y.config, 'owner/prova', y.da, y.a, { impronta: impronta(testoY) }, {
+  const r2 = await spostaIsolata(y.config, 'owner/prova', y.da, y.a, { impronta: impronta(testoY) }, {
     dopoCopia: () => {
       const progetti = path.dirname(y.a)
       fs.renameSync(progetti, `${progetti}-vero`)
@@ -2941,11 +2926,11 @@ test('Percorsi, rilievo 3: lo spostamento tiene gli stessi lock degli scrittori 
   const testo = await configuraDa(x)
   const occupati = {}
   const prova = async (nome, m) => (occupati[nome] = !!(await D.conMutex(m, 0, () => true)).occupato)
-  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+  const r = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
     primaDelConfig: async () => {
       await prova('azioni', D.MUTEX_AZIONI(path.join(x.da, 'azioni')))
       await prova('config', D.MUTEX_AZIONI(path.dirname(x.config)) + ':config')
-      await prova('api', require('./api-claude.cjs').MUTEX_API)
+      await prova('api', ISOLA.mutexApi)
       await prova('cli', D.mutexEsecuzione('cli', path.join(x.da, 'azioni', 'esecuzioni', 'az-in00001.json')))
       await prova('apiEsecuzione', D.mutexEsecuzione('api', path.join(x.da, 'azioni', 'esecuzioni', 'az-in00001.json')))
     },
@@ -2957,7 +2942,7 @@ test('Percorsi, rilievo 3: lo spostamento tiene gli stessi lock degli scrittori 
   const fileEs = path.join(y.da, 'azioni', 'esecuzioni', 'az-vivo0001.json')
   fs.writeFileSync(fileEs, '{}')
   const testoY = await configuraDa(y)
-  const tenuto = await D.conMutex(D.mutexEsecuzione('cli', fileEs), 0, () => D.spostaDati(y.config, 'owner/prova', y.da, y.a, { impronta: impronta(testoY) }))
+  const tenuto = await D.conMutex(D.mutexEsecuzione('cli', fileEs), 0, () => spostaIsolata(y.config, 'owner/prova', y.da, y.a, { impronta: impronta(testoY) }))
   assert.strictEqual(tenuto.valore[0], 3)
   assert.strictEqual(fs.existsSync(y.a), false)
   assert.deepStrictEqual(fs.readFileSync(y.config), testoY)
@@ -2967,12 +2952,12 @@ test('Percorsi, rilievo 4: link saltati = config invariato e omissioni dette; so
   const x = datiDaSpostare()
   giunzione(fuori(), path.join(x.da, 'board'))
   const testo = await configuraDa(x)
-  const [codice, uscita] = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
+  const [codice, uscita] = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
   assert.strictEqual(codice, 4)
   assert.deepStrictEqual(JSON.parse(uscita).saltati, ['board'])
   assert.strictEqual(fs.existsSync(x.a), false)
   assert.deepStrictEqual(fs.readFileSync(x.config), testo)
-  const [c2, u2] = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo), accettaSaltati: ['board'] })
+  const [c2, u2] = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo), accettaSaltati: ['board'] })
   assert.strictEqual(c2, 0, u2)
   assert.strictEqual(JSON.parse(fs.readFileSync(x.config, 'utf8')).progetti['owner/prova'].cartella, x.a.replace(/\\/g, '/'))
 })
@@ -2998,7 +2983,7 @@ test('Paths, round 2 finding 1: a staging subfolder swapped for a link during th
   }
   let r
   try {
-    r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
+    r = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
   } finally {
     fs.mkdirSync = mkdir
   }
@@ -3018,7 +3003,7 @@ test('Paths, round 2 finding 1: an alias above the root re-pointed during the mo
   const x = { ...datiDaSpostare(), config: path.join(ponte, 'chipmanager', 'config.json'), a: path.join(ponte, 'chipmanager', 'progetti', 'owner__prova') }
   const testo = await configuraDa(x)
   let estranea
-  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+  const r = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
     dopoCopia: () => {
       const nome = fs.readdirSync(path.join(fisico1, 'chipmanager', 'progetti')).find(n => n.includes('.staging-'))
       estranea = path.join(fisico2, 'chipmanager', 'progetti', nome)
@@ -3040,7 +3025,7 @@ test('Paths, round 2 finding 2: executions are counted under the actions mutex: 
   const fileEs = path.join(x.da, 'azioni', 'esecuzioni', 'az-tardi001.json')
   let rilascia
   const tenuto = await D.conMutex(D.MUTEX_AZIONI(path.join(x.da, 'azioni')), 0, async () => {
-    const sposta = D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
+    const sposta = spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
     await new Promise(ok => setTimeout(ok, 150))
     // A launcher writes the record under the actions mutex; its supervisor then holds the record's own lock.
     fs.writeFileSync(fileEs, JSON.stringify({ id: 'a-tardi0001', tentativo: 'az-tardi001', stato: 'avviata' }))
@@ -3055,7 +3040,7 @@ test('Paths, round 2 finding 2: executions are counted under the actions mutex: 
   // A set that changes between the count and the locks: counted again, the move stops cleanly.
   const y = datiDaSpostare()
   const testoY = await configuraDa(y)
-  const r = await D.spostaDati(y.config, 'owner/prova', y.da, y.a, { impronta: impronta(testoY) }, {
+  const r = await spostaIsolata(y.config, 'owner/prova', y.da, y.a, { impronta: impronta(testoY) }, {
     dopoLock: () => fs.writeFileSync(path.join(y.da, 'azioni', 'esecuzioni', 'az-nuova001.json'), '{}'),
   })
   assert.deepStrictEqual([r[0], JSON.parse(r[1]).motivo], [3, 'esecuzioni cambiate'])
@@ -3069,17 +3054,17 @@ test('Paths, round 2 finding 3: the confirmed names must be exactly the skipped 
   const nomi = Array.from({ length: 201 }, (_, i) => `link-${String(i).padStart(3, '0')}`)
   for (const n of nomi) giunzione(altrove, path.join(x.da, n))
   const testo = await configuraDa(x)
-  const [c0, u0] = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
+  const [c0, u0] = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) })
   assert.strictEqual(c0, 4)
   const saltati = JSON.parse(u0).saltati
   assert.deepStrictEqual([...saltati].sort(), nomi)
   for (const accettaSaltati of [saltati.slice(1), [...saltati, 'non-saltato']]) {
-    const [c, u] = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo), accettaSaltati })
+    const [c, u] = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo), accettaSaltati })
     assert.deepStrictEqual([c, JSON.parse(u).saltati.length], [4, 201])
     assert.strictEqual(fs.existsSync(x.a), false)
     assert.deepStrictEqual(fs.readFileSync(x.config), testo)
   }
-  const [c2, u2] = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo), accettaSaltati: saltati })
+  const [c2, u2] = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo), accettaSaltati: saltati })
   assert.strictEqual(c2, 0, u2)
   assert.strictEqual(JSON.parse(fs.readFileSync(x.config, 'utf8')).progetti['owner/prova'].cartella, x.a.replace(/\\/g, '/'))
 })
@@ -3094,7 +3079,7 @@ test('Paths, round 3 finding 2a: the alias above the root re-pointed before the 
   const x = { ...datiDaSpostare(), config: path.join(ponte, 'chipmanager', 'config.json'), a: path.join(ponte, 'chipmanager', 'progetti', 'owner__prova') }
   const testo = await configuraDa(x)
   const estraneo = path.join(fisico2, 'chipmanager', 'config.json')
-  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+  const r = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
     primaDelConfig: () => {
       fs.mkdirSync(path.dirname(estraneo), { recursive: true })
       fs.writeFileSync(estraneo, '{"di":"altri"}')
@@ -3112,7 +3097,7 @@ test('Paths, round 3 finding 2a: the alias above the root re-pointed before the 
 test('Paths, round 4: a file added inside the original staging folder (same ino) before the rename: nothing unverified is published', async () => {
   const x = datiDaSpostare()
   const testo = await configuraDa(x)
-  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+  const r = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
     dopoCopia: () => {
       const sopra = path.dirname(x.a)
       const nome = fs.readdirSync(sopra).find(n => n.includes('.staging-'))
@@ -3130,7 +3115,7 @@ test('Paths, round 4: a file added inside the original staging folder (same ino)
 test('Paths, round 3 finding 2b: a staging folder swapped for another one with the same name before the rename: nothing unverified is published', async () => {
   const x = datiDaSpostare()
   const testo = await configuraDa(x)
-  const r = await D.spostaDati(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
+  const r = await spostaIsolata(x.config, 'owner/prova', x.da, x.a, { impronta: impronta(testo) }, {
     dopoCopia: () => {
       // Same name and same verified files, plus one more: only the folder's identity tells it apart.
       const sopra = path.dirname(x.a)
@@ -4210,7 +4195,7 @@ test('Revisione F13a, giro 3, punto 2: nel recupero conta il costo già salvato 
   passo('a-cat00002', 'az-cat00002', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
   const [c, u] = await avvia(dm, 'a-cat00002', 'az-cat00002', config)
   assert.deepStrictEqual([c, JSON.parse(u)], [5, { gruppo: 'catena', speso: 0.4, tettoGruppo: 0.3 }])
-  assert.deepStrictEqual(senzaDati(API.leggiSpesa(dm).voci['az-cra00001']), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'contato', costo: null, gruppi: ['catena:c-catena001'], riportato: 0.4 })
+  assert.deepStrictEqual(senzaDati(API.leggiSpesa(dm).voci['az-cra00001']), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'contato', costo: null, gruppi: ['catena:c-catena001'], riportato: 0.4, recuperato: true })
   assert.strictEqual(stdin.length, 0)
   // Senza costo salvato (o illeggibile) conta la prenotazione intera.
   const dm2 = tmp()
@@ -4224,9 +4209,59 @@ test('Revisione F13a, giro 3, punto 2: nel recupero conta il costo già salvato 
 test('Revisione F13a, giro 3, punto 3: la corsia API nelle prove non prende mai il mutex di produzione; il wrapper completa i posizionali', async () => {
   const dm = tmp()
   fs.writeFileSync(API.fileSpesa(dm), JSON.stringify({ v: 1, voci: { 'az-mut00001': { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 1, stato: 'prenotato' } } }))
-  // Senza ISOLA (chiamata diretta) il controllo ferma la prova.
+  // Senza ISOLA (chiamata diretta) il controllo ferma la prova; anche chiederlo apertamente, da qualunque codice.
   await assert.rejects(API_VERA.contaSpesa(dm, 'az-mut00001', 0.2), /mutex di produzione/)
+  await assert.rejects(require(DISCO).conMutex(API_VERA.MUTEX_API, 0, () => true), /mutex di produzione/)
+  await assert.rejects(require(DISCO).conMutex('accesso:claude', 0, () => true), /mutex di produzione/)
   // Col wrapper e tre soli argomenti: ISOLA va nei deps, riportato resta undefined.
   await API.contaSpesa(dm, 'az-mut00001', 0.2)
   assert.deepStrictEqual(API.leggiSpesa(dm).voci['az-mut00001'], { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 1, stato: 'contato', costo: 0.2 })
+})
+
+// --- Revisione F13a, giro 4 (recupero e supervisore) ------------------------------------------------------------------
+
+test('Revisione F13a, giro 4, punto 1: il recupero non anticipa un supervisore che sta chiudendo il conto; il consuntivo tardivo conta la differenza', async () => {
+  const { dir, stdin, passo, avvia, registro } = spesaGiro2()
+  const dm = tmp()
+  const config = configApi({ apiClaude: { budgetUsd: 50, tetto: 5 }, modoLavoro: { pipeline: { tettoUsd: 0.3 } } })
+  const voce = { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'prenotato', gruppi: ['catena:c-catena001'], dati: path.resolve(dir) }
+  registro(dm, { 'az-sup00001': voce })
+  const esec = path.join(dir, 'esecuzioni', 'az-sup00001.json')
+  fs.mkdirSync(path.dirname(esec), { recursive: true })
+  fs.writeFileSync(esec, JSON.stringify({ id: 'a-sup00001', tentativo: 'az-sup00001', stato: 'avviata' }))
+  // Il supervisore ha il processo uscito ma tiene ancora la sua esecuzione: un nuovo avvio non recupera la sua voce.
+  let chiudi
+  const tenuto = new Promise(r => (chiudi = r))
+  let preso
+  const pronto = new Promise(r => (preso = r))
+  const supervisore = require(DISCO).conMutex(require(DISCO).mutexEsecuzione('api', esec), 0, async () => {
+    preso()
+    await tenuto
+    await API.contaSpesa(dm, 'az-sup00001', null, 0.4)
+  })
+  await pronto
+  passo('a-cat00001', 'az-cat00001', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  assert.deepStrictEqual(await avvia(dm, 'a-cat00001', 'az-cat00001', config), [0, ''])
+  assert.strictEqual(API.leggiSpesa(dm).voci['az-sup00001'].stato, 'prenotato')
+  assert.strictEqual(JSON.parse(stdin.at(-1)).tetto, 0.2)
+  // Il consuntivo vero (0,40 $) arriva e conta: mese e gruppo 0,40 + 0,20, il passo dopo non parte.
+  chiudi()
+  await supervisore
+  assert.strictEqual(API.leggiSpesa(dm).voci['az-sup00001'].riportato, 0.4)
+  fs.rmSync(API.fileLock(dm))
+  passo('a-cat00002', 'az-cat00002', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  const [c, u] = await avvia(dm, 'a-cat00002', 'az-cat00002', config)
+  assert.deepStrictEqual([c, JSON.parse(u).gruppo], [5, 'catena'])
+})
+
+test('Revisione F13a, giro 4, punto 1: dopo un recupero il consuntivo vero alza la voce (mai la abbassa); una voce chiusa dal supervisore resta', async () => {
+  const dm = tmp()
+  const base = { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'contato', costo: null, gruppi: ['catena:c-catena001'] }
+  fs.writeFileSync(API.fileSpesa(dm), JSON.stringify({ v: 1, voci: { 'az-rec00001': { ...base, recuperato: true }, 'az-chi00001': { ...base, costo: 0.1 } } }))
+  await API.contaSpesa(dm, 'az-rec00001', 0.4)
+  await API.contaSpesa(dm, 'az-rec00001', 0.2)
+  await API.contaSpesa(dm, 'az-chi00001', 0.4)
+  const v = API.leggiSpesa(dm).voci
+  assert.deepStrictEqual([v['az-rec00001'].riportato, v['az-rec00001'].costo, v['az-chi00001'].costo, v['az-chi00001'].riportato], [0.4, null, 0.1, undefined])
+  assert.strictEqual(Math.round(API.spesoNelMese(v, '2026-11') * 100) / 100, 0.5)
 })
