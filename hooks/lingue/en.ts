@@ -143,9 +143,16 @@ const en = {
   // Settings — setup and doctor: project rules (routing.json) missing or invalid
   "rot.titolo": "Project rules not readable: {motivo}",
   "rot.incompleto": "routing.json incomplete",
-  "rot.spiega": "chipManager reads this project's rules from .claude/routing.json in the repository (or the path in the config's «routing» field): allowed models, efforts, reviewers and Codex lanes. Until the file is complete, every start stays blocked. Setup does not write it: ask the project maintainer or Claude to prepare it, then refresh.",
+  "rot.spiega": "chipManager reads this project's rules from .claude/routing.json in the repository (or the path in the config's «routing» field): allowed models, efforts, reviewers and Codex lanes. Until the file is complete, every start stays blocked. When it is missing, you can create default rules here after checking them; an existing file is never changed.",
   "rot.guida": "Guide: {url}",
   "rot.apri": "Open the routing.json guide",
+  "rot.crea": "Create default rules",
+  "rot.conferma": "Create {percorso} with this content? Nothing else is written, and an existing file is never replaced.\n\n{testo}",
+  "rot.creato": "Default rules created",
+  "rot.esiste": "routing.json already exists: it is never overwritten",
+  "rot.collegamento": "The path to routing.json goes through a link or junction, or into .git: nothing written",
+  "rot.nonScritto": "routing.json could not be written",
+  "rot.campo": "routing.json: «{campo}» missing or invalid",
   // Balancing: positions, profiles, thresholds, budgets
   "pos.moltoMeno": "Much less (does not exclude)",
   "pos.meno": "Less",

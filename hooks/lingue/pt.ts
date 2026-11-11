@@ -141,9 +141,16 @@ const pt: Dizionario = {
   // Settings — setup and doctor: project rules (routing.json) missing or invalid
   "rot.titolo": "Regras do projeto ilegíveis: {motivo}",
   "rot.incompleto": "routing.json incompleto",
-  "rot.spiega": "O chipManager lê as regras deste projeto em .claude/routing.json no repositório (ou no caminho do campo «routing» da configuração): modelos, effort, revisores e faixas do Codex permitidos. Enquanto o arquivo não estiver completo, todo início fica bloqueado. A configuração guiada não o escreve: peça a quem mantém o projeto ou ao Claude que o prepare e depois atualize.",
+  "rot.spiega": "O chipManager lê as regras deste projeto em .claude/routing.json no repositório (ou no caminho do campo «routing» da configuração): modelos, effort, revisores e faixas do Codex permitidos. Enquanto o arquivo não estiver completo, todo início fica bloqueado. Se ele faltar, você pode criar aqui as regras padrão depois de conferi-las; um arquivo existente nunca é alterado.",
   "rot.guida": "Guia: {url}",
   "rot.apri": "Abrir o guia do routing.json",
+  "rot.crea": "Criar regras padrão",
+  "rot.conferma": "Criar {percorso} com este conteúdo? Nada mais é escrito e um arquivo existente nunca é substituído.\n\n{testo}",
+  "rot.creato": "Regras padrão criadas",
+  "rot.esiste": "routing.json já existe: nunca é sobrescrito",
+  "rot.collegamento": "O caminho do routing.json passa por um link ou junction, ou dentro de .git: nada foi escrito",
+  "rot.nonScritto": "Não foi possível escrever o routing.json",
+  "rot.campo": "routing.json: «{campo}» ausente ou inválido",
   // Balancing: positions, profiles, thresholds, budgets
   "pos.moltoMeno": "Muito menos (não exclui)",
   "pos.meno": "Menos",

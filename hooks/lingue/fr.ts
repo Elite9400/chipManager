@@ -141,9 +141,16 @@ const fr: Dizionario = {
   // Settings — setup and doctor: project rules (routing.json) missing or invalid
   "rot.titolo": "Règles du projet illisibles : {motivo}",
   "rot.incompleto": "routing.json incomplet",
-  "rot.spiega": "chipManager lit les règles de ce projet dans .claude/routing.json du dépôt (ou au chemin du champ « routing » de la configuration) : modèles, effort, relecteurs et voies Codex autorisés. Tant que le fichier n'est pas complet, tout démarrage reste bloqué. La configuration guidée ne l'écrit pas : demandez au responsable du projet ou à Claude de le préparer, puis actualisez.",
+  "rot.spiega": "chipManager lit les règles de ce projet dans .claude/routing.json du dépôt (ou au chemin du champ « routing » de la configuration) : modèles, effort, relecteurs et voies Codex autorisés. Tant que le fichier n'est pas complet, tout démarrage reste bloqué. S'il manque, vous pouvez créer ici les règles par défaut après les avoir vérifiées ; un fichier existant n'est jamais modifié.",
   "rot.guida": "Guide : {url}",
   "rot.apri": "Ouvrir le guide de routing.json",
+  "rot.crea": "Créer les règles par défaut",
+  "rot.conferma": "Créer {percorso} avec ce contenu ? Rien d'autre n'est écrit et un fichier existant n'est jamais remplacé.\n\n{testo}",
+  "rot.creato": "Règles par défaut créées",
+  "rot.esiste": "routing.json existe déjà : il n'est jamais écrasé",
+  "rot.collegamento": "Le chemin de routing.json passe par un lien ou une jonction, ou dans .git : rien n'a été écrit",
+  "rot.nonScritto": "routing.json n'a pas pu être écrit",
+  "rot.campo": "routing.json : « {campo} » absent ou non valide",
   // Balancing: positions, profiles, thresholds, budgets
   "pos.moltoMeno": "Beaucoup moins (n'exclut pas)",
   "pos.meno": "Moins",

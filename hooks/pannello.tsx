@@ -102,6 +102,8 @@ export type Ctx = {
   segnala: (come: 'gh' | 'url') => Promise<unknown>
   accedi: (tipo: TipoAccesso) => Promise<unknown>
   apriConfig: () => Promise<unknown>
+  /** Creates the default routing.json after a confirmation showing path and text; false = declined. Never overwrites. */
+  creaRegole: () => Promise<boolean>
   /** F13.3b/F13.4: a provider's key page or a help page (exact whitelist in the helper), «Check» and local detection. */
   apriPagina: (url: string) => Promise<unknown>
   verificaCompatibile: (id: string) => Promise<unknown>

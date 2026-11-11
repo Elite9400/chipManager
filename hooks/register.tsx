@@ -93,6 +93,7 @@ import { MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
 import { chiamaCompatibile, connessiCompatibili, rilevaLocali, verificaCompatibile } from './compatibili-host'
 import { cambiaPlugin, controllaApprovate, installaSkill, leggiPlugin } from './skill-base-host'
 import { voceSkill } from './skill-base'
+import { campoRegoleMancante, testoRegoleIniziali } from './regole-iniziali'
 import type { Chiave } from './lingua'
 /** F13.7: a refusal code from the install helper, shown in the panel as is (one of the dictionary keys skill.err.*). */
 const CODICE_SKILL = /^skill\.err\.\w+$/
@@ -492,19 +493,50 @@ async function chiSonoIo($: Eng, opz: { cache?: boolean } = {}): Promise<Chiaman
  * Configurazione locale e routing.json riletti dal disco: si chiama prima di ogni decisione, non solo
  * all'apertura. Una configurazione che non vale blocca come un routing.json illeggibile.
  */
-async function leggiRegole($: Eng) {
+/** Where the rules are read from: the project's `routing` (default `.claude/routing.json`) under the session's root. */
+async function percorsoRegole($: Eng) {
   const sr = await $.session.repo().catch(() => null)
   const root = sr?.root
+  const progetto = progettoDa(await leggiConfig($), repoGithub(sr?.remote) ?? (root ? checkoutDi(root) : null))
+  if (eMsg(progetto)) throw new Errore(progetto)
+  return { root, progetto, file: root ? `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/${progetto.routing}` : undefined }
+}
+
+/**
+ * «Create default rules»: only when the file is missing, after a confirmation that shows the exact path and the full
+ * text. The helper creates it exclusively (never overwrites, never inside .git, never through a link). false = declined.
+ */
+async function creaRegole($: Eng): Promise<boolean> {
+  const T = await lingue($)
+  const { root, progetto, file } = await percorsoRegole($)
+  if (!root || !file) throw errore('regole.routingAssente')
+  if (await $.fs.exists(file)) throw errore('rot.esiste')
+  const testo = testoRegoleIniziali()
+  const si = T('rot.crea')
+  if ((await $.ui.ask(T('rot.conferma', { percorso: file, testo }), { options: [si, T('comune.annulla')], header: 'chipManager' }).catch(() => '')) !== si) return false
+  conta({ processi: 1 }, 'regole-crea')
+  const e = await $.process.run(['node', `${$.plugin.root.replace(/\\/g, '/')}/strumenti/regole-crea.cjs`], { stdin: JSON.stringify({ root, relativo: progetto.routing, testo }), timeoutMs: 20_000 })
+  if (e.exitCode === 4) throw errore('rot.esiste')
+  if (e.exitCode === 6) throw errore('rot.collegamento')
+  if (e.exitCode !== 0) throw errore('rot.nonScritto')
+  await leggiRegole($)
+  return true
+}
+
+async function leggiRegole($: Eng) {
   let r: Regole
   let progetto: ReturnType<typeof progettoDa> | undefined
   try {
-    progetto = progettoDa(await leggiConfig($), repoGithub(sr?.remote) ?? (root ? checkoutDi(root) : null))
-    if (eMsg(progetto)) throw new Errore(progetto)
-    const f = root ? `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/${progetto.routing}` : undefined
+    const p = await percorsoRegole($)
+    progetto = p.progetto
+    const f = p.file
     if (!f || !(await $.fs.exists(f))) throw errore('regole.routingAssente')
     const json = JSON.parse((await $.fs.read(f)) as string) as { versione?: unknown }
+    const letto = regoleDa(json, `routing.json${json.versione !== undefined ? ` v${String(json.versione)}` : ''}`)
     r = {
-      ...regoleDa(json, `routing.json${json.versione !== undefined ? ` v${String(json.versione)}` : ''}`),
+      ...letto,
+      // An incomplete file names the first section it lacks, for the doctor and setup (the file is never touched).
+      ...(!letto.lette && { motivo: msg('rot.campo', { campo: campoRegoleMancante(json) ?? 'routing.json' }) }),
       sensibili: progetto.sensibili,
       background: progetto.background,
       risorse: progetto.risorse,
@@ -2804,6 +2836,7 @@ export const register: Register = (on, options) => {
       ricontrollaCambio: a => ricontrollaCambio($, a.id),
       accedi: tipo => accedi($, tipo),
       apriConfig: () => apriConfig($),
+      creaRegole: () => creaRegole($),
       apriPagina: async url => {
         // Il controllo vero è nell'helper (lista esatta): qui solo un rifiuto immediato e leggibile.
         const esito = await helper($, ['apri-pagina', url])

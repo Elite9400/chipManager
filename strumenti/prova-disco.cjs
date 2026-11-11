@@ -2856,6 +2856,35 @@ test('audit 10: the panel never opens a page as a bare promise: a refused page g
   assert.deepStrictEqual(nude, [])
 })
 
+test('default rules helper: exclusive creation only; never over a file, through a link or junction, or inside .git', () => {
+  const { crea } = require('./regole-crea.cjs')
+  const testo = '{"versione":1}\n'
+  const tipo = process.platform === 'win32' ? 'junction' : 'dir'
+  // Empty repository: `.claude` is created, then the file.
+  const root = fuori()
+  assert.strictEqual(crea({ root, relativo: '.claude/routing.json', testo }), 0)
+  assert.strictEqual(fs.readFileSync(path.join(root, '.claude', 'routing.json'), 'utf8'), testo)
+  // Already there: never overwritten.
+  assert.strictEqual(crea({ root, relativo: '.claude/routing.json', testo: '{"altro":1}' }), 4)
+  assert.strictEqual(fs.readFileSync(path.join(root, '.claude', 'routing.json'), 'utf8'), testo)
+  // `.claude` is a junction (or the repository root is one): refused, nothing written at the target.
+  const altrove = fuori()
+  const conLink = fuori()
+  fs.symlinkSync(altrove, path.join(conLink, '.claude'), tipo)
+  assert.strictEqual(crea({ root: conLink, relativo: '.claude/routing.json', testo }), 6)
+  const radiceLink = path.join(fuori(), 'radice')
+  fs.symlinkSync(fuori(), radiceLink, tipo)
+  assert.strictEqual(crea({ root: radiceLink, relativo: '.claude/routing.json', testo }), 6)
+  assert.deepStrictEqual(fs.readdirSync(altrove), [])
+  // Paths the config would refuse, `.git` anywhere, and text that is not JSON: invalid input, nothing created.
+  const vuota = fuori()
+  for (const relativo of ['../routing.json', '/abs/routing.json', '.git/routing.json', 'a/.GIT/r.json', ''])
+    assert.strictEqual(crea({ root: vuota, relativo, testo }), 2, relativo)
+  assert.strictEqual(crea({ root: path.join(vuota, '.git'), relativo: 'routing.json', testo }), 2)
+  assert.strictEqual(crea({ root: vuota, relativo: 'routing.json', testo: 'non json' }), 2)
+  assert.deepStrictEqual(fs.readdirSync(vuota), [])
+})
+
 test('F11.3 archivia il registro per cartella: rinomina reversibile, mai sovrascritto; poi la diagnosi non lo trova più', async () => {
   const dati = path.join(fuori(), 'dati')
   fs.mkdirSync(dati)

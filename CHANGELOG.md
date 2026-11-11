@@ -296,7 +296,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Button labels are unique, so no two controls share a name.
 - The disk tests use their own locks, so they never contend with a real panel or another run on the same machine.
 - Setup's summary and the doctor say when the project's `routing.json` is missing or incomplete, what it is for, and
-  where the guide is; the doctor no longer reports "all checks passed" while every start is blocked. Nothing is written.
+  where the guide is; the doctor no longer reports "all checks passed" while every start is blocked. An incomplete file
+  is named by its first missing section and never changed. When the file is missing, **Create default rules** writes
+  one after a confirmation that shows the exact path and full text: the mod's own model lists, Codex only on R1–R3,
+  R4/R5 with Claude and always reviewed, no external provider. Exclusive creation only: never over an existing file,
+  never inside `.git`, never through a link.
 - A valid empty Claude plan drops the earlier plan quotas, status-line ones included; the Claude API spend stays.
 - A malformed config shows "config.json cannot be read" in the Project section instead of breaking it.
 - The Qwen workspace host can be cleared: Apply removes it from the config.

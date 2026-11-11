@@ -646,10 +646,12 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       </Box>
     ) : null
 
-  // Rules missing or incomplete block every start, and setup does not write them: setup and doctor say what the file is
-  // and where the guide is. A config problem (`cfg.*`) has its own doctor finding; rules not read yet say nothing.
+  // Rules missing or incomplete block every start: setup and doctor say what the file is and where the guide is, and
+  // offer to create default rules when the file is missing (never over an existing one, whose bad section is named).
+  // A config problem (`cfg.*`) has its own doctor finding; rules not read yet say nothing.
   const motivoRegole = regoleOra.motivo
   const regoleDaSistemare = !regoleOra.lette && (motivoRegole === undefined ? !!regoleOra.fonte : typeof motivoRegole === 'string' || !motivoRegole.k.startsWith('cfg.'))
+  const regoleAssenti = typeof motivoRegole === 'object' && motivoRegole.k === 'regole.routingAssente'
   const regoleUi = () => {
     if (!regoleDaSistemare) return []
     const motivo = motivoRegole === undefined ? T('rot.incompleto') : T.m(motivoRegole)
@@ -657,6 +659,11 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
       <Box key="regole-guida" flexDirection="column" alignItems="flex-start" gap={terminale ? 0 : 'xs'}>
         {nota1('regole-guida-titolo', STATO.errore, '✗', T('rot.titolo', { motivo }))}
         {didascalia('regole-guida-spiega', T('rot.spiega'))}
+        {regoleAssenti ? (
+          <Button key="regole-guida-crea" variant="primary" label={T('rot.crea')}
+            onPress={() => void esegui('regole-guida', async () => { if (await c.creaRegole()) $.ui.toast(T('rot.creato')) }, '')} />
+        ) : null}
+        {errore('regole-guida')}
         {/* The helper opens exact help addresses only (no anchor): the published button opens the page, the text names the section. */}
         {SITO_PUBBLICATO
           ? <Button key="regole-guida-apri" variant="secondary" label={T('rot.apri')} onPress={() => void c.fai(() => c.apriPagina(urlAiuto('quick-start')))} />

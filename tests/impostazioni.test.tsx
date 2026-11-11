@@ -22,7 +22,8 @@ import {
   profiloDi,
   simula,
 } from '../hooks/bilanciamento'
-import { bilancia, regoleDa, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
+import { bilancia, regoleDa, REGOLE_DEFAULT, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
+import { campoRegoleMancante, regoleIniziali, testoRegoleIniziali } from '../hooks/regole-iniziali'
 import { LEGENDA, LINGUE, t } from '../hooks/lingua'
 import { PAGINE_AIUTO, urlAiuto } from '../hooks/aiuto'
 import { ACCENTO, ALFA_VELO, GRIGIO, VELO } from '../hooks/tema'
@@ -286,6 +287,15 @@ function ambiente(on: On, progetto: Record<string, unknown> = {}, account?: Reco
     const fine = (exitCode: number, stdout = '') => ({ value: { exitCode, stdout, stderr: '' } as never })
     processi.push([...e.argv])
     const [, script, cmd, file] = e.argv
+    // Like strumenti/regole-crea.cjs: exclusive creation, refused through a link (`collegati`); the real one is tested in prova-disco.
+    if (script?.endsWith('/regole-crea.cjs')) {
+      const x = JSON.parse(String(e.init?.stdin ?? '{}')) as { root: string; relativo: string; testo: string }
+      const f = `${p(x.root)}/${x.relativo}`
+      if ([...collegati].some(l => f.startsWith(`${l}/`))) return fine(6)
+      if (disco.has(f)) return fine(4)
+      disco.set(f, x.testo)
+      return fine(0)
+    }
     if (script?.endsWith('/fornitori.cjs')) {
       const leggi = () => fine(0, JSON.stringify({
         limiti: [{ id: 'claude-weekly', fornitore: 'claude', nome: 'Claude piano · settimanale', fonte: 'app', percentuale: 37, unita: '%', letto: new Date().toISOString() }],
@@ -2085,15 +2095,100 @@ test('audit 4: without a readable routing.json, setup and doctor say what the fi
   testo = testi(await ui.drawn()).join('\n')
   expect(testo).toContain('Project rules not readable: routing.json missing')
   expect([testo.includes('All checks passed'), testo.includes('Nothing to fix.')]).toEqual([false, false])
-  // An incomplete file: the same guide, with its reason.
-  amb.disco.set('X:/repo/.claude/routing.json', JSON.stringify({ modelli_ammessi: ['claude-opus-5-5'] }))
+  expect(await ui.find({ key: 'regole-guida-crea' })).toBeDefined()
+  // An incomplete file: the same guide, naming the first section it lacks; no offer to create, nothing touched.
+  const incompleto = JSON.stringify({ modelli_ammessi: ['claude-opus-5-5'] })
+  amb.disco.set('X:/repo/.claude/routing.json', incompleto)
   await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
-  expect(testi(await ui.drawn()).join('\n')).toContain('Project rules not readable: routing.json incomplete')
-  // Nothing written in the repository (only the file the test put there).
-  expect([...amb.disco.keys()].filter(k => k.startsWith('X:/repo/'))).toEqual(['X:/repo/.claude/routing.json'])
+  expect(testi(await ui.drawn()).join('\n')).toContain('Project rules not readable: routing.json: «effort_ammessi» missing or invalid')
+  expect(await ui.find({ key: 'regole-guida-crea' })).toBeUndefined()
+  expect([[...amb.disco.keys()].filter(k => k.startsWith('X:/repo/')), amb.disco.get('X:/repo/.claude/routing.json')]).toEqual([['X:/repo/.claude/routing.json'], incompleto])
+  expect(amb.processi.some(x => x[1]?.endsWith('/regole-crea.cjs'))).toBe(false)
   amb.disco.set('X:/repo/.claude/routing.json', JSON.stringify(ROUTING))
   await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
   expect(await ui.find({ key: 'regole-guida' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('default rules: built from the mod\'s own lists, read back by regoleDa as complete; the missing section mirrors regoleDa', () => {
+  const r = regoleIniziali()
+  expect(JSON.parse(testoRegoleIniziali())).toEqual(r)
+  const lette = regoleDa(r, 'routing.json v1')
+  expect(lette.lette).toBe(true)
+  expect(r.modelli_ammessi).toEqual([...REGOLE_DEFAULT.modelli.claude, ...REGOLE_DEFAULT.modelli.codex])
+  expect(r.effort_ammessi).toEqual(['low', 'medium', 'high', 'xhigh'])
+  expect(r.tetto_per_modello).toEqual(REGOLE_DEFAULT.tetto)
+  // No external provider: no FreeLLMAPI models; Codex never on R4/R5.
+  expect([lette.modelli.freellmapi, 'freellmapi' in r, r.corsia_codex.esegue.corsie]).toEqual([[], false, ['R1', 'R2', 'R3']])
+  // Every Claude author: the ordinary reviewer is another Claude model, and the sensitive one (Fable 5.2, Opus for Fable) is in the row.
+  for (const autore of lette.modelli.claude) {
+    const riga = lette.revisori[autore]!
+    const sensibile = autore.startsWith('claude-fable-') ? 'claude-opus-5-5' : 'claude-fable-5-2'
+    expect([autore, riga.find(x => x.startsWith('claude-')) !== autore, riga.includes(sensibile), riga.includes(autore)]).toEqual([autore, true, true, false])
+  }
+  for (const m of lette.modelli.codex) expect(lette.revisori[m]).toContain(lette.corsiaCodex.rivistoDa.R1!)
+  // The doctor's «missing section» agrees with regoleDa on partial files.
+  const casi: unknown[] = [null, {}, { ...r, effort_ammessi: ['max'] }, { ...r, revisione: {} }, { ...r, corsia_codex: { ...r.corsia_codex, effort: {} } },
+    { ...r, corsia_codex: { ...r.corsia_codex, rivisto_da: { _nota: 'x' } } }, { ...r, corsia_codex: { ...r.corsia_codex, modelli: 'gpt' } }, r]
+  for (const c of casi) expect([c, campoRegoleMancante(c) === undefined]).toEqual([c, regoleDa(c, 'x').lette])
+})
+
+/** Settings on the Summary step with no routing.json, ready to create the default rules. */
+async function senzaRegole($: Parameters<TestBody>[0], on: On) {
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.disco.delete('X:/repo/.claude/routing.json')
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': {} } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--setup' } as never)
+  const ui = await $.ui.mount({ ...PANE('terminal', 60) })
+  await ui.press({ key: 'setup-riepilogo-vai' })
+  return { amb, ui }
+}
+
+test('default rules, empty repository (terminal, 60 columns): the confirmation shows path and full text; then the file exists and starts are unblocked', async ($, on) => {
+  const { amb, ui } = await senzaRegole($, on)
+  expect(testi(await ui.drawn()).join('\n')).toContain('nothing starts until routing.json can be read')
+  amb.popup.risposta = q => (q.includes('X:/repo/.claude/routing.json') && q.includes(testoRegoleIniziali()) ? 'Create default rules' : null)
+  await ui.press({ key: 'regole-guida-crea' })
+  expect(amb.disco.get('X:/repo/.claude/routing.json')).toBe(testoRegoleIniziali())
+  expect(amb.toast).toContain('Default rules created')
+  const testo = testi(await ui.drawn()).join('\n')
+  expect([testo.includes('nothing starts until routing.json can be read'), !!(await ui.find({ key: 'regole-guida' }))]).toEqual([false, false])
+  await ui.unmount()
+})
+
+test('default rules: Cancel writes nothing and runs nothing', async ($, on) => {
+  const { amb, ui } = await senzaRegole($, on)
+  amb.popup.risposta = () => 'Undo'
+  await ui.press({ key: 'regole-guida-crea' })
+  expect([amb.disco.has('X:/repo/.claude/routing.json'), amb.processi.some(x => x[1]?.endsWith('/regole-crea.cjs'))]).toEqual([false, false])
+  expect(await ui.find({ key: 'regole-guida-crea' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('default rules: a file that appeared meanwhile is never overwritten; a path through a link is refused', async ($, on) => {
+  const { amb, ui } = await senzaRegole($, on)
+  amb.popup.risposta = () => 'Create default rules'
+  // Already there when pressed: nothing asked, nothing written, the error in line.
+  amb.disco.set('X:/repo/.claude/routing.json', '{"mio":true}')
+  await ui.press({ key: 'regole-guida-crea' })
+  expect([amb.disco.get('X:/repo/.claude/routing.json'), amb.domande.length, amb.processi.some(x => x[1]?.endsWith('/regole-crea.cjs'))]).toEqual(['{"mio":true}', 0, false])
+  expect(testi(await ui.drawn()).join('\n')).toContain('routing.json already exists: it is never overwritten')
+  // Created by someone else between the question and the write: the helper refuses (exclusive creation).
+  amb.disco.delete('X:/repo/.claude/routing.json')
+  amb.popup.risposta = () => (amb.disco.set('X:/repo/.claude/routing.json', '{"altro":true}'), 'Create default rules')
+  await ui.press({ key: 'regole-guida-crea' })
+  expect([amb.disco.get('X:/repo/.claude/routing.json'), amb.processi.filter(x => x[1]?.endsWith('/regole-crea.cjs')).length]).toEqual(['{"altro":true}', 1])
+  expect(testi(await ui.drawn()).join('\n')).toContain('routing.json already exists: it is never overwritten')
+  // `.claude` is a junction: refused, nothing written.
+  amb.disco.delete('X:/repo/.claude/routing.json')
+  amb.collegati.add('X:/repo/.claude')
+  amb.popup.risposta = () => 'Create default rules'
+  await ui.press({ key: 'regole-guida-crea' })
+  expect(amb.disco.has('X:/repo/.claude/routing.json')).toBe(false)
+  expect(testi(await ui.drawn()).join('\n')).toContain('goes through a link or junction')
   await ui.unmount()
 })
 
