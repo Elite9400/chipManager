@@ -4761,3 +4761,13 @@ test('Revisione audit 2.2.0, C2: una figlia Ollama ammessa dal progetto della di
   expect([inviati, amb.azione().find(a => a.id === f.id)!.stato]).toEqual([1, 'consegnata'])
   await ui.unmount()
 })
+
+test('Audit 2.2.0, punto 3 (dopo il rebase): un valore rifiutato di routing.json tiene il suo motivo anche nelle regole lette dal disco', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.set('X:/repo/.claude/routing.json', JSON.stringify({ ...ROUTING, modelli_ammessi: [...ROUTING.modelli_ammessi, 'gpt-6 -c x=1'] }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const r = (await $.tool.call({ tool: 'mcp__chip-manager__risorse_agenti' } as never)) as { result?: unknown }
+  const regole = (JSON.parse(String(r.result)) as { regole: { lette: boolean; fonte: string } }).regole
+  expect([regole.lette, regole.fonte.includes('invalid model or effort in modelli_ammessi'), regole.fonte.includes('gpt-6 -c')]).toEqual([false, true, false])
+})

@@ -574,7 +574,8 @@ async function leggiRegole($: Eng) {
     r = {
       ...letto,
       // An incomplete file names the first section it lacks, for the doctor and setup (the file is never touched).
-      ...(!letto.lette && { motivo: msg('rot.campo', { campo: campoRegoleMancante(json) ?? 'routing.json' }) }),
+      // Audit 2.2.0, point 3: a value refused by regoleDa (model or effort out of form) keeps its own reason.
+      ...(!letto.lette && { motivo: letto.motivo ?? msg('rot.campo', { campo: campoRegoleMancante(json) ?? 'routing.json' }) }),
       sensibili: progetto.sensibili,
       background: progetto.background,
       risorse: progetto.risorse,
