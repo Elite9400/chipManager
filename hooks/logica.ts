@@ -58,14 +58,14 @@ export const RISORSE_DEFAULT: RisorseProgetto = {
 export const REGOLE_DEFAULT: Regole = {
   lette: false,
   modelli: {
-    claude: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-haiku-5-5'],
+    claude: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-2', 'claude-fable-5-1', 'claude-haiku-5-5'],
     codex: ['gpt-6.1-sol', 'gpt-6-astra'],
     freellmapi: [],
     // F13.3b: models of registry providers come from their catalogue at run time; none here, so `bilancia` never picks them.
     compatibile: [],
   },
   effort: ['low', 'medium', 'high', 'xhigh'],
-  tetto: { 'claude-fable-5-1': 'xhigh' },
+  tetto: { 'claude-fable-5-2': 'xhigh', 'claude-fable-5-1': 'xhigh' },
   revisori: {},
   corsiaCodex: { corsie: ['R1', 'R2', 'R3'], effort: {}, rivistoDa: {} },
   sensibili: [],
@@ -605,6 +605,8 @@ export const effortDi = (a: Azione, regole: Regole = REGOLE_DEFAULT) => {
     corsia ? modo.effortPredefinito[corsia] : 'high',
     a.esecutore === 'codex' ? regole.corsiaCodex.effort[corsia ?? ''] : undefined,
     corsia === 'R4' || corsia === 'R5' || sensibile(a, regole) ? 'high' : undefined,
+    // F13.1: il lavoro su Fable 5.2 parte da high; xhigh solo per scelta esplicita.
+    modelloDi(a, regole) === 'claude-fable-5-2' ? 'high' : undefined,
   ].filter((x): x is string => !!x && ordine.includes(x))
   const voluto = candidati.reduce((m, x) => (ordine.indexOf(x) > ordine.indexOf(m) ? x : m), candidati[0] ?? 'high')
   return ammessi.find(x => ordine.indexOf(x) >= ordine.indexOf(voluto)) ?? ammessi.at(-1)!
@@ -689,7 +691,7 @@ export const corsiaDi = (a: Azione, regole: Pick<Regole, 'sensibili'>): Corsia |
   sensibile(a, regole) && (!a.corsia || a.corsia < 'R4') ? 'R4' : a.corsia
 
 /** Modelli ammessi come autori sulle corsie sensibili: lì serve verifica avversariale, non risparmio. */
-const AUTORI_R4 = ['claude-opus-5-5', 'claude-fable-5-1']
+const AUTORI_R4 = ['claude-opus-5-5', 'claude-fable-5-2', 'claude-fable-5-1']
 
 // --- dipendenze ----------------------------------------------------------------------------------
 
@@ -718,7 +720,8 @@ export function revisoreConcreto(a: Azione, regole: Regole): string | undefined 
   // F13.3b: no routing row can exist for an arbitrary catalogue id: the Claude coordinator of the lane reviews, like Codex.
   if (a.esecutore === 'codex' || a.esecutore === 'compatibile') return regole.corsiaCodex.rivistoDa[corsiaDi(a, regole) ?? ''] ?? COORDINATORE_PREDEFINITO
   const autore = modelloDi(a, regole)
-  if (sensibile(a, regole)) return autore === 'claude-fable-5-1' ? 'claude-opus-5-5' : 'claude-fable-5-1'
+  // F13.1: Fable 5.2 ↔ Opus 5.5, mai l'autore stesso; un autore Fable (5.1 o 5.2) ha Opus.
+  if (sensibile(a, regole)) return autore.startsWith('claude-fable-') ? 'claude-opus-5-5' : 'claude-fable-5-2'
   return (regole.revisori[autore] ?? []).find(r => r.startsWith('claude-') && r !== autore)
 }
 
@@ -1025,10 +1028,12 @@ export const rangoModello = (m: string) => RANGO.findIndex(f => m.toLowerCase().
 
 /** Fonte, data di lettura e alias (Anthropic API) della tabella; le righe vanno dal modello di rango più basso. */
 export const ADVISOR = {
+  // F13.1: la tabella di Claude Code (non quella delle Messages API), dalla documentazione allegata a Claude Code 2.1.321.
   fonte: 'https://code.claude.com/docs/en/advisor',
-  letta: '2026-11-06',
-  versione: 1,
-  alias: { fable: 'claude-fable-5-1', opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5' } as Record<string, string>,
+  letta: '2026-11-11',
+  versione: 2,
+  // Ids espliciti: «fable» qui è Fable 5.2 (nelle app Claude `/model fable` può voler dire altro).
+  alias: { fable: 'claude-fable-5-2', opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5' } as Record<string, string>,
   /** [modelli che eseguono, advisor ammessi]: `famiglia` = ogni versione, `famiglia-v` = quella, `famiglia>=v` = da quella in su. */
   coppie: [
     [['haiku-4.5', 'sonnet-4.6'], ['fable', 'opus', 'sonnet', 'haiku-5.5']],
@@ -1037,15 +1042,17 @@ export const ADVISOR = {
     [['opus-4.7', 'opus-4.8'], ['fable', 'opus>=4.7', 'sonnet-5.5']],
     [['sonnet-5.5'], ['fable', 'opus>=5', 'sonnet-5.5']],
     [['opus-5', 'opus-5.5'], ['fable', 'opus>=5']],
-    [['fable-5'], ['fable-5.1', 'fable-5']],
-    [['fable-5.1'], ['fable-5.1']],
+    [['fable-5'], ['fable-5.2', 'fable-5.1', 'fable-5']],
+    [['fable-5.1'], ['fable-5.2', 'fable-5.1']],
+    // Un esecutore Fable 5.2 accetta solo Fable 5.2 (Mythos 5.2 è riconosciuto ma non abilitato).
+    [['fable-5.2'], ['fable-5.2']],
   ] as const,
 }
 /** I modelli che la tabella nomina, come id completi: gli altri non si scelgono né come esecutore né come auditor. */
 export const MODELLI_ADVISOR = ['claude-haiku-4-5', 'claude-haiku-5-5', 'claude-sonnet-4-6', 'claude-sonnet-5', 'claude-sonnet-5-5', 'claude-opus-4-6',
-  'claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5', 'claude-opus-5-5', 'claude-fable-5', 'claude-fable-5-1']
+  'claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5', 'claude-opus-5-5', 'claude-fable-5', 'claude-fable-5-1', 'claude-fable-5-2']
 const famigliaVersione = (id: string) => {
-  const m = /^claude-(haiku|sonnet|opus|fable)-(\d+)(?:-(\d+))?$/.exec(id)
+  const m = /^claude-(haiku|sonnet|opus|fable|mythos)-(\d+)(?:-(\d+))?$/.exec(id)
   return m ? { f: m[1]!, v: Number(m[2]) + (m[3] ? Number(m[3]) / 10 : 0) } : undefined
 }
 const nellaRegola = (regola: string, id: string) => {
@@ -1492,6 +1499,7 @@ export const PERMESSI = [
 const NOMI: Record<string, string> = {
   'claude-opus-5-5': 'Opus 5.5',
   'claude-sonnet-5-5': 'Sonnet 5.5',
+  'claude-fable-5-2': 'Fable 5.2',
   'claude-fable-5-1': 'Fable 5.1',
   'claude-haiku-5-5': 'Haiku 5.5',
   'gpt-6.1-sol': 'GPT-6.1 Sol',

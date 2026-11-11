@@ -2379,3 +2379,24 @@ test('Paths, round 2 finding 3: 51 skipped links: every name shown a page at a t
   expect(amb.toast).toContain('Data not moved: nothing changed')
   expect(amb.toast.some(t => t.startsWith('Settings changed elsewhere'))).toBe(false)
 })
+
+test('F13.1 doctor: Claude Code più vecchio di 2.1.321 = avviso per Fable 5.2; 2.1.321 o più nuovo, o versione ignota, nessun avviso', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.lingua = 'en'
+  amb.disco.set(CONFIG, JSON.stringify({ progetti: { 'esempio/demo': {} } }))
+  let versione: string | null = '2.1.300'
+  on('session.version', () => {
+    if (versione === null) throw new Error('ignota')
+    return { value: { version: versione, base: versione } as never }
+  })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  expect(testi(await ui.drawn()).join('\n')).toContain('Claude Code 2.1.300 is older than 2.1.321')
+  for (const v of ['2.1.321', '2.2.0', null]) {
+    versione = v
+    await ui.press({ key: 'doctor-ricontrolla' })
+    expect([v, testi(await ui.drawn()).join('\n').includes('older than 2.1.321')]).toEqual([v, false])
+  }
+})

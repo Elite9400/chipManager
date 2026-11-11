@@ -1255,6 +1255,13 @@ async function diagnosiDoctor($: Eng) {
       if (t.codice === 'percorso.dati' && /^helper\.(dentroWorkingTree|collegamento)/.test(String(t.motivo ?? '')) && !daEnv && verso && base && base !== verso)
         Object.assign(t, { spostabile: true, da: base, verso })
     if (typeof v.versione === 'string' && v.versione !== VERSIONE_MOD) trovati.push({ codice: 'host.versione' })
+    // F13.1: Fable 5.2 vuole Claude Code ≥ 2.1.321. Una versione ignota non si giudica (niente avviso inventato).
+    const host = await $.session.version().then(x => x.base ?? x.version).catch(() => undefined)
+    const numeri = (s: string) => (/^(\d+)\.(\d+)\.(\d+)/.exec(s) ?? []).slice(1).map(Number)
+    if (typeof host === 'string' && numeri(host).length === 3) {
+      const [a, b, c] = numeri(host) as [number, number, number]
+      if (a * 1e8 + b * 1e4 + c < 2 * 1e8 + 1 * 1e4 + 321) trovati.push({ codice: 'host.claudeCode', versione: host.slice(0, 20) })
+    }
     const quando = new Date(await $.clock.now()).toISOString()
     const impronta = typeof v.impronta === 'string' && /^[0-9a-f]{64}$/.test(v.impronta) ? v.impronta : null
     await update($, statoDoctor, (): StatoDoctor => ({ trovati, quando, impronta }))

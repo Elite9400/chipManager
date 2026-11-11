@@ -116,7 +116,7 @@ function scriviDati(file, testo) {
 const TITOLO_RAPPORTO = 'chipManager report: doctor findings'
 const RILIEVI_RAPPORTO = ['config.illeggibile', 'config.senzaCopie', 'config.campoIgnoto', 'config.nonValido', 'config.restrizioneLarga', 'config.modoNonValido',
   'percorso.config', 'percorso.dati', 'percorso.macchina', 'percorso.registro', 'registro.sviluppo', 'lock.api', 'lock.apiIlleggibile', 'chiavi.residue',
-  'azioni.orfane', 'azioni.progettiIgnoti', 'accesso.claude', 'accesso.codex', 'accesso.github', 'host.impostazioniApi', 'host.advisor', 'host.versione', 'connessione']
+  'azioni.orfane', 'azioni.progettiIgnoti', 'accesso.claude', 'accesso.codex', 'accesso.github', 'host.impostazioniApi', 'host.advisor', 'host.versione', 'host.claudeCode', 'connessione']
 const CAMPI_ACCOUNT_RAPPORTO = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi', 'modoLavoro', 'compatibili']
 const CAMPI_PROGETTO_RAPPORTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude',
   'consigliere', 'restrizioni', 'modoLavoro', 'compatibili']

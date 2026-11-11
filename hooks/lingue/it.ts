@@ -1217,6 +1217,8 @@ const it: Dizionario = {
   "doc.chiediSaltati": "Questi sono link e non sono stati copiati: {saltati}. Il config non è cambiato. Spostare comunque, senza di loro?",
   "doc.spostaComunque": "Sposta senza di loro",
   "doc.nonSpostati": "Dati non spostati: niente cambiato",
+  "doc.r.host.claudeCode": "Claude Code {versione} è più vecchio di 2.1.321",
+  "doc.f.host.claudeCode": "Fable 5.2 richiede Claude Code 2.1.321 o successivo: aggiorna Claude Code prima di usarlo.",
   // ‹fine›
 }
 

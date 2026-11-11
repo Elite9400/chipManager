@@ -1217,6 +1217,8 @@ const de: Dizionario = {
   "doc.chiediSaltati": "Das sind Links und sie wurden nicht kopiert: {saltati}. Die Config ist unverändert. Trotzdem verschieben, ohne sie?",
   "doc.spostaComunque": "Ohne sie verschieben",
   "doc.nonSpostati": "Daten nicht verschoben: nichts geändert",
+  "doc.r.host.claudeCode": "Claude Code {versione} ist älter als 2.1.321",
+  "doc.f.host.claudeCode": "Fable 5.2 braucht Claude Code 2.1.321 oder neuer: Claude Code vor der Nutzung aktualisieren.",
   // ‹fine›
 }
 

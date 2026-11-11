@@ -3177,11 +3177,11 @@ test('F7.3 tabella: ogni coppia della documentazione, alias risolti, id ignoti m
     for (const x of si) expect([esegue, x, ok(esegue, x)]).toEqual([esegue, x, true])
     for (const x of no) expect([esegue, x, ok(esegue, x)]).toEqual([esegue, x, false])
   }
-  expect([idAuditor('opus'), idAuditor('sonnet'), idAuditor('fable'), idAuditor('claude-opus-9'), idAuditor('haiku')]).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', null, null])
+  expect([idAuditor('opus'), idAuditor('sonnet'), idAuditor('fable'), idAuditor('claude-opus-9'), idAuditor('haiku')]).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-2', null, null])
   expect(motivoAuditor('claude-opus-5-5', 'claude-opus-9')?.k).toBe('au.ignoto')
   expect(motivoAuditor('claude-opus-9', 'fable')?.k).toBe('au.esecutoreIgnoto')
   expect(motivoAuditor('claude-opus-5-5', 'sonnet')?.k).toBe('au.coppia')
-  expect(ADVISOR).toMatchObject({ fonte: 'https://code.claude.com/docs/en/advisor', letta: '2026-11-06' })
+  expect(ADVISOR).toMatchObject({ fonte: 'https://code.claude.com/docs/en/advisor', letta: '2026-11-11' })
   // Il rango dei modelli non cambia: la tabella è a parte.
   expect([rangoModello('claude-sonnet-5-5'), rangoModello('claude-opus-5-5')]).toEqual([1, 2])
 })
@@ -3218,7 +3218,8 @@ test('F7.3 avvio: --advisor solo per api-claude (alias risolto); le sessioni des
   await ui.press({ key: `avvia-${api.id}` })
   await ui.press({ key: `avvia-${desk.id}` })
   expect(ingressi).toHaveLength(1)
-  expect(ingressi[0]).toMatchObject({ advisor: 'claude-fable-5-1' })
+  // F13.1: l'alias «fable» della mod è Fable 5.2.
+  expect(ingressi[0]).toMatchObject({ advisor: 'claude-fable-5-2' })
   expect(ingressi[0]).not.toHaveProperty('senzaAdvisor')
   const start = amb.chiamate.filter(c => c.tool === 'start_session')
   expect(start).toHaveLength(1)

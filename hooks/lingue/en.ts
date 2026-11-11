@@ -1219,6 +1219,8 @@ const en = {
   "doc.chiediSaltati": "These are links and were not copied: {saltati}. The config has not changed. Move anyway, without them?",
   "doc.spostaComunque": "Move without them",
   "doc.nonSpostati": "Data not moved: nothing changed",
+  "doc.r.host.claudeCode": "Claude Code {versione} is older than 2.1.321",
+  "doc.f.host.claudeCode": "Fable 5.2 needs Claude Code 2.1.321 or later: update Claude Code before using it.",
   // ‹fine›
 } satisfies Record<string, Voce>
 
