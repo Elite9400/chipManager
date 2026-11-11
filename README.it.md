@@ -333,7 +333,7 @@ Le impostazioni stanno in due strati.
 
 La vista **Impostazioni** mostra una sezione alla volta, in due gruppi: **Account · tutti i progetti** (Connessioni,
 Soglie con i budget manuali, Modo di lavoro, Esecuzione, Lingua) e **Progetto · owner/repo** (Bilanciamento,
-Progetto, Board, Avanzate, Legenda).
+Progetto, Board, Avanzate, Aiuto).
 
 - **Modo di lavoro.** Effort predefinito per corsia (R0–R2 `medium`, R3–R5 `high`; R4/R5 mai sotto), la sandbox di
   Codex quando esegue (`workspace-write` modifica i file e la sessione Claude fa i commit; `read-only`), le sessioni
@@ -681,9 +681,9 @@ Comune alle due:
   attesi; collegamenti, junction, marcatori d'identità estranei e cartelle dati dentro un working tree sono
   rifiutati.
 
-## Legenda
+## Aiuto
 
-Lo stesso testo della sezione **Legenda** delle Impostazioni e del fondo della board, così chi è nuovo trova ogni sigla senza uscire dal pannello.
+La sezione **Aiuto** delle Impostazioni e il fondo della board tengono una riga per corsia, che serve a leggere le chip. Ogni altro termine e funzione è spiegato sul sito di documentazione, pubblicato con GitHub Pages al rilascio.
 
 ### Corsie
 
@@ -694,20 +694,9 @@ Lo stesso testo della sezione **Legenda** delle Impostazioni e del fondo della b
 - R4 — sensibile: auth, permessi, PII o i termini del progetto. Solo Claude (Opus o Fable), revisione Claude, effort almeno high.
 - R5 — rischio massimo, stesse guardie di R4. Restano entrambe a Claude: serve una revisione avversariale su questo computer, quindi niente Codex, proxy, cloud o bypass.
 
-### Termini
+### Sito di documentazione
 
-- effort — quanto ragionamento spende il modello: low, medium, high, xhigh. Di più è più lento e costa di più.
-- worktree — un checkout separato su un ramo suo: la sessione lavora lì senza toccare il tuo.
-- fork — una sessione nuova che parte da una copia di questa conversazione invece che dal solo mandato.
-- fusione — il ramo entra nel ramo base. Solo la fusione chiude una chip: consegnata non vuol dire fatta.
-- registro — il registro.json dell'orchestratore, che segue i task per ramo. Quando il task di una chip è fuso, la chip si chiude.
-- MCP — gli strumenti che chiamano gli agenti: suggerisci_azione mette una chip qui, risorse_agenti legge limiti e margini.
-- PII — dati personali. Un mandato che li contiene resta in locale e va su una corsia sensibile.
-- soglie — uso di attenzione e di critica di un limite del fornitore. Oltre la critica, le scelte aperte vanno a un altro fornitore ammesso.
-- contesto — quanto della finestra di contesto di una sessione è già usato.
-- token — l'unità di testo che contano i modelli. Limiti e contesto si misurano in token.
-- cartella condivisa — la sessione lavora nel tuo checkout, senza worktree. Il registro non la collega: chiudila tu.
-- cloud — una sessione nuova nel cloud. Riceve solo titolo e mandato, mai il contesto locale, e mai sulle corsie sensibili.
+[Panoramica](https://elite9400.github.io/chipManager/site/index.html) · [Avvio rapido](https://elite9400.github.io/chipManager/site/quick-start.html) · [Il pannello](https://elite9400.github.io/chipManager/site/panel.html) · [Le chip e il loro ciclo di vita](https://elite9400.github.io/chipManager/site/chips.html) · [Corsie R0–R5](https://elite9400.github.io/chipManager/site/lanes.html) · [I modelli e come usarli](https://elite9400.github.io/chipManager/site/models.html) · [Modo di lavoro e impostazioni](https://elite9400.github.io/chipManager/site/settings.html) · [Doctor e rapporti](https://elite9400.github.io/chipManager/site/doctor.html) · [Board](https://elite9400.github.io/chipManager/site/board.html) · [Per gli agenti](https://elite9400.github.io/chipManager/site/agents.html) · [Domande frequenti](https://elite9400.github.io/chipManager/site/faq.html)
 
 ## Struttura
 

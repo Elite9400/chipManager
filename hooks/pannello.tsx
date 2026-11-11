@@ -102,6 +102,10 @@ export type Ctx = {
   segnala: (come: 'gh' | 'url') => Promise<unknown>
   accedi: (tipo: TipoAccesso) => Promise<unknown>
   apriConfig: () => Promise<unknown>
+  /** F13.3b/F13.4: a provider's key page or a help page (exact whitelist in the helper), «Check» and local detection. */
+  apriPagina: (url: string) => Promise<unknown>
+  verificaCompatibile: (id: string) => Promise<unknown>
+  rilevaLocali: () => Promise<unknown>
   /** F6.2: «Libera» e «Termina» del lock della corsia API, ciascuno con il suo popup. */
   liberaApi: () => Promise<unknown>
   terminaApi: () => Promise<unknown>

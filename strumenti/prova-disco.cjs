@@ -868,21 +868,23 @@ test('F5.7: statusline Claude e Codex locale danno lo stesso utilizzo 0→100 pe
   assert.deepStrictEqual([...claude, ...codex].map(l => [l.percentuale, l.unita]), [[37, '%'], [37, '%']])
 })
 
-test('legenda: i README ricopiano la legenda del dizionario voce per voce (en e it), più la storia dello sviluppo', () => {
+test('legenda: i README ricopiano le righe delle corsie del dizionario (en e it), linkano il sito, più la storia dello sviluppo', () => {
   const radice = path.join(__dirname, '..')
-  const intestazioni = ['legenda.descrizione', 'legenda.corsie', 'legenda.termini', 'legenda.rimando']
+  // F13.4: la Legenda è diventata Aiuto; dal dizionario restano solo le righe delle corsie.
+  const intestazioni = ['legenda.corsie', 'legenda.rimando']
   const dizionario = l =>
     [...fs.readFileSync(path.join(radice, 'hooks', 'lingue', `${l}.ts`), 'utf8').matchAll(/^\s*"(legenda\.[a-z0-9]+)": (".*"),\r?$/gm)]
       .filter(m => !intestazioni.includes(m[1]))
       .map(m => JSON.parse(m[2]))
-  for (const [file, l, titolo, storia] of [['README.md', 'en', 'Legend', 'Development history'], ['README.it.md', 'it', 'Legenda', 'Storia dello sviluppo']]) {
+  for (const [file, l, titolo, storia] of [['README.md', 'en', 'Help', 'Development history'], ['README.it.md', 'it', 'Aiuto', 'Storia dello sviluppo']]) {
     const md = fs.readFileSync(path.join(radice, file), 'utf8').replace(/\r\n/g, '\n')
     const da = md.indexOf(`\n## ${titolo}\n`)
     assert.ok(da >= 0, `${file}: manca «## ${titolo}»`)
     const sezione = md.slice(da + 1, md.indexOf('\n## ', da + 1))
     const voci = dizionario(l)
-    assert.strictEqual(voci.length, 18, `${l}: voci della legenda`)
+    assert.strictEqual(voci.length, 6, `${l}: righe delle corsie`)
     assert.deepStrictEqual([...sezione.matchAll(/^- (.*)$/gm)].map(m => m[1]), voci, file)
+    for (const p of require(DISCO).PAGINE_AIUTO) assert.ok(sezione.includes(`(https://elite9400.github.io/chipManager/site/${p}.html)`), `${file}: ${p}`)
     assert.match(md, new RegExp(`\\n## ${storia}\\n[^]*?\\(docs/`), `${file}: «${storia}» rimanda a docs/`)
   }
 })
@@ -1955,8 +1957,8 @@ function logicaTs(rev) {
   const dir = fuori()
   const nomi = rev
     ? spawnSync('git', ['-C', RADICE_REPO, 'ls-tree', '-r', '--name-only', rev, 'hooks/'], { encoding: 'utf8' }).stdout.trim().split('\n')
-    : ['hooks/logica.ts', 'hooks/lingua.ts', 'hooks/tema.ts', 'hooks/bilanciamento.ts', 'hooks/rapporto.ts', ...fs.readdirSync(path.join(RADICE_REPO, 'hooks', 'lingue')).map(n => `hooks/lingue/${n}`)]
-  for (const n of nomi.filter(n => /^hooks\/(logica|lingua|tema|bilanciamento|rapporto)\.ts$|^hooks\/lingue\/\w+\.ts$/.test(n))) {
+    : ['hooks/logica.ts', 'hooks/lingua.ts', 'hooks/tema.ts', 'hooks/bilanciamento.ts', 'hooks/rapporto.ts', 'hooks/compatibili.ts', 'hooks/skill-base.ts', ...fs.readdirSync(path.join(RADICE_REPO, 'hooks', 'lingue')).map(n => `hooks/lingue/${n}`)]
+  for (const n of nomi.filter(n => /^hooks\/(logica|lingua|tema|bilanciamento|rapporto|compatibili|skill-base)\.ts$|^hooks\/lingue\/\w+\.ts$/.test(n))) {
     const testo = rev ? spawnSync('git', ['-C', RADICE_REPO, 'show', `${rev}:${n}`], { encoding: 'utf8' }).stdout : fs.readFileSync(path.join(RADICE_REPO, n), 'utf8')
     assert.ok(testo, `${rev ?? 'worktree'}:${n}`)
     fs.mkdirSync(path.dirname(path.join(dir, n)), { recursive: true })
@@ -2347,11 +2349,14 @@ const MODI_VALIDI = [
   { effortPredefinito: { R0: 'low', R3: 'xhigh', R4: 'xhigh' } },
   { effortPredefinito: { R1: null }, codexSandbox: 'read-only', parallelo: 8, auditorSuggerito: true, revisioneIncrociata: false },
   { parallelo: null, codexSandbox: null, auditorSuggerito: null },
+  // F13.7: baseline skills on/off by registry id only; null removes the override.
+  { skillBase: { ponytail: false, superpowers: null, tokeneconomizer: true } },
 ]
 const MODI_NON_VALIDI = [
   [], 'x', { profilo: 'qualita' }, { consigliere: 'applica' }, { effortPredefinito: { R4: 'medium' } }, { effortPredefinito: { R5: 'low' } },
   { effortPredefinito: { R9: 'high' } }, { effortPredefinito: { R0: 'max' } }, { effortPredefinito: [] }, { codexSandbox: 'danger-full-access' },
   { parallelo: 0 }, { parallelo: 9 }, { parallelo: 2.5 }, { parallelo: '3' }, { auditorSuggerito: 'sì' }, { revisioneIncrociata: 1 },
+  { skillBase: { altro: true } }, { skillBase: 'si' }, { skillBase: { ponytail: 'no' } }, { skillBase: ['ponytail'] },
 ]
 
 test('F11.1 parità: modo di lavoro efficace e controllo in scrittura uguali nel pannello e nell\'helper', () => {
@@ -2363,6 +2368,8 @@ test('F11.1 parità: modo di lavoro efficace e controllo in scrittura uguali nel
     // In lettura un campo che non vale si ignora (eredita): mai un R4 sotto high, mai un parallelo fuori 1–8.
     [{ effortPredefinito: { R4: 'low', R1: 'xhigh' }, parallelo: 40, codexSandbox: 'tutto' }, { effortPredefinito: { R5: 'medium' }, auditorSuggerito: 'sì', ignoto: 1 }],
     [{ parallelo: null }, { parallelo: 3, auditorSuggerito: true }],
+    // F13.7: per skill the project replaces the account; unknown ids and non-booleans are ignored in reading.
+    [{ skillBase: { ponytail: false, superpowers: false } }, { skillBase: { superpowers: true, altro: true, tokeneconomizer: 'si' } }],
   ]
   const ts = conLogica(`console.log(JSON.stringify({
   efficaci: ingresso.coppie.map(([a, p]) => nuova.risorseDa(p === null ? {} : { modoLavoro: p }, a === null ? undefined : { modoLavoro: a }).modoLavoro),
@@ -2375,6 +2382,8 @@ test('F11.1 parità: modo di lavoro efficace e controllo in scrittura uguali nel
   assert.deepStrictEqual(ts.efficaci[2], { effortPredefinito: { R0: 'high', R1: 'medium', R2: 'low', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', parallelo: 2, auditorSuggerito: false, revisioneIncrociata: false })
   assert.deepStrictEqual(ts.efficaci[3].effortPredefinito, { R0: 'medium', R1: 'xhigh', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' })
   assert.strictEqual(ts.efficaci[3].parallelo, undefined)
+  assert.deepStrictEqual(ts.efficaci[5].skillBase, { ponytail: false, superpowers: true })
+  assert.strictEqual('skillBase' in ts.efficaci[0], false)
   MODI_VALIDI.forEach((m, i) => {
     assert.strictEqual(ts.scrittura[i], null, JSON.stringify(m))
     assert.strictEqual(R.modoNonValido(m), null, JSON.stringify(m))
@@ -3231,4 +3240,56 @@ test('F13.3b config: l\'helper scrive opt-in e impostazioni valide e rifiuta que
     { campi: {}, account: { compatibili: { qwen: { workspace: 'https://evil.example.com/compatible-mode/v1' } } } }])
     assert.strictEqual(await configura(file, { atteso: dopo, repo: 'acme/repo', ...no }), 2, JSON.stringify(no))
   assert.strictEqual(fs.readFileSync(file, 'utf8'), dopo)
+})
+
+test('F13.4 Aiuto: pagine del sito uguali in TS e CJS; apri-pagina apre solo indirizzi esatti, separato dal rapporto', () => {
+  const D = require(DISCO)
+  const url = require('node:url').pathToFileURL(path.join(RADICE_REPO, 'hooks', 'aiuto.ts')).href
+  const r = spawnSync(process.execPath, ['--experimental-transform-types', '--no-warnings', '--input-type=module', '-e',
+    `const a = await import(${JSON.stringify(url)}); console.log(JSON.stringify({ pagine: a.PAGINE_AIUTO, url: a.PAGINE_AIUTO.map(a.urlAiuto) }))`], { encoding: 'utf8' })
+  assert.strictEqual(r.status, 0, r.stderr)
+  const ts = JSON.parse(r.stdout)
+  assert.deepStrictEqual(ts.pagine, D.PAGINE_AIUTO)
+  const aperti = []
+  const avvia = argv => aperti.push(argv.at(-1))
+  for (const u of [...ts.url, 'https://openrouter.ai/settings/keys', 'https://console.groq.com/keys']) assert.deepStrictEqual(D.apriPagina(u, { avvia }), [0, ''], u)
+  assert.strictEqual(aperti.length, ts.url.length + 2)
+  for (const no of ['https://elite9400.github.io/chipManager/site/altro.html', 'https://elite9400.github.io/chipManager/site/index.html?x=1',
+    'http://elite9400.github.io/chipManager/site/index.html', 'https://evil.example.com/index.html', 'https://openrouter.ai/settings/keys#x',
+    'https://github.com/Elite9400/chipManager/issues/new', 'http://localhost:11434/v1', '', null])
+    assert.deepStrictEqual(D.apriPagina(no, { avvia }), [2, ''], String(no))
+  assert.strictEqual(aperti.length, ts.url.length + 2)
+  // Il controllo del rapporto resta quello di prima: una pagina d'aiuto non passa da apri-url.
+  assert.deepStrictEqual(D.apriUrl(ts.url[0], { avvia }), [2, ''])
+})
+
+test('F13.7 skill di base: registro uguale in TS e CJS; rilevamento validato; riga del mandato per ruolo, ≤ 200, solo per le attive', () => {
+  const K = require('./skill-base.cjs')
+  const url = require('node:url').pathToFileURL(path.join(RADICE_REPO, 'hooks', 'skill-base.ts')).href
+  const elenchi = [
+    [{ id: 'ponytail@ponytail', version: '1.0.0', scope: 'user', enabled: true, installPath: 'X', extra: 1 }, { id: 'superpowers@claude-plugins-official', scope: 'user', enabled: false }],
+    [{ id: 'tokeneconomizer@tokeneconomizer', scope: 'user', enabled: true }, { id: 'superpowers@claude-plugins-official', scope: 'managed', enabled: true }],
+    { plugins: [] }, [{ id: 'senza-marketplace', scope: 'user', enabled: true }], [{ id: 'a@b', scope: 'altro', enabled: true }], [{ id: 'a@b', scope: 'user', enabled: 'si' }], 'testo',
+  ]
+  const casi = [[0, undefined, 'lavoro', false], [1, undefined, 'lavoro', false], [1, { tokeneconomizer: true }, 'lavoro', false], [1, { tokeneconomizer: true }, 'lavoro', true],
+    [1, undefined, 'revisore', false], [1, { superpowers: false }, 'dirigente', false], [1, undefined, 'revisore', true], [2, undefined, 'lavoro', false]]
+  const r = spawnSync(process.execPath, ['--experimental-transform-types', '--no-warnings', '--input-type=module', '-e', `const k = await import(${JSON.stringify(url)})
+const elenchi = ${JSON.stringify(elenchi)}; const casi = ${JSON.stringify(casi)}
+console.log(JSON.stringify({ registro: k.SKILL_BASE, letti: elenchi.map(e => k.pluginDa(e)),
+  righe: casi.map(([i, accese, ruolo, solo]) => k.rigaSkill(k.skillAttive(k.pluginDa(elenchi[i]), accese ?? undefined, ruolo, solo))) }))`], { encoding: 'utf8' })
+  assert.strictEqual(r.status, 0, r.stderr)
+  const ts = JSON.parse(r.stdout)
+  assert.deepStrictEqual(ts.registro, K.SKILL_BASE)
+  assert.deepStrictEqual(ts.letti, elenchi.map(e => K.pluginDa(e)))
+  assert.deepStrictEqual(ts.righe, casi.map(([i, accese, ruolo, solo]) => K.rigaSkill(K.skillAttive(K.pluginDa(elenchi[i]), accese ?? undefined, ruolo, solo))))
+  // Il rilevamento tiene solo identità, versione, ambito e stato; una voce fuori forma rende ignoto l'elenco intero.
+  assert.deepStrictEqual(ts.letti[0], [{ id: 'ponytail@ponytail', versione: '1.0.0', scope: 'user', attivo: true }, { id: 'superpowers@claude-plugins-official', scope: 'user', attivo: false }])
+  assert.deepStrictEqual(ts.letti.slice(2), [null, null, null, null, null])
+  // Righe: solo installate e attive, rilevanti per il ruolo; TokenEconomizer (sperimentale) solo se acceso; soloLocale toglie i flussi esterni.
+  assert.deepStrictEqual(ts.righe.map(x => x.replace(/^Use the installed skills: (.*?)\..*$/, '$1')), ['ponytail', '', 'tokeneconomizer', '', 'superpowers', '', '', ''])
+  for (const x of ts.righe) assert.ok(x.length <= K.RIGA_SKILL_MAX)
+  // Le sorgenti sono stringhe fisse owner/repo; le skill invocate dall'utente non entrano mai nei mandati.
+  for (const v of K.SKILL_BASE) assert.match(v.repo, /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/)
+  assert.deepStrictEqual(K.SKILL_BASE.filter(v => v.utente).map(v => v.ruoli.length), [0])
+  assert.deepStrictEqual(K.SKILL_BASE.filter(v => v.sperimentale).map(v => [v.id, v.predefinito]), [['tokeneconomizer', false]])
 })

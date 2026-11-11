@@ -24,6 +24,7 @@ import {
 } from '../hooks/bilanciamento'
 import { bilancia, regoleDa, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
 import { LEGENDA, LINGUE, t } from '../hooks/lingua'
+import { PAGINE_AIUTO, urlAiuto } from '../hooks/aiuto'
 import { ACCENTO, ALFA_VELO, GRIGIO, VELO } from '../hooks/tema'
 import { MAX_URL, rapportoRedatto, urlRapporto } from '../hooks/rapporto'
 import { usoDesktop } from '../hooks/risorse'
@@ -649,7 +650,7 @@ test('impostazioni: in ogni sezione le etichette dei pulsanti sono uniche (prese
       const etichette = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label))
       expect([s, etichette.filter((e, i) => etichette.indexOf(e) !== i)]).toEqual([s, []])
     }
-    expect((await ui.find({ key: 'sezione-legenda-premi' }))?.props).toMatchObject({ label: 'Legenda', variant: 'primary' })
+    expect((await ui.find({ key: 'sezione-legenda-premi' }))?.props).toMatchObject({ label: 'Aiuto', variant: 'primary' })
     await ui.press({ key: 'sezione-soglie-premi' })
     expect((await ui.find({ key: 'soglia-codex-70/90-premi' }))?.props).toMatchObject({ label: 'Codex, 70/90 (predefinita)', variant: 'primary' })
     await ui.unmount()
@@ -702,7 +703,7 @@ test('F5.7: ogni percentuale di piano è utilizzo 0→100 con «used» in ogni l
   }
 })
 
-test('legenda: ultima sezione, chiusa all\'apertura; corsie e termini una voce per riga; rimando R0–R5 solo nel Bilanciamento', async ($, on) => {
+test('F13.4 Aiuto: ultima sezione, chiusa all\'apertura; una riga per corsia, le pagine del sito come testo da copiare prima di Pages; rimando R0–R5 solo nel Bilanciamento', async ($, on) => {
   ambiente(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -714,13 +715,17 @@ test('legenda: ultima sezione, chiusa all\'apertura; corsie e termini una voce p
   await ui.press({ key: 'sezione-legenda-premi' })
   expect(await ui.find({ key: 'pagina-legenda' })).toBeDefined()
   // Una voce per riga: ogni voce è un Text a sé con il testo intero del dizionario.
-  for (const k of [...LEGENDA.corsie, ...LEGENDA.termini]) expect([k, !!(await ui.find({ type: 'Text', text: t('it', k) }))]).toEqual([k, true])
+  for (const k of LEGENDA.corsie) expect([k, !!(await ui.find({ type: 'Text', text: t('it', k) }))]).toEqual([k, true])
+  // Prima di GitHub Pages nessun pulsante apre il sito: gli indirizzi esatti come testo, e «Copia gli indirizzi».
+  for (const p of PAGINE_AIUTO) expect([p, !!(await ui.find({ type: 'Text', text: `${t('it', `aiuto.p.${p}` as never)} · ${urlAiuto(p)}` }))]).toEqual([p, true])
+  expect(await ui.find({ key: 'aiuto-copia' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'aiuto-index' })).toBeUndefined()
   expect(LEGENDA.corsie).toEqual(['legenda.r0', 'legenda.r1', 'legenda.r2', 'legenda.r3', 'legenda.r4', 'legenda.r5'])
   expect(t('it', 'legenda.r5')).toContain('Claude')
   // Il rimando testuale sta solo nella sezione dei pesi.
-  expect(await ui.find({ type: 'Text', text: 'R0–R5: vedi Legenda.' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'R0–R5: vedi Aiuto.' })).toBeUndefined()
   await ui.press({ key: 'sezione-bilanciamento-premi' })
-  expect(await ui.find({ type: 'Text', text: 'R0–R5: vedi Legenda.' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'R0–R5: vedi Aiuto.' })).toBeDefined()
   await ui.unmount()
 })
 

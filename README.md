@@ -321,7 +321,7 @@ Settings come in two layers.
 
 The **Settings** view has one section at a time, in two groups: **Account · all projects** (Connections,
 Thresholds with the manual budgets, Work mode, Execution, Language) and **Project · owner/repo** (Balancing, Project,
-Board, Advanced, Legend).
+Board, Advanced, Help).
 
 - **Work mode.** Default effort per lane (R0–R2 `medium`, R3–R5 `high`; R4/R5 never lower), the Codex sandbox when
   Codex executes (`workspace-write` edits files and the Claude session commits; `read-only`), sessions started together
@@ -661,9 +661,9 @@ Common to both:
 - **Board** — written by the helper under the configuration lock, only if mode and generation are still the
   expected ones; links, junctions, foreign identity markers and data folders inside a working tree are refused.
 
-## Legend
+## Help
 
-The same text as the **Legend** section in Settings and at the bottom of the board, so a new user finds every abbreviation without leaving the panel.
+The **Help** section in Settings and the bottom of the board keep one line per lane, needed to read the chips. Every other term and function is explained on the documentation site, published with GitHub Pages at release.
 
 ### Lanes
 
@@ -674,20 +674,9 @@ The same text as the **Legend** section in Settings and at the bottom of the boa
 - R4 — sensitive: auth, permissions, PII or your project's terms. Claude only (Opus or Fable), Claude review, effort at least high.
 - R5 — highest risk, same guards as R4. Both stay with Claude: they need an adversarial review on this computer, so no Codex, proxy, cloud or bypass.
 
-### Terms
+### Documentation site
 
-- effort — how much reasoning the model spends: low, medium, high, xhigh. More is slower and costs more.
-- worktree — a separate checkout on its own branch: the session works there without touching yours.
-- fork — a new session that starts from a copy of this conversation instead of the brief alone.
-- merge — the branch enters the base branch. Only a merge closes a chip: delivered is not done.
-- registry — the orchestrator's registro.json, which tracks tasks by branch. When the task of a chip is merged, the chip closes.
-- MCP — the tools agents call: suggerisci_azione puts a chip here, risorse_agenti reads limits and margins.
-- PII — personal data. A brief that contains it stays local and goes to a sensitive lane.
-- thresholds — warning and critical usage of a provider limit. Over critical, open choices go to another allowed provider.
-- context — how much of a session's context window is already used.
-- token — the unit of text models count. Limits and context are measured in tokens.
-- shared folder — the session works in your checkout, without a worktree. The registry cannot link it: close it yourself.
-- cloud — a new session in the cloud. It gets only title and brief, never local context, and never on sensitive lanes.
+[Overview](https://elite9400.github.io/chipManager/site/index.html) · [Quick start](https://elite9400.github.io/chipManager/site/quick-start.html) · [The panel](https://elite9400.github.io/chipManager/site/panel.html) · [Chips and their life cycle](https://elite9400.github.io/chipManager/site/chips.html) · [Lanes R0–R5](https://elite9400.github.io/chipManager/site/lanes.html) · [Models and how to use them](https://elite9400.github.io/chipManager/site/models.html) · [Work mode and settings](https://elite9400.github.io/chipManager/site/settings.html) · [Doctor and reports](https://elite9400.github.io/chipManager/site/doctor.html) · [Board](https://elite9400.github.io/chipManager/site/board.html) · [For agents](https://elite9400.github.io/chipManager/site/agents.html) · [FAQ](https://elite9400.github.io/chipManager/site/faq.html)
 
 ## Project layout
 

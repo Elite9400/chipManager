@@ -5,7 +5,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { Fornitore, PassoEsecuzione, Pendenti, Peso, Rilievo, RisorseProgetto, StatoDoctor, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni } from '../types'
+import type { Fornitore, PassoEsecuzione, Pendenti, Peso, Rilievo, RisorseProgetto, StatoCompatibili, StatoDoctor, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni } from '../types'
 import {
   budgetDa,
   campiDaProposta,
@@ -39,6 +39,9 @@ import type { Chiave, Lingua, T } from './lingua'
 import { INSTALLAZIONE, nomeLimiteIn, unitaIn } from './risorse'
 import { ACCENTO, ALFA_VELO, GRIGIO, LIVELLO, STATO } from './tema'
 import { urlRapporto } from './rapporto'
+import { PAGINE_AIUTO, SITO_PUBBLICATO, urlAiuto } from './aiuto'
+import { COMPATIBILI } from './compatibili'
+import type { VoceCompatibile } from './compatibili'
 
 type StatoVista = StatoImpostazioni
 type Sezione = StatoVista['sezione']
@@ -72,6 +75,7 @@ const PASSI_TUOI: readonly string[] = ['fornitori', 'accessi', 'chiavi']
 // --- F11.3: il doctor ----------------------------------------------------------------------------------------------
 /** L'ultima diagnosi (in memoria): la scrive il comando, la legge la pagina Doctor. */
 export const statoDoctor = atom({ plugin: 'chip-manager', key: 'doctor' } as const, {} as StatoDoctor, { shape: 'doctor-1' })
+const statoCompatibili = atom({ plugin: 'chip-manager', key: 'compatibili' } as const, {} as StatoCompatibili, { shape: 'compatibili-1' })
 /** I codici che la pagina sa dire: un codice fuori elenco non si mostra (e non entra mai in un rapporto). */
 export { RILIEVI } from './rapporto'
 /** Gli avvisi (!): il resto blocca qualcosa (✗). */
@@ -408,6 +412,57 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
   const chiave = (f: Fornitore) =>
     f === 'claude' ? T(capacita.chiavi.anthropic ? 'con.adminImpostata' : 'con.adminMancante') : f === 'deepseek' ? T(capacita.chiavi.deepseek ? 'con.chiaveImpostata' : 'con.chiaveMancante') : undefined
 
+  // --- F13.3b: OpenAI-compatible providers. The key never passes through the panel: «Get the key» opens the registry's
+  // fixed page, the key goes in /config, «Check» is one cheap call on click. The project opts in per provider (Off/R1/R2).
+  const sc = await read($, statoCompatibili)
+  const compatibiliUi = () => {
+    const livelli = r.compatibili ?? {}
+    const impAccount = r.account.compatibili ?? {}
+    const stato = (v: VoceCompatibile) => {
+      const chiave = !v.opzione ? T('cmp.senzaChiave') : !v.chiaveObbligatoria
+        ? T('cmp.chiaveFacoltativa') : T((regoleOra.compatibiliConnessi ?? []).includes(v.id) ? 'cmp.chiaveSi' : 'cmp.chiaveNo')
+      const esito = sc.inCorso === v.id ? T('cmp.inCorso') : sc.verifiche?.[v.id] ? T(`cmp.esito.${sc.verifiche[v.id]!.esito}` as Chiave) : ''
+      const trovato = sc.rilevati?.find(x => x.id === v.id)
+      return [chiave, esito, trovato ? T('cmp.rilevati', { nome: v.nome, n: trovato.modelli.length }) : ''].filter(Boolean).join(' · ')
+    }
+    return [
+      <Text key="cmp-titolo" weight="semibold" wrap="wrap">{T('cmp.titolo')}</Text>,
+      didascalia('cmp-descrizione', T('cmp.descrizione')),
+      ...COMPATIBILI.map(v => (
+        <Box key={`cmp-${v.id}`} flexDirection="column" gap={terminale ? 0 : 'xs'}>
+          {u.Riga({
+            chiave: `cmp-riga-${v.id}`,
+            classe,
+            principale: [<Text key={`cmp-nome-${v.id}`} weight="medium">{v.nome}</Text>, didascalia(`cmp-stato-${v.id}`, stato(v))],
+            azioni: [
+              ...(v.paginaChiave ? [<Button key={`cmp-chiave-${v.id}`} variant="secondary" label={T('cmp.prendiChiave', { nome: v.nome })} onPress={() => void esegui(`cmp-${v.id}`, () => c.apriPagina(v.paginaChiave!), '')} />] : []),
+              ...(v.verificaChiave ? [<Button key={`cmp-verifica-${v.id}`} plain label={T('cmp.verifica', { nome: v.nome })} onPress={() => void esegui(`cmp-${v.id}`, () => c.verificaCompatibile(v.id), '')} />] : []),
+            ],
+          })}
+          {u.GruppoChip({
+            chiave: `cmp-livello-${v.id}`, etichetta: T('cmp.livello', { nome: v.nome }), contesto: v.nome, modo: 'scelta', valore: livelli[v.id] ?? 'niente',
+            voci: [{ valore: 'niente', testo: T('cmp.spento') }, { valore: 'R1', testo: 'R1' }, { valore: 'R2', testo: 'R2' }],
+            onCambia: x => salva(`cmp-${v.id}`, () => ({ compatibili: { ...livelli, [v.id]: x === 'niente' ? null : x } }))(),
+          })}
+          {v.id === 'qwen'
+            ? u.GruppoChip({
+                chiave: 'cmp-regione-qwen', etichetta: T('cmp.regione'), modo: 'scelta', valore: impAccount.qwen?.regione ?? 'intl',
+                voci: (['intl', 'cn', 'us'] as const).map(x => ({ valore: x, testo: T(`cmp.regione.${x}` as Chiave) })),
+                onCambia: x => salva('cmp-qwen', () => ({ 'account.compatibili': { ...impAccount, qwen: { ...impAccount.qwen, regione: x } } }))(),
+              })
+            : null}
+          {v.opzione ? didascalia(`cmp-dove-${v.id}`, T('cmp.dove', { nome: v.nome })) : null}
+          {errore(`cmp-${v.id}`)}
+        </Box>
+      )),
+      <Box key="cmp-locali" flexDirection="column" alignItems="flex-start" gap={terminale ? 0 : 'xs'}>
+        <Button key="cmp-rileva" variant="secondary" label={T('cmp.rileva')} onPress={() => void esegui('cmp-rileva', () => c.rilevaLocali(), '')} />
+        {sc.inCorso === 'rileva' ? didascalia('cmp-rileva-stato', T('cmp.inCorso')) : sc.rilevatiIl && !sc.rilevati?.length ? didascalia('cmp-rileva-stato', T('cmp.nessunLocale')) : null}
+        {errore('cmp-rileva')}
+      </Box>,
+    ]
+  }
+
   const connessioni = () => {
     const stato = T('con.stato', { n: collegati.length, mancanti: ammessi.length - collegati.length })
     return u.Sezione({
@@ -455,6 +510,7 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
             </Box>
           )
         }),
+        ...compatibiliUi(),
         didascalia('chiavi-nota', T('con.chiaviNota')),
       ],
     })
@@ -1280,21 +1336,37 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
 
   // --- Legenda -----------------------------------------------------------------------------------------
   // Una voce per riga, dallo stesso dizionario della board; le fasi di sviluppo stanno solo nei README.
+  // F13.4: «Aiuto» al posto della Legenda. Restano le righe delle corsie; il resto è sul sito, con indirizzi esatti (aiuto.ts).
+  // Prima di GitHub Pages gli indirizzi si mostrano come testo da copiare e nulla si apre.
   const legenda = () =>
     u.Sezione({
       chiave: 'pagina-legenda',
       titolo: T('imp.sezione.legenda'),
-      descrizione: T('legenda.descrizione'),
-      figli: (['corsie', 'termini'] as const).map(g => (
-        <Box key={`legenda-${g}`} flexDirection="column" gap={terminale ? 0 : 'xs'}>
-          <Text key={`legenda-${g}-titolo`} bold>{T(`legenda.${g}`)}</Text>
-          {LEGENDA[g].map(k => (
+      descrizione: T('aiuto.descrizione'),
+      figli: [
+        <Box key="legenda-corsie" flexDirection="column" gap={terminale ? 0 : 'xs'}>
+          <Text key="legenda-corsie-titolo" bold>{T('legenda.corsie')}</Text>
+          {LEGENDA.corsie.map(k => (
             <Text key={k} wrap="wrap">
               {T(k)}
             </Text>
           ))}
-        </Box>
-      )),
+        </Box>,
+        <Box key="aiuto-sito" flexDirection="column" alignItems="flex-start" gap={terminale ? 0 : 'xs'}>
+          <Text key="aiuto-sito-titolo" bold>{T('aiuto.pagine')}</Text>
+          {SITO_PUBBLICATO ? null : didascalia('aiuto-non-pubblicato', T('aiuto.nonPubblicato'))}
+          {PAGINE_AIUTO.map(p =>
+            SITO_PUBBLICATO ? (
+              <Button key={`aiuto-${p}`} plain label={T('aiuto.apri', { pagina: T(`aiuto.p.${p}` as Chiave) })} onPress={() => void c.apriPagina(urlAiuto(p))} />
+            ) : (
+              <Text key={`aiuto-${p}`} wrap="wrap">{`${T(`aiuto.p.${p}` as Chiave)} · ${urlAiuto(p)}`}</Text>
+            ))}
+          {SITO_PUBBLICATO ? null : (
+            <Button key="aiuto-copia" variant="secondary" label={T('aiuto.copia')}
+              onPress={() => void $.ui.copy({ text: PAGINE_AIUTO.map(p => `${T(`aiuto.p.${p}` as Chiave)}: ${urlAiuto(p)}`).join('\n') }).then(x => x.isCopied && $.ui.toast(T('ese.copiato')))} />
+          )}
+        </Box>,
+      ],
     })
 
   const pendenti = piena(vista.pendenti)?.dove.length ?? 0

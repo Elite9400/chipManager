@@ -5,6 +5,7 @@ import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { GRIGIO, LIVELLO, STATO } from './tema'
 import { baseDi, impostazioniCompatibiliDa, livelliCompatibiliDa, MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
+import { SKILL_BASE } from './skill-base'
 
 // --- regole (routing.json) ---------------------------------------------------------------------
 
@@ -222,7 +223,9 @@ function manualiDa(v: unknown, progetto: boolean): Limite[] | undefined {
 // --- F11.1: il modo di lavoro --------------------------------------------------------------------------------------
 const EFFORT_MODO = ['low', 'medium', 'high', 'xhigh'] as const
 const CORSIE_MODO: readonly Corsia[] = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5']
-const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata']
+const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata', 'skillBase']
+/** F13.7: the baseline skill ids the work mode may turn on or off (absent = the entry's default). */
+const ID_SKILL = SKILL_BASE.map(v => v.id)
 /** Le corsie dove l'effort non scende sotto high: un valore più basso viola la guardia e non vale. */
 const sottoHigh = (c: string, x: string) => (c === 'R4' || c === 'R5') && EFFORT_MODO.indexOf(x as never) < 2
 
@@ -245,6 +248,10 @@ export function modoDa(v: unknown): ModoLavoro {
   if (Number.isInteger(v.parallelo) && (v.parallelo as number) >= 1 && (v.parallelo as number) <= 8) out.parallelo = v.parallelo as number
   if (typeof v.auditorSuggerito === 'boolean') out.auditorSuggerito = v.auditorSuggerito
   if (typeof v.revisioneIncrociata === 'boolean') out.revisioneIncrociata = v.revisioneIncrociata
+  if (oggettoRisorse(v.skillBase)) {
+    const s = Object.fromEntries(Object.entries(v.skillBase).filter(([k, x]) => ID_SKILL.includes(k) && typeof x === 'boolean')) as Record<string, boolean>
+    if (Object.keys(s).length) out.skillBase = s
+  }
   return out
 }
 
@@ -265,6 +272,11 @@ export function modoNonValido(v: unknown): string | undefined {
   if (v.parallelo !== undefined && v.parallelo !== null && !(Number.isInteger(v.parallelo) && (v.parallelo as number) >= 1 && (v.parallelo as number) <= 8)) return 'modoLavoro.parallelo'
   for (const k of ['auditorSuggerito', 'revisioneIncrociata'])
     if (v[k] !== undefined && v[k] !== null && typeof v[k] !== 'boolean') return `modoLavoro.${k}`
+  const sb = v.skillBase
+  if (sb !== undefined && sb !== null) {
+    if (!oggettoRisorse(sb)) return 'modoLavoro.skillBase'
+    for (const [k, x] of Object.entries(sb)) if (!ID_SKILL.includes(k) || (x !== null && typeof x !== 'boolean')) return `modoLavoro.skillBase.${k.replace(/[^A-Za-z0-9_-]/g, '?').slice(0, 40)}`
+  }
   return undefined
 }
 
@@ -279,6 +291,8 @@ export function modoEfficace(account: ModoLavoro | undefined, progetto: ModoLavo
     ...(parallelo !== undefined && { parallelo }),
     auditorSuggerito: progetto?.auditorSuggerito ?? account?.auditorSuggerito ?? d.auditorSuggerito,
     revisioneIncrociata: progetto?.revisioneIncrociata ?? account?.revisioneIncrociata ?? d.revisioneIncrociata,
+    // F13.7: per skill the project replaces the account; empty = absent, so payloads without the field stay as before.
+    ...(Object.keys({ ...account?.skillBase, ...progetto?.skillBase }).length && { skillBase: { ...account?.skillBase, ...progetto?.skillBase } }),
   }
 }
 

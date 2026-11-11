@@ -4,6 +4,7 @@
 import { expect } from 'claude-code/testing'
 
 import { NUOVI_F11 } from './f11-nuovi'
+import { NUOVI_F13B } from './f13b-nuovi'
 import { PRIMA } from './f9-prima'
 
 export type ControlloF9 = { tipo?: string; chiave?: unknown; label?: unknown; hotkey?: unknown; variant?: unknown; value?: unknown; options?: unknown; gestori: string[] }
@@ -41,10 +42,18 @@ export const nuovoF11 = (k: unknown) => typeof k === 'string' && /^(sezione-modo
 
 /** I controlli di una vista: quelli di prima contro la fotografia di F9, i nuovi contro quella di F11; una vista nuova tutta in F11. */
 export function confrontaControlli(chiave: string, c: ControlloF9[]) {
-  if (!(chiave in PRIMA)) return confrontaF9(chiave, c, NUOVI_F11)
-  confrontaF9(chiave, c.filter(x => !nuovoF11(x.chiave)))
-  confrontaF9(chiave, c.filter(x => nuovoF11(x.chiave)), NUOVI_F11)
+  // F13b: provider rows, Help and the relabelled Help tab go to their own snapshot, before the F9 and F11 ones.
+  confrontaF9(chiave, c.filter(x => nuovoF13b(x.chiave)), NUOVI_F13B)
+  c = c.filter(x => !nuovoF13b(x.chiave))
+  // The older snapshots lose the same controls, so a relabelled one (the Help tab) is compared only once, in F13b's.
+  const senza = (foto: Record<string, unknown>) => (chiave in foto ? { ...foto, [chiave]: (foto[chiave] as ControlloF9[]).filter(x => !nuovoF13b(x.chiave)) } : foto)
+  if (!(chiave in PRIMA)) return confrontaF9(chiave, c, senza(NUOVI_F11))
+  confrontaF9(chiave, c.filter(x => !nuovoF11(x.chiave)), senza(PRIMA))
+  confrontaF9(chiave, c.filter(x => nuovoF11(x.chiave)), senza(NUOVI_F11))
 }
+
+/** F13b: the controls added (cmp-*, aiuto-*) or relabelled (the Help tab, formerly Legend) by F13b. */
+export const nuovoF13b = (k: unknown) => typeof k === 'string' && /^(cmp-|aiuto-|sezione-legenda-premi$)/.test(k)
 
 /**
  * Confronta `chiave` con la fotografia «prima» (tests/f9-prima.ts). Una chiave che la fotografia non ha ancora si

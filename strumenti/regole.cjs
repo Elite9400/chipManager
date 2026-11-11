@@ -50,7 +50,8 @@ function apiDa(v, campo) {
 // --- F11.1: il modo di lavoro (gemello di modoDa, modoNonValido e modoEfficace in hooks/logica.ts) ---------------------
 const EFFORT_MODO = ['low', 'medium', 'high', 'xhigh']
 const CORSIE_MODO = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5']
-const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata']
+const CAMPI_MODO = ['effortPredefinito', 'codexSandbox', 'parallelo', 'auditorSuggerito', 'revisioneIncrociata', 'skillBase']
+const ID_SKILL = require('./skill-base.cjs').SKILL_BASE.map(v => v.id)
 const MODO_PREDEFINITO = { effortPredefinito: { R0: 'medium', R1: 'medium', R2: 'medium', R3: 'high', R4: 'high', R5: 'high' }, codexSandbox: 'workspace-write', auditorSuggerito: false, revisioneIncrociata: true }
 const sottoHigh = (c, x) => (c === 'R4' || c === 'R5') && EFFORT_MODO.indexOf(x) < 2
 const paralleloValido = v => Number.isInteger(v) && v >= 1 && v <= 8
@@ -71,6 +72,10 @@ function modoDa(v) {
   if (paralleloValido(v.parallelo)) out.parallelo = v.parallelo
   if (typeof v.auditorSuggerito === 'boolean') out.auditorSuggerito = v.auditorSuggerito
   if (typeof v.revisioneIncrociata === 'boolean') out.revisioneIncrociata = v.revisioneIncrociata
+  if (oggetto(v.skillBase)) {
+    const s = Object.fromEntries(Object.entries(v.skillBase).filter(([k, x]) => ID_SKILL.includes(k) && typeof x === 'boolean'))
+    if (Object.keys(s).length) out.skillBase = s
+  }
   return out
 }
 
@@ -90,6 +95,11 @@ function modoNonValido(v) {
   if (v.codexSandbox !== undefined && v.codexSandbox !== null && v.codexSandbox !== 'workspace-write' && v.codexSandbox !== 'read-only') return 'modoLavoro.codexSandbox'
   if (v.parallelo !== undefined && v.parallelo !== null && !paralleloValido(v.parallelo)) return 'modoLavoro.parallelo'
   for (const k of ['auditorSuggerito', 'revisioneIncrociata']) if (v[k] !== undefined && v[k] !== null && typeof v[k] !== 'boolean') return `modoLavoro.${k}`
+  const sb = v.skillBase
+  if (sb !== undefined && sb !== null) {
+    if (!oggetto(sb)) return 'modoLavoro.skillBase'
+    for (const [k, x] of Object.entries(sb)) if (!ID_SKILL.includes(k) || (x !== null && typeof x !== 'boolean')) return `modoLavoro.skillBase.${k.replace(/[^A-Za-z0-9_-]/g, '?').slice(0, 40)}`
+  }
   return null
 }
 
@@ -106,6 +116,7 @@ function modoEfficace(accountGrezzo, progettoGrezzo) {
     ...(parallelo !== undefined && { parallelo }),
     auditorSuggerito: p.auditorSuggerito ?? a.auditorSuggerito ?? d.auditorSuggerito,
     revisioneIncrociata: p.revisioneIncrociata ?? a.revisioneIncrociata ?? d.revisioneIncrociata,
+    ...(Object.keys({ ...a.skillBase, ...p.skillBase }).length && { skillBase: { ...a.skillBase, ...p.skillBase } }),
   }
 }
 
@@ -168,9 +179,9 @@ function regoleEfficaci(accountGrezzo, progettoGrezzo) {
     apiClaude = { budgetUsd: account.apiClaude.budgetUsd, tetto, ...(limite < account.apiClaude.budgetUsd && { limiteProgettoUsd: limite }) }
   }
   const modoLavoro = modoEfficace(oggetto(accountGrezzo) ? accountGrezzo.modoLavoro : undefined, p.modoLavoro)
-  const compatibili = require('./compatibili.cjs').livelliCompatibiliDa(p.compatibili)
-  if (!compatibili) no('compatibili')
-  return { soglie, apiClaude, endpoint: (fp && fp.endpoint) ?? account.endpoint ?? ENDPOINT_PREDEFINITO, modoLavoro, compatibili, impostazioniCompatibili: account.compatibili }
+  // F13.3b: validated like the panel; the helper does not need the values, so they stay out of the effective rules.
+  if (!require('./compatibili.cjs').livelliCompatibiliDa(p.compatibili)) no('compatibili')
+  return { soglie, apiClaude, endpoint: (fp && fp.endpoint) ?? account.endpoint ?? ENDPOINT_PREDEFINITO, modoLavoro }
 }
 
 /** Il motivo per cui le restrizioni allargherebbero l'account, o null (più severo = valore più basso). Lancia se non valgono. */

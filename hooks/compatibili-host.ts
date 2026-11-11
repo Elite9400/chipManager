@@ -1,8 +1,28 @@
 // F13.3b: the host side of the OpenAI-compatible providers. Keys stay in the native sensitive options and reach only the
 // helper process of the provider in question, through its environment (never argv, records or the panel).
+import { atom, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
+import type { StatoCompatibili } from '../types'
 import { COMPATIBILI, MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
 import { conta } from './logica'
+
+/** Shared by the panel and the settings view: only outcome codes, times and validated model ids. */
+export const statoCompatibili = atom({ plugin: 'chip-manager', key: 'compatibili' } as const, {} as StatoCompatibili, { shape: 'compatibili-1' })
+
+/** «Check» on one provider, only on the owner's click. A failed helper run is «unreachable», never a guess. */
+export async function verificaCompatibile($: EngineInterface, opz: Record<string, unknown>, id: string, imp: unknown) {
+  if (!voceCompatibile(id)) return
+  await update($, statoCompatibili, s => ({ ...s, inCorso: id }))
+  const esito = await chiamaCompatibile($, opz, 'verifica', { provider: id, imp }).then(esitoVerifica).catch(() => 'irraggiungibile' as const)
+  await update($, statoCompatibili, s => ({ ...s, inCorso: undefined, verifiche: { ...s.verifiche, [id]: { esito, quando: new Date().toISOString() } } }))
+}
+
+/** Local servers on their default loopback ports (FreeLLMAPI preset included). */
+export async function rilevaLocali($: EngineInterface, opz: Record<string, unknown>) {
+  await update($, statoCompatibili, s => ({ ...s, inCorso: 'rileva' }))
+  const rilevati = await chiamaCompatibile($, opz, 'rileva', {}).then(rilevatiDa).catch(() => [])
+  await update($, statoCompatibili, s => ({ ...s, inCorso: undefined, rilevati, rilevatiIl: new Date().toISOString() }))
+}
 
 /** Registry providers usable now: no key needed, or its native option is set. Environment variables never count. */
 export const connessiCompatibili = (opz: Record<string, unknown>) =>

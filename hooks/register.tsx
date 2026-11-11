@@ -75,7 +75,7 @@ import {
 } from './logica'
 import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
 import { MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
-import { chiamaCompatibile, connessiCompatibili } from './compatibili-host'
+import { chiamaCompatibile, connessiCompatibili, rilevaLocali, verificaCompatibile } from './compatibili-host'
 import { board, chiaveRiassunto, hash, improntaBoard, testoRiassunto } from './board'
 import type { Piano as PianoBoard } from './board'
 import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salvato, t, testo, traduttore } from './lingua'
@@ -2584,6 +2584,13 @@ export const register: Register = (on, options) => {
       ricontrollaCambio: a => ricontrollaCambio($, a.id),
       accedi: tipo => accedi($, tipo),
       apriConfig: () => apriConfig($),
+      apriPagina: async url => {
+        // Il controllo vero è nell'helper (lista esatta): qui solo un rifiuto immediato e leggibile.
+        const esito = await helper($, ['apri-pagina', url])
+        if (esito.codice !== 0) throw errore('err.paginaNonAperta')
+      },
+      verificaCompatibile: async id => verificaCompatibile($, opz, id, (await leggiRegole($)).risorse.account.compatibili?.[id]),
+      rilevaLocali: () => rilevaLocali($, opz),
       installa: async passo => {
         let r = await leggiRegole($)
         if (!r.lette || r.risorse.soloLocale || !r.risorse.fornitori.includes('freellmapi')) throw errore('err.abilitaFree')

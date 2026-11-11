@@ -63,18 +63,20 @@ test('board: quattro gruppi, un <details> per ogni chip mostrata, fallita fra «
   expect(html.slice(html.indexOf('Prossimi ('))).toContain('limite di 3 sessioni in parallelo')
 })
 
-test('board: «Legenda» in fondo, chiusa, dallo stesso dizionario del pannello; testo escapato', () => {
+test('board: «Aiuto» in fondo, chiuso, con le sole righe delle corsie dello stesso dizionario del pannello; testo escapato', () => {
   const html = board(dati(insieme()))
   const i = html.indexOf('<details id="legenda">')
   expect(i).toBeGreaterThan(html.lastIndexOf('</section>'))
   expect(i).toBeLessThan(html.indexOf('<footer>'))
   expect(html).not.toContain('<details id="legenda" open')
   const legenda = html.slice(i, html.indexOf('</details>', i))
-  expect(legenda).toContain('<summary>Legenda</summary>')
-  for (const k of [...LEGENDA.corsie, ...LEGENDA.termini]) expect(legenda).toContain(`<li>${esc(t('it', k))}</li>`)
+  expect(legenda).toContain('<summary>Aiuto</summary>')
+  for (const k of LEGENDA.corsie) expect(legenda).toContain(`<li>${esc(t('it', k))}</li>`)
+  // F13.4: i termini stanno sul sito, non più nella board.
+  expect(legenda.match(/<li>/g)?.length).toBe(LEGENDA.corsie.length)
   // L'apostrofo di «l'effort» arriva escapato.
   expect(legenda).toContain('l&#39;effort')
-  expect(board(dati([], { lingua: 'en' }))).toContain('<summary>Legend</summary>')
+  expect(board(dati([], { lingua: 'en' }))).toContain('<summary>Help</summary>')
 })
 
 test('board F5.2: scura di default (chiara solo con prefers-color-scheme: light), dati in ui-monospace, errore con ✗', () => {

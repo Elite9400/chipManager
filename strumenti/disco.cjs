@@ -153,6 +153,28 @@ function rapportoValido(t) {
   return codici.every((c, i) => RILIEVI_RAPPORTO.includes(c) && (i === 0 || codici[i - 1] < c))
 }
 
+/** F13.4/F13.3b: twin of hooks/aiuto.ts. Exact addresses only: the help pages and the registry's key pages. */
+const PAGINE_AIUTO = ['index', 'quick-start', 'panel', 'chips', 'lanes', 'models', 'settings', 'doctor', 'board', 'agents', 'faq']
+const SITO_AIUTO = 'https://elite9400.github.io/chipManager/site/'
+const paginePermesse = () => new Set([...PAGINE_AIUTO.map(p => `${SITO_AIUTO}${p}.html`),
+  ...require('./compatibili.cjs').COMPATIBILI.map(v => v.paginaChiave).filter(Boolean)])
+
+/** Opens a help page or a provider's key page, separately from the report URL check: exact string match, fixed argv. */
+function apriPagina(url, deps = {}) {
+  if (typeof url !== 'string' || !paginePermesse().has(url)) return [2, '']
+  const argv = process.platform === 'win32' ? ['rundll32', 'url.dll,FileProtocolHandler', url] : process.platform === 'darwin' ? ['open', url] : ['xdg-open', url]
+  try {
+    if (deps.avvia) deps.avvia(argv)
+    else {
+      const [eseguibile, argomenti] = comandoReale(argv)
+      spawn(eseguibile, argomenti, { stdio: 'ignore', detached: true, windowsHide: true }).unref()
+    }
+    return [0, '']
+  } catch {
+    return [1, '']
+  }
+}
+
 /**
  * Apre nel browser SOLO il nuovo issue di chipManager: https, host esatto github.com, percorso esatto, i soli parametri
  * `title` (fisso) e `body` (un rapporto valido). Argv fisso per sistema, mai una shell. `deps.avvia` solo per le prove.
@@ -1764,6 +1786,7 @@ async function comandoHelper(argv, { mutexCodex = MUTEX_CODEX, dirMacchina } = {
   if (cmd === 'diagnosi' && a.length === 4) return esci(0, JSON.stringify(require('./diagnosi.cjs').diagnosi(...a, { dm: dirMacchina })))
   if (cmd === 'archivia-registro' && a.length === 1) return esci(...(await require('./diagnosi.cjs').archiviaRegistro(a[0])))
   if (cmd === 'apri-url' && a.length === 1) return esci(...apriUrl(a[0]))
+  if (cmd === 'apri-pagina' && a.length === 1) return esci(...apriPagina(a[0]))
   if (cmd === 'sposta-dati' && a.length === 4) return esci(...(await spostaDati(...a, stdin())))
   if (cmd === 'segnala-gh' && !a.length) return esci(...segnalaGh(stdin()))
   if (cmd === 'lancia-cli' && a.length === 3) return esci(await lanciaCli(...a, stdin()))
@@ -1802,7 +1825,7 @@ function esci(codice, testo) {
 }
 
 module.exports = {
-  main, conMutex, percorsoCanonico, mutexEsecuzione, registraRadici, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
+  main, conMutex, percorsoCanonico, mutexEsecuzione, registraRadici, scriviAtomico, scriviDati, scriviConfig, ripristinaConfig, spostaDati, configValido, apriUrl, apriPagina, PAGINE_AIUTO, segnalaGh, rapportoValido, percorsoSicuro, Rifiuto, impostazioniProponi, impostazioniPrendi, propostaImpostazioniNonValida, fileImpostazioniDi, prenota, porta, MUTEX_AZIONI, MUTEX_CODEX, configura, configuraUtente, lanciaCli, eseguiCli, pesiProponi, pesiDecidi, pesiAnnulla,
   esci, preparaWorktree, parametriValidi, avviaComando, comandoReale, elencoProcessi, alberoVivo, vivo, tentativoValido, idValido, fileEsecuzione,
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => esci(1, String(e?.message ?? e)))

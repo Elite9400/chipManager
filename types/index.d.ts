@@ -38,6 +38,8 @@ export type ModoLavoro = {
   parallelo?: number
   auditorSuggerito?: boolean
   revisioneIncrociata?: boolean
+  /** F13.7: baseline skills on or off by id (absent = the entry's default); never a source, only registry ids. */
+  skillBase?: Record<string, boolean>
 }
 /** F11.1: il modo di lavoro efficace (account, progetto e predefiniti combinati). */
 export type ModoLavoroEfficace = {
@@ -343,6 +345,15 @@ export type TipoAccesso = 'claude' | 'gh' | 'codex'
 /** F11.3: un rilievo del doctor: un codice di un elenco chiuso e pochi dettagli (numeri, nomi di campo della mod). */
 export type Rilievo = { codice: string; [dettaglio: string]: unknown }
 /** F11.3: l'ultima diagnosi del doctor (solo in memoria). */
+/** F13.7: the installed baseline plugins from `claude plugin list --json` (null = unknown) and when they were read. */
+export type StatoSkill = { installati?: { id: string; versione?: string; scope: 'user' | 'project' | 'local' | 'managed'; attivo: boolean }[] | null; quando?: string }
+/** F13.3b: outcomes of the owner's «Check» per registry provider and the last local-server detection (no keys, no bodies). */
+export type StatoCompatibili = {
+  verifiche?: Record<string, { esito: 'valida' | 'rifiutata' | 'irraggiungibile' | 'assente' | 'nonDisponibile' | 'configurazione' | 'ignoto'; quando: string }>
+  rilevati?: { id: string; base: string; modelli: string[] }[]
+  rilevatiIl?: string
+  inCorso?: string
+}
 export type StatoDoctor = {
   trovati?: Rilievo[]
   quando?: string
@@ -488,6 +499,8 @@ declare module 'claude-code' {
       esecuzione: Shaped<StatoEsecuzione>
       /** F11.3: l'ultima diagnosi del doctor. */
       doctor: Shaped<StatoDoctor>
+      compatibili: Shaped<StatoCompatibili>
+      skill: Shaped<StatoSkill>
       /** F6.4: la spesa a crediti API del mese (stimata), dal registro dell'helper; null = non configurata o illeggibile. */
       spesaApi: Shaped<{ mese: string; speso: number | null; progetto?: number | null } | null>
       vive: Shaped<Record<string, Vita>>
