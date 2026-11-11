@@ -1246,10 +1246,31 @@ const API = new Proxy(API_VERA, {
   get(m, k) {
     const f = m[k]
     if (!['lanciaApi', 'eseguiApi', 'statoApi', 'liberaApi', 'terminaApi', 'accedi', 'contaSpesa'].includes(k)) return f
-    // Il deps è l'argomento dopo i posizionali (f.length conta quelli senza valore predefinito).
-    return (...a) => f(...a.slice(0, f.length), { ...ISOLA, ...(a[f.length] ?? {}) })
+    // Il deps è l'argomento dopo i posizionali (f.length conta quelli senza valore predefinito). Giro 3 di F13a, punto 3:
+    // i posizionali mancanti si completano con undefined, così ISOLA non finisce mai in un parametro posizionale.
+    return (...a) => f(...a.slice(0, f.length), ...Array(Math.max(0, f.length - a.length)).fill(undefined), { ...ISOLA, ...(a[f.length] ?? {}) })
   },
 })
+/**
+ * Giro 3 di F13a, punto 3: se la corsia API prende un mutex di produzione dentro una prova (lock della macchina, accesso),
+ * la prova fallisce. Le prove che lo prendono apposta lo fanno dal proprio codice, non dalla corsia API.
+ */
+const PRODUZIONE = nome => nome === API_VERA.MUTEX_API || /^accesso:/.test(nome)
+const conMutexVero = require(DISCO).conMutex
+let produzioneAmmessa = false
+/** Solo per la prova che mostra apposta che la produzione si ferma sul lock tenuto da un altro processo. */
+const conMutexDiProduzione = async fn => {
+  produzioneAmmessa = true
+  try {
+    return await fn()
+  } finally {
+    produzioneAmmessa = false
+  }
+}
+require(DISCO).conMutex = (nome, ...resto) => {
+  if (!produzioneAmmessa && PRODUZIONE(nome) && /api-claude\.cjs/.test(new Error().stack ?? '')) throw new Error(`prova: mutex di produzione dalla corsia API (${nome})`)
+  return conMutexVero(nome, ...resto)
+}
 const CHIAVE_PROVA = 'sk-ant-prova-0123456789'
 /** Una voce del registro senza la cartella delle azioni (giro 2 di F13a), che cambia a ogni prova. */
 const senzaDati = v => {
@@ -1952,7 +1973,7 @@ test('corsia API: le prove usano mutex propri; il lock della macchina tenuto da 
     assert.deepStrictEqual([codice, Date.now() - inizio < 4000], [0, true])
     assert.strictEqual((await API.statoApi(tmp())).libero, true)
     // La produzione no: senza i mutex delle prove lo stesso lock la ferma (stesso nome di sempre).
-    assert.strictEqual((await API_VERA.statoApi(tmp(), { adesso: () => Date.now() })).motivo, 'mutex')
+    assert.strictEqual((await conMutexDiProduzione(() => API_VERA.statoApi(tmp(), { adesso: () => Date.now() }))).motivo, 'mutex')
   } finally {
     tenitore.kill('SIGKILL')
     await new Promise(r => tenitore.on('exit', r))
@@ -4154,7 +4175,58 @@ test('Revisione F13a, giro 2, punto 4: una prenotazione rimasta senza lock si li
   passo('a-nuo00001', 'az-nuo00001', {})
   assert.deepStrictEqual(await avvia(dm, 'a-nuo00001', 'az-nuo00001', config), [0, ''])
   const v = API.leggiSpesa(dm).voci
-  assert.deepStrictEqual([v['az-orfa0001'].stato, v['az-orfa0001'].costo, v['az-orfa0002'].stato, v['az-orfa0002'].costo, v['az-vecc0001'].stato],
-    ['contato', 0, 'contato', null, 'prenotato'])
+  // Giro 3: senza avvio la voce si toglie (non resta «contata a 0»).
+  assert.deepStrictEqual([v['az-orfa0001'], v['az-orfa0002'].stato, v['az-orfa0002'].costo, v['az-vecc0001'].stato],
+    [undefined, 'contato', null, 'prenotato'])
   assert.strictEqual(v['az-nuo00001'].dati, path.resolve(dir))
+})
+
+// --- Revisione F13a, giro 3 (recupero delle prenotazioni) ----------------------------------------------------------------
+
+test('Revisione F13a, giro 3, punto 1: una prenotazione orfana senza avvio si annulla; lo stesso tentativo riprenota coi limiti e il consuntivo conta', async () => {
+  const { dir, stdin, passo, avvia, registro } = spesaGiro2()
+  const dm = tmp()
+  const config = configApi({ apiClaude: { budgetUsd: 50, tetto: 5 }, modoLavoro: { pipeline: { tettoUsd: 1 } } })
+  registro(dm, { 'az-cat00001': { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'prenotato', gruppi: ['catena:c-catena001'], dati: path.resolve(dir) } })
+  passo('a-cat00001', 'az-cat00001', { catena: { id: 'c-catena001', giro: 1, ruolo: 'scrittore' } })
+  // Si riprova lo stesso tentativo: il residuo è tutto (1 $), mese e gruppo non portano più gli 0,10 $ dell'orfana.
+  assert.deepStrictEqual(await avvia(dm, 'a-cat00001', 'az-cat00001', config), [0, ''])
+  assert.strictEqual(JSON.parse(stdin.at(-1)).tetto, 1)
+  assert.deepStrictEqual(senzaDati(API.leggiSpesa(dm).voci['az-cat00001']), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 1, stato: 'prenotato', gruppi: ['catena:c-catena001'] })
+  // Il consuntivo vero conta.
+  await API.contaSpesa(dm, 'az-cat00001', 0.4)
+  assert.strictEqual(API.leggiSpesa(dm).voci['az-cat00001'].costo, 0.4)
+  assert.strictEqual(API.spesoNelMese(API.leggiSpesa(dm).voci, '2026-11'), 0.4)
+})
+
+test('Revisione F13a, giro 3, punto 2: nel recupero conta il costo già salvato nell\'esecuzione se supera la prenotazione', async () => {
+  const { dir, stdin, passo, avvia, registro } = spesaGiro2()
+  const dm = tmp()
+  const config = configApi({ apiClaude: { budgetUsd: 50, tetto: 5 }, modoLavoro: { pipeline: { tettoUsd: 0.3 } } })
+  const orfana = { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'prenotato', gruppi: ['catena:c-catena001'], dati: path.resolve(dir) }
+  registro(dm, { 'az-cra00001': orfana })
+  fs.mkdirSync(path.join(dir, 'esecuzioni'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'esecuzioni', 'az-cra00001.json'), JSON.stringify({ id: 'a-cra00001', tentativo: 'az-cra00001', stato: 'avviata', incerto: true, costoRiportato: 0.4 }))
+  passo('a-cat00002', 'az-cat00002', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  const [c, u] = await avvia(dm, 'a-cat00002', 'az-cat00002', config)
+  assert.deepStrictEqual([c, JSON.parse(u)], [5, { gruppo: 'catena', speso: 0.4, tettoGruppo: 0.3 }])
+  assert.deepStrictEqual(senzaDati(API.leggiSpesa(dm).voci['az-cra00001']), { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 0.1, stato: 'contato', costo: null, gruppi: ['catena:c-catena001'], riportato: 0.4 })
+  assert.strictEqual(stdin.length, 0)
+  // Senza costo salvato (o illeggibile) conta la prenotazione intera.
+  const dm2 = tmp()
+  registro(dm2, { 'az-cra00002': orfana })
+  fs.writeFileSync(path.join(dir, 'esecuzioni', 'az-cra00002.json'), '{ rotto')
+  passo('a-cat00003', 'az-cat00003', { catena: { id: 'c-catena001', giro: 2, ruolo: 'scrittore' } })
+  assert.deepStrictEqual(await avvia(dm2, 'a-cat00003', 'az-cat00003', config), [0, ''])
+  assert.strictEqual(JSON.parse(stdin.at(-1)).tetto, 0.2)
+})
+
+test('Revisione F13a, giro 3, punto 3: la corsia API nelle prove non prende mai il mutex di produzione; il wrapper completa i posizionali', async () => {
+  const dm = tmp()
+  fs.writeFileSync(API.fileSpesa(dm), JSON.stringify({ v: 1, voci: { 'az-mut00001': { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 1, stato: 'prenotato' } } }))
+  // Senza ISOLA (chiamata diretta) il controllo ferma la prova.
+  await assert.rejects(API_VERA.contaSpesa(dm, 'az-mut00001', 0.2), /mutex di produzione/)
+  // Col wrapper e tre soli argomenti: ISOLA va nei deps, riportato resta undefined.
+  await API.contaSpesa(dm, 'az-mut00001', 0.2)
+  assert.deepStrictEqual(API.leggiSpesa(dm).voci['az-mut00001'], { progetto: PROGETTO_PROVA, mese: '2026-11', tetto: 1, stato: 'contato', costo: 0.2 })
 })

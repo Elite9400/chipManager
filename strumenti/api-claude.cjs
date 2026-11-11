@@ -240,16 +240,34 @@ function contaSpesaQui(dm, tentativo, costo, riportato) {
 
 /**
  * Revisione F13a, giro 2, punto 4: con il lock libero nessuna esecuzione è attiva, quindi una voce ancora `prenotato` è di
- * un processo chiuso fra la prenotazione e il lock. Senza il record d'avvio è un mancato avvio e si libera (costo 0); col
- * record la spesa è incerta e conta per intero. Una voce senza cartella (registri vecchi) resta com'è. Sotto il mutex.
+ * un processo chiuso fra la prenotazione e il lock. Senza il record d'avvio è un mancato avvio e la voce si toglie; col
+ * record la spesa è incerta: conta la prenotazione, o il costo salvato nell'esecuzione se più alto. Una voce senza
+ * cartella (registri vecchi) resta com'è. Sotto il mutex.
  */
 function recuperaPrenotazioni(dm) {
   const s = leggiSpesa(dm)
   let cambiato = false
+  const numero = x => typeof x === 'number' && Number.isFinite(x) && x >= 0
   for (const [t, v] of Object.entries(s.voci)) {
     if (v.stato !== 'prenotato' || !v.dati) continue
-    s.voci[t] = { ...v, stato: 'contato', costo: fs.existsSync(d.fileEsecuzione(v.dati, t)) ? null : 0 }
     cambiato = true
+    const file = d.fileEsecuzione(v.dati, t)
+    // Giro 3, punto 1: senza avvio la prenotazione si annulla davvero (mese e gruppo insieme): lo stesso tentativo può
+    // prenotare di nuovo passando da tutti i limiti, e il suo consuntivo conterà.
+    if (!fs.existsSync(file)) {
+      delete s.voci[t]
+      continue
+    }
+    // Giro 3, punto 2: con l'avvio la spesa è incerta; un costo già salvato nell'esecuzione (pulito o riportato) conta se
+    // supera la prenotazione, altrimenti conta la prenotazione intera.
+    let es
+    try {
+      es = JSON.parse(fs.readFileSync(file, 'utf8'))
+    } catch {
+      es = undefined
+    }
+    const salvato = Math.max(numero(es?.costo) ? es.costo : -1, numero(es?.costoRiportato) ? es.costoRiportato : -1)
+    s.voci[t] = { ...v, stato: 'contato', costo: null, ...(salvato >= 0 && { riportato: salvato }) }
   }
   if (cambiato) d.scriviDati(fileSpesa(dm), JSON.stringify(s))
 }
