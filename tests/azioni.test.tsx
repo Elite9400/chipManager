@@ -76,7 +76,11 @@ import {
   trovaTask,
   violazioni,
   violazioniAvvio,
+  chipSetup,
+  corsiaDi,
+  statoSetup,
 } from '../hooks/logica'
+import { idSetup, voceSkill } from '../hooks/skill-base'
 import type { Azione, Chiamante, Consumo, Limite, Regole } from '../types'
 import { applicaPatch, diversoDa, presetChi, TETTO_RISORSE } from '../hooks/bilanciamento'
 import type { Consiglio } from '../hooks/logica'
@@ -4893,4 +4897,312 @@ test('RC 2.2.0, terzo giro, punto 3: se l\'apertura rifiuta con un valore strano
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const r = await $.command.run({ command: 'chipmanager' } as never) as { text?: unknown }
   expect([t('it', 'comando.erroreGenerico'), "Could not read the mod's data. Opened the doctor."]).toContain(String(r.text))
+
+// --- F14: caveman, the full Matt Pocock set, per-repository setup -----------------------------------------------------
+
+const CAVEMAN_MOD = 'caveman@chipmanager-base'
+const POCOCK_MOD = 'mattpocock-skills@chipmanager-base'
+const CMD_SETUP = 'mattpocock-skills:setup-matt-pocock-skills'
+const SOLO_LOCALE = JSON.stringify({ progetti: { 'acme/progetto': { soloLocale: true } } })
+
+/** A desktop session with the plugin CLI, the install helper and the loaded commands scriptable by the test. */
+function ambienteF14(on: Parameters<TestBody>[1], opz: { elenco?: () => object[]; comandi?: () => string[]; helper?: (cmd: string, input: Record<string, unknown>) => unknown; cli?: boolean } = {}) {
+  const helper: { cmd: string; id?: unknown; stdin?: unknown }[] = []
+  const amb = ambiente(on, {
+    cli: opz.cli,
+    fonte: (cmd, input) => {
+      if (cmd === 'claude plugin list --json') return opz.elenco?.() ?? [{ id: POCOCK_MOD, scope: 'user', enabled: true }]
+      if (cmd.startsWith('skill-')) return (helper.push({ cmd, id: input.id, stdin: input.stdin }), opz.helper?.(cmd, input) ?? (cmd === 'skill-controlla' ? { spenti: [] } : {}))
+      return cmd.startsWith('claude plugin ') ? {} : undefined
+    },
+    api: cmd => (cmd === 'diagnosi' ? [0, JSON.stringify({ trovati: [] })] : undefined),
+  })
+  const listati: number[] = []
+  on('command.list', () => (listati.push(1), { value: (opz.comandi?.() ?? [CMD_SETUP]).map(name => ({ name, description: '', source: 'plugin' as const, plugin: name.split(':')[0] })) }))
+  const setup = () => amb.azione().filter(a => a.setup === 'mattpocock-skills')
+  return { ...amb, helper, listati, setup }
+}
+/** Lets the asynchronous work of a session start settle (the proposal runs after the approval check). */
+const assesta = () => finche(() => false, 60)
+
+test('F14.1 caveman: il consenso all\'attivazione dice che esegue Node a ogni sessione e prompt e cambia lo stile ovunque, con i requisiti; senza sì nulla', async ($, on) => {
+  const amb = ambienteF14(on, { elenco: () => [{ id: CAVEMAN_MOD, scope: 'user', enabled: false }] })
+  mock.clock(on)
+  const domande: string[] = []
+  let risposta = 'Annulla'
+  conferme(on, testo => (domande.push(testo), risposta))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
+  await ui.press({ key: 'skill-cambia-caveman' })
+  await finche(() => domande.length === 1)
+  for (const parte of ['node, sh, sed, printf', 'ogni sessione', 'tutte le sessioni', 'caveman-compress']) expect([parte, domande[0]!.includes(parte)]).toEqual([parte, true])
+  expect(amb.helper.filter(h => h.cmd === 'skill-abilita')).toEqual([])
+  risposta = 'Attiva · caveman'
+  await ui.press({ key: 'skill-cambia-caveman' })
+  await finche(() => amb.helper.some(h => h.cmd === 'skill-abilita'))
+  expect(amb.helper.filter(h => h.cmd === 'skill-abilita').map(h => h.id)).toEqual(['caveman'])
+  await ui.unmount()
+})
+
+test('F14.1 caveman: un progetto solo locale non lo installa né lo attiva; la politica si rilegge dopo la conferma e dopo il consenso', async ($, on) => {
+  let installato = false
+  const amb = ambienteF14(on, {
+    elenco: () => (installato ? [{ id: CAVEMAN_MOD, scope: 'user', enabled: false }] : []),
+    helper: cmd => (cmd === 'skill-prepara' ? { id: 'caveman', url: 'https://github.com/JuliusBrussee/caveman.git', sha: '1e91f1306d602d4ca23618701b1185575ae1869b',
+      impronta: 'e'.repeat(64), hook: ['plugin.json · SessionStart: node src/hooks/caveman-activate.js'], skills: ['caveman'] } : undefined),
+  })
+  mock.clock(on)
+  let durante: (() => void) | undefined
+  const domande: string[] = []
+  let risposta = 'Installa · caveman'
+  conferme(on, testo => (domande.push(testo), durante?.(), risposta))
+  const apri = async () => {
+    await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE('desktop') })
+    await ui.press({ key: 'impostazioni' })
+    await ui.press({ key: 'sezione-modo-premi' })
+    await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
+    return ui
+  }
+  // Solo locale dall'inizio: né la preparazione né la domanda.
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', SOLO_LOCALE)
+  let ui = await apri()
+  await ui.press({ key: 'skill-installa-caveman' })
+  await assesta()
+  expect([domande.length, amb.helper.map(h => h.cmd).filter(c => c !== 'skill-controlla')]).toEqual([0, []])
+  await ui.unmount()
+  // Diventa solo locale mentre la conferma d'installazione è aperta: nessuna installazione, la revisione scaricata va via.
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': {} } }))
+  durante = () => amb.disco.set('X:/casa/.claude/chipmanager/config.json', SOLO_LOCALE)
+  ui = await apri()
+  await ui.press({ key: 'skill-installa-caveman' })
+  await finche(() => amb.helper.some(h => h.cmd === 'skill-pulisci'))
+  expect(amb.helper.some(h => h.cmd === 'skill-installa')).toBe(false)
+  await ui.unmount()
+  // Installato e spento: il consenso all'attivazione, poi solo locale nel frattempo = niente.
+  installato = true
+  risposta = 'Attiva · caveman'
+  domande.length = 0
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': {} } }))
+  ui = await apri()
+  await ui.press({ key: 'skill-cambia-caveman' })
+  await finche(() => domande.length === 1)
+  await assesta()
+  expect(amb.helper.some(h => h.cmd === 'skill-abilita')).toBe(false)
+  await ui.unmount()
+  // Solo locale prima del clic: nessuna domanda.
+  durante = undefined
+  ui = await apri()
+  await ui.press({ key: 'skill-cambia-caveman' })
+  await assesta()
+  expect([domande.length, amb.helper.some(h => h.cmd === 'skill-abilita')]).toEqual([1, false])
+  await ui.unmount()
+})
+
+test('F14.2 Pocock: la conferma d\'installazione elenca le skill lette dalla revisione approvata, non un elenco fisso', async ($, on) => {
+  const amb = ambienteF14(on, {
+    elenco: () => [],
+    helper: cmd => (cmd === 'skill-prepara' ? { id: 'mattpocock-skills', url: 'https://github.com/mattpocock/skills.git', sha: 'c'.repeat(40), impronta: 'e'.repeat(64),
+      hook: [], skills: ['ask-matt', 'to-spec', 'wizard'] } : undefined),
+  })
+  mock.clock(on)
+  const domande: string[] = []
+  conferme(on, testo => (domande.push(testo), 'Annulla'))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
+  await ui.press({ key: 'skill-installa-mattpocock-skills' })
+  await finche(() => domande.length === 1)
+  expect([domande[0]!.includes('(3)'), domande[0]!.includes('ask-matt, to-spec, wizard'), domande[0]!.includes('grill-me'), domande[0]!.includes('handoff')]).toEqual([true, true, false, false])
+  await ui.unmount()
+})
+
+test('F14.3 vincoli puri: la chip di setup è Claude, locale, corsia ≥ R2; cambiarli la blocca col motivo; lo stato del record viene dalla sola chip', () => {
+  const v = voceSkill('mattpocock-skills')!
+  const a = chipSetup(v, 'acme/progetto', R, 3, '2026-11-11T10:00:00.000Z')
+  expect([a.id, a.setup, a.repo, a.stato, a.esecutore, a.destinazione ?? 'local', a.ordine]).toEqual([idSetup(v, 'acme/progetto'), 'mattpocock-skills', 'acme/progetto', 'proposta', 'claude', 'local', 3])
+  expect(CORSIE.indexOf(corsiaDi(a, R)!) >= CORSIE.indexOf('R2')).toBe(true)
+  expect(a.brief).toContain(`/${CMD_SETUP}`)
+  expect(normalizza(JSON.parse(JSON.stringify(a)))).toEqual(a)
+  const codici = (x: Azione) => violazioni(x, R).map(m => m.k)
+  expect(codici(a).filter(k => k.startsWith('v.setup'))).toEqual([])
+  for (const cambio of [{ esecutore: 'codex' as const, revisore: 'claude' as const }, { destinazione: 'cloud' as const }, { destinazione: 'api-claude' as const }, { corsia: 'R1' as const }])
+    expect([JSON.stringify(cambio), codici({ ...a, ...cambio }).includes('v.setupVincoli')]).toEqual([JSON.stringify(cambio), true])
+  // Un record con un valore di setup che il registro non conosce non si legge come chip di setup.
+  expect('k' in normalizza({ ...a, setup: 'inventata' })).toBe(true)
+  const stati: [Azione['stato'], string][] = [['proposta', 'proposto'], ['accodata', 'proposto'], ['in-avvio', 'in-corso'], ['avviata', 'in-corso'], ['consegnata', 'in-corso'],
+    ['fallita', 'fallito'], ['scartata', 'scartato'], ['completata', 'fatto']]
+  for (const [stato, atteso] of stati) expect([stato, statoSetup({ ...a, stato })]).toEqual([stato, atteso])
+  expect(statoSetup(undefined)).toBe('assente')
+})
+
+test('F14.3 setup: proposto solo col plugin installato, attivo e caricato; una volta per repository, anche con due sessioni insieme', async ($, on) => {
+  let elenco: object[] = [{ id: POCOCK_MOD, scope: 'user', enabled: false }]
+  let comandi: string[] = []
+  const amb = ambienteF14(on, { elenco: () => elenco, comandi: () => comandi })
+  mock.clock(on)
+  const v = voceSkill('mattpocock-skills')!
+  // Spento; poi attivo ma non caricato (la sessione non ha ancora il comando): nessuna proposta.
+  for (const [lista, cmd] of [[[{ id: POCOCK_MOD, scope: 'user', enabled: false }], [CMD_SETUP]], [[{ id: POCOCK_MOD, scope: 'user', enabled: true }], []], [[], [CMD_SETUP]]] as const) {
+    elenco = [...lista]
+    comandi = [...cmd]
+    await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+    await assesta()
+    expect(amb.setup().length).toBe(0)
+  }
+  // Installato, attivo e caricato: una chip, con l'id fisso del progetto; due avvii di sessione insieme non la duplicano.
+  elenco = [{ id: POCOCK_MOD, scope: 'user', enabled: true }]
+  comandi = [CMD_SETUP]
+  await Promise.all([$.session.start({ cwd: '/', surface: 'desktop', isInteractive: true }), $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })])
+  await finche(() => amb.setup().length === 1)
+  await assesta()
+  expect(amb.setup().map(a => [a.id, a.repo, a.stato, a.esecutore, a.destinazione ?? 'local', CORSIE.indexOf(a.corsia!) >= CORSIE.indexOf('R2')]))
+    .toEqual([[idSetup(v, 'acme/progetto'), 'acme/progetto', 'proposta', 'claude', 'local', true]])
+  const versione = amb.setup()[0]!.versione
+  // Avvii successivi: nessuna nuova proposta, nessuna riscrittura.
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await assesta()
+  expect(amb.setup().map(a => [a.id, a.versione])).toEqual([[idSetup(v, 'acme/progetto'), versione]])
+  // Installato dall'utente col suo id originale: conta lo stesso.
+  expect(amb.azione().filter(a => a.setup).length).toBe(1)
+})
+
+test('F14.3 setup: un repository nuovo col plugin già installato ha la sua proposta, con un altro id', async ($, on) => {
+  let remote = 'https://github.com/acme/progetto.git'
+  const amb = ambienteF14(on, { elenco: () => [{ id: 'mattpocock-skills@claude-plugins-official', scope: 'user', enabled: true }] })
+  on('session.repo', () => ({ value: { root: 'X:/repo', remote, internal: false, repo: null } as never }))
+  mock.clock(on)
+  const v = voceSkill('mattpocock-skills')!
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await finche(() => amb.setup().length === 1)
+  remote = 'https://github.com/acme/altro.git'
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await finche(() => amb.setup().length === 2)
+  expect(amb.setup().map(a => [a.repo, a.id]).sort()).toEqual([['acme/altro', idSetup(v, 'acme/altro')], ['acme/progetto', idSetup(v, 'acme/progetto')]])
+})
+
+test('F14.3 setup: scartato non torna da solo; scartato o fallito si ripropone dal doctor; consegnato non è fatto, completato sì', async ($, on) => {
+  const amb = ambienteF14(on)
+  mock.clock(on)
+  const v = voceSkill('mattpocock-skills')!
+  const id = idSetup(v, 'acme/progetto')
+  const file = `X:/orch/azioni/${id}.json`
+  const record = () => JSON.parse(amb.disco.get(file)!) as Azione
+  const scrivi = (x: Partial<Azione>) => amb.disco.set(file, JSON.stringify({ ...record(), ...x, versione: record().versione + 1 }))
+  const domande: string[] = []
+  conferme(on, testo => (domande.push(testo), 'Annulla'))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await finche(() => amb.setup().length === 1)
+  let ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: `scarta-${id}` })
+  await finche(() => record().stato === 'scartata')
+  await ui.unmount()
+  // Scartata: un nuovo avvio di sessione non la ripropone.
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await assesta()
+  expect([amb.setup().length, record().stato]).toEqual([1, 'scartata'])
+  // Il doctor la riporta, con «Proponi di nuovo»: la stessa chip torna proposta.
+  const riproponi = async () => {
+    await $.command.run({ command: 'chipmanager', args: '--doctor' } as never)
+    const u = await $.ui.mount({ ...PANE('desktop') })
+    await finche(() => amb.processi.some(p => p.argv[2] === 'diagnosi'))
+    let premuto = false
+    for (let i = 0; i < 6 && !premuto; i++) {
+      const b = await u.find({ key: `doctor-rimedio-${i}` })
+      if (b && /Proponi di nuovo/.test(String((b.props as { label?: unknown }).label))) (await u.press({ key: `doctor-rimedio-${i}` }), (premuto = true))
+    }
+    await u.unmount()
+    return premuto
+  }
+  expect(await riproponi()).toBe(true)
+  await finche(() => record().stato === 'proposta')
+  expect([amb.setup().length, record().id]).toEqual([1, id])
+  // Fallita: anche lei si ripropone.
+  scrivi({ stato: 'fallita', errore: 'avvio rifiutato' })
+  expect(await riproponi()).toBe(true)
+  await finche(() => record().stato === 'proposta')
+  // Consegnata nel worktree: non è fatta, e il doctor non propone nulla.
+  scrivi({ stato: 'consegnata', consegnataIl: '2026-11-11T10:00:00.000Z' })
+  expect(statoSetup(record())).toBe('in-corso')
+  expect(await riproponi()).toBe(false)
+  // Completata: fatta; nessuna nuova proposta, nessun rimedio.
+  scrivi({ stato: 'completata', completataIl: '2026-11-11T11:00:00.000Z' })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await assesta()
+  expect([statoSetup(record()), amb.setup().length, await riproponi()]).toEqual(['fatto', 1, false])
+  ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.unmount()
+})
+
+test('F14.3 setup: all\'avvio si ricontrollano plugin e vincoli; spento dopo la proposta, esecutore o destinazione cambiati, avvio non interattivo = bloccata col motivo', async ($, on) => {
+  let elenco: object[] = [{ id: POCOCK_MOD, scope: 'user', enabled: true }]
+  let comandi = [CMD_SETUP]
+  const amb = ambienteF14(on, { elenco: () => elenco, comandi: () => comandi })
+  mock.clock(on)
+  const v = voceSkill('mattpocock-skills')!
+  const id = idSetup(v, 'acme/progetto')
+  const record = () => JSON.parse(amb.disco.get(`X:/orch/azioni/${id}.json`)!) as Azione
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await finche(() => amb.setup().length === 1)
+  const avvii = () => amb.chiamate.filter(c => c.tool === 'start_session').length
+  const prova = async (motivo: RegExp) => {
+    const ui = await $.ui.mount({ ...PANE('desktop') })
+    await ui.press({ key: 'ricarica' })
+    await ui.press({ key: `avvia-${id}` }).catch(() => undefined)
+    await assesta()
+    expect([avvii(), record().stato]).toEqual([0, 'proposta'])
+    expect(await ui.find({ type: 'Text', text: motivo })).toBeDefined()
+    await ui.unmount()
+  }
+  // Spento dopo la proposta; poi attivo ma il comando non è più caricato.
+  elenco = [{ id: POCOCK_MOD, scope: 'user', enabled: false }]
+  await prova(/mattpocock-skills/)
+  elenco = [{ id: POCOCK_MOD, scope: 'user', enabled: true }]
+  comandi = []
+  await prova(/mattpocock-skills/)
+  comandi = [CMD_SETUP]
+  // L'utente cambia l'esecutore dall'editor: bloccata.
+  let ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: `mod-${id}` })
+  await ui.press({ key: `chi-dettagli-${id}` })
+  await ui.select({ key: `esec-${id}`, value: 'codex' })
+  await finche(() => record().esecutore === 'codex')
+  await ui.unmount()
+  await prova(/Claude/)
+  // Di nuovo Claude, poi la destinazione cambiata (cloud o crediti API): bloccata.
+  amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...record(), esecutore: 'claude', revisore: 'codex', versione: record().versione + 1 }))
+  for (const destinazione of ['cloud', 'api-claude'] as const) {
+    amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...record(), destinazione, versione: record().versione + 1 }))
+    await prova(/locale/)
+  }
+  amb.disco.set(`X:/orch/azioni/${id}.json`, JSON.stringify({ ...record(), destinazione: undefined, versione: record().versione + 1 }))
+  // Tutto in regola: parte, in una sessione desktop interattiva.
+  ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: `avvia-${id}` })
+  await finche(() => avvii() === 1)
+  expect(record().stato).toBe('avviata')
+  await ui.unmount()
+})
+
+test('F14.3 setup: dal terminale (avvio non interattivo `claude -p`) la chip di setup non parte', async ($, on) => {
+  const amb = ambienteF14(on, { cli: true })
+  mock.clock(on)
+  const id = idSetup(voceSkill('mattpocock-skills')!, 'acme/progetto')
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await finche(() => amb.setup().length === 1)
+  const ui = await $.ui.mount({ ...PANE('terminal') })
+  await ui.press({ key: 'ricarica' })
+  await ui.press({ key: `avvia-${id}` }).catch(() => undefined)
+  await assesta()
+  expect([amb.processi.some(p => p.argv[2] === 'lancia-cli'), amb.setup()[0]!.stato]).toEqual([false, 'proposta'])
+  expect(await ui.find({ type: 'Text', text: /interattiv/ })).toBeDefined()
+  await ui.unmount()
 })
