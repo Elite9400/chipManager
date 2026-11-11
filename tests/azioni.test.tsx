@@ -470,6 +470,11 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
     processi.push({ argv: e.argv, stdin: e.init?.stdin, // Only the variable names: the values are credentials and must not reach any recorded state.
     env: Object.fromEntries(Object.keys((e.init as { env?: Record<string, string> } | undefined)?.env ?? {}).map(k => [k, '<set>'])) })
     if (exe === 'docker') return fine(0)
+    // F13.7: the plugin CLI (`claude plugin ...`), scriptable by the test; by default no plugin is installed.
+    if (exe === 'claude' && e.argv[1] === 'plugin') {
+      const risposta = opz.fonte?.(`claude ${e.argv.slice(1).join(' ')}`, {})
+      return fine(0, risposta === undefined ? '[]' : JSON.stringify(risposta))
+    }
     // F13.3b: the OpenAI-compatible helper, scriptable by the test like the providers helper.
     if (e.argv[1]?.endsWith('/compatibili.cjs')) {
       const input = JSON.parse(e.init?.stdin ?? '{}')
@@ -3693,4 +3698,56 @@ test('F13.3b avvio: conferma del testo, solo titolo e brief, solo la chiave di q
   expect(amb.azione().find(a => a.provider === 'ollama')!.costo).toEqual({ tipo: 'gratuito' })
   expect(amb.azione().find(a => a.provider === 'mistral')!.costo).toEqual({ tipo: 'ignoto' })
   expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(0)
+})
+
+// --- F13.7: baseline skills in mandates and in the panel ------------------------------------------------------------
+
+const PLUGIN = (attivi: string[], spenti: string[] = [], gestiti: string[] = []) => [
+  ...attivi.map(id => ({ id, scope: 'user' as const, attivo: true })), ...spenti.map(id => ({ id, scope: 'user' as const, attivo: false })),
+  ...gestiti.map(id => ({ id, scope: 'managed' as const, attivo: true })),
+]
+
+test('F13.7 mandato: nomina solo le skill installate e attive, per ruolo, solo per Claude; soloLocale e interruttori le tolgono', () => {
+  const tutti = PLUGIN(['ponytail@ponytail', 'superpowers@claude-plugins-official', 'tokeneconomizer@tokeneconomizer'])
+  const RS: Regole = { ...R, pluginBase: tutti }
+  const claude = base('a-skill001', 1, { corsia: 'R2', revisore: 'claude', modello: 'claude-opus-5-5' })
+  const p = mandato(claude, RS).prompt
+  expect(p).toContain('Use the installed skills: ponytail. They never start sessions, worktrees or reviews outside chips.')
+  // Il revisore Claude (subagente) riceve le skill di revisione; TokenEconomizer resta spento finché non lo accendi.
+  expect(p).toContain('Use the installed skills: superpowers.')
+  expect(p).not.toContain('tokeneconomizer')
+  const acceso = { ...RS, risorse: { ...RS.risorse, modoLavoro: { ...RS.risorse.modoLavoro, skillBase: { tokeneconomizer: true, ponytail: false } } } }
+  expect(mandato(claude, acceso).prompt).toContain('Use the installed skills: tokeneconomizer.')
+  expect(mandato(claude, acceso).prompt).not.toContain('skills: ponytail')
+  // Codex e i revisori Codex non ricevono nulla; l'elenco ignoto non nomina nulla.
+  const codex = base('a-skill002', 1, { esecutore: 'codex', corsia: 'R2', revisore: 'claude' })
+  expect(mandato(codex, RS).prompt).not.toContain('ponytail')
+  expect(mandato({ ...claude, revisore: 'codex' }, RS).prompt).not.toContain('superpowers')
+  expect(mandato(claude, { ...R, pluginBase: null }).prompt).not.toContain('Use the installed skills')
+  // soloLocale: solo i flussi locali (ponytail resta, superpowers no).
+  const locale = { ...RS, risorse: { ...RS.risorse, soloLocale: true } }
+  expect(mandato(claude, locale).prompt).toContain('skills: ponytail')
+  expect(mandato(claude, locale).prompt).not.toContain('superpowers')
+  // Spento o non attivo nell'ospite: non nominato.
+  expect(mandato(claude, { ...R, pluginBase: PLUGIN([], ['ponytail@ponytail']) }).prompt).not.toContain('ponytail')
+})
+
+test('F13.7 pannello: rileva i plugin con argv esatto; abilita e disabilita solo su clic, --scope user; un plugin gestito è bloccato', async ($, on) => {
+  const elenco = [{ id: 'ponytail@ponytail', scope: 'user', enabled: false }, { id: 'superpowers@claude-plugins-official', scope: 'managed', enabled: true }]
+  const amb = ambiente(on, { fonte: cmd => (cmd === 'claude plugin list --json' ? elenco : cmd.startsWith('claude plugin ') ? {} : undefined) })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const plugin = () => amb.processi.filter(p => p.argv[0] === 'claude').map(p => p.argv.join(' '))
+  await finche(() => plugin().includes('claude plugin list --json'))
+  expect(plugin().every(x => x === 'claude plugin list --json')).toBe(true)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  expect((await ui.find({ key: 'skill-cambia-ponytail' }))?.props.label).toBe('Attiva · ponytail')
+  // Gestito dalla policy: nessun pulsante.
+  expect(await ui.find({ key: 'skill-cambia-superpowers' })).toBeUndefined()
+  await ui.press({ key: 'skill-cambia-ponytail' })
+  await finche(() => plugin().includes('claude plugin enable ponytail@ponytail --scope user'))
+  expect(plugin().filter(x => !x.startsWith('claude plugin list'))).toEqual(['claude plugin enable ponytail@ponytail --scope user'])
+  await ui.unmount()
 })

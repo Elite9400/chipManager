@@ -106,6 +106,9 @@ export type Ctx = {
   apriPagina: (url: string) => Promise<unknown>
   verificaCompatibile: (id: string) => Promise<unknown>
   rilevaLocali: () => Promise<unknown>
+  /** F13.7: read the installed plugins again; enable or disable one baseline plugin (registry only, --scope user). */
+  leggiPlugin: () => Promise<unknown>
+  cambiaPlugin: (id: string, attiva: boolean) => Promise<unknown>
   /** F6.2: «Libera» e «Termina» del lock della corsia API, ciascuno con il suo popup. */
   liberaApi: () => Promise<unknown>
   terminaApi: () => Promise<unknown>

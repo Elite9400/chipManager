@@ -16,6 +16,7 @@ Work that deserves its own session (one branch, one review) goes to the chipMana
 - Always set `corsia`: R0 text, R1 small with tests, R2 ordinary, R3 large, R4–R5 sensitive.
 - Leave `esecutore`, `modello`, `effort` out unless you have a reason: the panel balances them within
   `routing.json` and live limits, among allowed and connected providers (DeepSeek and FreeLLMAPI need their key).
+  Text-only R0–R1 work may name `esecutore: "compatibile"` with `provider` and a catalogue model, if the project opted in.
   An omitted effort follows the owner's work mode (default `medium` on R0–R2).
 - Leave `destinazione` out unless the work needs one place: it runs locally unless the owner or the destination
   advisor changes it; the balancer never sets it.

@@ -347,7 +347,9 @@ Board, Advanced, Help).
 `/chipmanager --setup` opens a guided setup in the panel: language, providers, sign-ins (Claude, Codex, GitHub), API
 keys, limits, work mode and a summary. Each step can be skipped; changes go into the Settings draft and **Apply**
 writes them all in one save. Providers, sign-ins and keys are yours («you»); keys are entered only in the mod's
-sensitive options (`/config`), and the step shows only whether a key is set. A session can prepare a configuration
+sensitive options (`/config`), and the step shows only whether a key is set. The providers step also lists the
+OpenAI-compatible providers (key page, check, per-project opt-in, local detection) and the work-mode step the baseline
+skills. A session can prepare a configuration
 with `proponi_impostazioni`: the setup then opens on the summary for you to review.
 
 ## Doctor
@@ -358,7 +360,8 @@ register), the API lock and leftover key files, actions without a known project,
 block API Claude. Every finding says the cause and the fix. **Restore**, **Archive** and **Release** run only after
 you confirm, then the check runs again. Restore puts back the newest of the three kept copies and moves counters
 forward, so old board work and old weight undos are refused. **Copy report** gives the text; **Report to
-chipManager** shows a codes-only report and sends it, after a yes, with `gh` or the prefilled GitHub page.
+chipManager** shows a codes-only report and sends it, after a yes, with `gh` or the prefilled GitHub page. The doctor
+also lists the baseline skills (installed, enabled, locked by policy) with **Enable**/**Disable** on click.
 
 ## Configuration
 
@@ -546,6 +549,39 @@ FreeLLMAPI actions are short text transformations at effort `low`: title + brief
 confirmed in full. They never get background, repository, tools or files; sensitive lanes, local data, forks and
 shared folders are blocked. The result is a **draft**, never applied automatically, and a Claude review is
 required. *Free* is not a promise of zero cost: limits and billing depend on the proxy's providers.
+
+## OpenAI-compatible providers
+
+Text-only chips can also run on **DeepSeek, OpenRouter, Qwen (Alibaba Cloud Model Studio), Mistral, Groq** or a
+**local server** (Ollama, LM Studio, vLLM). They are one registry with fixed URLs (`hooks/compatibili.ts`), never an
+address from settings or from an agent; local servers are loopback only.
+
+1. **Get the key**: Settings → Connections → **Get the key · <provider>** opens the provider's own key page. Put the key
+   in `/config`, in the mod's option for that provider: keys never pass through the panel, and environment variables do
+   not count.
+2. **Check** makes one cheap authenticated call, only when you press it, and shows a code (valid, refused, not
+   reachable). **Detect local servers** asks `GET /v1/models` on the default loopback ports with a short timeout.
+3. **Opt in per project**: Off, R1 or R2 for each provider. Qwen also has a region (international, China, or US with a
+   workspace host from the documented pattern).
+4. **Propose** with `esecutore: "compatibile"`, `provider` and the model id from the provider's catalogue. The panel
+   never picks these providers on its own.
+
+The guards are the FreeLLMAPI ones, for every provider, local included (a local server can proxy cloud models): lanes
+R0–R1 (R2 if you choose), title + brief within 1500 characters and confirmed in full, the LAN-data filter, effort low,
+a Claude reviewer, never sensitive work, no background, repository, tools or files. Before each run the model must be
+in the provider's catalogue; tool calls in the answer, redirects and an answer that contains the key are refused. The
+result is a draft, never applied automatically. A local server is recorded as free; a remote provider's cost is
+unknown to the mod.
+
+## Baseline skills
+
+The mod recommends a few plugins and names the enabled ones in Claude mandates, by role: **ponytail** for whoever writes
+code, **superpowers** (planning and review) for reviewers; **mattpocock-skills** (handoff, grill-me, grilling) is yours
+to invoke and is never named; **TokenEconomizer** is experimental and off by default. Settings → Work mode shows each
+one (installed, enabled, data flow, source) with a switch that only decides whether the mod names it — «Off» never
+disables a plugin you installed — and **Enable**/**Disable** buttons that run `claude plugin enable|disable <id> --scope
+user` on your click (a plugin managed by policy is shown as locked). In a local-only project, skills that send data off
+the computer are never named. The mod reads `claude plugin list --json` and stores only identity, scope and state.
 
 ## Languages
 

@@ -122,6 +122,7 @@ destination. Explicit fields always stay.
 | Well-specified R1–R3 coding task, tests exist, Codex enabled | `codex` (cost spread to another plan; one run per machine) |
 | Design-heavy, ambiguous, or needs this repo's tools and skills | `claude` |
 | R0–R1 pure text (rewording, summaries) and FreeLLMAPI enabled | `freellmapi` (effort `low`, Claude reviewer, ≤ 1,500 chars of title + brief) |
+| Same kind of text task, and the project opted in an OpenAI-compatible provider | `compatibile` with `provider` (`deepseek`, `openrouter`, `qwen`, `mistral`, `groq`, `ollama`, `lmstudio`, `vllm`) and the model id from its catalogue; same guards as `freellmapi`; never chosen by the balancer |
 | Sensitive (R4–R5) | `claude` with Opus or Fable (enforced) |
 | Not sure | leave both out |
 

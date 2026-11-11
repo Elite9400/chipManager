@@ -5,7 +5,8 @@ import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { GRIGIO, LIVELLO, STATO } from './tema'
 import { baseDi, impostazioniCompatibiliDa, livelliCompatibiliDa, MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
-import { SKILL_BASE } from './skill-base'
+import { rigaSkill, SKILL_BASE, skillAttive } from './skill-base'
+import type { RuoloSkill } from './skill-base'
 
 // --- regole (routing.json) ---------------------------------------------------------------------
 
@@ -1272,7 +1273,21 @@ export type Strumenti = { disco: string }
 const conCorsia = (s: Strumenti | undefined, revisione: boolean, comando: string) =>
   s ? `node "${s.disco}" corsia-codex ${revisione ? '--revisione ' : ''}-- ${comando}` : comando
 
+/**
+ * F13.7: the mandate line naming the enabled baseline skills relevant to `ruolo` (≤ 200 characters, English), or ''.
+ * Exported for F13a's director mandate. The installed plugins come from `claude plugin list --json` (`pluginBase`).
+ */
+export const rigaSkillPer = (regole: Regole, ruolo: RuoloSkill) =>
+  rigaSkill(skillAttive(regole.pluginBase ?? null, regole.risorse.modoLavoro?.skillBase, ruolo, regole.risorse.soloLocale))
+
 function revisione(a: Azione, regole: Regole, s: Strumenti | undefined) {
+  const r = revisioneSenzaSkill(a, regole, s)
+  // The Claude reviewer (a subagent, or the coordinator of a Codex chip) gets the reviewer skills; Codex gets none.
+  const skill = r && revisoreConcreto(a, regole) !== 'motore:codex' ? rigaSkillPer(regole, 'revisore') : ''
+  return skill ? `${r} ${skill}` : r
+}
+
+function revisioneSenzaSkill(a: Azione, regole: Regole, s: Strumenti | undefined) {
   const rev = revisoreConcreto(a, regole)
   if (!rev) return ''
   if (rev === 'motore:codex') {
@@ -1306,6 +1321,9 @@ export function mandato(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strument
     )
   }
   parti.push(a.brief.trim())
+  // F13.7: the enabled baseline skills for whoever writes the code, Claude only (Codex gets none).
+  const skill = a.esecutore === 'claude' ? rigaSkillPer(regole, 'lavoro') : ''
+  if (skill) parti.push(skill)
   const rev = revisione(a, regole, s)
   if (rev) parti.push(rev)
   parti.push(

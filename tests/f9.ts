@@ -53,7 +53,7 @@ export function confrontaControlli(chiave: string, c: ControlloF9[]) {
 }
 
 /** F13b: the controls added (cmp-*, aiuto-*) or relabelled (the Help tab, formerly Legend) by F13b. */
-export const nuovoF13b = (k: unknown) => typeof k === 'string' && /^(cmp-|aiuto-|sezione-legenda-premi$)/.test(k)
+export const nuovoF13b = (k: unknown) => typeof k === 'string' && /^(cmp-|aiuto-|skill-|sezione-legenda-premi$)/.test(k)
 
 /**
  * Confronta `chiave` con la fotografia «prima» (tests/f9-prima.ts). Una chiave che la fotografia non ha ancora si

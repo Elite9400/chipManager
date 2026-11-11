@@ -10,6 +10,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Added
 
+- **OpenAI-compatible providers** (F13.3/F13.3b): text-only chips on DeepSeek, OpenRouter, Qwen (Alibaba Cloud Model
+  Studio, international, China or US with a workspace host), Mistral, Groq, or a local Ollama, LM Studio or vLLM server.
+  One registry with fixed URLs in TS and CJS (parity tested); local servers loopback only. Settings → Connections:
+  **Get the key** opens the provider's key page (exact whitelist, separate from the report URL check), **Check** makes
+  one cheap call on click, **Detect local servers** lists the models of servers on the default ports, and each project
+  opts in per provider (Off, R1, R2). Keys only as native sensitive options (`openrouterKey`, `qwenKey`, `mistralKey`,
+  `groqKey`, optional `lmstudioKey`, `vllmKey`; `deepseekKey` as before). Chips use `esecutore: "compatibile"` with a
+  `provider` and an explicit catalogue model; the balancer never picks them. The FreeLLMAPI guards apply to every one of
+  them, local included: lanes R0–R1 (R2 by choice), LAN-data filter, 1500-character confirmed text, effort low, Claude
+  reviewer, never sensitive; catalogue check before each run, no redirects, tool calls refused, the key-leak check only
+  when a key is set. A local server's run is recorded as free, a remote one's cost as unknown. OpenRouter's PKCE sign-in
+  is not used: the host gives the mod no way to write a native option, so the key page is the documented path.
+- **Help** replaces the Legend (F13.4): one line per lane stays in the panel and the board; every other term lives on the
+  documentation site. Its pages are listed with exact addresses; until GitHub Pages is on they are shown as copyable
+  text and nothing opens. The legend's term entries left the six dictionaries.
+- **Baseline skills** (F13.7, first part): a registry in TS and CJS (ponytail, superpowers, mattpocock-skills,
+  TokenEconomizer as experimental and off). The mod reads `claude plugin list --json` (identity, scope and state only;
+  an unreadable listing is unknown, never «absent»), names the enabled skills in Claude mandates by role in one line of
+  at most 200 characters (ponytail for workers, superpowers for reviewers; never user-invoked skills, never for Codex;
+  in a local-only project only local-only skills), and shows them in Settings → Work mode and in the doctor with a
+  per-skill switch (`modoLavoro.skillBase`, account with project override) and **Enable**/**Disable** on click with
+  `--scope user` (managed plugins locked). Not in this build: installing from the mod (approved revision pinned through
+  a local marketplace, hooks listed before install, TokenEconomizer's guarded sequence) and the approval-record check at
+  session start; install these plugins yourself for now.
+
 - **Work mode** (Settings, Account group): default effort per lane, the Codex sandbox when Codex executes, sessions
   started together (1–8, over the host option), a suggested auditor in the Recommended preset, and cross review on
   R0–R2. Set for all projects, with a per-project override field by field; presets Recommended, Economy and Quality.

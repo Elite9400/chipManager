@@ -359,7 +359,9 @@ Progetto, Board, Avanzate, Aiuto).
 `/chipmanager --setup` apre nel pannello una configurazione guidata: lingua, fornitori, accessi (Claude, Codex,
 GitHub), chiavi API, limiti, modo di lavoro e riepilogo. Ogni passo si può saltare; le modifiche vanno nella bozza
 delle Impostazioni e **Applica** le scrive tutte insieme. Fornitori, accessi e chiavi sono tuoi («tu»); le chiavi si
-inseriscono solo nelle opzioni sensibili della mod (`/config`) e il passo dice solo se una chiave c'è. Una sessione può
+inseriscono solo nelle opzioni sensibili della mod (`/config`) e il passo dice solo se una chiave c'è. Il passo dei
+fornitori elenca anche i fornitori compatibili con OpenAI (pagina della chiave, verifica, opt-in per progetto,
+rilevamento dei server locali) e quello del modo di lavoro le skill di base. Una sessione può
 preparare una configurazione con `proponi_impostazioni`: la configurazione guidata si apre allora sul riepilogo.
 
 ## Doctor
@@ -371,7 +373,8 @@ bloccano API Claude. Ogni rilievo dice la causa e il rimedio. **Ripristina**, **
 dopo la tua conferma, poi il controllo riparte. Il ripristino rimette la più recente delle tre copie tenute e fa
 avanzare i contatori, così il lavoro vecchio della board e gli annullamenti vecchi dei pesi vengono rifiutati.
 **Copia il rapporto** dà il testo; **Segnala a chipManager** mostra un rapporto di soli codici e lo invia, dopo un sì,
-con `gh` o la pagina precompilata di GitHub.
+con `gh` o la pagina precompilata di GitHub. Il doctor elenca anche le skill di base (installate, attive, bloccate
+dalla policy) con **Attiva**/**Disattiva** al clic.
 
 ## Configurazione
 
@@ -561,6 +564,41 @@ Le azioni FreeLLMAPI sono trasformazioni testuali brevi a effort `low`: titolo +
 confermati per intero. Non ricevono mai background, repository, strumenti o file; corsie sensibili, dati locali,
 fork e cartelle condivise sono bloccati. Il risultato è una **bozza**, mai applicata da sola, e serve la revisione
 di Claude. *Gratis* non è una promessa di costo zero: limiti e fatturazione dipendono dai fornitori del proxy.
+
+## Fornitori compatibili con OpenAI
+
+Le chip di solo testo possono girare anche su **DeepSeek, OpenRouter, Qwen (Alibaba Cloud Model Studio), Mistral, Groq**
+o un **server locale** (Ollama, LM Studio, vLLM). Sono un registro con URL fissi (`hooks/compatibili.ts`), mai un
+indirizzo preso dalle impostazioni o da un agente; i server locali solo in loopback.
+
+1. **Prendi la chiave**: Impostazioni → Connessioni → **Prendi la chiave · <fornitore>** apre la pagina delle chiavi del
+   fornitore. Metti la chiave in `/config`, nell'opzione della mod per quel fornitore: le chiavi non passano mai dal
+   pannello e le variabili d'ambiente non contano.
+2. **Verifica** fa una sola chiamata autenticata economica, solo quando la premi, e mostra un codice (valida, rifiutata,
+   non raggiungibile). **Rileva i server locali** chiede `GET /v1/models` sulle porte loopback predefinite, con timeout
+   breve.
+3. **Opt-in per progetto**: Spento, R1 o R2 per ogni fornitore. Qwen ha anche la regione (internazionale, Cina, oppure
+   USA con un host del workspace nel formato documentato).
+4. **Proponi** con `esecutore: "compatibile"`, `provider` e l'id del modello dal catalogo del fornitore. Il pannello non
+   sceglie mai da sé questi fornitori.
+
+Le guardie sono quelle di FreeLLMAPI, per ogni fornitore, locali compresi (un server locale può fare da proxy a modelli
+nel cloud): corsie R0–R1 (R2 se lo scegli), titolo + mandato entro 1500 caratteri e confermati per intero, il filtro
+dei dati LAN, effort low, un revisore Claude, mai lavoro sensibile, niente background, repository, strumenti o file.
+Prima di ogni esecuzione il modello deve stare nel catalogo del fornitore; tool call nella risposta, redirect e una
+risposta che contiene la chiave vengono rifiutati. Il risultato è una bozza, mai applicata da sola. Un server locale
+risulta gratuito; il costo di un fornitore remoto la mod non lo conosce.
+
+## Skill di base
+
+La mod consiglia alcuni plugin e nomina quelli attivi nei mandati Claude, per ruolo: **ponytail** per chi scrive codice,
+**superpowers** (piani e revisione) per chi rivede; **mattpocock-skills** (handoff, grill-me, grilling) lo invochi tu e
+non viene mai nominato; **TokenEconomizer** è sperimentale e spento di serie. Impostazioni → Modo di lavoro mostra
+ognuno (installato, attivo, flusso dei dati, fonte) con un interruttore che decide solo se la mod lo nomina — «Spento»
+non disattiva mai un plugin che hai installato — e i pulsanti **Attiva**/**Disattiva**, che eseguono `claude plugin
+enable|disable <id> --scope user` al tuo clic (un plugin gestito dalla policy appare bloccato). In un progetto solo
+locale le skill che inviano dati fuori dal computer non vengono mai nominate. La mod legge `claude plugin list --json`
+e conserva solo identità, ambito e stato.
 
 ## Lingue
 

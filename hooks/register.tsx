@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { ControlloEsecuzione, LockApi, Rilievo, StatoDoctor, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni, Vista } from '../types'
+import type { ControlloEsecuzione, LockApi, Rilievo, StatoDoctor, StatoSkill, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni, Vista } from '../types'
 import type { Azione, BoardProgetto, Chiamante, Consumo, Contesto, Corsia, Destinazione, Fornitore, Limite, Motore, Pendenti, Permessi, Peso, PropostaPesi, Regole, Revisione, Revisore, Risorse, RisorseProgetto, SessioneProgetto, Sessioni, StatoAzione, StatoBoard, Traguardi, Vita } from '../types'
 import { alLavoroDa, cambiatiAltrove, campoNonValido, conBozza, contestoPerModello, impostazioniCorrenti, percorsiTolti, perStrato, propostaDa, propostaImpostazioniDa, proposteBrevi, proposteDa, rispostaRisorse, TESTI_PESI, valoreConfig } from './bilanciamento'
 import {
@@ -76,6 +76,7 @@ import {
 import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
 import { MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
 import { chiamaCompatibile, connessiCompatibili, rilevaLocali, verificaCompatibile } from './compatibili-host'
+import { cambiaPlugin, leggiPlugin } from './skill-base-host'
 import { board, chiaveRiassunto, hash, improntaBoard, testoRiassunto } from './board'
 import type { Piano as PianoBoard } from './board'
 import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salvato, t, testo, traduttore } from './lingua'
@@ -108,6 +109,8 @@ const spesaApi = atom({ plugin: 'chip-manager', key: 'spesaApi' } as const, null
 const esecuzione = atom({ plugin: 'chip-manager', key: 'esecuzione' } as const, {} as StatoEsecuzione, { shape: 'esecuzione-1' })
 /** F11.3: l'ultima diagnosi del doctor (la stessa chiave che legge la pagina Doctor). */
 const statoDoctor = atom({ plugin: 'chip-manager', key: 'doctor' } as const, {} as StatoDoctor, { shape: 'doctor-1' })
+/** F13.7: the installed plugins (the same atom as skill-base-host.ts, which writes it). */
+const statoSkill = atom({ plugin: 'chip-manager', key: 'skill' } as const, {} as StatoSkill, { shape: 'skill-1' })
 const vistaOra = atom({ plugin: 'chip-manager', key: 'vista' } as const, 'lavoro' as Vista)
 const impostazioni = atom({ plugin: 'chip-manager', key: 'impostazioni' } as const, { sezione: 'connessioni' } as StatoImpostazioni, { shape: 'impostazioni-1' })
 const consumo = atom({ plugin: 'chip-manager', key: 'consumo' } as const, { processi: 0, app: 0, byte: 0, byteLimiti: 0, salti: 0, comandi: {}, da: 0 } as Consumo, { shape: 'consumo-2' })
@@ -488,7 +491,7 @@ async function leggiRegole($: Eng) {
   const deepseek = chiaviFornitori.deepseek || !!(await $.env.get('DEEPSEEK_API_KEY').catch(() => undefined))
   const freellmapi = chiaviFornitori.freellmapi || !!(await $.env.get('FREELLMAPI_KEY').catch(() => undefined))
   const connessi: Fornitore[] = ['claude', 'codex', ...(deepseek ? ['deepseek' as const] : []), ...(freellmapi ? ['freellmapi' as const] : [])]
-  r = { ...r, chiaveApi: chiaveApiPresente, connessi, compatibiliConnessi: compatibiliPresenti }
+  r = { ...r, chiaveApi: chiaveApiPresente, connessi, compatibiliConnessi: compatibiliPresenti, pluginBase: (await read($, statoSkill)).installati ?? null }
   paralleloModo = r.risorse.modoLavoro?.parallelo
   if (!uguale(await read($, regole), r)) await update($, regole, () => r)
   return r
@@ -2222,6 +2225,8 @@ export const register: Register = (on, options) => {
     const r = await leggiRegole($)
     await ripristinaImpostazioni($, traduttore(await leggiLingua($)))
     await aggiornaRisorse($, opz)
+    // F13.7: which baseline plugins are installed and enabled (an unreadable listing = unknown: no skill is named).
+    void leggiPlugin($).catch(() => undefined)
     await $.command.register({ name: 'chipmanager', description: 'Opens the chipManager panel of suggested actions' })
     await $.tool.register({
       name: 'suggerisci_azione',
@@ -2591,6 +2596,8 @@ export const register: Register = (on, options) => {
       },
       verificaCompatibile: async id => verificaCompatibile($, opz, id, (await leggiRegole($)).risorse.account.compatibili?.[id]),
       rilevaLocali: () => rilevaLocali($, opz),
+      leggiPlugin: () => leggiPlugin($),
+      cambiaPlugin: (id, attiva) => cambiaPlugin($, id, attiva),
       installa: async passo => {
         let r = await leggiRegole($)
         if (!r.lette || r.risorse.soloLocale || !r.risorse.fornitori.includes('freellmapi')) throw errore('err.abilitaFree')

@@ -1,5 +1,6 @@
-// F13b: the snapshot of the controls F13b adds or relabels (providers in Connections, the Help section and its tab).
-// Controls from before stay compared with tests/f9-prima.ts and tests/f11-nuovi.ts. Change it only for a declared fix.
+// F13b: the snapshot of the controls F13b adds or relabels (providers in Connections, the Help section and its tab,
+// the baseline skills). Controls from before stay compared with tests/f9-prima.ts and tests/f11-nuovi.ts. Change it
+// only for a declared fix.
 export const NUOVI_F13B: Record<string, unknown> = {
  "controlli:desktop:lavoro": [],
  "controlli:desktop:lavoro-dettagli": [],
@@ -447,6 +448,65 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "gestori": [
     "press"
    ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-si-premi",
+   "label": "ponytail, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-no-premi",
+   "label": "ponytail, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-si-premi",
+   "label": "superpowers, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-no-premi",
+   "label": "superpowers, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-si-premi",
+   "label": "tokeneconomizer, On",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-no-premi",
+   "label": "tokeneconomizer, Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
+   "gestori": [
+    "press"
+   ]
   }
  ],
  "controlli:desktop:impostazioni-doctor": [
@@ -454,6 +514,14 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "sezione-legenda-premi",
    "label": "Help",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
    "gestori": [
     "press"
    ]
@@ -849,6 +917,65 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "sezione-legenda-premi",
    "label": "Help",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-si-premi",
+   "label": "ponytail, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-no-premi",
+   "label": "ponytail, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-si-premi",
+   "label": "superpowers, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-no-premi",
+   "label": "superpowers, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-si-premi",
+   "label": "tokeneconomizer, On",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-no-premi",
+   "label": "tokeneconomizer, Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
    "gestori": [
     "press"
    ]
@@ -1310,6 +1437,65 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "gestori": [
     "press"
    ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-si-premi",
+   "label": "ponytail, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-no-premi",
+   "label": "ponytail, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-si-premi",
+   "label": "superpowers, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-no-premi",
+   "label": "superpowers, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-si-premi",
+   "label": "tokeneconomizer, On",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-no-premi",
+   "label": "tokeneconomizer, Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
+   "gestori": [
+    "press"
+   ]
   }
  ],
  "controlli:terminal:impostazioni-doctor": [
@@ -1317,6 +1503,14 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "sezione-legenda-premi",
    "label": "Help",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
    "gestori": [
     "press"
    ]
@@ -1712,6 +1906,65 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "sezione-legenda-premi",
    "label": "Help",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-si-premi",
+   "label": "ponytail, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-no-premi",
+   "label": "ponytail, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-si-premi",
+   "label": "superpowers, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-no-premi",
+   "label": "superpowers, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-si-premi",
+   "label": "tokeneconomizer, On",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-no-premi",
+   "label": "tokeneconomizer, Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
    "gestori": [
     "press"
    ]
@@ -2173,6 +2426,65 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "gestori": [
     "press"
    ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-si-premi",
+   "label": "ponytail, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-no-premi",
+   "label": "ponytail, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-si-premi",
+   "label": "superpowers, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-no-premi",
+   "label": "superpowers, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-si-premi",
+   "label": "tokeneconomizer, On",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-no-premi",
+   "label": "tokeneconomizer, Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
+   "gestori": [
+    "press"
+   ]
   }
  ],
  "controlli:vscode:impostazioni-doctor": [
@@ -2180,6 +2492,14 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "sezione-legenda-premi",
    "label": "Help",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
    "gestori": [
     "press"
    ]
@@ -2575,6 +2895,65 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "sezione-legenda-premi",
    "label": "Help",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-si-premi",
+   "label": "ponytail, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-no-premi",
+   "label": "ponytail, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-si-premi",
+   "label": "superpowers, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-no-premi",
+   "label": "superpowers, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-si-premi",
+   "label": "tokeneconomizer, On",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-no-premi",
+   "label": "tokeneconomizer, Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
    "gestori": [
     "press"
    ]
@@ -3036,6 +3415,65 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "gestori": [
     "press"
    ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-si-premi",
+   "label": "ponytail, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-no-premi",
+   "label": "ponytail, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-si-premi",
+   "label": "superpowers, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-no-premi",
+   "label": "superpowers, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-si-premi",
+   "label": "tokeneconomizer, On",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-no-premi",
+   "label": "tokeneconomizer, Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
+   "gestori": [
+    "press"
+   ]
   }
  ],
  "controlli:mobile:impostazioni-doctor": [
@@ -3043,6 +3481,14 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "sezione-legenda-premi",
    "label": "Help",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
    "gestori": [
     "press"
    ]
@@ -3438,6 +3884,65 @@ export const NUOVI_F13B: Record<string, unknown> = {
    "tipo": "Button",
    "chiave": "sezione-legenda-premi",
    "label": "Help",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-si-premi",
+   "label": "ponytail, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-ponytail-no-premi",
+   "label": "ponytail, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-si-premi",
+   "label": "superpowers, On",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-superpowers-no-premi",
+   "label": "superpowers, Off",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-si-premi",
+   "label": "tokeneconomizer, On",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-usa-tokeneconomizer-no-premi",
+   "label": "tokeneconomizer, Off",
+   "variant": "primary",
+   "gestori": [
+    "press"
+   ]
+  },
+  {
+   "tipo": "Button",
+   "chiave": "skill-rileggi",
+   "label": "Read the plugin list again",
    "gestori": [
     "press"
    ]

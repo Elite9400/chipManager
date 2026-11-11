@@ -324,6 +324,8 @@ export type Regole = {
   connessi?: Fornitore[]
   /** F13.3b: registry providers usable now (key present, or no key needed). Absent = none. */
   compatibiliConnessi?: string[]
+  /** F13.7: installed plugins from `claude plugin list --json`; null or absent = unknown (no skill is named). */
+  pluginBase?: { id: string; versione?: string; scope: 'user' | 'project' | 'local' | 'managed'; attivo: boolean }[] | null
 }
 
 /** F6.2: perché il lock della corsia API resta tenuto: uscita non registrata, discendenti, file-chiave, cache della chiave. */

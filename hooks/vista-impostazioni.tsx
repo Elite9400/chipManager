@@ -5,7 +5,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { Fornitore, PassoEsecuzione, Pendenti, Peso, Rilievo, RisorseProgetto, StatoCompatibili, StatoDoctor, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni } from '../types'
+import type { Fornitore, PassoEsecuzione, Pendenti, Peso, Rilievo, RisorseProgetto, StatoCompatibili, StatoDoctor, StatoSkill, StatoEsecuzione, StatoImpostazioni, TipoAccesso, VoceImpostazioni } from '../types'
 import {
   budgetDa,
   campiDaProposta,
@@ -42,6 +42,7 @@ import { urlRapporto } from './rapporto'
 import { PAGINE_AIUTO, SITO_PUBBLICATO, urlAiuto } from './aiuto'
 import { COMPATIBILI } from './compatibili'
 import type { VoceCompatibile } from './compatibili'
+import { SKILL_BASE } from './skill-base'
 
 type StatoVista = StatoImpostazioni
 type Sezione = StatoVista['sezione']
@@ -76,6 +77,7 @@ const PASSI_TUOI: readonly string[] = ['fornitori', 'accessi', 'chiavi']
 /** L'ultima diagnosi (in memoria): la scrive il comando, la legge la pagina Doctor. */
 export const statoDoctor = atom({ plugin: 'chip-manager', key: 'doctor' } as const, {} as StatoDoctor, { shape: 'doctor-1' })
 const statoCompatibili = atom({ plugin: 'chip-manager', key: 'compatibili' } as const, {} as StatoCompatibili, { shape: 'compatibili-1' })
+const statoSkill = atom({ plugin: 'chip-manager', key: 'skill' } as const, {} as StatoSkill, { shape: 'skill-1' })
 /** I codici che la pagina sa dire: un codice fuori elenco non si mostra (e non entra mai in un rapporto). */
 export { RILIEVI } from './rapporto'
 /** Gli avvisi (!): il resto blocca qualcosa (✗). */
@@ -735,6 +737,8 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
             {RIMEDIO(x.r) ? <Button key={`doctor-rimedio-${i}`} variant="secondary" label={x.r.codice.startsWith('accesso.') ? `${T(RIMEDIO(x.r)!)} · ${({ 'accesso.claude': 'Claude', 'accesso.codex': 'Codex', 'accesso.github': 'GitHub' } as Record<string, string>)[x.r.codice]}` : T(RIMEDIO(x.r)!)} onPress={() => void c.rimedio(x.r)} /> : null}
           </Box>
         )),
+        // F13.7: the baseline skills, installed or not, with enable/disable on click (managed ones locked).
+        ...skillUi(),
         copiaUi('doctor'),
         <Box key="doctor-azioni" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={terminale ? 1 : 'xs'} rowGap={terminale ? 0 : 'xs'}>
           <Button key="doctor-ricontrolla" variant="primary" label={T('doc.ricontrolla')} onPress={() => void c.diagnosi()} />
@@ -827,8 +831,51 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
             onPress={() => salva('modo-ripristina', () => ({ [campo]: null }))()} />
         ) : null,
         ...['modo-ripristina', 'modo-codex', 'modo-parallelo', 'modo-auditor', 'modo-incrociata', ...['R0', 'R1', 'R2', 'R3', 'R4', 'R5'].map(c => `modo-effort-${c}`)].map(errore),
+        ...skillUi((id, on) => scrivi(`skill-usa-${id}`, { skillBase: { ...strato.skillBase, [id]: on } }), m.skillBase),
       ],
     })
+  }
+
+  // --- F13.7: baseline skills. The panel never installs or enables silently: every change is the owner's click; a
+  // managed plugin is shown as locked. «Off» only stops the mod naming a skill in mandates.
+  const skillStato = await read($, statoSkill)
+  const skillUi = (usa?: (id: string, on: boolean) => void, accese?: Readonly<Record<string, boolean>>) => {
+    const installati = skillStato.installati
+    const soloLocale = r.soloLocale
+    return [
+      <Text key="skill-titolo" weight="semibold" wrap="wrap">{T('skill.titolo')}</Text>,
+      didascalia('skill-descrizione', T('skill.descrizione')),
+      soloLocale ? didascalia('skill-sololocale', T('skill.soloLocale')) : null,
+      ...SKILL_BASE.map(v => {
+        const p = installati?.find(x => x.id === v.plugin)
+        const stato = installati === null || installati === undefined ? 'ignoto' : !p ? 'mancante' : p.scope === 'managed' ? 'gestito' : p.attivo ? 'attivo' : 'disattivo'
+        const dettagli = [T(`skill.stato.${stato}` as Chiave), T(`skill.flusso.${v.flusso}` as Chiave), v.sperimentale ? T('skill.sperimentale') : '', v.utente ? T('skill.utente') : '', T('skill.fonte', { repo: v.repo })]
+        return (
+          <Box key={`skill-${v.id}`} flexDirection="column" gap={terminale ? 0 : 'xs'}>
+            {u.Riga({
+              chiave: `skill-riga-${v.id}`,
+              classe,
+              principale: [<Text key={`skill-nome-${v.id}`} weight="medium">{v.id}</Text>, didascalia(`skill-stato-${v.id}`, dettagli.filter(Boolean).join(' · '))],
+              azioni: stato === 'attivo' || stato === 'disattivo'
+                ? [<Button key={`skill-cambia-${v.id}`} plain label={T(stato === 'attivo' ? 'skill.disabilita' : 'skill.abilita', { nome: v.id })}
+                    onPress={() => void esegui(`skill-${v.id}`, () => c.cambiaPlugin(v.id, stato !== 'attivo'), '')} />]
+                : [],
+            })}
+            {usa && !v.utente
+              ? u.GruppoChip({
+                  chiave: `skill-usa-${v.id}`, etichetta: T('skill.usa', { nome: v.id }), contesto: v.id, modo: 'scelta', valore: (accese?.[v.id] ?? v.predefinito) ? 'si' : 'no',
+                  voci: [{ valore: 'si', testo: T('modo.si') }, { valore: 'no', testo: T('modo.no') }],
+                  onCambia: x => usa(v.id, x === 'si'),
+                })
+              : null}
+            {errore(`skill-${v.id}`)}
+            {usa ? errore(`skill-usa-${v.id}`) : null}
+          </Box>
+        )
+      }),
+      <Button key="skill-rileggi" plain label={T('skill.rileggi')} onPress={() => void esegui('skill-rileggi', () => c.leggiPlugin(), '')} />,
+      errore('skill-rileggi'),
+    ]
   }
 
   // --- Bilanciamento ---------------------------------------------------------------------------------
