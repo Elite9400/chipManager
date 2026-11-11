@@ -2905,7 +2905,9 @@ test('default rules helper: one normal form for the routing path, shared with th
   const { crea, percorso } = require('./regole-crea.cjs')
   const ingressi = ['.claude/routing.json', 'regole/routing.json', './regole//routing.json', 'regole/./routing.json', 'regole\\routing.json', 'a\\b/c.json',
     '.\\regole\\\\routing.json', '../routing.json', 'a/../b.json', '..\\b.json', '/abs.json', '\\abs.json', 'C:/abs.json', 'C:\\abs.json', 'c:rel.json', '', '.',
-    'regole/', 'x'.repeat(401)]
+    'regole/', 'x'.repeat(401),
+    // A drive or `:` that shows up only once `./` and empty segments are gone (index 19 on).
+    './C:/routing.json', './c:rules.json', './/C:/x.json', 'regole/c:x.json', 'a/b:c', '.\\C:\\routing.json', '.\\c:rules.json']
   // The platform is simulated: the same inputs as a POSIX session and as a Windows one.
   const [posix, windows] = conLogica('console.log(JSON.stringify([false, true].map(w => ingresso.map(x => nuova.normalizzaRouting(x, w) ?? null))))', ingressi)
   const root = fuori()
@@ -2920,9 +2922,25 @@ test('default rules helper: one normal form for the routing path, shared with th
   assert.deepStrictEqual(windows.slice(0, 7), ['.claude/routing.json', 'regole/routing.json', 'regole/routing.json', 'regole/routing.json', 'regole/routing.json', 'a/b/c.json', 'regole/routing.json'])
   // `..`, absolute paths and drives: refused on both platforms.
   for (const normali of [posix, windows]) assert.deepStrictEqual(normali.slice(7, 15), Array(8).fill(null))
+  // A drive or `:` in any segment of the normalized result: refused on both platforms, by the reader and the helper.
+  for (const normali of [posix, windows]) assert.deepStrictEqual(normali.slice(19), Array(7).fill(null))
+  for (const x of ['C:/routing.json', 'c:rules.json', 'regole/c:x.json']) assert.strictEqual(percorso(root, x), null, x)
   // The helper itself never takes a backslash: it receives the normalized form.
   assert.strictEqual(crea({ root, relativo: 'regole\\routing.json', testo: '{}' }), 2)
   assert.deepStrictEqual(fs.readdirSync(root), [])
+})
+
+test('default rules helper: reader, confirmation and helper use the same root; only on Windows does a backslash in it become /', () => {
+  const { fileDi } = require('./regole-crea.cjs')
+  // Platforms simulated with path.posix and path.win32 for the helper, and the `windows` flag for the reader.
+  const casi = [['/tmp/a\\b', false, path.posix], ['/tmp/repo/', false, path.posix], ['X:\\repo\\', true, path.win32], ['X:/repo', true, path.win32]]
+  const letti = conLogica('console.log(JSON.stringify(ingresso.map(([r, w]) => nuova.fileRegole(r, "regole/routing.json", w))))', casi.map(([r, w]) => [r, w]))
+  for (const [i, [root, w, p]] of casi.entries()) {
+    const scritto = fileDi(root, ['regole', 'routing.json'], p)
+    assert.strictEqual(letti[i], w ? scritto.replace(/\\/g, '/') : scritto, `${root} (${w ? 'win32' : 'posix'})`)
+  }
+  // The POSIX root keeps its literal backslash on both sides.
+  assert.strictEqual(letti[0], '/tmp/a\\b/regole/routing.json')
 })
 
 test('default rules helper: a failed or partial write leaves no file of its own (same dev+ino), and never removes someone else\'s', () => {

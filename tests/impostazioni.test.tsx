@@ -2197,9 +2197,9 @@ test('default rules: the configured routing path has one normal form for confirm
   for (const windows of [false, true]) expect(con('./regole//routing.json', windows)).toMatchObject({ routing: 'regole/routing.json' })
   // A backslash: separator on Windows (configs that work today keep working), ambiguous on POSIX.
   expect([con('.\\regole\\routing.json', true), con('regole\\routing.json', false)]).toMatchObject([{ routing: 'regole/routing.json' }, { k: 'cfg.routing' }])
-  // Everywhere: no `..`, no absolute path, no drive.
+  // Everywhere: no `..`, no absolute path, no drive, no `:` in any segment once normalized.
   for (const windows of [false, true])
-    for (const r of ['..\\fuori.json', 'a/../b.json', '\\abs.json', '/abs.json', 'C:\\x.json', 'c:x.json'])
+    for (const r of ['..\\fuori.json', 'a/../b.json', '\\abs.json', '/abs.json', 'C:\\x.json', 'c:x.json', './C:/routing.json', './c:rules.json', 'regole/c:x.json'])
       expect([r, windows, con(r, windows)]).toEqual([r, windows, { k: 'cfg.routing' }])
   // A Windows session (drive root X:): a backslashed config reads, confirms and writes the same file.
   const amb = ambiente(on)

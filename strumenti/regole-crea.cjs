@@ -13,12 +13,15 @@ const MAX_TESTO = 64 * 1024
  */
 function percorso(root, relativo) {
   if (typeof root !== 'string' || !path.isAbsolute(root) || typeof relativo !== 'string' || !relativo || relativo.length > 400) return null
-  if (relativo.includes('\\') || relativo.startsWith('/') || /^[a-z]:/i.test(relativo)) return null
+  if (relativo.includes('\\') || relativo.startsWith('/')) return null
   const pezzi = relativo.split('/')
-  if (pezzi.some(p => p === '' || p === '.' || p === '..')) return null
+  if (pezzi.some(p => p === '' || p === '.' || p === '..' || p.includes(':'))) return null
   if ([...path.resolve(root).split(/[\\/]+/), ...pezzi].some(p => p.toLowerCase() === '.git')) return null
   return pezzi
 }
+
+/** The file written: the root as given (a POSIX root may hold a literal `\`), then the segments. Twin of fileRegole. */
+const fileDi = (root, pezzi, p = path) => p.join(p.resolve(root), ...pezzi)
 
 /** 0 created, 4 exists, 6 unsafe; throws on other I/O errors. `fsx` only for the tests. */
 function crea(input, fsx = fs) {
@@ -47,7 +50,7 @@ function crea(input, fsx = fs) {
     }
     if (s.isSymbolicLink() || !s.isDirectory()) return 6
   }
-  const file = path.join(dir, pezzi.at(-1))
+  const file = fileDi(root, pezzi)
   // An existing name, link included, is never replaced: lstat sees a dangling link that `wx` alone would report as EEXIST too.
   try {
     fsx.lstatSync(file)
@@ -102,4 +105,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { crea, percorso }
+module.exports = { crea, percorso, fileDi }

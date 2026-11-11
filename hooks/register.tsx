@@ -14,6 +14,7 @@ import {
   BASE_RE,
   cartellaDati,
   checkoutDi,
+  fileRegole,
   contestoDa,
   conUltime,
   CORSIE,
@@ -496,9 +497,10 @@ const suWindows = async ($: Eng, root?: string) => /^[A-Za-z]:/.test(root ?? '')
 async function percorsoRegole($: Eng) {
   const sr = await $.session.repo().catch(() => null)
   const root = sr?.root
-  const progetto = progettoDa(await leggiConfig($), repoGithub(sr?.remote) ?? (root ? checkoutDi(root) : null), await suWindows($, root))
+  const windows = await suWindows($, root)
+  const progetto = progettoDa(await leggiConfig($), repoGithub(sr?.remote) ?? (root ? checkoutDi(root) : null), windows)
   if (eMsg(progetto)) throw new Errore(progetto)
-  return { root, progetto, file: root ? `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/${progetto.routing}` : undefined }
+  return { root, progetto, file: root ? fileRegole(root, progetto.routing, windows) : undefined }
 }
 
 /**

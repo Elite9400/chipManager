@@ -139,15 +139,23 @@ const PROGETTO_PREDEFINITO: Progetto = { routing: ROUTING_PREDEFINITO, sensibili
  * The one normal form of a project's `routing` path, used to read, to confirm and to write it: relative, `/`-separated,
  * no empty or `.` segments. On Windows a backslash is a separator and becomes `/` first (configs written that way keep
  * working); on POSIX it may be part of a file name, so it is ambiguous and refused. `..`, absolute paths and drives are
- * refused everywhere. strumenti/regole-crea.cjs accepts only paths already in this form (parity test).
+ * refused everywhere, and so is a `:` in any segment of the result (`./C:/x` would otherwise become a drive once the
+ * `./` goes). strumenti/regole-crea.cjs accepts only paths already in this form (parity test).
  */
 export function normalizzaRouting(v: unknown, windows = false): string | undefined {
   if (typeof v !== 'string' || !v || v.length > 400 || (!windows && v.includes('\\'))) return undefined
   const s = windows ? v.replace(/\\/g, '/') : v
-  if (s.startsWith('/') || /^[a-z]:/i.test(s)) return undefined
+  if (s.startsWith('/')) return undefined
   const pezzi = s.split('/').filter(x => x !== '' && x !== '.')
-  return pezzi.length && !pezzi.includes('..') ? pezzi.join('/') : undefined
+  return pezzi.length && !pezzi.some(x => x === '..' || x.includes(':')) ? pezzi.join('/') : undefined
 }
+
+/**
+ * The rules file the reader opens, the confirmation shows and the helper creates (it joins the same root and segments).
+ * Only on Windows does `\` in the root become `/`; a POSIX root may hold a literal backslash and stays as it is.
+ */
+export const fileRegole = (root: string, routing: string, windows: boolean) =>
+  `${(windows ? root.replace(/\\/g, '/') : root).replace(/\/+$/, '')}/${routing}`
 
 /**
  * `config` = il JSON della configurazione (`null` se il file non c'è). Restituisce la sezione del progetto o il
