@@ -4815,3 +4815,26 @@ test('RC 2.2.0, punto 4: il mese della spesa nel pannello è in ora locale, come
   expect([meseLocale(new Date(2027, 0, 31, 23, 59).getTime()), meseLocale(new Date(2027, 1, 1, 0, 30).getTime()), meseLocale(new Date(2026, 11, 31, 23, 59, 59).getTime()),
     meseLocale(new Date(2027, 0, 1, 0, 0, 1).getTime())]).toEqual(['2027-01', '2027-02', '2026-12', '2027-01'])
 })
+
+test('RC 2.2.0: /chipmanager con i dati che non si leggono risponde col motivo, apre il doctor e mostra l\'errore; l\'hook non fallisce', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  amb.disco.set('X:/orch/azioni/nota.txt', 'x')
+  // La cartella delle azioni non si elenca (come con un helper di un'altra versione): `carica` lancia.
+  Object.defineProperty(amb.elenchi, 'push', {
+    configurable: true, writable: true,
+    value: (x: string) => {
+      if (x.endsWith('/orch/azioni')) throw new Error('helper.mutexNonCreabile: pipe (EACCES)')
+      return Array.prototype.push.call(amb.elenchi, x)
+    },
+  })
+  const r = await $.command.run({ command: 'chipmanager' } as never) as { text?: unknown }
+  const testo = String(r.text)
+  expect([testo.startsWith('Non riesco a leggere i dati della mod: '), testo.split(': ')[1]!.split('. ')[0]!.trim().length > 0, testo.includes('/reload-plugins')]).toEqual([true, true, true])
+  expect(amb.toast).toContain(testo)
+  delete (amb.elenchi as { push?: unknown }).push
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  expect(await ui.find({ key: 'pagina-doctor' })).toBeDefined()
+  await ui.unmount()
+})

@@ -2405,6 +2405,51 @@ let chiaviFornitori = { deepseek: false, freellmapi: false }
 /** F13.3b: registry providers whose native option is set, or that need no key. */
 let compatibiliPresenti: string[] = []
 
+/** Il comando `/chipmanager` quando i dati si leggono (o è il doctor, che parte anche senza). */
+async function apriComando($: Eng, parole: string[], pagina: 'doctor' | 'setup' | undefined) {
+  if (pagina) {
+    // Il setup con una proposta dell'IA già nella bozza si apre sul riepilogo: l'utente controlla e conferma.
+    await update($, impostazioni, (s): StatoImpostazioni => ({ ...s, sezione: pagina, errore: undefined,
+      ...(pagina === 'setup' && { passoSetup: s.proposta || s.propostaInCoda ? 6 : 0 }) }))
+    await update($, vistaOra, (): Vista => 'impostazioni')
+  }
+  await $.ui.open({ id: PANE, title: TITOLO, focus: true })
+  // Il pannello è già aperto su «Controllo in corso»; il comando torna a diagnosi finita (in sola lettura, ≤ 20 s).
+  if (pagina === 'doctor') await diagnosiDoctor($)
+  const T = await lingue($)
+  const ignote = parole.filter(p => p !== '--doctor' && p !== '--setup')
+  return { text: [T(pagina === 'doctor' ? 'comando.doctor' : pagina === 'setup' ? 'comando.setup' : 'comando.aperto'), ignote.length ? T('comando.ignoto', { testo: ignote.join(' ').slice(0, 60) }) : ''].filter(Boolean).join(' ') }
+}
+
+/**
+ * RC 2.2.0: `/chipmanager` after an error. Every step is guarded, so the command always answers: the panel opens on the
+ * doctor (which then runs its check, the stale-module warning included), the reason shows as a toast, and the text
+ * says to reload the plugins if the mod was just updated.
+ */
+async function comandoInErrore($: Eng, err: unknown) {
+  let T = traduttore('en')
+  try {
+    T = await lingue($)
+  } catch {
+    /* English */
+  }
+  const motivo = (testo(T.lingua, msgDi(err)) || 'unknown error').replace(/\s+/g, ' ').slice(0, 200)
+  const frase = T('comando.errore', { motivo })
+  for (const passo of [
+    () => update($, impostazioni, (s): StatoImpostazioni => ({ ...s, sezione: 'doctor', errore: undefined })),
+    () => update($, vistaOra, (): Vista => 'impostazioni'),
+    () => $.ui.open({ id: PANE, title: TITOLO, focus: true }),
+    () => $.ui.toast(frase),
+  ])
+    try {
+      await passo()
+    } catch {
+      /* the next step, and the answer, still come */
+    }
+  void diagnosiDoctor($).catch(() => {})
+  return { text: frase }
+}
+
 export const register: Register = (on, options) => {
   const opz = (options ?? {}) as Record<string, unknown>
   chiaveApiPresente = typeof opz.anthropicApiKey === 'string' && opz.anthropicApiKey.trim().length > 0
@@ -2556,22 +2601,19 @@ export const register: Register = (on, options) => {
     // F11: `--setup` e `--doctor` aprono il pannello sulla loro pagina delle Impostazioni; altro testo non cambia niente.
     const parole = (e.args ?? '').trim().split(/\s+/).filter(Boolean)
     const pagina = parole.includes('--doctor') ? ('doctor' as const) : parole.includes('--setup') ? ('setup' as const) : undefined
-    // Il doctor deve partire anche con un config che non si legge (diagnosticarlo è il suo primo compito).
-    await carica($).catch(err => {
-      if (pagina !== 'doctor') throw err
-    })
-    if (pagina) {
-      // Il setup con una proposta dell'IA già nella bozza si apre sul riepilogo: l'utente controlla e conferma.
-      await update($, impostazioni, (s): StatoImpostazioni => ({ ...s, sezione: pagina, errore: undefined,
-        ...(pagina === 'setup' && { passoSetup: s.proposta || s.propostaInCoda ? 6 : 0 }) }))
-      await update($, vistaOra, (): Vista => 'impostazioni')
+    // RC 2.2.0: il comando non fallisce mai in silenzio. Dati che non si leggono, o qualunque altro errore qui dentro:
+    // il pannello si apre comunque sul doctor, l'errore si mostra e il comando risponde col motivo (comandoInErrore).
+    try {
+      // Il doctor deve partire anche con un config che non si legge (diagnosticarlo è il suo primo compito).
+      let datiIllegibili: unknown
+      await carica($).catch(err => {
+        datiIllegibili = err ?? new Error('unreadable data')
+      })
+      if (datiIllegibili !== undefined && pagina !== 'doctor') return await comandoInErrore($, datiIllegibili)
+      return await apriComando($, parole, pagina)
+    } catch (err) {
+      return await comandoInErrore($, err)
     }
-    await $.ui.open({ id: PANE, title: TITOLO, focus: true })
-    // Il pannello è già aperto su «Controllo in corso»; il comando torna a diagnosi finita (in sola lettura, ≤ 20 s).
-    if (pagina === 'doctor') await diagnosiDoctor($)
-    const T = await lingue($)
-    const ignote = parole.filter(p => p !== '--doctor' && p !== '--setup')
-    return { text: [T(pagina === 'doctor' ? 'comando.doctor' : pagina === 'setup' ? 'comando.setup' : 'comando.aperto'), ignote.length ? T('comando.ignoto', { testo: ignote.join(' ').slice(0, 60) }) : ''].filter(Boolean).join(' ') }
   })
 
   on('tool.call', { tool: 'mcp__chip-manager__suggerisci_azione' }, async ($, e) => {

@@ -41,6 +41,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Fixed
 
+- **`/chipmanager` never fails silently.** If the mod's data cannot be read (or anything else in the command fails), the
+  panel opens on the doctor anyway, the reason shows, and the command answers in the user's language, suggesting
+  `/reload-plugins` after an update.
 - **Chain deliveries are one write.** A step's artefact and its `consegnata` record are written together by the helper,
   with a compare-and-swap on the record version read by the panel: a late or concurrent delivery writes nothing, and an
   artefact a record has already delivered is never overwritten.

@@ -1106,6 +1106,7 @@ const en = {
   "comando.doctor": "chipManager doctor opened: checking.",
   "comando.setup": "chipManager setup opened.",
   "comando.ignoto": "Ignored: {testo} (use --setup or --doctor).",
+  "comando.errore": "Could not read the mod's data: {motivo}. Opened the doctor; if you just updated, run /reload-plugins.",
   "doc.titolo": "Doctor",
   "doc.descrizione": "Checks the mod's settings, data folders, locks, sign-ins and host. It changes nothing unless you confirm a fix.",
   "doc.inCorso": "Checking…",

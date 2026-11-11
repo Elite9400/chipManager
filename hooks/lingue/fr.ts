@@ -1104,6 +1104,7 @@ const fr: Dizionario = {
   "comando.doctor": "Doctor de chipManager ouvert : vérification en cours.",
   "comando.setup": "Configuration guidée de chipManager ouverte.",
   "comando.ignoto": "Ignoré : {testo} (utilisez --setup ou --doctor).",
+  "comando.errore": "Impossible de lire les données de la mod : {motivo}. Le doctor est ouvert ; si vous venez de mettre à jour, lancez /reload-plugins.",
   "doc.titolo": "Doctor",
   "doc.descrizione": "Vérifie réglages, dossiers de données, verrous, connexions et hôte du mod. Ne change rien tant que vous ne confirmez pas une correction.",
   "doc.inCorso": "Vérification…",

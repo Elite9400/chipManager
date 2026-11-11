@@ -1104,6 +1104,7 @@ const it: Dizionario = {
   "comando.doctor": "Doctor di chipManager aperto: controllo in corso.",
   "comando.setup": "Configurazione guidata di chipManager aperta.",
   "comando.ignoto": "Ignorato: {testo} (usa --setup o --doctor).",
+  "comando.errore": "Non riesco a leggere i dati della mod: {motivo}. Ho aperto il doctor; se hai appena aggiornato, esegui /reload-plugins.",
   "doc.titolo": "Doctor",
   "doc.descrizione": "Controlla impostazioni, cartelle dei dati, lock, accessi e host della mod. Non cambia niente finché non confermi un rimedio.",
   "doc.inCorso": "Controllo in corso…",
