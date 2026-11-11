@@ -1057,6 +1057,7 @@ const it: Dizionario = {
   "skill.nessunHook": "nessuno",
   "skill.installato": "{nome} installato, disattivato: attivalo quando vuoi.",
   "skill.spentiAvvio": "Disattivati perché non approvati da te: {nomi}",
+  "skill.spentiPyc": "Disattivato perché cambiato: {nomi}. L'unica differenza è byte-code Python (__pycache__/*.pyc), probabilmente scritto dai suoi stessi hook: segnalalo.",
   "skill.nonInstallabile": "sperimentale: la mod non lo installa ancora",
   "skill.err.ufficiale": "il marketplace ufficiale non è aggiunto: esegui claude plugin marketplace add anthropics/claude-plugins-official",
   "skill.err.fonte": "la fonte non corrisponde al registro: niente installato",

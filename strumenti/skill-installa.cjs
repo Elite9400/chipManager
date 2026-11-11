@@ -35,10 +35,10 @@ class Rifiuto extends Error {
   constructor(motivo) { super(motivo); this.motivo = motivo }
 }
 
-/** Runs argv without a shell; `.cmd` shims resolved like the main helper. Returns { status, stdout }. */
+/** Runs argv without a shell; `.cmd` shims resolved like the main helper; `opz.env` added to the current environment. Returns { status, stdout }. */
 function eseguiReale(argv, opz = {}) {
   const [eseguibile, argomenti] = require('./disco.cjs').comandoReale(argv)
-  const r = spawnSync(eseguibile, argomenti, { cwd: opz.cwd, encoding: 'utf8', timeout: opz.timeoutMs ?? 120_000, windowsHide: true, shell: false, maxBuffer: 2_000_000 })
+  const r = spawnSync(eseguibile, argomenti, { cwd: opz.cwd, env: opz.env ? { ...process.env, ...opz.env } : undefined, encoding: 'utf8', timeout: opz.timeoutMs ?? 120_000, windowsHide: true, shell: false, maxBuffer: 2_000_000 })
   return { status: r.status ?? 1, stdout: r.stdout ?? '' }
 }
 
@@ -347,13 +347,13 @@ function hookDa(v, esiste, testo, voce, elenca = () => null) {
     for (const r of fm) righe.push(riga(`${f} · ${r}`))
     for (const [n, r] of contestoDinamico(linee, corpo)) righe.push(riga(`${f}:${n} · ${r}`))
   }
-  // Final audit, point 3: output styles, their frontmatter; one with `force-for-plugin` (any value) changes the prompt of
-  // every session, so its whole body is shown too.
+  // Final audit, point 3, and its review: every output style whole, frontmatter and body, every non-empty line with its
+  // number. `force-for-plugin` applies one to every session and YAML spells it many ways (quoted, flow, commented), so no
+  // style is told apart by reading it.
   for (const f of new Set(cartelle([manifest?.outputStyles, voce?.outputStyles], 'output-styles').flatMap(d => tutti(d).filter(x => /\.md$/i.test(x))))) {
-    const { fm, corpo, righe: linee } = delimita(grezzo(f))
-    for (const r of fm) righe.push(riga(`${f} · ${r}`))
-    if (fm.some(r => /^\s*force-for-plugin\s*:/i.test(r)))
-      for (let i = corpo; i < linee.length; i++) if (linee[i].trim()) righe.push(riga(`${f}:${i + 1} · ${linee[i]}`))
+    grezzo(f).split('\n').forEach((r, i) => {
+      if (r.trim()) righe.push(riga(`${f}:${i + 1} · ${r.replace(/\r$/, '')}`))
+    })
   }
   // RC 2.2.0, review B1: the agent `settings.agent` makes the main thread is shown whole (every non-empty line of its
   // file). It is found by file name, by its path under an agents folder (`a/b.md` = `a:b`) or by its frontmatter `name`;
@@ -416,7 +416,20 @@ function marchioHost(abs, nome) {
  */
 /** The executable bit as git reads it: the owner's (0100); on Windows there is none. */
 const bitEseguibile = (s, piattaforma = process.platform) => piattaforma !== 'win32' && (s.mode & 0o100) !== 0
-function alberoImpronta(root, voce, lato = 'revisione', eseguibile = s => bitEseguibile(s)) {
+/** A real `__pycache__` folder holding only regular `*.pyc` files (Python's byte-code cache, nothing else). */
+function soloPyc(abs) {
+  try {
+    if (!fs.lstatSync(abs).isDirectory()) return false
+    return fs.readdirSync(abs).every(f => /\.pyc$/.test(f) && fs.lstatSync(path.join(abs, f)).isFile())
+  } catch {
+    return false
+  }
+}
+/**
+ * `senzaPyc` only to explain a refusal (final audit review, point 2c): the same fingerprint with byte-code caches left
+ * out, never to accept a copy.
+ */
+function alberoImpronta(root, voce, lato = 'revisione', eseguibile = s => bitEseguibile(s), senzaPyc = false) {
   const h = require('node:crypto').createHash('sha256')
   const file = []
   const giro = (abs, rel) => {
@@ -431,6 +444,7 @@ function alberoImpronta(root, voce, lato = 'revisione', eseguibile = s => bitEse
           if (lato === 'copia' && MARCHI_HOST.has(n) && marchioHost(path.join(abs, n), n)) continue
           throw new Rifiuto('skill.err.percorso')
         }
+        if (senzaPyc && n === '__pycache__' && soloPyc(path.join(abs, n))) continue
         giro(path.join(abs, n), rel ? `${rel}/${n}` : n)
       }
     } else if (s.isFile()) file.push([rel, abs, eseguibile(s, abs)])
@@ -698,6 +712,12 @@ const MANIFEST_CLONE = '.claude-plugin/marketplace.json'
 /** Forward slashes on Windows too: the marketplace path upstream documents. */
 const percorsoAvanti = p => p.replace(/\\/g, '/')
 
+/**
+ * Final audit review, point 2b: every Python command the mod runs for TokenEconomizer writes no byte-code cache. The
+ * host's own hooks run outside the mod's control: a copy changed only by such a cache is still turned off, and the
+ * start-up message says why (controlla).
+ */
+const SENZA_BYTECODE = Object.freeze({ PYTHONDONTWRITEBYTECODE: '1' })
 /** Python ≥ 3.10 (first working of python3, python, py -3) and, on Windows, Git's `sh`: argv of the interpreter, or a refusal. */
 function prerequisiti(deps) {
   const piattaforma = deps.piattaforma ?? process.platform
@@ -705,7 +725,7 @@ function prerequisiti(deps) {
   for (const c of [['python3'], ['python'], ...(piattaforma === 'win32' ? [['py', '-3']] : [])]) {
     // A command that does not exist (ENOENT from the resolver) is a candidate that fails: try the next one.
     let r
-    try { r = deps.esegui([...c, '--version'], { timeoutMs: 15_000 }) } catch { continue }
+    try { r = deps.esegui([...c, '--version'], { timeoutMs: 15_000, env: SENZA_BYTECODE }) } catch { continue }
     const m = /Python (\d+)\.(\d+)/.exec(r.stdout)
     if (r.status === 0 && m && (Number(m[1]) > 3 || (Number(m[1]) === 3 && Number(m[2]) >= 10))) { py = c; break }
   }
@@ -888,7 +908,7 @@ function installa(id, input, dm, deps) {
  */
 function configuraClone(dm, deps) {
   const py = prerequisiti(deps)
-  const te = (...a) => deps.esegui([...py, path.join(dirClone(dm), 'plugin', 'scripts', 'te_bootstrap.py'), 'cli', ...a], { timeoutMs: 60_000 })
+  const te = (...a) => deps.esegui([...py, path.join(dirClone(dm), 'plugin', 'scripts', 'te_bootstrap.py'), 'cli', ...a], { timeoutMs: 60_000, env: SENZA_BYTECODE })
   if (te('config', 'set', 'toolprune=propose', '--global').status !== 0 || te('config', 'set', 'loopguard=off', '--global').status !== 0)
     throw new Rifiuto('skill.err.config')
   // The settings file format is not documented: read the values back and require both, or stay off.
@@ -925,18 +945,25 @@ function controlla(dm, deps) {
   if (!elenco) return { spenti: [], ignoto: true }
   const r = leggiRecord(dm)
   const spenti = []
+  const pyc = []
   for (const v of K.SKILL_BASE) {
     const plugin = pluginInstallato(v)
     const p = elenco.find(x => x.id === plugin)
     const rec = r.voci[v.id]
     if (!p?.attivo || (!rec && marketplace(nomeMarketplace(v), dirDellaVoce(v, dm), deps) !== 'nostro')) continue
     let ok = !!rec?.abilitato && rec.plugin === plugin
-    if (ok) try { verificaInstallato(v, rec, dm, deps) } catch { ok = false }
+    let errore
+    if (ok) try { verificaInstallato(v, rec, dm, deps) } catch (e) { ok = false; errore = e }
     if (ok) continue
     spegniPlugin(deps, plugin)
     spenti.push(v.id)
+    // Final audit review, point 2c: off all the same; the message names a change made only of Python byte-code caches.
+    if (errore?.motivo === 'skill.err.hookCambiati') try {
+      const installato = percorsoInstallato(plugin, deps)
+      if (installato && alberoImpronta(installato, v.pin === 'clone' ? voceClone(dirClone(dm), v) : undefined, 'copia', undefined, true) === rec.impronta) pyc.push(v.id)
+    } catch { /* not explained: the usual message */ }
   }
-  return { spenti }
+  return pyc.length ? { spenti, pyc } : { spenti }
 }
 
 function main(argv = process.argv.slice(2), deps = {}) {
@@ -958,4 +985,4 @@ if (require.main === module) {
   process.exitCode = codice
 }
 
-module.exports = { main, prepara, installa, revisione, skillDa, abilita, controlla, pulisci, prerequisiti, dirClone, fileSenzaLink, marketplace, hookInstallati, alberoImpronta, bitEseguibile, hookDellaRevisione, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }
+module.exports = { main, eseguiReale, prepara, installa, revisione, skillDa, abilita, controlla, pulisci, prerequisiti, dirClone, fileSenzaLink, marketplace, hookInstallati, alberoImpronta, bitEseguibile, hookDellaRevisione, righeHook, shaInstallato, coincide, fileRecord, dirMarketplace, Rifiuto }

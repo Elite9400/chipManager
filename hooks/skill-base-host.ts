@@ -84,13 +84,16 @@ export async function installaSkill($: EngineInterface, id: string, conferma: (d
  * `@chipmanager-base` id, or TokenEconomizer, which keeps its upstream id. Whether it is really the mod's (its marketplace)
  * is the helper's check: a TokenEconomizer the user installed is left alone there.
  */
-export async function controllaApprovate($: EngineInterface) {
+export async function controllaApprovate($: EngineInterface): Promise<{ spenti: string[]; pyc: string[] }> {
   const installati = await leggiPlugin($)
   const daControllare = (id: string) => id.endsWith(`@${MARKETPLACE_BASE}`) || SKILL_BASE.some(v => v.pin === 'clone' && v.plugin === id)
-  if (!installati?.some(p => daControllare(p.id) && p.attivo)) return []
+  if (!installati?.some(p => daControllare(p.id) && p.attivo)) return { spenti: [], pyc: [] }
   const r = await helperSkill($, ['controlla'])
   await leggiPlugin($)
-  return r.ok && Array.isArray(r.dati.spenti) ? r.dati.spenti.filter((x): x is string => typeof x === 'string') : []
+  const testi = (x: unknown) => (Array.isArray(x) ? x.filter((y): y is string => typeof y === 'string') : [])
+  const spenti = r.ok ? testi(r.dati.spenti) : []
+  // Final audit review, point 2c: those turned off because changed only by Python byte-code caches (among the turned off).
+  return { spenti, pyc: r.ok ? testi(r.dati.pyc).filter(x => spenti.includes(x)) : [] }
 }
 
 /**

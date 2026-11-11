@@ -5220,3 +5220,14 @@ test('F14.3 setup: dal terminale (avvio non interattivo `claude -p`) la chip di 
   expect(await ui.find({ type: 'Text', text: /mai con claude -p/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('RC2, revisione Codex, punto 2c: all\'avvio, uno spento perché cambiato solo dal byte-code Python ha il suo messaggio; gli altri il solito', async ($, on) => {
+  const amb = ambiente(on, {
+    fonte: cmd => (cmd === 'claude plugin list --json' ? [{ id: 'tokeneconomizer@tokeneconomizer', scope: 'user', enabled: true }, { id: 'ponytail@chipmanager-base', scope: 'user', enabled: true }]
+      : cmd === 'skill-controlla' ? { spenti: ['tokeneconomizer', 'ponytail'], pyc: ['tokeneconomizer'] } : undefined),
+  })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await finche(() => amb.toast.length >= 2)
+  expect(amb.toast).toEqual(expect.arrayContaining([t('it', 'skill.spentiAvvio', { nomi: 'ponytail' }), t('it', 'skill.spentiPyc', { nomi: 'tokeneconomizer' })]))
+})

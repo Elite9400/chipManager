@@ -1059,6 +1059,7 @@ const en = {
   "skill.nessunHook": "none",
   "skill.installato": "{nome} installed, disabled: enable it when you want.",
   "skill.spentiAvvio": "Disabled because not approved by you: {nomi}",
+  "skill.spentiPyc": "Disabled because changed: {nomi}. The only difference is Python byte-code (__pycache__/*.pyc), probably written by its own hooks: please report it.",
   "skill.nonInstallabile": "experimental: the mod does not install it yet",
   "skill.err.ufficiale": "the official marketplace is not added: run claude plugin marketplace add anthropics/claude-plugins-official",
   "skill.err.fonte": "the source does not match the registry: nothing installed",

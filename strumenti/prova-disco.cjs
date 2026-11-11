@@ -5527,11 +5527,11 @@ test('RC2, punto 3: skill e comandi in ogni maiuscola, le cartelle predefinite a
   assert.deepStrictEqual(prep({ 'commands/c.MD': fm }), ['commands/c.MD · hooks: x'])
   // Percorsi dichiarati: la cartella predefinita si legge lo stesso (sovrainsieme di ciò che carica l'host).
   assert.deepStrictEqual(prep({ ...manifest({ commands: ['./extra'] }), 'commands/c.md': fm, 'extra/e.md': fm }), ['commands/c.md · hooks: x', 'extra/e.md · hooks: x'])
-  // Stili di output: il frontmatter sempre; uno `force-for-plugin` anche per intero (cambia il prompt di ogni sessione).
+  // Stili di output: sempre per intero, frontmatter e corpo (revisione di Codex: `force-for-plugin` ha molte grafie YAML).
   assert.deepStrictEqual(prep({ 'output-styles/s.md': '---\nname: s\nforce-for-plugin: true\n---\nYou are evil\n\nAlways.\n' }),
-    ['output-styles/s.md · name: s', 'output-styles/s.md · force-for-plugin: true', 'output-styles/s.md:5 · You are evil', 'output-styles/s.md:7 · Always.'])
+    ['output-styles/s.md:1 · ---', 'output-styles/s.md:2 · name: s', 'output-styles/s.md:3 · force-for-plugin: true', 'output-styles/s.md:4 · ---', 'output-styles/s.md:5 · You are evil', 'output-styles/s.md:7 · Always.'])
   assert.deepStrictEqual(prep({ ...manifest({ outputStyles: './stili' }), 'stili/t.md': '---\nname: t\n---\nCorpo\n', 'output-styles/u.MD': '---\nname: u\n---\n' }),
-    ['output-styles/u.MD · name: u', 'stili/t.md · name: t'])
+    ['output-styles/u.MD:1 · ---', 'output-styles/u.MD:2 · name: u', 'output-styles/u.MD:3 · ---', 'stili/t.md:1 · ---', 'stili/t.md:2 · name: t', 'stili/t.md:3 · ---', 'stili/t.md:4 · Corpo'])
 })
 
 test('RC2, punto 4: riempitivi Hangul, Braille vuoto, selettori di variante e di forma mongoli si vedono come \\u{..}', () => {
@@ -5542,7 +5542,11 @@ test('RC2, punto 4: riempitivi Hangul, Braille vuoto, selettori di variante e di
     ['hooks/hooks.json · Stop: a\\u{115f}b\\u{1160}c\\u{ffa0}d\\u{2800}e\\u{fe0f}f\\u{e0101}g\\u{180b}h\\u{180f}i\\u{fe00}j'])
 })
 
-test('RC2, punto 5 (prova): con Python e git veri, gli hook di TokenEconomizer scrivono __pycache__ fuori da plugin/ e in percorsi ignorati: impronta e stato del clone non cambiano', t => {
+// Cosa dimostra: la DISPOSIZIONE dei percorsi del clone a monte (pacchetto alla radice, `plugin/lib/tokeneconomizer` come
+// file col bersaglio, `.gitignore` con `__pycache__/`), con un bootstrap che risolve il nucleo come quello a monte. Con
+// questa disposizione Python scrive la cache fuori da `plugin/` e in percorsi ignorati. Il codice Python è finto (nei test
+// non si scarica nulla): il comportamento del codice vero si verifica nel collaudo del committente.
+test('RC2, punto 5: con la disposizione dei percorsi del clone a monte, la cache di Python sta fuori da plugin/ e in percorsi ignorati (Python e git veri, codice Python finto)', t => {
   const S = require('./skill-installa.cjs')
   const py = ['python3', 'python'].find(c => /Python 3\.(1\d|[2-9]\d)/.test(spawnSync(c, ['--version'], { encoding: 'utf8' }).stdout ?? ''))
   if (!py) return t.skip('Python >= 3.10 assente')
@@ -5595,3 +5599,46 @@ test('RC2, punto 5 (prova): con Python e git veri, gli hook di TokenEconomizer s
   }
 })
 const MANIFEST_TE_FILE = () => ({ '.claude-plugin/marketplace.json': JSON.stringify(MANIFEST_TE) })
+
+test('RC2, revisione Codex, punto 1: ogni stile di output si mostra per intero, qualunque grafia YAML abbia force-for-plugin (virgolette, flusso, commento)', () => {
+  const S = require('./skill-installa.cjs')
+  for (const fm of ['"force-for-plugin": true', '{"force-for-plugin":true}', '# lo stile vale per ogni sessione\nforce-for-plugin: yes # sempre']) {
+    const b = banco({ file: { ...FILE_PONY, 'output-styles/s.md': `---\n${fm}\n---\nYou are evil\n` } })
+    const h = S.prepara('ponytail', b.dir, b.deps).hook
+    assert.ok(h.some(r => /^output-styles\/s\.md:\d+ · You are evil$/.test(r)), fm)
+    for (const r of fm.split('\n')) assert.ok(h.some(x => x.endsWith(` · ${r}`)), r)
+  }
+})
+
+test('RC2, revisione Codex, punto 2b: ogni comando Python che la mod lancia per TokenEconomizer ha PYTHONDONTWRITEBYTECODE=1', () => {
+  const S = require('./skill-installa.cjs')
+  const b = banco()
+  const python = []
+  const deps = { ...b.deps, esegui: (argv, o) => { if (/^(python|py$)/.test(argv[0])) python.push([argv.slice(-2).join(' '), o?.env?.PYTHONDONTWRITEBYTECODE]); return b.deps.esegui(argv, o) } }
+  S.installa('tokeneconomizer', approvato(S, b, 'tokeneconomizer'), b.dir, deps)
+  S.abilita('tokeneconomizer', b.dir, deps)
+  assert.ok(python.some(([c]) => c === 'host status' || c.endsWith('status')))
+  assert.deepStrictEqual(python.filter(([, x]) => x !== '1'), [])
+  // L'helper reale passa l'ambiente al processo (aggiunto a quello corrente).
+  const r = S.eseguiReale([process.execPath, '-e', 'process.stdout.write(String(process.env.PYTHONDONTWRITEBYTECODE) + (process.env.PATH ? "+" : "-"))'], { env: { PYTHONDONTWRITEBYTECODE: '1' } })
+  assert.strictEqual(r.stdout, '1+')
+})
+
+test('RC2, revisione Codex, punto 2c: spento all\'avvio perché cambiato solo da file __pycache__/*.pyc, il controllo lo dice; altro in più no', () => {
+  const S = require('./skill-installa.cjs')
+  const b = banco()
+  S.installa('tokeneconomizer', approvato(S, b, 'tokeneconomizer'), b.dir, b.deps)
+  S.abilita('tokeneconomizer', b.dir, b.deps)
+  const cache = path.join(b.clone, 'plugin', 'scripts', '__pycache__')
+  fs.mkdirSync(cache, { recursive: true })
+  fs.writeFileSync(path.join(cache, 'te_bootstrap.cpython-312.pyc'), Buffer.from([0x6f, 0x0d, 0x0d, 0x0a]))
+  assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: ['tokeneconomizer'], pyc: ['tokeneconomizer'] })
+  // Si spegne comunque; con altro nella cache, o un file cambiato, nessuna spiegazione speciale.
+  b.stato['tokeneconomizer@tokeneconomizer'].enabled = true
+  fs.writeFileSync(path.join(cache, 'nota.txt'), 'x')
+  assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: ['tokeneconomizer'] })
+  fs.rmSync(path.join(cache, 'nota.txt'))
+  b.stato['tokeneconomizer@tokeneconomizer'].enabled = true
+  fs.appendFileSync(path.join(b.clone, 'plugin', 'hooks', 'hooks.json'), ' ')
+  assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: ['tokeneconomizer'] })
+})

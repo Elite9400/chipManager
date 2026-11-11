@@ -2565,8 +2565,11 @@ export const register: Register = (on, options) => {
     await aggiornaRisorse($, opz)
     // F13.7: which baseline plugins are installed and enabled (an unreadable listing = unknown: no skill is named).
     // F13.7 r3: a mod-installed plugin enabled without the owner's approval record is disabled again, and the owner told.
-    void controllaApprovate($).then(async spenti => {
-      if (spenti.length) $.ui.toast((await lingue($))('skill.spentiAvvio', { nomi: spenti.join(', ') }))
+    void controllaApprovate($).then(async ({ spenti, pyc }) => {
+      const T = await lingue($)
+      const altri = spenti.filter(x => !pyc.includes(x))
+      if (altri.length) $.ui.toast(T('skill.spentiAvvio', { nomi: altri.join(', ') }))
+      if (pyc.length) $.ui.toast(T('skill.spentiPyc', { nomi: pyc.join(', ') }))
       // F14.3: after the approval check (the listing is fresh), the per-repository setup chips, once per project.
       await proponiSetup($)
     }).catch(() => undefined)

@@ -1057,6 +1057,7 @@ const es: Dizionario = {
   "skill.nessunHook": "ninguno",
   "skill.installato": "{nome} instalado, desactivado: actívalo cuando quieras.",
   "skill.spentiAvvio": "Desactivados porque no los aprobaste: {nomi}",
+  "skill.spentiPyc": "Desactivado porque cambió: {nomi}. La única diferencia es byte-code de Python (__pycache__/*.pyc), probablemente escrito por sus propios hooks: infórmalo.",
   "skill.nonInstallabile": "experimental: el mod aún no lo instala",
   "skill.err.ufficiale": "el marketplace oficial no está añadido: ejecuta claude plugin marketplace add anthropics/claude-plugins-official",
   "skill.err.fonte": "la fuente no coincide con el registro: no se instaló nada",
