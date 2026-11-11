@@ -1359,6 +1359,9 @@ export function mandatoApi(a: Azione, regole: Regole = REGOLE_DEFAULT, s?: Strum
   const parti: string[] = []
   if (corsia) parti.push(`**Lane ${corsia}.** Set by the panel: apply the skills and gates the project process requires for this lane.`)
   parti.push(a.brief.trim())
+  // F13.7: the same baseline-skill line as the ordinary mandate (API runs are always Claude writing code).
+  const skill = rigaSkillPer(regole, 'lavoro')
+  if (skill) parti.push(skill)
   parti.push(
     '**How this run works.** You run headless, on API credits with a spending cap, in a worktree made for this attempt. ' +
       'Work only there and commit your changes on its branch. Do not push, merge, open pull requests or start other sessions. ' +

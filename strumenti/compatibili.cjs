@@ -106,7 +106,8 @@ const chiaveDi = (id, env = process.env) => env[`CHIPMANAGER_${id.toUpperCase()}
 const intestazioni = chiave => (chiave ? { Authorization: `Bearer ${chiave}` } : {})
 
 /** Model ids from an OpenAI-style list, validated; anything else in the body is dropped. */
-const idModelli = json => (Array.isArray(json?.data) ? json.data.map(m => m?.id).filter(x => typeof x === 'string' && MODELLO_COMPATIBILE.test(x)).slice(0, 200) : null)
+// The whole validated catalogue: membership is checked on all of it; only the detection display is cut.
+const idModelli = json => (Array.isArray(json?.data) ? json.data.map(m => m?.id).filter(x => typeof x === 'string' && MODELLO_COMPATIBILE.test(x)) : null)
 
 /** Only on the owner's click. Outcomes are codes for the panel's dictionary, never the HTTP body. */
 async function verifica(input, env = process.env, get = richiesta) {
@@ -131,7 +132,7 @@ async function rileva(get = richiesta) {
   const trovati = []
   for (const p of punti) {
     try {
-      const modelli = idModelli(await get(`${p.base}/models`, { timeoutMs: 1_500 }))
+      const modelli = idModelli(await get(`${p.base}/models`, { timeoutMs: 1_500 }))?.slice(0, 200)
       if (modelli) trovati.push({ id: p.id, base: p.base, modelli })
     } catch { /* not running: not listed */ }
   }

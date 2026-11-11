@@ -4,7 +4,7 @@ import { atom, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 import type { StatoSkill } from '../types'
 import { conta } from './logica'
-import { eDellaVoce, MARKETPLACE_BASE, pluginDa, pluginDellaMod, voceSkill } from './skill-base'
+import { eDellaVoce, MARKETPLACE_BASE, pluginDa, pluginDellaMod, SKILL_BASE, voceSkill } from './skill-base'
 
 export const statoSkill = atom({ plugin: 'chip-manager', key: 'skill' } as const, {} as StatoSkill, { shape: 'skill-1' })
 
@@ -34,7 +34,9 @@ export async function helperSkill($: EngineInterface, argv: string[], stdin?: st
  * Install at the approved revision, only on the owner's click: the helper resolves the revision and reads the hooks it
  * declares; `conferma` shows source, commit, data flow and hooks and must say yes; then the install, which arrives disabled.
  */
-export async function installaSkill($: EngineInterface, id: string, conferma: (d: { url: string; sha: string; hook: string[] }) => Promise<boolean>) {
+export async function installaSkill($: EngineInterface, id: string, conferma: (d: { url: string; sha: string; hook: string[] }) => Promise<boolean>,
+  /** Re-read right before installing: a policy that changed while the confirmation was open stops it (reason as a code). */
+  ancoraAmmessa: () => Promise<string | undefined> = async () => undefined) {
   const v = voceSkill(id)
   if (!v) throw new Error('skill.err.nonInstallabile')
   const p = await helperSkill($, ['prepara', id])
@@ -47,22 +49,33 @@ export async function installaSkill($: EngineInterface, id: string, conferma: (d
   const url = String(p.dati.url ?? '')
   const sha = String(p.dati.sha ?? '')
   const hook = Array.isArray(p.dati.hook) ? p.dati.hook.filter((x): x is string => typeof x === 'string').slice(0, 60) : []
+  const impronta = typeof p.dati.impronta === 'string' && /^[0-9a-f]{64}$/.test(p.dati.impronta) ? p.dati.impronta : ''
   if (!(await conferma({ url, sha, hook }))) {
     await pulisci()
     return false
   }
-  // Exactly what the owner approved: url, sha and the hooks shown; the record keeps them and is never re-derived.
-  const i = await helperSkill($, ['installa', id], JSON.stringify({ url, sha, hook }))
+  const no = await ancoraAmmessa()
+  if (no) {
+    await pulisci()
+    throw new Error(no)
+  }
+  // Exactly what the owner approved: url, sha, the digest of the full content and the preview shown; never re-derived.
+  const i = await helperSkill($, ['installa', id], JSON.stringify({ url, sha, impronta, hook }))
   await pulisci()
   await leggiPlugin($)
   if (!i.ok) throw new Error(i.motivo)
   return true
 }
 
-/** Session start (second belt after `defaultEnabled: false`): runs only when a mod-installed plugin is enabled. */
+/**
+ * Session start (second belt after `defaultEnabled: false`): runs when a plugin the mod may have installed is enabled — any
+ * `@chipmanager-base` id, or TokenEconomizer, which keeps its upstream id. Whether it is really the mod's (its marketplace)
+ * is the helper's check: a TokenEconomizer the user installed is left alone there.
+ */
 export async function controllaApprovate($: EngineInterface) {
   const installati = await leggiPlugin($)
-  if (!installati?.some(p => p.id.endsWith(`@${MARKETPLACE_BASE}`) && p.attivo)) return []
+  const daControllare = (id: string) => id.endsWith(`@${MARKETPLACE_BASE}`) || SKILL_BASE.some(v => v.pin === 'clone' && v.plugin === id)
+  if (!installati?.some(p => daControllare(p.id) && p.attivo)) return []
   const r = await helperSkill($, ['controlla'])
   await leggiPlugin($)
   return r.ok && Array.isArray(r.dati.spenti) ? r.dati.spenti.filter((x): x is string => typeof x === 'string') : []

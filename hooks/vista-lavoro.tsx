@@ -94,7 +94,8 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
     voci: readonly { value: string; label: string }[],
     applica: (v: string) => Partial<Azione>,
   ) =>
-    Select && (
+    // A Select needs at least one option: with none there is nothing to choose, so nothing is drawn.
+    Select && voci.length > 0 && (
       <Select key={`${chiave}-${a.id}`} label={nome} value={valore} options={voci} onSelect={v => void modifica(a, applica(v))()} />
     )
 
@@ -213,8 +214,9 @@ export function vistaLavoro($: EngineInterface, d: Dati) {
         {/* F8.4: i dettagli senza un secondo titolo (il pulsante lo dice già) e senza righe vuote fra le scelte. */}
         {aperti && dettagliChiLavora(`g-chi-dettagli-${a.id}`, [
           scelta(a, 'esec', T('ed.esecutore'), a.esecutore, MOTORI.filter(m => regoleOra.risorse.fornitori.includes(m)).map(m => ({ value: m, label: motore(m) })), v =>
-            conAuditorValido(a, { esecutore: v as Motore, modello: undefined, effort: undefined })),
-          scelta(a, 'mod', T('ed.modello'), modello, regoleOra.modelli[a.esecutore].map(m => ({ value: m, label: nomeModello(m) })), v => conAuditorValido(a, { modello: v })),
+            // F13.3b: `provider` belongs only to `compatibile`; any other executor drops it (a record with both is refused).
+            conAuditorValido(a, { esecutore: v as Motore, provider: v === 'compatibile' ? a.provider : undefined, modello: undefined, effort: undefined })),
+          scelta(a, 'mod', T('ed.modello'), modello, (a.esecutore === 'compatibile' ? (a.modello ? [a.modello] : []) : regoleOra.modelli[a.esecutore]).map(m => ({ value: m, label: nomeModello(m) })), v => conAuditorValido(a, { modello: v })),
           scelta(a, 'eff', T('ed.effort'), effortDi(a, regoleOra), effortPer(regoleOra, modello).map(m => ({ value: m, label: `${barreEffort(m)}  ${m}` })), v => ({ effort: v })),
           // L'auditor: solo le coppie della tabella; le altre si vedono sotto con il motivo.
           a.esecutore === 'claude' && scelta(a, 'aud', T('chi.auditorScelta'), a.auditor ?? 'nessuno', [

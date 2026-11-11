@@ -367,7 +367,10 @@ type Letti = Azione[] & { nomi?: string[]; rotte?: { nome: string; motivo: Msg |
 
 /** Scrittura singola con compare-and-swap atomico. `nuova` = il file non deve esistere. */
 async function salva($: Eng, a: Azione, opz: { nuova?: boolean } = {}) {
-  const nuova = { ...a, versione: a.versione + 1, aggiornata: ora() }
+  // F13.3b: the last guard before writing: `provider` only with `compatibile` (a record with both would be refused on read).
+  const { provider, ...resto } = a
+  const nuova = { ...(a.esecutore === 'compatibile' ? a : resto), versione: a.versione + 1, aggiornata: ora() }
+  void provider
   const r = await helper($, ['cas', `${await cartella($)}/${a.id}.json`, opz.nuova ? 'nuovo' : String(a.versione)], JSON.stringify(nuova))
   if (r.codice === 4) throw new Conflitto(msg('err.cambiataAltrove', { titolo: a.titolo }))
   if (r.codice === 3) throw errore('err.altraScrive')
@@ -2631,9 +2634,14 @@ export const register: Register = (on, options) => {
           const fatto = await installaSkill($, id, async ({ url, sha, hook }) => {
             const domanda = T('skill.conferma', { nome: id, url, sha, nota: v?.nota ?? '', hook: hook.length ? hook.map(h => `· ${h}`).join('\n') : T('skill.nessunHook') })
             return (await $.ui.ask(domanda, { options: [T('skill.installa', { nome: id }), T('comune.annulla')], header: 'chipManager' }).catch(() => '')) === T('skill.installa', { nome: id })
+          }, async () => {
+            // The policy may have changed while the confirmation was open: read and validate it again, fail closed.
+            const ora = await leggiRegole($)
+            return v && v.flusso !== 'locale' && (!ora.lette || ora.risorse.soloLocale) ? 'skill.bloccatoLocale' : undefined
           })
           if (fatto) $.ui.toast(T('skill.installato', { nome: id }))
         } catch (e) {
+          if ((e as Error)?.message === 'skill.bloccatoLocale') throw errore('skill.bloccatoLocale', { nome: id })
           if (CODICE_SKILL.test((e as Error)?.message ?? '')) throw errore((e as Error).message as Chiave)
           throw e
         }

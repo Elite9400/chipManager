@@ -453,6 +453,17 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
                 onCambia: x => salva('cmp-qwen', () => ({ 'account.compatibili': { ...impAccount, qwen: { ...impAccount.qwen, regione: x } } }))(),
               })
             : null}
+          {/* F13.3b: the US region needs a workspace host; it is validated like the config (documented pattern only). */}
+          {v.id === 'qwen' && Input && (impAccount.qwen?.regione === 'us' || impAccount.qwen?.workspace) ? (
+            <Input key="cmp-workspace-qwen" label={T('cmp.workspace')} value={impAccount.qwen?.workspace ?? ''}
+              onSubmit={x => salva('cmp-qwen', () => ({ 'account.compatibili': { ...impAccount, qwen: { ...impAccount.qwen, ...(x.trim() ? { workspace: x.trim() } : { workspace: undefined }) } } }))()} />
+          ) : null}
+          {v.id === 'qwen' && impAccount.qwen?.regione === 'us' && !impAccount.qwen?.workspace ? didascalia('cmp-workspace-nota', T('cmp.workspaceNota')) : null}
+          {/* The models a local server lists: the ids to use in `modello` (first ones; the full catalogue is checked at run time). */}
+          {(() => {
+            const trovato = sc.rilevati?.find(x => x.id === v.id)
+            return trovato?.modelli.length ? didascalia(`cmp-modelli-${v.id}`, T('cmp.modelli', { modelli: trovato.modelli.slice(0, 12).join(', ') })) : null
+          })()}
           {v.opzione ? didascalia(`cmp-dove-${v.id}`, T('cmp.dove', { nome: v.nome })) : null}
           {errore(`cmp-${v.id}`)}
         </Box>

@@ -54,6 +54,7 @@ import {
   datiLocali,
   faseDiAzione,
   mandato,
+  mandatoApi,
   normalizza,
   parametriAvvio,
   progettoDa,
@@ -3873,7 +3874,7 @@ test('F13.7 installa dal pannello: conferma con fonte, commit e hook; senza sì 
   const amb = ambiente(on, {
     fonte: (cmd, input) => {
       if (cmd === 'claude plugin list --json') return []
-      if (cmd === 'skill-prepara') return (chiamate.push({ cmd }), { id: input.id, url: 'https://github.com/DietrichGebert/ponytail.git', sha: SHA, hook: ['hooks/hooks.json · SessionStart: node inizio.js'] })
+      if (cmd === 'skill-prepara') return (chiamate.push({ cmd }), { id: input.id, url: 'https://github.com/DietrichGebert/ponytail.git', sha: SHA, impronta: 'e'.repeat(64), hook: ['hooks/hooks.json · SessionStart: node inizio.js'] })
       if (cmd === 'skill-installa') return (chiamate.push({ cmd, stdin: input.stdin as string }), { id: 'ponytail', plugin: 'ponytail@chipmanager-base', sha: SHA })
       if (cmd === 'skill-pulisci') return (chiamate.push({ cmd }), { tolte: 1 })
       return undefined
@@ -3899,7 +3900,7 @@ test('F13.7 installa dal pannello: conferma con fonte, commit e hook; senza sì 
   risposta = 'Installa · ponytail'
   await ui.press({ key: 'skill-installa-ponytail' })
   await finche(() => chiamate.some(c => c.cmd === 'skill-installa'))
-  expect(JSON.parse(chiamate.find(c => c.cmd === 'skill-installa')!.stdin!)).toEqual({ url: 'https://github.com/DietrichGebert/ponytail.git', sha: SHA, hook: ['hooks/hooks.json · SessionStart: node inizio.js'] })
+  expect(JSON.parse(chiamate.find(c => c.cmd === 'skill-installa')!.stdin!)).toEqual({ url: 'https://github.com/DietrichGebert/ponytail.git', sha: SHA, impronta: 'e'.repeat(64), hook: ['hooks/hooks.json · SessionStart: node inizio.js'] })
   await finche(() => chiamate.filter(c => c.cmd === 'skill-pulisci').length === 2)
   await ui.unmount()
 })
@@ -3927,5 +3928,93 @@ test('F13.7 avvio: il controllo delle approvazioni gira solo con un plugin della
   await ui.press({ key: 'skill-rileggi' })
   expect(await ui.find({ key: 'skill-installa-superpowers' })).toBeUndefined()
   expect(await ui.find({ key: 'skill-installa-ponytail' })).toBeDefined()
+  await ui.unmount()
+})
+
+// --- F13b review (Codex), findings 4, 5, 6, 9, 10 --------------------------------------------------------------------
+
+test('F13b rilievo 4: con solo TokenEconomizer attivo il controllo delle approvazioni all\'avvio gira (la proprietà la decide l\'helper)', async ($, on) => {
+  const controlli: string[] = []
+  const amb = ambiente(on, {
+    fonte: cmd => (cmd === 'claude plugin list --json' ? [{ id: 'tokeneconomizer@tokeneconomizer', scope: 'user', enabled: true }] : cmd === 'skill-controlla' ? (controlli.push(cmd), { spenti: [] }) : undefined),
+  })
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await finche(() => controlli.length === 1)
+  expect(amb.processi.filter(p => p.argv[1]?.endsWith('/skill-installa.cjs')).map(p => p.argv[2])).toEqual(['controlla'])
+})
+
+test('F13b rilievo 5: passando da compatibile a Claude o con un preset, provider sparisce e il record resta valido', async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { compatibili: { ollama: 'R1' } } } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Bozza', brief: 'Riassumi.', esecutore: 'compatibile', provider: 'ollama', modello: 'qwen3:8b', corsia: 'R1' } as never)
+  const a = amb.azione()[0]!
+  expect(a.provider).toBe('ollama')
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  if (!(await ui.find({ key: `chi-dettagli-${a.id}` }))) await ui.press({ key: `mod-${a.id}` })
+  await ui.press({ key: `chi-dettagli-${a.id}` })
+  await ui.select({ key: `esec-${a.id}`, value: 'claude' })
+  await finche(() => amb.azione()[0]!.esecutore === 'claude')
+  const dopo = amb.azione()[0]!
+  expect('provider' in dopo).toBe(false)
+  expect('k' in (normalizza(dopo) as object)).toBe(false)
+  await ui.unmount()
+  // Il preset (bilanciamento) non sceglie mai compatibile, e non lascia provider.
+  const { campi } = presetChi({ ...a }, 'economico', RC, [], [a], AUTORE)
+  expect(campi.esecutore).not.toBe('compatibile')
+  expect(campi.provider).toBeUndefined()
+})
+
+test('F13b rilievo 6: se il progetto diventa solo locale mentre la conferma è aperta, l\'installazione di un plugin con flusso esterno non parte', async ($, on) => {
+  const chiamate: string[] = []
+  const amb = ambiente(on, {
+    fonte: (cmd, input) => {
+      if (cmd === 'claude plugin list --json') return []
+      if (cmd === 'skill-prepara') return (chiamate.push(cmd), { id: input.id, url: 'https://github.com/obra/superpowers.git', sha: 'c'.repeat(40), impronta: 'd'.repeat(64), hook: [] })
+      if (cmd.startsWith('skill-')) return (chiamate.push(cmd), {})
+      return undefined
+    },
+  })
+  mock.clock(on)
+  conferme(on, () => {
+    amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { soloLocale: true } } }))
+    return 'Installa · superpowers'
+  })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  await ui.press({ key: 'sezione-modo-premi' })
+  await finche(() => !!amb.processi.find(p => p.argv.join(' ') === 'claude plugin list --json'))
+  await ui.press({ key: 'skill-installa-superpowers' })
+  await finche(() => chiamate.includes('skill-pulisci'))
+  expect(chiamate).toEqual(['skill-prepara', 'skill-pulisci'])
+  await ui.unmount()
+})
+
+test('F13b rilievo 9: il mandato a crediti API porta la stessa riga delle skill del mandato ordinario', () => {
+  const RS: Regole = { ...R, pluginBase: [{ id: 'ponytail@ponytail', scope: 'user', attivo: true }] }
+  const a = base('a-apiskl01', 1, { corsia: 'R2', revisore: 'claude', modello: 'claude-opus-5-5', destinazione: 'api-claude' })
+  expect(mandatoApi(a, RS).prompt).toContain('Use the installed skills: ponytail.')
+  expect(mandatoApi(a, { ...R, pluginBase: null }).prompt).not.toContain('Use the installed skills')
+})
+
+test('F13b rilievo 10: Qwen USA chiede l\'host del workspace (validato) e il rilevamento mostra gli id dei modelli', async ($, on) => {
+  const amb = ambiente(on, { fonte: cmd => (cmd === 'compatibili-rileva' ? { trovati: [{ id: 'ollama', base: 'http://localhost:11434/v1', modelli: ['qwen3:8b', 'llama3.2'] }] } : undefined) })
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ account: { compatibili: { qwen: { regione: 'us' } } }, progetti: { 'acme/progetto': {} } }))
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  await ui.press({ key: 'impostazioni' })
+  const c = async (k: string) => !!(await ui.find({ key: k }))
+  expect([await c('cmp-workspace-qwen'), !!(await ui.find({ type: 'Text', text: /<workspace>\.us-east-1\.maas\.aliyuncs\.com/ }))]).toEqual([true, true])
+  await ui.input({ key: 'cmp-workspace-qwen', text: 'https://evil.example.com/compatible-mode/v1' })
+  expect(['errore', !!(await ui.find({ type: 'Text', text: /config.json: «account»/ }))]).toEqual(['errore', true])
+  await ui.input({ key: 'cmp-workspace-qwen', text: 'https://ws1.us-east-1.maas.aliyuncs.com/compatible-mode/v1' })
+  expect(['valido', !!(await ui.find({ type: 'Text', text: /config.json: «account»/ }))]).toEqual(['valido', false])
+  await ui.press({ key: 'cmp-rileva' })
+  await finche(() => !!amb.processi.find(p => p.argv[1]?.endsWith('/compatibili.cjs') && p.argv[2] === 'rileva'))
+  expect(['modelli', !!(await ui.find({ type: 'Text', text: /qwen3:8b, llama3\.2/ }))]).toEqual(['modelli', true])
   await ui.unmount()
 })
