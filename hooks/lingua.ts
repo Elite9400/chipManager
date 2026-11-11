@@ -155,3 +155,57 @@ export function traduttore(l: Lingua) {
   })
 }
 export type T = ReturnType<typeof traduttore>
+
+// --- larghezza nel terminale ------------------------------------------------------------------------------------------
+
+/** Ideogrammi, kana, hangul, forme a larghezza piena: due colonne. */
+const LARGO = /[\u1100-\u115F\u2E80-\u303E\u3041-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1F64F}\u{1F900}-\u{1F9FF}\u{20000}-\u{3FFFD}]/u
+/**
+ * Le colonne che un grafema occupa nel terminale: 2 per CJK, larghezza piena ed emoji, 0 per i soli segni che si
+ * combinano (o i caratteri di larghezza nulla), altrimenti 1.
+ */
+function colonneGrafema(g: string): number {
+  if (/\p{Extended_Pictographic}/u.test(g) || LARGO.test(g)) return 2
+  return /^[\p{M}\u200B-\u200F\uFE00-\uFE0F]*$/u.test(g) ? 0 : 1
+}
+/**
+ * I grafemi di un testo senza Intl (come il resto di questo modulo): per code point, con attaccati al precedente i segni
+ * che si combinano, i selettori di variante, i toni della pelle, le sequenze unite da ZWJ e le coppie di bandiere.
+ */
+function grafemi(t: string): string[] {
+  const out: string[] = []
+  let unisci = false
+  for (const c of t) {
+    const prima = out.length ? out[out.length - 1]! : undefined
+    const ri = /[\u{1F1E6}-\u{1F1FF}]/u
+    const attacca = prima !== undefined && (unisci || /^[\p{M}\u200D\uFE0E\uFE0F\u{1F3FB}-\u{1F3FF}\u{E0020}-\u{E007F}]$/u.test(c) ||
+      (ri.test(c) && ri.test(prima) && [...prima].length === 1))
+    if (attacca) out[out.length - 1] = prima + c
+    else out.push(c)
+    unisci = c === '\u200D'
+  }
+  return out
+}
+/** Le colonne di un testo nel terminale (per grafema, non per unità UTF-16). */
+export const colonne = (t: string) => grafemi(t).reduce((n, g) => n + colonneGrafema(g), 0)
+/**
+ * Un testo a capo entro `larghezza` colonne, mai spezzando un grafema (un'emoji resta intera); le righe dopo la prima
+ * cominciano con `rientro` e stanno nella stessa larghezza. Una riga vuota resta una riga vuota.
+ */
+export function aCapo(t: string, larghezza = 60, rientro = '  '): string {
+  const righe: string[] = []
+  let riga = ''
+  let usate = 0
+  for (const g of grafemi(t)) {
+    const w = colonneGrafema(g)
+    if (usate + w > larghezza && riga.trim()) {
+      righe.push(riga)
+      riga = rientro
+      usate = colonne(rientro)
+    }
+    riga += g
+    usate += w
+  }
+  righe.push(riga)
+  return righe.join('\n')
+}

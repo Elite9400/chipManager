@@ -100,7 +100,7 @@ import type { Chiave } from './lingua'
 const CODICE_SKILL = /^skill\.err\.\w+$/
 import { board, chiaveRiassunto, hash, improntaBoard, testoRiassunto } from './board'
 import type { Piano as PianoBoard } from './board'
-import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salvato, t, testo, traduttore } from './lingua'
+import { aCapo, chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salvato, t, testo, traduttore } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { disegna } from './pannello'
 import type { EsitoApplica } from './pannello'
@@ -2918,8 +2918,8 @@ export const register: Register = (on, options) => {
             // Revisione dell'audit 2.2.0, S1: every component is shown, RIGHE_PER_PAGINA lines a page, and every page needs a yes.
             const pagine = Math.max(1, Math.ceil(hook.length / RIGHE_PER_PAGINA))
             for (let i = 0; i < pagine; i++) {
-              // Seconda revisione dell'audit 2.2.0, punto 1: each line whole, wrapped at 60 columns (never cut).
-              const aCapo = (t: string) => [t.slice(0, 60), ...Array.from({ length: Math.ceil(Math.max(0, t.length - 60) / 58) }, (_, k) => `  ${t.slice(60 + k * 58, 118 + k * 58)}`)].join('\n')
+              // Seconda revisione dell'audit 2.2.0, punto 1: each line whole, wrapped at 60 terminal columns (never cut);
+              // by grapheme and visual width (CJK and emoji take 2), so no character is split.
               const righe = hook.slice(i * RIGHE_PER_PAGINA, (i + 1) * RIGHE_PER_PAGINA).map(h => aCapo(`· ${h}`)).join('\n') + (pagine > 1 ? `\n(${i + 1}/${pagine})` : '')
               const domanda = T('skill.conferma', { nome: id, url, sha, nota: v?.nota ?? '', hook: hook.length ? righe : T('skill.nessunHook') })
                 + (v?.pin === 'clone' ? `\n\n${T('skill.setupClone')}` : '')

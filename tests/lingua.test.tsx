@@ -1,7 +1,7 @@
 // Lingue dell'interfaccia: completezza dei dizionari, segnaposto, plurali, date e numeri propri (niente Intl).
 import { expect, test } from 'claude-code/testing'
 
-import { chiaveOTesto, daTesto, data, DIZIONARI, eMsg, formaPlurale, LINGUE, letto, linguaDa, msg, numero, ora, salvato, t, testo } from '../hooks/lingua'
+import { aCapo, chiaveOTesto, colonne, daTesto, data, DIZIONARI, eMsg, formaPlurale, LINGUE, letto, linguaDa, msg, numero, ora, salvato, t, testo } from '../hooks/lingua'
 import type { Chiave } from '../hooks/lingua'
 
 const segnaposto = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort().join(',')
@@ -92,4 +92,20 @@ test('dizionario: solo chiavi proprie; un nome ereditato (constructor, toString)
   expect(daTesto('hasOwnProperty')).toBe('hasOwnProperty')
   expect(eMsg({ k: 'constructor' })).toBe(false)
   expect(testo('it', { k: '__proto__' })).toBe('__proto__')
+})
+
+test('Terza revisione audit 2.2.0: a capo per grafema e per larghezza visiva (CJK ed emoji due colonne); un\'emoji non si spezza mai', () => {
+  expect([colonne('abc'), colonne('漢字'), colonne('😀'), colonne('e\u0301'), colonne('👍🏽'), colonne('🇮🇹'), colonne('👩\u200D💻')]).toEqual([3, 4, 2, 1, 2, 2, 2])
+  const solitarie = (x: string) => /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(x)
+  // L'emoji cade sul bordo delle 60 colonne: va intera sulla riga dopo, nessun surrogato spezzato.
+  const conEmoji = `· node ${'a'.repeat(52)}😀.js`
+  const r1 = aCapo(conEmoji).split('\n')
+  expect([r1.length, r1.every(r => colonne(r) <= 60), r1.some(solitarie), r1[1]!.startsWith('  😀')]).toEqual([2, true, false, true])
+  expect(r1.map((r, i) => (i ? r.slice(2) : r)).join('')).toBe(conEmoji)
+  // Una riga CJK: 60 caratteri sono 120 colonne, quindi va a capo e ogni riga sta in 60 colonne.
+  const cjk = `· ${'漢'.repeat(60)}`
+  const r2 = aCapo(cjk).split('\n')
+  expect([r2.length > 2, r2.every(r => colonne(r) <= 60), r2.map((r, i) => (i ? r.slice(2) : r)).join('') === cjk]).toEqual([true, true, true])
+  // Una riga corta resta com'è.
+  expect(aCapo('· breve')).toBe('· breve')
 })

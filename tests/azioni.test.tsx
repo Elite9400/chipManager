@@ -81,7 +81,7 @@ import { applicaPatch, diversoDa, presetChi, TETTO_RISORSE } from '../hooks/bila
 import type { Consiglio } from '../hooks/logica'
 import { DiscoIt } from './disco-it'
 import { confrontaF9, controlliF9, fineF9 } from './f9'
-import { chiaveOTesto } from '../hooks/lingua'
+import { chiaveOTesto, colonne } from '../hooks/lingua'
 import { INSTALLAZIONE, pianoVuoto, risorseLette, usoDesktop } from '../hooks/risorse'
 import { chiaveRiassunto } from '../hooks/board'
 import { GRIGIO, LIVELLO, STATO } from '../hooks/tema'
@@ -4774,10 +4774,11 @@ test('Audit 2.2.0, punto 3 (dopo il rebase): un valore rifiutato di routing.json
 
 test('Seconda revisione audit 2.2.0, punto 1: nella conferma ogni riga dell\'anteprima resta intera, a capo entro 60 colonne', async ($, on) => {
   const lunga = `${'d'.repeat(205)}.json · MCP calc: calc.exe /x`
+  let speciali: string[] | undefined
   const amb = ambiente(on, {
     fonte: (cmd, input) => {
       if (cmd === 'claude plugin list --json') return []
-      if (cmd === 'skill-prepara') return { id: input.id, url: 'https://github.com/DietrichGebert/ponytail.git', sha: 'c'.repeat(40), impronta: 'e'.repeat(64), hook: [lunga] }
+      if (cmd === 'skill-prepara') return { id: input.id, url: 'https://github.com/DietrichGebert/ponytail.git', sha: 'c'.repeat(40), impronta: 'e'.repeat(64), hook: speciali ?? [lunga] }
       if (cmd === 'skill-pulisci') return { tolte: 1 }
       return undefined
     },
@@ -4794,5 +4795,16 @@ test('Seconda revisione audit 2.2.0, punto 1: nella conferma ogni riga dell\'ant
   await finche(() => domande.length === 1)
   const blocco = domande[0]!.split('\n').filter(r => r.startsWith('· ') || r.startsWith('  '))
   expect([blocco.length > 1, blocco.every(r => r.length <= 60), blocco.map((r, i) => (i ? r.slice(2) : r)).join('') === `· ${lunga}`]).toEqual([true, true, true])
+  // Terza revisione: un'emoji sul bordo resta intera e una riga CJK sta in 60 colonne visive.
   await ui.unmount()
+  const ui2 = await $.ui.mount({ ...PANE('desktop') })
+  await ui2.press({ key: 'impostazioni' })
+  await ui2.press({ key: 'sezione-modo-premi' })
+  speciali = [`node ${'a'.repeat(52)}😀.js`, '漢'.repeat(60)]
+  await ui2.press({ key: 'skill-installa-ponytail' })
+  await finche(() => domande.length === 2)
+  const b2 = domande[1]!.split('\n').filter(r => r.startsWith('· ') || r.startsWith('  '))
+  const solitarie = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+  expect([b2.every(r => colonne(r) <= 60), b2.some(r => solitarie.test(r)), domande[1]!.includes('😀')]).toEqual([true, false, true])
+  await ui2.unmount()
 })
