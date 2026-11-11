@@ -213,17 +213,25 @@ function scriviRecord(dm, r) {
   d.scriviAtomico(fileRecord(dm), JSON.stringify(r, null, 1))
 }
 
-/** The installed revision, as the host records it (`gitCommitSha`, or a 12-character `version`); undefined = cannot verify. */
+const oggettoPuro = x => !!x && typeof x === 'object' && !Array.isArray(x)
+
+/**
+ * The installed revision, as the host records it (schema version 2: `gitCommitSha`, or a 12-character `version`);
+ * undefined = cannot verify. Fail-closed: an unknown schema, a wrong type, more than one user record, or a present field
+ * that is not valid refuses, with no fallback to another field.
+ */
 function shaInstallato(plugin, deps) {
   const f = deps.installati ?? path.join(process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR ?? path.join(os.homedir(), '.claude', 'plugins'), 'installed_plugins.json')
-  try {
-    const j = JSON.parse(fs.readFileSync(f, 'utf8'))
-    const voci = (j.plugins ?? j)[plugin]
-    const u = Array.isArray(voci) ? voci.find(x => x?.scope === 'user') : undefined
-    if (u && SHA.test(String(u.gitCommitSha))) return { pieno: u.gitCommitSha }
-    if (u && /^[0-9a-f]{12}$/.test(String(u.version))) return { corto: u.version }
-  } catch { /* unreadable: cannot verify */ }
-  return undefined
+  let j
+  try { j = JSON.parse(fs.readFileSync(f, 'utf8')) } catch { return undefined }
+  if (!oggettoPuro(j) || j.version !== 2 || !oggettoPuro(j.plugins)) return undefined
+  const voci = Object.hasOwn(j.plugins, plugin) ? j.plugins[plugin] : undefined
+  if (!Array.isArray(voci) || !voci.every(x => oggettoPuro(x) && typeof x.scope === 'string')) return undefined
+  const utente = voci.filter(x => x.scope === 'user')
+  if (utente.length !== 1) return undefined
+  const [u] = utente
+  if (u.gitCommitSha !== undefined) return typeof u.gitCommitSha === 'string' && SHA.test(u.gitCommitSha) ? { pieno: u.gitCommitSha } : undefined
+  return typeof u.version === 'string' && /^[0-9a-f]{12}$/.test(u.version) ? { corto: u.version } : undefined
 }
 const coincide = (inst, sha) => !!inst && (inst.pieno ? inst.pieno === sha : sha.startsWith(inst.corto))
 
@@ -244,16 +252,22 @@ function prepara(id, dm, deps) {
 }
 
 /**
- * Which marketplace provides `nome`, as Claude Code records it: `assente`, `nostro` (a directory source at exactly
- * `dirAtteso`) or `altro`. Unreadable = `altro`: in doubt nothing runs. (The file is Claude Code's own; its directory
- * entries are `{ source: 'directory', path }`.)
+ * Which marketplace provides `nome`, as Claude Code records it: `assente` (no file, or no entry with that name),
+ * `nostro` (a directory source at exactly `dirAtteso`) or `altro`. A file that cannot be read, or whose structure is not
+ * an object of `{ source: { source: string, ... } }` entries (a string `path` for directory ones), is `altro`: in doubt nothing runs. (The file is Claude
+ * Code's own; its directory entries are `{ source: 'directory', path }`.)
  */
 function marketplace(nome, dirAtteso, deps) {
   const f = deps.marketplaceNote ?? path.join(process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR ?? path.join(os.homedir(), '.claude', 'plugins'), 'known_marketplaces.json')
   let note
-  try { note = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {} } catch { return 'altro' }
-  const s = note?.[nome]?.source
-  if (!s) return 'assente'
+  try {
+    if (!fs.existsSync(f)) return 'assente'
+    note = JSON.parse(fs.readFileSync(f, 'utf8'))
+  } catch { return 'altro' }
+  const voceValida = x => oggettoPuro(x) && oggettoPuro(x.source) && typeof x.source.source === 'string' && (x.source.source !== 'directory' || typeof x.source.path === 'string')
+  if (!oggettoPuro(note) || !Object.values(note).every(voceValida)) return 'altro'
+  if (!Object.hasOwn(note, nome)) return 'assente'
+  const s = note[nome].source
   return s.source === 'directory' && typeof s.path === 'string' && path.resolve(s.path) === path.resolve(dirAtteso) ? 'nostro' : 'altro'
 }
 const dirDellaVoce = (v, dm) => (v.pin === 'clone' ? dirClone(dm) : dirMarketplace(dm))
@@ -405,6 +419,8 @@ function verificaInstallato(v, rec, dm, deps) {
 function installa(id, input, dm, deps) {
   const v = voce(id)
   if (input?.url !== urlDi(v) || !SHA.test(String(input?.sha)) || !IMPRONTA.test(String(input?.impronta))) throw new Rifiuto('skill.err.fonte')
+  // A marketplace with our name that is not ours, or a host file we cannot read as expected, stops before any command.
+  if (marketplace(nomeMarketplace(v), dirDellaVoce(v, dm), deps) === 'altro') throw new Rifiuto('skill.err.marketplace')
   // The preview the owner saw (kept for the panel) and the digest of the full content (what is compared).
   const hook = input.hook
   if (!Array.isArray(hook) || hook.length > 60 || !hook.every(x => typeof x === 'string' && x.length <= 200)) throw new Rifiuto('skill.err.fonte')
@@ -453,8 +469,9 @@ function abilita(id, dm, deps) {
 
 /**
  * Session start: a mod-installed plugin enabled without a matching approval (marketplace, revision, content digest and
- * the «enable» consent) is disabled and reported; nothing is ever reinstalled. A plugin whose marketplace is not the
- * mod's (installed by the user) is never touched.
+ * the «enable» consent) is disabled and reported; nothing is ever reinstalled. The mod's plugins are those it holds a
+ * record for or that come from its own marketplace: for them anything that differs or cannot be verified disables. Only
+ * a plugin with neither (installed by the user) is never touched.
  */
 function controlla(dm, deps) {
   const l = deps.esegui(['claude', 'plugin', 'list', '--json'], { timeoutMs: 30_000 })
@@ -466,8 +483,8 @@ function controlla(dm, deps) {
   for (const v of K.SKILL_BASE) {
     const plugin = pluginInstallato(v)
     const p = elenco.find(x => x.id === plugin)
-    if (!p?.attivo || marketplace(nomeMarketplace(v), dirDellaVoce(v, dm), deps) !== 'nostro') continue
     const rec = r.voci[v.id]
+    if (!p?.attivo || (!rec && marketplace(nomeMarketplace(v), dirDellaVoce(v, dm), deps) !== 'nostro')) continue
     let ok = !!rec?.abilitato && rec.plugin === plugin
     if (ok) try { verificaInstallato(v, rec, dm, deps) } catch { ok = false }
     if (ok) continue

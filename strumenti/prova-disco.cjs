@@ -3519,7 +3519,7 @@ test('F13.7 abilita e controllo all\'avvio: con il record, revisione e impronta 
   assert.throws(() => S.abilita('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.hookCambiati')
   fs.writeFileSync(path.join(copia, 'hooks', 'hooks.json'), HOOK_PONY)
   // Revisione cambiata dopo l'approvazione: idem.
-  fs.writeFileSync(b.deps.installati, JSON.stringify({ plugins: { 'ponytail@chipmanager-base': [{ scope: 'user', gitCommitSha: SHA_B }] } }))
+  fs.writeFileSync(b.deps.installati, JSON.stringify({ version: 2, plugins: { 'ponytail@chipmanager-base': [{ scope: 'user', gitCommitSha: SHA_B }] } }))
   assert.throws(() => S.abilita('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.cambiato')
   // Elenco illeggibile: ignoto, nessun comando.
   const x = banco()
@@ -3633,6 +3633,80 @@ test('F13.7 TokenEconomizer: secondo consenso solo con tutto verificato; avvio s
   const u = banco({ marketplace: { tokeneconomizer: { source: { source: 'directory', path: '/altrove/TokenEconomizer' } } }, elenco: [{ id: 'tokeneconomizer@tokeneconomizer', scope: 'user', enabled: true, installPath: '/altrove/TokenEconomizer/plugin' }] })
   assert.deepStrictEqual(S.controlla(u.dir, u.deps), { spenti: [] })
   assert.ok(!u.comandi.some(c => c.includes('disable')))
+})
+
+test('F13b r2 rilievo 1: un plugin con il record della mod resta sotto controllo anche se il marketplace è illeggibile o diverso; senza record non si tocca', () => {
+  const S = require('./skill-installa.cjs')
+  const P = 'ponytail@chipmanager-base'
+  for (const note of ['null', '{', JSON.stringify({}), JSON.stringify({ 'chipmanager-base': { source: { source: 'directory', path: '/altrove/marketplace' } } })]) {
+    const b = banco()
+    S.installa('ponytail', approvato(S, b, 'ponytail'), b.dir, b.deps)
+    S.abilita('ponytail', b.dir, b.deps)
+    fs.writeFileSync(b.deps.installati, JSON.stringify({ version: 2, plugins: { [P]: [{ scope: 'user', gitCommitSha: SHA_B }] } }))
+    fs.writeFileSync(b.deps.marketplaceNote, note)
+    b.comandi.length = 0
+    assert.deepStrictEqual(S.controlla(b.dir, b.deps), { spenti: ['ponytail'] }, note)
+    assert.ok(b.comandi.includes(`claude plugin disable ${P} --scope user`), note)
+    assert.strictEqual(b.stato[P].enabled, false, note)
+  }
+  // No record and a marketplace that is not ours: the user's plugin, never touched.
+  const u = banco({ marketplace: { 'chipmanager-base': { source: { source: 'directory', path: '/altrove/marketplace' } } }, elenco: [{ id: P, scope: 'user', enabled: true }] })
+  assert.deepStrictEqual(S.controlla(u.dir, u.deps), { spenti: [] })
+  assert.ok(!u.comandi.some(c => c.includes('disable')))
+})
+
+test('F13b r2 rilievo 2: installed_plugins.json si legge in modo rigido (schema, versione, tipi, unicità) e un campo non valido non ripiega su un altro', () => {
+  const S = require('./skill-installa.cjs')
+  const P = 'ponytail@chipmanager-base'
+  const corto = SHA_A.slice(0, 12)
+  const con = (j, f) => { fs.writeFileSync(f, typeof j === 'string' ? j : JSON.stringify(j)); return f }
+  const f = path.join(tmp(), 'installed_plugins.json')
+  assert.deepStrictEqual(S.shaInstallato(P, { installati: con({ version: 2, plugins: { [P]: [{ scope: 'user', version: '4.9.0', gitCommitSha: SHA_A }] } }, f) }), { pieno: SHA_A })
+  assert.deepStrictEqual(S.shaInstallato(P, { installati: con({ version: 2, plugins: { [P]: [{ scope: 'project', gitCommitSha: SHA_B }, { scope: 'user', version: corto }] } }, f) }), { corto })
+  const cattivi = {
+    versioneArray: { version: 2, plugins: { [P]: [{ scope: 'user', version: [corto] }] } },
+    schema999: { version: 999, plugins: { [P]: [{ scope: 'user', gitCommitSha: SHA_A }] } },
+    senzaSchema: { plugins: { [P]: [{ scope: 'user', gitCommitSha: SHA_A }] } },
+    userDoppio: { version: 2, plugins: { [P]: [{ scope: 'user', gitCommitSha: SHA_A }, { scope: 'user', gitCommitSha: SHA_A }] } },
+    shaMalformato: { version: 2, plugins: { [P]: [{ scope: 'user', version: corto, gitCommitSha: 'zz' + SHA_A.slice(2) }] } },
+    shaNumero: { version: 2, plugins: { [P]: [{ scope: 'user', version: corto, gitCommitSha: 1 }] } },
+    pluginsArray: { version: 2, plugins: [] },
+    vociOggetto: { version: 2, plugins: { [P]: { scope: 'user', gitCommitSha: SHA_A } } },
+    vocePrimitiva: { version: 2, plugins: { [P]: [null, { scope: 'user', gitCommitSha: SHA_A }] } },
+    radiceArray: '[]',
+  }
+  for (const [nome, j] of Object.entries(cattivi)) {
+    assert.strictEqual(S.shaInstallato(P, { installati: con(j, f) }), undefined, nome)
+    const b = banco()
+    S.installa('ponytail', approvato(S, b, 'ponytail'), b.dir, b.deps)
+    con(j, b.deps.installati)
+    b.comandi.length = 0
+    assert.throws(() => S.abilita('ponytail', b.dir, b.deps), e => e.motivo === 'skill.err.cambiato', nome)
+    assert.ok(!b.comandi.some(c => c.includes(' enable ')), nome)
+  }
+})
+
+test('F13b r2 rilievo 3: known_marketplaces.json malformato si rifiuta prima di qualunque comando; solo il file assente vale «marketplace da aggiungere»', () => {
+  const S = require('./skill-installa.cjs')
+  const cattivi = ['null', '[]', '"x"', '{', JSON.stringify({ 'chipmanager-base': {} }), JSON.stringify({ 'chipmanager-base': null }),
+    JSON.stringify({ 'chipmanager-base': { source: null } }), JSON.stringify({ 'chipmanager-base': { source: { source: 'directory', path: 5 } } }),
+    JSON.stringify({ altro: { source: 'x' } })]
+  for (const id of ['ponytail', 'tokeneconomizer']) {
+    for (const note of cattivi) {
+      const b = banco()
+      const ap = approvato(S, b, id)
+      fs.writeFileSync(b.deps.marketplaceNote, note)
+      b.comandi.length = 0
+      assert.throws(() => S.installa(id, ap, b.dir, b.deps), e => e.motivo === 'skill.err.marketplace', `${id} ${note}`)
+      assert.deepStrictEqual(b.comandi, [], `${id} ${note}`)
+    }
+  }
+  // File assente: il marketplace si aggiunge e l'installazione procede.
+  const b = banco()
+  const ap = approvato(S, b, 'ponytail')
+  fs.rmSync(b.deps.marketplaceNote)
+  assert.deepStrictEqual(S.installa('ponytail', ap, b.dir, b.deps), { id: 'ponytail', plugin: 'ponytail@chipmanager-base', sha: SHA_A })
+  assert.ok(b.comandi.some(c => c.startsWith('claude plugin marketplace add')))
 })
 
 test('F13b rilievo 7: il modello si verifica sull\'intero catalogo validato; solo la visualizzazione del rilevamento è troncata', async () => {
