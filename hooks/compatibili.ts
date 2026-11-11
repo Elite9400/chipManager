@@ -83,3 +83,64 @@ export function baseDi(id: string, imp: ImpostazioneCompatibile | undefined): { 
 
 /** The URL of a registry path: absolute paths come only from the registry itself. */
 export const urlDi = (base: string, percorso: string) => (percorso.startsWith('https://') ? percorso : `${base}${percorso}`)
+
+const oggetto = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** Project opt-in (`progetti[repo].compatibili`): `{ id: 'R1' | 'R2' }`; absent or null = none; undefined = invalid shape. */
+export function livelliCompatibiliDa(v: unknown): Record<string, 'R1' | 'R2'> | undefined {
+  if (v === undefined || v === null) return {}
+  if (!oggetto(v)) return undefined
+  const out: Record<string, 'R1' | 'R2'> = {}
+  for (const [id, l] of Object.entries(v)) {
+    if (l === null) continue
+    if (!voceCompatibile(id) || (l !== 'R1' && l !== 'R2')) return undefined
+    out[id] = l
+  }
+  return out
+}
+
+/** Account settings (`account.compatibili`): only fields that `baseDi` accepts; anything else makes the shape invalid. */
+export function impostazioniCompatibiliDa(v: unknown): Record<string, ImpostazioneCompatibile> | undefined {
+  if (v === undefined || v === null) return {}
+  if (!oggetto(v)) return undefined
+  const out: Record<string, ImpostazioneCompatibile> = {}
+  for (const [id, x] of Object.entries(v)) {
+    if (x === null) continue
+    const voce = voceCompatibile(id)
+    if (!voce || !oggetto(x)) return undefined
+    const chiavi = Object.keys(x)
+    const ammesse = voce.locale ? ['endpoint'] : voce.id === 'qwen' ? ['regione', 'workspace'] : []
+    if (chiavi.some(k => !ammesse.includes(k))) return undefined
+    const imp: ImpostazioneCompatibile = {
+      ...(typeof x.endpoint === 'string' && { endpoint: x.endpoint }),
+      ...(typeof x.regione === 'string' && { regione: x.regione as RegioneQwen }),
+      ...(typeof x.workspace === 'string' && { workspace: x.workspace }),
+    }
+    // US without a workspace host is a valid setting that cannot run yet (baseDi says why); every other refusal is a bad shape.
+    const usSenzaHost = imp.regione === 'us' && imp.workspace === undefined
+    if (chiavi.length !== Object.keys(imp).length || (imp.regione !== undefined && !(imp.regione in REGIONI_QWEN)) || (!usSenzaHost && 'motivo' in baseDi(id, imp)))
+      return undefined
+    out[id] = imp
+  }
+  return out
+}
+
+/** Why a non-Claude writer cannot be used (F13a↔F13b interface), as a dictionary code; undefined = usable. */
+export function scrittoreAmmesso(
+  scrittore: { provider: string; modello: string },
+  regole: { risorse: { soloLocale: boolean; fornitori: readonly string[]; freellmapi: { livello: string }; compatibili: Record<string, string>; account: { compatibili?: Record<string, ImpostazioneCompatibile> } }; connessi?: readonly string[]; compatibiliConnessi?: readonly string[]; modelli: Record<string, readonly string[]> },
+): { k: string; p?: Record<string, string> } | undefined {
+  const { provider, modello } = scrittore
+  if (!ESECUTORI_TESTO.includes(provider)) return { k: 'cmp.ignoto', p: { provider } }
+  if (regole.risorse.soloLocale) return { k: 'v.soloLocale' }
+  if (provider === 'freellmapi') {
+    if (!regole.risorse.fornitori.includes('freellmapi') || regole.risorse.freellmapi.livello === 'niente') return { k: 'v.fornitoreNonAbilitato', p: { fornitore: provider } }
+    if (!(regole.connessi ?? []).includes('freellmapi')) return { k: 'v.nonConnesso', p: { fornitore: provider } }
+    return regole.modelli.freellmapi?.includes(modello) ? undefined : { k: 'v.modelloNonAmmesso', p: { modello, esecutore: provider } }
+  }
+  if (!regole.risorse.compatibili[provider]) return { k: 'v.fornitoreNonAbilitato', p: { fornitore: provider } }
+  if (!(regole.compatibiliConnessi ?? []).includes(provider)) return { k: 'v.nonConnesso', p: { fornitore: provider } }
+  const b = baseDi(provider, regole.risorse.account.compatibili?.[provider])
+  if ('motivo' in b) return { k: 'cmp.configurazione', p: { provider, motivo: b.motivo } }
+  return MODELLO_COMPATIBILE.test(modello) ? undefined : { k: 'v.modelloNonAmmesso', p: { modello, esecutore: provider } }
+}

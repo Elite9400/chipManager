@@ -139,12 +139,12 @@ export const manualiDaScrivere = (limiti: readonly Limite[]) =>
  * F10: i campi dello strato Account nella bozza, con il prefisso `account.` (lo toglie la scrittura): così base, conflitti
  * e «Riapplica» funzionano uguali per i due strati, e una modifica all'account nascosta da una restrizione non sfugge.
  */
-export const CAMPI_ACCOUNT = ['account.soglie', 'account.apiClaude', 'account.freellmapi', 'account.modoLavoro']
+export const CAMPI_ACCOUNT = ['account.soglie', 'account.apiClaude', 'account.freellmapi', 'account.modoLavoro', 'account.compatibili']
 /**
  * I campi che stanno nella bozza; i budget manuali no: si scrivono subito, e Applica non li tocca mai. Del progetto, `soglie`
  * e `apiClaude` (dei build di sviluppo) e `restrizioni` sono restrizioni: la bozza le toglie o le restringe soltanto.
  */
-export const CAMPI_BOZZA = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere', 'restrizioni', 'modoLavoro', ...CAMPI_ACCOUNT]
+export const CAMPI_BOZZA = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere', 'restrizioni', 'modoLavoro', 'compatibili', ...CAMPI_ACCOUNT]
 /** Il valore GREZZO di un campo (mai quello efficace) nella forma che scrive `configura`; null = assente. */
 export function valoreConfig(r: RisorseProgetto, k: string): unknown {
   switch (k) {
@@ -157,6 +157,8 @@ export function valoreConfig(r: RisorseProgetto, k: string): unknown {
     case 'account.apiClaude': return r.account.apiClaude ?? null
     case 'account.freellmapi': return r.account.freellmapi ?? null
     case 'account.modoLavoro': return r.account.modoLavoro ?? null
+    case 'account.compatibili': return r.account.compatibili ?? null
+    case 'compatibili': return Object.keys(r.compatibili ?? {}).length ? r.compatibili : null
     case 'modoLavoro': return r.strato.modoLavoro ?? null
     case 'account.limitiManuali': return manualiDaScrivere(r.account.limitiManuali)
     case 'limitiManuali': return manualiDaScrivere(r.limitiManuali.filter(l => l.progetto))
@@ -183,8 +185,10 @@ export function grezzi(r: RisorseProgetto) {
     ...(r.strato.apiClaude && { apiClaude: r.strato.apiClaude }), ...(r.consigliere && { consigliere: r.consigliere }), ...(r.profilo && { profilo: r.profilo }),
     ...(Object.keys(r.strato.restrizioni).length && { restrizioni: r.strato.restrizioni }),
     ...(r.strato.modoLavoro && { modoLavoro: r.strato.modoLavoro }),
+    ...(Object.keys(r.compatibili ?? {}).length && { compatibili: r.compatibili }),
   }
   const account: Record<string, unknown> = {
+    ...(r.account.compatibili && { compatibili: r.account.compatibili }),
     soglie: r.account.soglie, limitiManuali: valoreConfig(r, 'account.limitiManuali'),
     ...(r.account.apiClaude && { apiClaude: r.account.apiClaude }), ...(r.account.freellmapi && { freellmapi: r.account.freellmapi }),
     ...(r.account.modoLavoro && { modoLavoro: r.account.modoLavoro }),

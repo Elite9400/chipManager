@@ -117,9 +117,9 @@ const TITOLO_RAPPORTO = 'chipManager report: doctor findings'
 const RILIEVI_RAPPORTO = ['config.illeggibile', 'config.senzaCopie', 'config.campoIgnoto', 'config.nonValido', 'config.restrizioneLarga', 'config.modoNonValido',
   'percorso.config', 'percorso.dati', 'percorso.macchina', 'percorso.registro', 'registro.sviluppo', 'lock.api', 'lock.apiIlleggibile', 'chiavi.residue',
   'azioni.orfane', 'azioni.progettiIgnoti', 'accesso.claude', 'accesso.codex', 'accesso.github', 'host.impostazioniApi', 'host.advisor', 'host.versione', 'connessione']
-const CAMPI_ACCOUNT_RAPPORTO = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi', 'modoLavoro']
+const CAMPI_ACCOUNT_RAPPORTO = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi', 'modoLavoro', 'compatibili']
 const CAMPI_PROGETTO_RAPPORTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude',
-  'consigliere', 'restrizioni', 'modoLavoro']
+  'consigliere', 'restrizioni', 'modoLavoro', 'compatibili']
 const SUPERFICI_RAPPORTO = ['desktop', 'terminal', 'vscode', 'mobile', 'unknown']
 const TIPI_RAPPORTO = ['null', 'array', 'object', 'number', 'boolean', 'string']
 const VERSIONE_RAPPORTO = /^(\d{1,4}\.\d{1,4}\.\d{1,5}(-dev)?|unknown)$/
@@ -796,8 +796,8 @@ async function configura(file, richiesta) {
 }
 
 /** I campi di `progetti[repo]` che `configura` scrive (F10: `restrizioni`); quelli dell'account (`account` nella radice). */
-const CAMPI_PROGETTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere', 'restrizioni', 'modoLavoro']
-const CAMPI_ACCOUNT = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi', 'modoLavoro']
+const CAMPI_PROGETTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere', 'restrizioni', 'modoLavoro', 'compatibili']
+const CAMPI_ACCOUNT = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi', 'modoLavoro', 'compatibili']
 
 /** I campi di primo livello che appartengono all'utente, non a un progetto, e come devono essere. */
 const CAMPI_UTENTE = { lingua: v => ['en', 'it', 'es', 'fr', 'de', 'pt'].includes(v) }

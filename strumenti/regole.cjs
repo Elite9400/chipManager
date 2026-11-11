@@ -116,7 +116,11 @@ function accountDa(v) {
   manualiValidi(v.limitiManuali, 'account.limitiManuali')
   const f = v.freellmapi ?? undefined
   if (f !== undefined && (!oggetto(f) || (f.endpoint !== undefined && !endpointLocale(f.endpoint)))) no('account.freellmapi')
-  return { soglie: soglieDa(v.soglie, 'account.soglie'), ...(api && { apiClaude: { budgetUsd: api.budgetUsd, tetto: api.tetto ?? TETTO_PREDEFINITO } }), ...(f && typeof f.endpoint === 'string' && { endpoint: f.endpoint }) }
+  // F13.3b: the same parser as the panel (compatibili.cjs is the twin of hooks/compatibili.ts).
+  const compatibili = require('./compatibili.cjs').impostazioniCompatibiliDa(v.compatibili)
+  if (!compatibili) no('account.compatibili')
+  return { soglie: soglieDa(v.soglie, 'account.soglie'), ...(api && { apiClaude: { budgetUsd: api.budgetUsd, tetto: api.tetto ?? TETTO_PREDEFINITO } }), ...(f && typeof f.endpoint === 'string' && { endpoint: f.endpoint }),
+    compatibili }
 }
 
 function restrizioniDa(v) {
@@ -164,7 +168,9 @@ function regoleEfficaci(accountGrezzo, progettoGrezzo) {
     apiClaude = { budgetUsd: account.apiClaude.budgetUsd, tetto, ...(limite < account.apiClaude.budgetUsd && { limiteProgettoUsd: limite }) }
   }
   const modoLavoro = modoEfficace(oggetto(accountGrezzo) ? accountGrezzo.modoLavoro : undefined, p.modoLavoro)
-  return { soglie, apiClaude, endpoint: (fp && fp.endpoint) ?? account.endpoint ?? ENDPOINT_PREDEFINITO, modoLavoro }
+  const compatibili = require('./compatibili.cjs').livelliCompatibiliDa(p.compatibili)
+  if (!compatibili) no('compatibili')
+  return { soglie, apiClaude, endpoint: (fp && fp.endpoint) ?? account.endpoint ?? ENDPOINT_PREDEFINITO, modoLavoro, compatibili, impostazioniCompatibili: account.compatibili }
 }
 
 /** Il motivo per cui le restrizioni allargherebbero l'account, o null (più severo = valore più basso). Lancia se non valgono. */

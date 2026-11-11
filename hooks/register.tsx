@@ -74,6 +74,8 @@ import {
   violazioniAvvio,
 } from './logica'
 import type { Cadenza, Lavoro, Piano, Strumenti } from './logica'
+import { MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
+import { chiamaCompatibile, connessiCompatibili } from './compatibili-host'
 import { board, chiaveRiassunto, hash, improntaBoard, testoRiassunto } from './board'
 import type { Piano as PianoBoard } from './board'
 import { chiaveOTesto, daTesto, eMsg, Errore, errore, linguaDa, msg, msgDi, salvato, t, testo, traduttore } from './lingua'
@@ -486,7 +488,7 @@ async function leggiRegole($: Eng) {
   const deepseek = chiaviFornitori.deepseek || !!(await $.env.get('DEEPSEEK_API_KEY').catch(() => undefined))
   const freellmapi = chiaviFornitori.freellmapi || !!(await $.env.get('FREELLMAPI_KEY').catch(() => undefined))
   const connessi: Fornitore[] = ['claude', 'codex', ...(deepseek ? ['deepseek' as const] : []), ...(freellmapi ? ['freellmapi' as const] : [])]
-  r = { ...r, chiaveApi: chiaveApiPresente, connessi }
+  r = { ...r, chiaveApi: chiaveApiPresente, connessi, compatibiliConnessi: compatibiliPresenti }
   paralleloModo = r.risorse.modoLavoro?.parallelo
   if (!uguale(await read($, regole), r)) await update($, regole, () => r)
   return r
@@ -721,7 +723,7 @@ async function decidi(
     const ammessi = opz.qui ? ['proposta'] : ['proposta', 'accodata', 'fallita']
     if (!a || !ammessi.includes(a.stato)) return { nulla: a }
     if (opz.approvata !== undefined && a.versione !== opz.approvata) throw errore('err.cambiataDopoConferma', { titolo: a.titolo })
-    if (a.esecutore === 'freellmapi' && opz.terzoApprovato !== a.versione) return { blocchi: [msg('v.freeConferma')] }
+    if (modalitaDi(a) === 'esterno' && opz.terzoApprovato !== a.versione) return { blocchi: [msg('v.freeConferma')] }
     // Il cloud parte solo con il consenso dato al testo di QUESTA versione (letto per intero nella
     // conferma); un'azione diventata cloud dopo la conferma, o chiesta a mano, non parte.
     if (a.destinazione === 'cloud' && !opz.qui) {
@@ -764,7 +766,7 @@ async function decidi(
       lanciataDa: chi.io,
       ...salvato('motivoCoda', 'motivo', undefined),
       ...salvato('errore', 'errore', undefined),
-      lanciatore: opz.qui || opz.manuale ? undefined : modalitaDi(a) === 'api-claude' ? 'api-claude' : a.esecutore === 'freellmapi' ? 'freellmapi' : chi.lanciatore === 'cli' ? 'cli' : undefined,
+      lanciatore: opz.qui || opz.manuale ? undefined : modalitaDi(a) === 'api-claude' ? 'api-claude' : a.esecutore === 'freellmapi' ? 'freellmapi' : a.esecutore === 'compatibile' ? 'compatibile' : chi.lanciatore === 'cli' ? 'cli' : undefined,
       risultato: undefined,
     })
     if (presa) return { avvia: presa }
@@ -790,12 +792,15 @@ async function confermaCloud($: Eng, a: Azione) {
 async function avvia($: Eng, options: Record<string, unknown>, id: string, approvata?: number) {
   const tutte = await carica($)
   const prima = tutte.find(x => x.id === id)
-  if (prima?.esecutore === 'freellmapi' && ['proposta', 'accodata', 'fallita'].includes(prima.stato)) {
+  const esterno = !!prima && modalitaDi(prima) === 'esterno'
+  if (prima && esterno && ['proposta', 'accodata', 'fallita'].includes(prima.stato)) {
     const v = violazioni(prima, await leggiRegole($), tutte)
     if (v.length) throw errore('err.nonParte', { motivi: v })
     if (approvata !== undefined && prima.versione !== approvata) throw errore('err.cambiataPrimaInvio')
     const T = await lingue($)
-    if (await $.ui.ask(T('pop.free', { titolo: prima.titolo, brief: prima.brief }), { options: [T('pop.inviaTesto'), T('comune.annulla')], header: 'FreeLLMAPI' }) !== T('pop.inviaTesto')) return
+    const intestazione = prima.esecutore === 'compatibile' ? voceCompatibile(prima.provider)?.nome ?? 'OpenAI-compatible' : 'FreeLLMAPI'
+    const domanda = prima.esecutore === 'compatibile' ? T('pop.esterno', { provider: intestazione, titolo: prima.titolo, brief: prima.brief }) : T('pop.free', { titolo: prima.titolo, brief: prima.brief })
+    if (await $.ui.ask(domanda, { options: [T('pop.inviaTesto'), T('comune.annulla')], header: intestazione }) !== T('pop.inviaTesto')) return
     approvata = prima.versione
   }
   if (prima?.destinazione === 'cloud' && ['proposta', 'accodata', 'fallita'].includes(prima.stato)) {
@@ -806,11 +811,11 @@ async function avvia($: Eng, options: Record<string, unknown>, id: string, appro
     if (!(await confermaCloud($, prima))) return
     approvata = prima.versione
   }
-  const d = await decidi($, options, id, { approvata, cloudApprovato: prima?.destinazione === 'cloud' ? prima.versione : undefined, terzoApprovato: prima?.esecutore === 'freellmapi' ? prima.versione : undefined })
+  const d = await decidi($, options, id, { approvata, cloudApprovato: prima?.destinazione === 'cloud' ? prima.versione : undefined, terzoApprovato: esterno ? prima?.versione : undefined })
   if (d.blocchi) throw errore('err.nonParte', { motivi: d.blocchi })
   if (!d.avvia) return
   const presa = d.avvia
-  if (presa.lanciatore === 'cli' || presa.lanciatore === 'freellmapi' || presa.lanciatore === 'api-claude') return avviaAlternativa($, options, presa)
+  if (presa.lanciatore === 'cli' || presa.lanciatore === 'freellmapi' || presa.lanciatore === 'compatibile' || presa.lanciatore === 'api-claude') return avviaAlternativa($, options, presa)
   const args = parametriAvvio(presa, (await read($, regole)) ?? REGOLE_DEFAULT, strumenti($))
   let risposta: Awaited<ReturnType<Eng['mcp']['call']>>
   // Il gettone resta «in volo» finché la risposta non è SALVATA: fino ad allora non si annulla.
@@ -850,6 +855,16 @@ async function avviaAlternativa($: Eng, options: Record<string, unknown>, a: Azi
     const r = await leggiRegole($)
     const blocchi = violazioni(a, r, await carica($, { completa: true }))
     if (blocchi.length) return aggiorna($, a.id, x => x.tentativo === a.tentativo ? { ...transizione(x, 'fallita', ora()), ...salvato('errore', 'errore', msg('err.regoleCambiate')) } : null)
+    if (a.lanciatore === 'compatibile') {
+      // F13.3b: exactly the confirmed text, nothing from the repository; the helper re-checks provider, lane and catalogue.
+      const risultato = await chiamaCompatibile($, options, 'completa', { provider: a.provider, imp: r.risorse.account.compatibili?.[a.provider ?? ''],
+        livello: r.risorse.compatibili[a.provider ?? ''] ?? 'niente', soloLocale: r.risorse.soloLocale, modello: a.modello, testo: `${a.titolo}\n\n${a.brief}` }) as { risultato?: unknown }
+      if (typeof risultato.risultato !== 'string' || risultato.risultato.length > 30000) throw new Error('invalid answer')
+      return aggiorna($, a.id, x => x.stato === 'in-avvio' && x.tentativo === a.tentativo
+        ? { ...transizione(x, 'consegnata', ora()), risultato: risultato.risultato as string, avviataIl: ora(), ...salvato('errore', 'errore', msg('rec.bozzaFree')),
+            // F13a↔F13b: a local server is free; a remote provider's price is not read, so its cost is unknown.
+            costo: { tipo: voceCompatibile(a.provider)?.locale ? 'gratuito' : 'ignoto' } } : null)
+    }
     if (a.lanciatore === 'freellmapi') {
       const risultato = await fonte($, options, 'completa', { politica: r.risorse, testo: `${a.titolo}\n\n${a.brief}`, modello: a.modello }) as { risultato?: unknown }
       if (typeof risultato.risultato !== 'string' || risultato.risultato.length > 30000) throw new Error('invalid answer')
@@ -1018,7 +1033,7 @@ async function avviaTutte($: Eng, options: Record<string, unknown>) {
   }
   const claude = piano.avvia.filter(a => a.esecutore === 'claude').length
   const codexAvviati = piano.avvia.filter(a => a.esecutore === 'codex').length
-  const free = piano.avvia.filter(a => a.esecutore === 'freellmapi').length
+  const free = piano.avvia.filter(a => modalitaDi(a) === 'esterno').length
   const cloud = piano.avvia.filter(a => a.destinazione === 'cloud').length
   const T = await lingue($)
   const parti = [
@@ -1568,7 +1583,7 @@ async function giroVero($: Eng, options: Record<string, unknown>, lette?: Letti)
       } catch { /* record mancante o rotto: nessun riavvio automatico */ }
       if (a.stato === 'in-avvio') continue
     }
-    if (a.lanciatore === 'freellmapi' && a.stato === 'in-avvio') continue
+    if ((a.lanciatore === 'freellmapi' || a.lanciatore === 'compatibile') && a.stato === 'in-avvio') continue
     if (a.stato === 'in-avvio') {
       // Solo chi ha chiesto l'avvio vede le sessioni avviate da sé (list_sessions linked).
       if (a.lanciataDa !== chi.io) continue
@@ -1777,7 +1792,7 @@ async function fai($: Eng, fn: () => Promise<unknown>) {
 }
 
 // --- confine: input degli strumenti che il modello chiama ---------------------------------------
-const MOTORI = ['claude', 'codex', 'freellmapi'] as const
+const MOTORI = ['claude', 'codex', 'freellmapi', 'compatibile'] as const
 const ESITI = ['in-corso', 'approvata', 'da-correggere'] as const
 const REVISORI = ['claude', 'codex', 'nessuno'] as const
 const PERMESSI_VALIDI = PERMESSI.map(p => p.value).filter(v => v !== 'eredita')
@@ -1803,9 +1818,13 @@ function valida(e: Record<string, unknown>, r: Regole, esistenti: readonly Azion
   const esecutore = (e.esecutore ?? 'claude') as Motore
   const revisore = (e.revisore ?? (esecutore !== 'claude' ? 'claude' : 'codex')) as Revisore
   const esecutoreOk = MOTORI.includes(esecutore)
-  if (!esecutoreOk) errori.push('esecutore: claude | codex | freellmapi')
+  if (!esecutoreOk) errori.push('esecutore: claude | codex | freellmapi | compatibile')
   if (!REVISORI.includes(revisore)) errori.push('revisore: claude | codex | nessuno')
-  if (esecutoreOk && modelloOk && e.modello !== undefined && !r.modelli[esecutore].includes(e.modello as string))
+  // F13.3b: `provider` names a registry entry and goes only with `compatibile`, which needs an explicit catalogue model id.
+  if ((esecutore === 'compatibile') !== (e.provider !== undefined)) errori.push('provider: with esecutore "compatibile" only, and required there')
+  else if (e.provider !== undefined && !voceCompatibile(e.provider)) errori.push('provider: an id of the OpenAI-compatible registry (see risorse_agenti)')
+  if (esecutore === 'compatibile' && (typeof e.modello !== 'string' || !MODELLO_COMPATIBILE.test(e.modello))) errori.push('modello: the provider\'s model id is required')
+  else if (esecutoreOk && esecutore !== 'compatibile' && modelloOk && e.modello !== undefined && !r.modelli[esecutore].includes(e.modello as string))
     errori.push(`modello for ${esecutore}: ${r.modelli[esecutore].join(', ')}`)
   if (effortOk && e.effort !== undefined && !r.effort.includes(e.effort as string)) errori.push(`effort: ${r.effort.join(', ')}`)
   const dipende = e.dipende ?? []
@@ -1838,6 +1857,7 @@ function valida(e: Record<string, unknown>, r: Regole, esistenti: readonly Azion
   }
   const suggerita: Suggerita = {
     piano: e.piano as string | undefined,
+    ...(esecutore === 'compatibile' && { provider: e.provider as string }),
     titolo: (e.titolo as string).trim(),
     brief: e.brief as string,
     background: e.background as string | undefined,
@@ -1873,6 +1893,7 @@ const schemaSuggerisci = (r: Regole) => ({
     brief: { type: 'string', description: 'Self-contained brief: task, files, scope, when it is done.' },
     background: { type: 'string', description: 'Optional context; never sent to the cloud.' },
     esecutore: { type: 'string', enum: MOTORI, description: `Default claude. Codex on ${r.corsiaCodex.corsie.join(', ')}, never sensitive.` },
+    provider: { type: 'string', description: 'Registry id, with compatibile (text only).' },
     revisore: { type: 'string', enum: REVISORI, description: 'Default the other engine; mandatory on sensitive chips.' },
     modello: { type: 'string', description: `Claude: ${r.modelli.claude.join(', ')}. Codex: ${r.modelli.codex.join(', ')}.` },
     effort: { type: 'string', enum: r.effort },
@@ -1886,8 +1907,8 @@ const schemaSuggerisci = (r: Regole) => ({
     contesto: { type: 'string', enum: CONTESTI, description: 'fresh (default): brief only; fork: the conversation.' },
     destinazione: { type: 'string', enum: DESTINAZIONI, description: 'cloud: fresh, no LAN data; api-claude: API credits. Not sensitive.' },
     ramo: { type: 'string', description: 'Worktree branch, [a-z0-9-].' },
-    base: { type: 'string', description: 'Local starting branch; default the base of who starts it.' },
-    sveglia: { type: 'boolean', description: 'Wake whoever starts it even if the brief does not arrive.' },
+    base: { type: 'string', description: 'Local start branch; default: the starter\'s.' },
+    sveglia: { type: 'boolean', description: 'Wake the starter even without a report.' },
     piano: { type: 'string', description: '.md or .txt relative to the repository; the board shows it.' },
   },
   required: ['titolo', 'brief'],
@@ -2185,12 +2206,15 @@ async function apriBoard($: Eng) {
 let chiaveApiPresente = false
 /** F10: le chiavi dei fornitori nelle opzioni sensibili (solo la presenza). */
 let chiaviFornitori = { deepseek: false, freellmapi: false }
+/** F13.3b: registry providers whose native option is set, or that need no key. */
+let compatibiliPresenti: string[] = []
 
 export const register: Register = (on, options) => {
   const opz = (options ?? {}) as Record<string, unknown>
   chiaveApiPresente = typeof opz.anthropicApiKey === 'string' && opz.anthropicApiKey.trim().length > 0
   const presente = (k: string) => typeof opz[k] === 'string' && (opz[k] as string).trim().length > 0
   chiaviFornitori = { deepseek: presente('deepseekKey'), freellmapi: presente('freellmapiKey') }
+  compatibiliPresenti = connessiCompatibili(opz)
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)

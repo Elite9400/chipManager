@@ -12,9 +12,9 @@ const api = require('./api-claude.cjs')
 const oggetto = v => !!v && typeof v === 'object' && !Array.isArray(v)
 // I campi che la mod conosce, per strato: gli altri si segnalano (mai cancellati).
 const NOTI_RADICE = ['account', 'progetti', 'lingua', 'versione', 'cartella']
-const NOTI_ACCOUNT = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi', 'modoLavoro']
+const NOTI_ACCOUNT = ['soglie', 'limitiManuali', 'apiClaude', 'freellmapi', 'modoLavoro', 'compatibili']
 const NOTI_PROGETTO = ['fornitori', 'soloLocale', 'milestoneGithub', 'pesi', 'limitiManuali', 'freellmapi', 'board', 'soglie', 'profilo', 'apiClaude', 'consigliere',
-  'restrizioni', 'modoLavoro', 'pesiRevisione', 'pesiOrigine', 'cartella']
+  'restrizioni', 'modoLavoro', 'pesiRevisione', 'pesiOrigine', 'cartella', 'compatibili']
 const nome = s => String(s).replace(/[^A-Za-z0-9_.-]/g, '?').slice(0, 40)
 
 /** Le copie valide del config (bak1 è la più recente), lette senza toccarle. */

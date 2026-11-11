@@ -47,6 +47,59 @@ function baseDi(id, imp) {
   return b ? { base: b } : { motivo: 'Qwen US: needs a workspace host' }
 }
 const urlDi = (base, percorso) => (percorso.startsWith('https://') ? percorso : `${base}${percorso}`)
+const oggetto = v => !!v && typeof v === 'object' && !Array.isArray(v)
+
+function livelliCompatibiliDa(v) {
+  if (v === undefined || v === null) return {}
+  if (!oggetto(v)) return undefined
+  const out = {}
+  for (const [id, l] of Object.entries(v)) {
+    if (l === null) continue
+    if (!voceCompatibile(id) || (l !== 'R1' && l !== 'R2')) return undefined
+    out[id] = l
+  }
+  return out
+}
+
+function impostazioniCompatibiliDa(v) {
+  if (v === undefined || v === null) return {}
+  if (!oggetto(v)) return undefined
+  const out = {}
+  for (const [id, x] of Object.entries(v)) {
+    if (x === null) continue
+    const voce = voceCompatibile(id)
+    if (!voce || !oggetto(x)) return undefined
+    const chiavi = Object.keys(x)
+    const ammesse = voce.locale ? ['endpoint'] : voce.id === 'qwen' ? ['regione', 'workspace'] : []
+    if (chiavi.some(k => !ammesse.includes(k))) return undefined
+    const imp = {
+      ...(typeof x.endpoint === 'string' && { endpoint: x.endpoint }),
+      ...(typeof x.regione === 'string' && { regione: x.regione }),
+      ...(typeof x.workspace === 'string' && { workspace: x.workspace }),
+    }
+    const usSenzaHost = imp.regione === 'us' && imp.workspace === undefined
+    if (chiavi.length !== Object.keys(imp).length || (imp.regione !== undefined && !(imp.regione in REGIONI_QWEN)) || (!usSenzaHost && 'motivo' in baseDi(id, imp)))
+      return undefined
+    out[id] = imp
+  }
+  return out
+}
+
+function scrittoreAmmesso(scrittore, regole) {
+  const { provider, modello } = scrittore
+  if (!ESECUTORI_TESTO.includes(provider)) return { k: 'cmp.ignoto', p: { provider } }
+  if (regole.risorse.soloLocale) return { k: 'v.soloLocale' }
+  if (provider === 'freellmapi') {
+    if (!regole.risorse.fornitori.includes('freellmapi') || regole.risorse.freellmapi.livello === 'niente') return { k: 'v.fornitoreNonAbilitato', p: { fornitore: provider } }
+    if (!(regole.connessi ?? []).includes('freellmapi')) return { k: 'v.nonConnesso', p: { fornitore: provider } }
+    return regole.modelli.freellmapi?.includes(modello) ? undefined : { k: 'v.modelloNonAmmesso', p: { modello, esecutore: provider } }
+  }
+  if (!regole.risorse.compatibili[provider]) return { k: 'v.fornitoreNonAbilitato', p: { fornitore: provider } }
+  if (!(regole.compatibiliConnessi ?? []).includes(provider)) return { k: 'v.nonConnesso', p: { fornitore: provider } }
+  const b = baseDi(provider, regole.risorse.account.compatibili?.[provider])
+  if ('motivo' in b) return { k: 'cmp.configurazione', p: { provider, motivo: b.motivo } }
+  return MODELLO_COMPATIBILE.test(modello) ? undefined : { k: 'v.modelloNonAmmesso', p: { modello, esecutore: provider } }
+}
 
 /** The key from this process's environment: `CHIPMANAGER_<ID>_KEY`, set by the mod from the native option. */
 const chiaveDi = (id, env = process.env) => env[`CHIPMANAGER_${id.toUpperCase()}_KEY`] || undefined
@@ -122,4 +175,5 @@ async function main(argv = process.argv.slice(2), env = process.env) {
 }
 if (require.main === module) main().catch(e => { process.stderr.write(String(e?.message ?? 'request not available').slice(0, 200)); process.exitCode = 1 })
 
-module.exports = { COMPATIBILI, REGIONI_QWEN, ESECUTORI_TESTO, MODELLO_COMPATIBILE, endpointLoopback, voceCompatibile, baseDi, urlDi, chiaveDi, verifica, rileva, completa, main }
+module.exports = { COMPATIBILI, REGIONI_QWEN, ESECUTORI_TESTO, MODELLO_COMPATIBILE, endpointLoopback, voceCompatibile, baseDi, urlDi, chiaveDi,
+  livelliCompatibiliDa, impostazioniCompatibiliDa, scrittoreAmmesso, verifica, rileva, completa, main }

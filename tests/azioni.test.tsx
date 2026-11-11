@@ -425,7 +425,7 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
   const p = (s: string | undefined) => (s ?? '').replace(/\\/g, '/')
   const chiamate: { server: string; tool: string; args: Record<string, unknown> }[] = []
   const toast: string[] = []
-  const processi: { argv: readonly string[]; stdin?: string }[] = []
+  const processi: { argv: readonly string[]; stdin?: string; env?: Record<string, string> }[] = []
   const modello: { prompt: string; model: string }[] = []
   disco.set(p('X:/repo/.claude/routing.json'), JSON.stringify(ROUTING))
   disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { milestoneGithub: true } } }))
@@ -467,8 +467,15 @@ function ambiente(on: Parameters<TestBody>[1], opz: { cli?: boolean; senzaDir?: 
   on('process.run', (_, e) => {
     const [exe, , cmd, ...a] = e.argv
     const fine = (exitCode: number, stdout = '') => ({ value: { exitCode, stdout, stderr: '' } as never })
-    processi.push({ argv: e.argv, stdin: e.init?.stdin })
+    processi.push({ argv: e.argv, stdin: e.init?.stdin, // Only the variable names: the values are credentials and must not reach any recorded state.
+    env: Object.fromEntries(Object.keys((e.init as { env?: Record<string, string> } | undefined)?.env ?? {}).map(k => [k, '<set>'])) })
     if (exe === 'docker') return fine(0)
+    // F13.3b: the OpenAI-compatible helper, scriptable by the test like the providers helper.
+    if (e.argv[1]?.endsWith('/compatibili.cjs')) {
+      const input = JSON.parse(e.init?.stdin ?? '{}')
+      const risposta = opz.fonte?.(`compatibili-${cmd}`, input) ?? (cmd === 'completa' ? { risultato: 'Testo scritto.' } : cmd === 'rileva' ? { trovati: [] } : { esito: 'valida' })
+      return fine(0, JSON.stringify(risposta))
+    }
     if (e.argv[1]?.endsWith('/fornitori.cjs')) {
       const input = JSON.parse(e.init?.stdin ?? '{}')
       const rispondi = () => {
@@ -3589,3 +3596,101 @@ for (const superficie of ['desktop', 'terminal', 'vscode', 'mobile'] as const)
     await ui.unmount()
     fineF9()
   })
+
+// --- F13.3b: OpenAI-compatible providers as an explicit text executor ------------------------------------------------
+
+const RC: Regole = { ...R, compatibiliConnessi: ['ollama', 'mistral'], risorse: { ...R.risorse, compatibili: { ollama: 'R1', mistral: 'R2' } } }
+const CMP = (extra: Partial<Azione> = {}) => base('a-cmp00001', 1, { repo: AUTORE.repo!, esecutore: 'compatibile', provider: 'ollama', modello: 'qwen3:8b', corsia: 'R1', effort: 'low', revisore: 'claude', ...extra })
+const codici = (v: { k: string }[]) => v.map(m => m.k)
+
+test('F13.3b guardie: abilitato per progetto e connesso, corsie R0–R1 (R2 col livello), filtro LAN, testo, revisione Claude, mai sensibile', () => {
+  expect(violazioni(CMP(), RC)).toEqual([])
+  expect(modalitaDi(CMP())).toBe('esterno')
+  expect(codici(violazioni(CMP({ provider: 'groq' }), RC))).toContain('v.fornitoreNonAbilitato')
+  expect(codici(violazioni(CMP(), { ...RC, compatibiliConnessi: [] }))).toContain('v.nonConnesso')
+  expect(codici(violazioni(CMP({ provider: 'nessuno' }), RC))).toContain('cmp.ignoto')
+  expect(codici(violazioni(CMP({ modello: undefined }), RC))).toContain('cmp.modello')
+  expect(codici(violazioni(CMP({ corsia: 'R2' }), RC))).toContain('v.freeCorsia')
+  expect(violazioni(CMP({ provider: 'mistral', corsia: 'R2' }), RC)).toEqual([])
+  expect(codici(violazioni(CMP({ corsia: 'R3' }), RC))).toContain('v.freeCorsia')
+  // Il filtro dei dati LAN vale anche per un server locale: l'URL non dice dove finiscono i dati (F13 r1.7).
+  expect(codici(violazioni(CMP({ brief: 'Scrivi a mario@example.com.' }), RC))).toContain('v.datiLan')
+  expect(codici(violazioni(CMP({ brief: 'x'.repeat(1600) }), RC))).toContain('v.freeTesto')
+  expect(codici(violazioni(CMP({ revisore: 'codex' }), RC))).toContain('v.freeRevisione')
+  expect(codici(violazioni(CMP({ effort: 'high' }), RC))).toContain('v.freeEffort')
+  expect(codici(violazioni(CMP({ destinazione: 'cloud' }), RC))).toContain('v.freeIsolato')
+  for (const c of ['v.r4Autore', 'v.freeCorsia']) expect(codici(violazioni(CMP({ brief: 'Rivedi il login.' }), RC))).toContain(c)
+  expect(codici(violazioni(CMP(), { ...RC, risorse: { ...RC.risorse, soloLocale: true } }))).toContain('v.soloLocale')
+  // Qwen US senza host del workspace: il motivo, nessun URL inventato.
+  const qwen = { ...RC, compatibiliConnessi: ['qwen'], risorse: { ...RC.risorse, compatibili: { qwen: 'R1' as const }, account: { ...RC.risorse.account, compatibili: { qwen: { regione: 'us' as const } } } } }
+  expect(codici(violazioni(CMP({ provider: 'qwen' }), qwen))).toContain('cmp.configurazione')
+  expect(violazioniAvvio(CMP(), RC, [CMP()], AUTORE, true).map(m => m.k)).toContain('v.freeQui')
+})
+
+test('F13.3b il bilanciamento non sceglie mai un fornitore esterno; il record vuole il provider giusto', () => {
+  const a = base('a-cmp00002', 1, { repo: AUTORE.repo!, corsia: 'R1' })
+  expect(bilancia(a, {}, RC, [], [a], AUTORE).esecutore).not.toBe('compatibile')
+  const esplicita = CMP()
+  expect(bilancia(esplicita, { esecutore: 'compatibile', provider: 'ollama', modello: 'qwen3:8b', effort: 'low', revisore: 'claude' }, RC, [], [esplicita], AUTORE)).toMatchObject({ esecutore: 'compatibile', provider: 'ollama' })
+  expect(normalizza({ ...CMP(), stato: 'proposta' })).toMatchObject({ provider: 'ollama' })
+  for (const rotta of [{ provider: undefined }, { provider: 'altro' }, { esecutore: 'claude' as const }])
+    expect('k' in (normalizza({ ...CMP(rotta), stato: 'proposta' }) as object)).toBe(true)
+})
+
+test('F13.3b configurazione: opt-in del progetto e impostazioni dell\'account validate; forme sbagliate fermano', () => {
+  const p = (progetto: object, account?: object) => progettoDa({ ...(account && { account }), progetti: { 'acme/progetto': progetto } }, 'acme/progetto')
+  expect((p({ compatibili: { ollama: 'R1', mistral: null } }) as { risorse: { compatibili: unknown } }).risorse.compatibili).toEqual({ ollama: 'R1' })
+  expect((p({}, { compatibili: { ollama: { endpoint: 'http://127.0.0.1:11500/v1' }, qwen: { regione: 'us' } } }) as { risorse: { account: { compatibili: unknown } } }).risorse.account.compatibili)
+    .toEqual({ ollama: { endpoint: 'http://127.0.0.1:11500/v1' }, qwen: { regione: 'us' } })
+  for (const rotto of [
+    [{ compatibili: { ollama: 'R3' } }], [{ compatibili: { nessuno: 'R1' } }], [{ compatibili: ['ollama'] }],
+    [{}, { compatibili: { ollama: { endpoint: 'http://192.168.1.5:11434/v1' } } }], [{}, { compatibili: { mistral: { endpoint: 'http://localhost:1/v1' } } }],
+    [{}, { compatibili: { qwen: { workspace: 'https://evil.example.com/compatible-mode/v1' } } }], [{}, { compatibili: { qwen: { regione: 'eu' } } }],
+  ] as [object, object?][])
+    expect('k' in (p(...rotto) as object)).toBe(true)
+})
+
+test('F13.3b suggerisci_azione: provider solo con compatibile, modello esplicito', async ($, on) => {
+  const amb = ambiente(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const deny = async (args: object) => {
+    const r = (await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Bozza', brief: 'Riassumi.', ...args } as never)) as { deny?: string; text?: string }
+    return r.deny ?? r.text ?? ''
+  }
+  expect(await deny({ esecutore: 'compatibile', modello: 'qwen3:8b' })).toContain('provider:')
+  expect(await deny({ provider: 'ollama' })).toContain('provider:')
+  expect(await deny({ esecutore: 'compatibile', provider: 'altro', modello: 'qwen3:8b' })).toContain('registry')
+  expect(await deny({ esecutore: 'compatibile', provider: 'ollama' })).toContain('modello')
+  await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: 'Bozza', brief: 'Riassumi.', esecutore: 'compatibile', provider: 'ollama', modello: 'qwen3:8b', corsia: 'R1' } as never)
+  expect(amb.azione()[0]).toMatchObject({ esecutore: 'compatibile', provider: 'ollama', modello: 'qwen3:8b', revisore: 'claude' })
+})
+
+test('F13.3b avvio: conferma del testo, solo titolo e brief, solo la chiave di quel fornitore, costo per tipo', { options: { mistralKey: 'mk-prova-0123456789', openrouterKey: 'sk-or-prova-0123456789' } }, async ($, on) => {
+  const amb = ambiente(on)
+  amb.disco.set('X:/casa/.claude/chipmanager/config.json', JSON.stringify({ progetti: { 'acme/progetto': { compatibili: { ollama: 'R1', mistral: 'R1' } } } }))
+  mock.clock(on)
+  const viste: string[] = []
+  conferme(on, testo => { viste.push(testo); return 'Invia testo' })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const provider of ['ollama', 'mistral'])
+    await $.tool.call({ tool: 'mcp__chip-manager__suggerisci_azione', titolo: `Bozza ${provider}`, brief: 'Riassumi il paragrafo.', background: 'Contesto da non inviare.', esecutore: 'compatibile', provider, modello: 'qwen3:8b', corsia: 'R1' } as never)
+  const ui = await $.ui.mount({ ...PANE('desktop') })
+  for (const a of amb.azione()) await ui.press({ key: `avvia-${a.id}` })
+  await ui.unmount()
+  expect(viste.length).toBe(2)
+  const posta = amb.processi.filter(p => p.argv[1]?.endsWith('/compatibili.cjs') && p.argv[2] === 'completa')
+  expect(posta.length).toBe(2)
+  for (const p of posta) {
+    expect(JSON.parse(p.stdin!).testo).toMatch(/^Bozza (ollama|mistral)\n\nRiassumi il paragrafo\.$/)
+    expect(p.stdin).not.toContain('Contesto da non inviare.')
+  }
+  const ollama = posta.find(p => JSON.parse(p.stdin!).provider === 'ollama')!
+  const mistral = posta.find(p => JSON.parse(p.stdin!).provider === 'mistral')!
+  expect(ollama.env).toEqual({})
+  expect(mistral.env).toEqual({ CHIPMANAGER_MISTRAL_KEY: '<set>' })
+  for (const a of amb.azione()) expect(a).toMatchObject({ stato: 'consegnata', risultato: 'Testo scritto.', lanciatore: 'compatibile' })
+  expect(amb.azione().find(a => a.provider === 'ollama')!.costo).toEqual({ tipo: 'gratuito' })
+  expect(amb.azione().find(a => a.provider === 'mistral')!.costo).toEqual({ tipo: 'ignoto' })
+  expect(amb.chiamate.filter(c => c.tool === 'start_session').length).toBe(0)
+})

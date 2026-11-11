@@ -681,6 +681,7 @@ const de: Dizionario = {
   "pop.cloud": "Dieser Text geht ohne lokalen Kontext in die Cloud. Enthält er Daten, die im LAN bleiben müssen?\n\n{testo}\n\nSoll ich ihn senden?",
   "pop.inviaCloud": "In die Cloud senden",
   "pop.free": "FreeLLMAPI leitet diesen Text an die im Proxy konfigurierten Anbieter weiter. Es stehen keine Dateien oder Tools zur Verfügung.\n\n{titolo}\n\n{brief}\n\nSoll ich den Text senden?",
+  "pop.esterno": "{provider} erhält nur diesen Text, außerhalb von Claude. Keine Datei und kein Werkzeug stehen zur Verfügung.\n\n{titolo}\n\n{brief}\n\nText senden?",
   "pop.inviaTesto": "Text senden",
   "pop.avvio": { one: "1 Sitzung startet", other: "{n} Sitzungen starten" },
   "pop.nelCloud": "{n} in der Cloud",
@@ -971,6 +972,9 @@ const de: Dizionario = {
   "imp.pillProgetto": "Projekt",
   "imp.propostaAccount": "Sie ändert die Einstellungen aller Projekte.",
   "v.nonConnesso": "Anbieter {fornitore} nicht verbunden: sein Schlüssel fehlt in den Optionen der Mod",
+  "cmp.ignoto": "Anbieter {provider} steht nicht im Register der OpenAI-kompatiblen Anbieter",
+  "cmp.configurazione": "{provider}: {motivo}",
+  "cmp.modello": "ein OpenAI-kompatibler Anbieter braucht eine ausdrückliche Modell-ID",
   "con.nonConnesso": "Nicht verbunden",
   // F11.1: modo di lavoro
   "imp.sezione.modo": "Arbeitsweise",

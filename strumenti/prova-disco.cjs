@@ -3192,3 +3192,43 @@ test('F13.3b richiesta: redirect rifiutati e timeout per chiamata', async () => 
   assert.strictEqual('timeoutMs' in visto, false)
   assert.ok(visto.signal instanceof AbortSignal)
 })
+
+test('F13.3b parità: opt-in del progetto, impostazioni dell\'account e scrittoreAmmesso uguali in TS e CJS', () => {
+  const C = require('./compatibili.cjs')
+  const livelli = [undefined, null, {}, { ollama: 'R1', mistral: 'R2', groq: null }, { ollama: 'R3' }, { nessuno: 'R1' }, ['ollama'], 'R1']
+  const imp = [undefined, null, { ollama: { endpoint: 'http://127.0.0.1:11500/v1' } }, { ollama: { endpoint: 'http://10.0.0.2:11434/v1' } },
+    { qwen: { regione: 'us' } }, { qwen: { regione: 'cn' } }, { qwen: { regione: 'eu' } }, { qwen: { workspace: 'https://ws.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' } },
+    { qwen: { workspace: 'https://evil.example.com/compatible-mode/v1' } }, { mistral: { endpoint: 'http://localhost:1/v1' } }, { ollama: { endpoint: 'http://localhost:1/v1', extra: 1 } }]
+  const regole = (r = {}) => ({ risorse: { soloLocale: false, fornitori: ['claude', 'freellmapi'], freellmapi: { livello: 'R1' }, compatibili: { ollama: 'R1', qwen: 'R1' },
+    account: { compatibili: { qwen: { regione: 'us' } } }, ...r }, connessi: ['claude', 'freellmapi'], compatibiliConnessi: ['ollama', 'qwen'], modelli: { freellmapi: ['testo'] } })
+  const scrittori = [
+    [{ provider: 'ollama', modello: 'qwen3:8b' }, regole()], [{ provider: 'ollama', modello: 'a b' }, regole()], [{ provider: 'groq', modello: 'x' }, regole()],
+    [{ provider: 'qwen', modello: 'qwen-plus' }, regole()], [{ provider: 'freellmapi', modello: 'testo' }, regole()], [{ provider: 'freellmapi', modello: 'altro' }, regole()],
+    [{ provider: 'claude', modello: 'claude-opus-5-5' }, regole()], [{ provider: 'ollama', modello: 'x' }, regole({ soloLocale: true })],
+  ]
+  const ts = compatibiliTs(`console.log(JSON.stringify({
+    livelli: ${JSON.stringify(livelli)}.map(v => c.livelliCompatibiliDa(v) ?? 'NO'),
+    imp: ${JSON.stringify(imp)}.map(v => c.impostazioniCompatibiliDa(v) ?? 'NO'),
+    scrittori: ${JSON.stringify(scrittori)}.map(([s, r]) => c.scrittoreAmmesso(s, r) ?? 'OK') }))`)
+  assert.deepStrictEqual(ts.livelli, livelli.map(v => C.livelliCompatibiliDa(v) ?? 'NO'))
+  assert.deepStrictEqual(ts.imp, imp.map(v => C.impostazioniCompatibiliDa(v) ?? 'NO'))
+  assert.deepStrictEqual(ts.scrittori, scrittori.map(([s, r]) => C.scrittoreAmmesso(s, r) ?? 'OK'))
+  assert.deepStrictEqual(ts.livelli.slice(3, 5), [{ ollama: 'R1', mistral: 'R2' }, 'NO'])
+  assert.deepStrictEqual(ts.scrittori.slice(0, 5), ['OK', { k: 'v.modelloNonAmmesso', p: { modello: 'a b', esecutore: 'ollama' } }, { k: 'v.fornitoreNonAbilitato', p: { fornitore: 'groq' } },
+    { k: 'cmp.configurazione', p: { provider: 'qwen', motivo: 'Qwen US: needs a workspace host' } }, 'OK'])
+})
+
+test('F13.3b config: l\'helper scrive opt-in e impostazioni valide e rifiuta quelle che il pannello rifiuta', async () => {
+  const dir = tmp()
+  const file = path.join(dir, 'config.json')
+  const prima = JSON.stringify({ progetti: {} })
+  fs.writeFileSync(file, prima)
+  assert.strictEqual(await configura(file, { atteso: prima, repo: 'acme/repo', campi: { compatibili: { ollama: 'R1' } }, account: { compatibili: { ollama: { endpoint: 'http://127.0.0.1:11500/v1' } } } }), 0)
+  const dopo = fs.readFileSync(file, 'utf8')
+  assert.deepStrictEqual(JSON.parse(dopo).progetti['acme/repo'].compatibili, { ollama: 'R1' })
+  assert.deepStrictEqual(JSON.parse(dopo).account.compatibili, { ollama: { endpoint: 'http://127.0.0.1:11500/v1' } })
+  for (const no of [{ campi: { compatibili: { ollama: 'R3' } } }, { campi: {}, account: { compatibili: { ollama: { endpoint: 'http://192.168.0.2:11434/v1' } } } },
+    { campi: {}, account: { compatibili: { qwen: { workspace: 'https://evil.example.com/compatible-mode/v1' } } } }])
+    assert.strictEqual(await configura(file, { atteso: dopo, repo: 'acme/repo', ...no }), 2, JSON.stringify(no))
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), dopo)
+})

@@ -683,6 +683,7 @@ const en = {
   "pop.cloud": "This text will go to the cloud, without local context. Does it contain data to keep on the LAN?\n\n{testo}\n\nShall I send it?",
   "pop.inviaCloud": "Send to the cloud",
   "pop.free": "FreeLLMAPI forwards this text to the providers configured in the proxy. No file or tool will be available.\n\n{titolo}\n\n{brief}\n\nShall I send the text?",
+  "pop.esterno": "{provider} receives only this text, outside Claude. No file or tool will be available.\n\n{titolo}\n\n{brief}\n\nShall I send the text?",
   "pop.inviaTesto": "Send text",
   "pop.avvio": { one: "Starting 1 session", other: "Starting {n} sessions" },
   "pop.nelCloud": "{n} in the cloud",
@@ -973,6 +974,9 @@ const en = {
   "imp.pillProgetto": "project",
   "imp.propostaAccount": "It changes the settings of all projects.",
   "v.nonConnesso": "provider {fornitore} is not connected: its key is missing from the mod options",
+  "cmp.ignoto": "provider {provider} is not in the registry of OpenAI-compatible providers",
+  "cmp.configurazione": "{provider}: {motivo}",
+  "cmp.modello": "an OpenAI-compatible provider needs an explicit model id",
   "con.nonConnesso": "Not connected",
   // F11.1: modo di lavoro
   "imp.sezione.modo": "Work mode",

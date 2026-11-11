@@ -4,6 +4,7 @@ import type { Azione, BoardProgetto, Chiamante, Consumo, ControlloEsecuzione, Co
 import { eMsg, msg, numero as scriviNumero, salvato, t } from './lingua'
 import type { Lingua, Msg } from './lingua'
 import { GRIGIO, LIVELLO, STATO } from './tema'
+import { baseDi, impostazioniCompatibiliDa, livelliCompatibiliDa, MODELLO_COMPATIBILE, voceCompatibile } from './compatibili'
 
 // --- regole (routing.json) ---------------------------------------------------------------------
 
@@ -45,6 +46,7 @@ export const TETTO_API_PREDEFINITO = 2
 export const RISORSE_DEFAULT: RisorseProgetto = {
   fornitori: ['claude', 'codex'], soloLocale: false, milestoneGithub: false, pesi: [], limitiManuali: [],
   freellmapi: { livello: 'niente', endpoint: 'http://localhost:3001/v1' },
+  compatibili: {},
   soglie: { claude: SOGLIA_PREDEFINITA, codex: SOGLIA_PREDEFINITA, deepseek: SOGLIA_PREDEFINITA, freellmapi: SOGLIA_PREDEFINITA },
   board: { modo: 'spenta', generazione: 0 },
   account: { soglie: {}, limitiManuali: [] },
@@ -57,6 +59,8 @@ export const REGOLE_DEFAULT: Regole = {
     claude: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-haiku-5-5'],
     codex: ['gpt-6.1-sol', 'gpt-6-astra'],
     freellmapi: [],
+    // F13.3b: models of registry providers come from their catalogue at run time; none here, so `bilancia` never picks them.
+    compatibile: [],
   },
   effort: ['low', 'medium', 'high', 'xhigh'],
   tetto: { 'claude-fable-5-1': 'xhigh' },
@@ -105,6 +109,7 @@ export function regoleDa(json: unknown, fonte: string): Regole {
       claude: ammessi?.filter(m => m.startsWith('claude-')) ?? REGOLE_DEFAULT.modelli.claude,
       codex: (lista(cc.modelli) ?? ammessi?.filter(m => m.startsWith('gpt-'))) ?? REGOLE_DEFAULT.modelli.codex,
       freellmapi: lista((r.freellmapi as Record<string, unknown> | undefined)?.modelli)?.filter(m => /^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,99}$/.test(m) && !/^(auto|fusion|claude-)/i.test(m)) ?? [],
+      compatibile: [],
     },
     effort: effort?.length ? effort : REGOLE_DEFAULT.effort,
     tetto: mappa(r.tetto_per_modello),
@@ -288,9 +293,12 @@ export function accountDa(v: unknown): StratoAccount | Msg {
   if (api !== undefined && (!oggettoRisorse(api) || !numero(api.budgetUsd, 0.01, 100_000) || (api.tetto !== undefined && !numero(api.tetto, 0.01, 1_000)))) return errore
   const f = v.freellmapi === null ? undefined : v.freellmapi
   if (f !== undefined && (!oggettoRisorse(f) || (f.endpoint !== undefined && !endpointLocale(f.endpoint)))) return errore
+  const compatibili = impostazioniCompatibiliDa(v.compatibili)
+  if (!compatibili) return errore
   // Grezzo, come sta nel file: il tetto predefinito vale solo per i valori efficaci (rilievo 5), mai per basi e proposte.
   return { soglie, limitiManuali, ...(api && { apiClaude: { budgetUsd: api.budgetUsd as number, ...(api.tetto !== undefined && { tetto: api.tetto as number }) } }),
     ...(f && typeof f.endpoint === 'string' && { freellmapi: { endpoint: f.endpoint } }),
+    ...(Object.keys(compatibili).length && { compatibili }),
     ...(v.modoLavoro !== undefined && v.modoLavoro !== null && { modoLavoro: modoDa(v.modoLavoro) }) }
 }
 
@@ -372,6 +380,8 @@ export function risorseDa(p: Record<string, unknown>, accountGrezzo?: unknown): 
   if (!oggettoRisorse(f) || !['niente', 'R1', 'R2'].includes(String(f.livello)) || !endpointLocale(f.endpoint ?? RISORSE_DEFAULT.freellmapi.endpoint)) return errore
   const pesi = p.pesi ?? []
   if (!Array.isArray(pesi) || pesi.length > 100 || !pesi.every(pesoValido) || new Set(pesi.map(x => `${x.tipo}:${x.nome}`)).size !== pesi.length) return errore
+  const compatibili = livelliCompatibiliDa(p.compatibili)
+  if (!compatibili) return errore
   const manualiProgetto = manualiDa(p.limitiManuali, true)
   if (!manualiProgetto) return errore
   // Soglie per fornitore dello strato Progetto: assente = eredita (70/90 se nessuno strato ne ha), null = nessuna soglia.
@@ -416,6 +426,7 @@ export function risorseDa(p: Record<string, unknown>, accountGrezzo?: unknown): 
   const e = regoleEfficaci(account, { ...strato, limitiManuali: manualiProgetto })
   return { ...(e.apiClaude && { apiClaude: e.apiClaude }), ...(consigliere && { consigliere }), board, fornitori: [...fornitori], soloLocale: p.soloLocale === true, milestoneGithub: p.milestoneGithub === true,
     freellmapi: { livello, endpoint: e.endpoint },
+    compatibili,
     pesi: pesi.map(x => ({ tipo: x.tipo, nome: x.nome, percentuale: x.percentuale, assoluto: x.assoluto })), limitiManuali: e.limitiManuali,
     soglie: e.soglie,
     modoLavoro: e.modoLavoro,
@@ -550,6 +561,8 @@ export function bilancia(a: Azione, espliciti: Record<string, unknown>, r: Regol
 }
 
 export const modelloDi = (a: Azione, regole: Regole = REGOLE_DEFAULT) => {
+  // F13.3b: the model of a registry provider is always explicit (its catalogue is checked when it runs).
+  if (a.esecutore === 'compatibile') return a.modello && MODELLO_COMPATIBILE.test(a.modello) ? a.modello : ''
   const ammessi = regole.modelli[a.esecutore]
   return a.modello && ammessi.includes(a.modello) ? a.modello : (ammessi[0] ?? REGOLE_DEFAULT.modelli[a.esecutore][0] ?? '')
 }
@@ -569,7 +582,7 @@ export function effortPer(regole: Regole, modello: string) {
 export const effortDi = (a: Azione, regole: Regole = REGOLE_DEFAULT) => {
   const ammessi = effortPer(regole, modelloDi(a, regole))
   if (a.effort && ammessi.includes(a.effort)) return a.effort
-  if (a.esecutore === 'freellmapi' && ammessi.includes('low')) return 'low'
+  if ((a.esecutore === 'freellmapi' || a.esecutore === 'compatibile') && ammessi.includes('low')) return 'low'
   const ordine = regole.effort
   const corsia = corsiaDi(a, regole)
   const modo = regole.risorse.modoLavoro ?? RISORSE_DEFAULT.modoLavoro
@@ -687,7 +700,8 @@ export const dipendenzeChiuse = (a: Azione, lista: readonly Azione[]) => dipende
 export function revisoreConcreto(a: Azione, regole: Regole): string | undefined {
   if (a.revisore === 'nessuno') return undefined
   if (a.revisore === 'codex') return 'motore:codex'
-  if (a.esecutore === 'codex') return regole.corsiaCodex.rivistoDa[corsiaDi(a, regole) ?? ''] ?? COORDINATORE_PREDEFINITO
+  // F13.3b: no routing row can exist for an arbitrary catalogue id: the Claude coordinator of the lane reviews, like Codex.
+  if (a.esecutore === 'codex' || a.esecutore === 'compatibile') return regole.corsiaCodex.rivistoDa[corsiaDi(a, regole) ?? ''] ?? COORDINATORE_PREDEFINITO
   const autore = modelloDi(a, regole)
   if (sensibile(a, regole)) return autore === 'claude-fable-5-1' ? 'claude-opus-5-5' : 'claude-fable-5-1'
   return (regole.revisori[autore] ?? []).find(r => r.startsWith('claude-') && r !== autore)
@@ -696,7 +710,7 @@ export function revisoreConcreto(a: Azione, regole: Regole): string | undefined 
 /** Dove gira davvero un'azione (F6): l'esecutore esterno decide da sé, altrimenti la destinazione. */
 export type Modalita = 'local' | 'cloud' | 'api-claude' | 'esterno'
 /** La modalità effettiva: una sola funzione per pannello, strumenti e coda, da cui dipendono le guardie. */
-export const modalitaDi = (a: Pick<Azione, 'esecutore' | 'destinazione'>): Modalita => (a.esecutore === 'freellmapi' ? 'esterno' : (a.destinazione ?? 'local'))
+export const modalitaDi = (a: Pick<Azione, 'esecutore' | 'destinazione'>): Modalita => (a.esecutore === 'freellmapi' || a.esecutore === 'compatibile' ? 'esterno' : (a.destinazione ?? 'local'))
 
 /** Le destinazioni della 2.2.0 (F6): API Codex e Codex cloud restano fuori. */
 export const DESTINAZIONI: readonly Destinazione[] = ['local', 'cloud', 'api-claude']
@@ -783,7 +797,7 @@ export type Consiglio = { d: Destinazione; motivi: Msg[] }
  * null = niente da consigliare.
  */
 export function consigliaDove(a: Azione, regole: Regole, limiti: readonly Limite[], lista: readonly Azione[], spesaApi?: number | null, adesso = Date.now(), spesaProgetto?: number | null): Consiglio | null {
-  if (a.destinazione !== undefined || a.esecutore === 'freellmapi') return null
+  if (a.destinazione !== undefined || modalitaDi(a) === 'esterno') return null
   if (sensibile(a, regole)) return { d: 'local', motivi: [msg('cons.sensibile')] }
   const ammesse = destinazioniPer(a, regole, lista, true).filter(x => !x.motivo).map(x => x.d)
   const pct = (f: Fornitore) => piuPieno(limiti, f, adesso)?.percentuale
@@ -829,12 +843,25 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
   const politica = regole.risorse
   const modo = modalitaDi(a)
   if (politica.soloLocale) v.push(msg('v.soloLocale'))
-  if (!politica.fornitori.includes(a.esecutore)) v.push(msg('v.fornitoreNonAbilitato', { fornitore: a.esecutore }))
+  // F13.3b: a registry provider is enabled by the project's own opt-in (`compatibili`), connected by its key or by needing none.
+  const compatibile = a.esecutore === 'compatibile'
+  const livelloEsterno = compatibile ? (politica.compatibili ?? {})[a.provider ?? ''] ?? 'niente' : politica.freellmapi.livello
+  if (compatibile) {
+    if (!voceCompatibile(a.provider)) v.push(msg('cmp.ignoto', { provider: String(a.provider ?? '—') }))
+    else if (livelloEsterno === 'niente') v.push(msg('v.fornitoreNonAbilitato', { fornitore: a.provider! }))
+    else if (!(regole.compatibiliConnessi ?? []).includes(a.provider!)) v.push(msg('v.nonConnesso', { fornitore: a.provider! }))
+    else {
+      const b = baseDi(a.provider!, politica.account?.compatibili?.[a.provider!])
+      if ('motivo' in b) v.push(msg('cmp.configurazione', { provider: a.provider!, motivo: b.motivo }))
+    }
+    if (!modello) v.push(msg('cmp.modello'))
+  } else if (!politica.fornitori.includes(a.esecutore)) v.push(msg('v.fornitoreNonAbilitato', { fornitore: a.esecutore }))
   else if (!connesso(regole, a.esecutore)) v.push(msg('v.nonConnesso', { fornitore: a.esecutore }))
   if (a.revisore !== 'nessuno' && !politica.fornitori.includes(a.revisore)) v.push(msg('v.revisoreNonAbilitato', { revisore: a.revisore }))
-  if (!regole.modelli[a.esecutore].length) v.push(msg('v.nessunModello', { esecutore: a.esecutore }))
-  if (a.esecutore === 'freellmapi') {
-    if (!corsia || !['R0', 'R1', ...(politica.freellmapi.livello === 'R2' ? ['R2'] : [])].includes(corsia) || politica.freellmapi.livello === 'niente')
+  if (!compatibile && !regole.modelli[a.esecutore].length) v.push(msg('v.nessunModello', { esecutore: a.esecutore }))
+  // Every non-Claude text executor: same lanes, LAN-data filter, text limit, isolation, Claude review and low effort (F13 r1.7).
+  if (a.esecutore === 'freellmapi' || compatibile) {
+    if (!corsia || !['R0', 'R1', ...(livelloEsterno === 'R2' ? ['R2'] : [])].includes(corsia) || livelloEsterno === 'niente')
       v.push(msg('v.freeCorsia'))
     if (datiLocali(`${a.titolo}\n${a.brief}\n${a.background ?? ''}\n${regole.background}`)) v.push(msg('v.datiLan'))
     if (a.contesto === 'fork' || (a.destinazione ?? 'local') !== 'local' || a.worktree === false) v.push(msg('v.freeIsolato'))
@@ -856,8 +883,8 @@ export function violazioni(a: Azione, regole: Regole, lista: readonly Azione[] =
   if (a.effort && a.effort !== effort) v.push(msg('v.effortOltre', { effort: a.effort, modello: nomeModello(modello) }))
   // Il revisore che il mandato nominerà deve stare nella matrice dell'autore e non essere l'autore.
   const rev = revisoreConcreto(a, regole)
-  const ammessi = regole.revisori[modello]
-  if (a.revisore !== 'nessuno' && !ammessi)
+  const ammessi = compatibile ? undefined : regole.revisori[modello]
+  if (a.revisore !== 'nessuno' && !ammessi && !compatibile)
     v.push(msg('v.rigaRevisori', { modello: nomeModello(modello) }))
   if (a.revisore !== 'nessuno') {
     if (!rev) v.push(msg('v.revisoreClaude', { modello: nomeModello(modello) }))
@@ -924,7 +951,7 @@ export function violazioniAvvio(a: Azione, regole: Regole, lista: readonly Azion
   if (!a.repo) v.push(msg('v.senzaProgetto'))
   else if (!chi.repo) v.push(msg('v.progettoIgnoto'))
   else if (a.repo !== chi.repo) v.push(msg('v.altroProgetto', { repo: a.repo }))
-  if (a.esecutore === 'freellmapi') {
+  if (a.esecutore === 'freellmapi' || a.esecutore === 'compatibile') {
     if (qui) v.push(msg('v.freeQui'))
     return v
   }
@@ -1169,7 +1196,8 @@ export function normalizza(x: unknown): Azione | Msg {
   if (typeof a.id !== 'string' || !ID_RE.test(a.id)) return msg('rec.campo', { campo: 'id' })
   if (typeof a.titolo !== 'string' || !a.titolo || typeof a.brief !== 'string' || !a.brief) return msg('rec.titolo')
   if (!STATI.includes(a.stato as StatoAzione) || !tra('statoPrima', STATI)) return msg('rec.campo', { campo: 'stato' })
-  if (!['claude', 'codex', 'freellmapi'].includes(a.esecutore as string) || !['claude', 'codex', 'nessuno'].includes(a.revisore as string))
+  if (!['claude', 'codex', 'freellmapi', 'compatibile'].includes(a.esecutore as string) || !['claude', 'codex', 'nessuno'].includes(a.revisore as string) ||
+      (a.esecutore === 'compatibile') !== (a.provider !== undefined) || (a.provider !== undefined && !voceCompatibile(a.provider)))
     return msg('rec.campo', { campo: 'esecutore/revisore' })
   if (!Number.isFinite(a.ordine)) return msg('rec.campo', { campo: 'ordine' })
   if (a.dipende !== undefined && !(Array.isArray(a.dipende) && a.dipende.every(d => typeof d === 'string' && ID_RE.test(d))))
@@ -1178,7 +1206,7 @@ export function normalizza(x: unknown): Azione | Msg {
   if (a.sessione !== undefined && !(typeof a.sessione === 'string' && SESSIONE_RE.test(a.sessione))) return msg('rec.campo', { campo: 'sessione' })
   if (!tra('corsia', CORSIE) || !tra('contesto', ['fresh', 'fork']) || !tra('destinazione', ['local', 'cloud', 'api-claude'])) return msg('rec.campo', { campo: 'opzioni' })
   if (!tra('permessi', ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'])) return msg('rec.campo', { campo: 'permessi' })
-  if (!tra('lanciatore', ['cli', 'freellmapi', 'api-claude']) || !str('risultato', 30000)) return msg('rec.campo', { campo: 'esecuzione' })
+  if (!tra('lanciatore', ['cli', 'freellmapi', 'api-claude', 'compatibile']) || !str('risultato', 30000)) return msg('rec.campo', { campo: 'esecuzione' })
   if (a.costoApi !== undefined && a.costoApi !== null && !numero(a.costoApi, 0, 1_000_000)) return msg('rec.campo', { campo: 'esecuzione' })
   if (!bool('worktree') || !bool('sveglia') || !bool('sensibile') || !bool('qui') || !bool('incerto') || !bool('manuale') || !bool('presa')) return msg('rec.campo', { campo: 'opzioni' })
   if (a.ramo !== undefined && !(typeof a.ramo === 'string' && RAMO_RE.test(a.ramo))) return msg('rec.campo', { campo: 'ramo' })

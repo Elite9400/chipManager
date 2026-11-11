@@ -1,6 +1,7 @@
-export type Motore = 'claude' | 'codex' | 'freellmapi'
+/** F13.3b: `compatibile` = an OpenAI-compatible provider from the registry (hooks/compatibili.ts), named by `Azione.provider`. */
+export type Motore = 'claude' | 'codex' | 'freellmapi' | 'compatibile'
 export type Revisore = 'claude' | 'codex' | 'nessuno'
-export type Fornitore = Motore | 'deepseek'
+export type Fornitore = Exclude<Motore, 'compatibile'> | 'deepseek'
 export type Peso = { tipo: 'fornitore' | 'modello' | 'effort'; nome: string; percentuale: number; assoluto: number }
 export type Limite = {
   id: string
@@ -24,7 +25,9 @@ export type SogliePerStrato = Partial<Record<Fornitore, Soglia | null>>
 /** F10: le restrizioni di un progetto (`progetti[repo].restrizioni`): possono solo restringere l'account, mai allargarlo. */
 export type Restrizioni = { soglie?: SogliePerStrato; apiLimiteMeseUsd?: number; apiTetto?: number }
 /** F10: lo strato Account (`account` nella radice del config), uguale in tutti i progetti; letto e convalidato, senza predefiniti. */
-export type StratoAccount = { soglie: SogliePerStrato; limitiManuali: Limite[]; apiClaude?: { budgetUsd: number; tetto?: number }; freellmapi?: { endpoint: string }; modoLavoro?: ModoLavoro }
+export type StratoAccount = { soglie: SogliePerStrato; limitiManuali: Limite[]; apiClaude?: { budgetUsd: number; tetto?: number }; freellmapi?: { endpoint: string }; modoLavoro?: ModoLavoro
+  /** F13.3b: per registry provider, a loopback endpoint (local servers) or the Qwen region / workspace host. */
+  compatibili?: Record<string, { endpoint?: string; regione?: 'intl' | 'cn' | 'us'; workspace?: string }> }
 /**
  * F11.1: il modo di lavoro di uno strato, grezzo (assente o null = eredita). Preferenze, non guardie: il progetto
  * sostituisce l'account campo per campo; le guardie (minimi di corsia e di motore, R4/R5, permessi) vincono sempre.
@@ -64,6 +67,8 @@ export type RisorseProgetto = {
   pesi: Peso[]
   limitiManuali: Limite[]
   freellmapi: { livello: 'niente' | 'R1' | 'R2'; endpoint: string }
+  /** F13.3b: per-project opt-in of each registry provider and its highest lane (absent = off). */
+  compatibili: Record<string, 'R1' | 'R2'>
   /** Soglie EFFICACI (F10: account e progetto combinati) di attenzione e critica per fornitore, in percentuale; null = nessuna. */
   soglie: Record<Fornitore, Soglia | null>
   /** Board di progetto in HTML: `generazione` cresce a ogni cambio di `modo` (lo incrementa l'helper sotto il lock del config). */
@@ -166,6 +171,8 @@ export type Azione = {
   /** Id di azioni che devono essere COMPLETATE (fuse) prima di avviare questa. */
   dipende: string[]
   esecutore: Motore
+  /** F13.3b: the registry provider id when `esecutore` is `compatibile`. */
+  provider?: string
   revisore: Revisore
   modello?: string
   effort?: string
@@ -241,7 +248,9 @@ export type Azione = {
   erroreCodice?: string
   erroreParametri?: Record<string, unknown>
   /** Esecuzione CLI/proxy: il gettone identifica il record privato nell'helper. */
-  lanciatore?: 'cli' | 'freellmapi' | 'api-claude'
+  lanciatore?: 'cli' | 'freellmapi' | 'api-claude' | 'compatibile'
+  /** F13a↔F13b: the cost of a run, kept apart by kind (estimated, observed, unknown, free). */
+  costo?: { tipo: 'stimato' | 'osservato' | 'ignoto' | 'gratuito'; usd?: number }
   /** F6.2: costo stimato in USD dell'esecuzione a crediti API (`total_cost_usd`); null = ignoto (conta il tetto). */
   costoApi?: number | null
   /** F7.2: l'ultimo «Cambia» su una sessione al lavoro: che cosa, verso quale valore, con quale esito (incerto = da ricontrollare). */
@@ -311,6 +320,8 @@ export type Regole = {
    * connessi (il loro login non si legge in modo affidabile); DeepSeek e FreeLLMAPI solo con la chiave. Assente = tutti.
    */
   connessi?: Fornitore[]
+  /** F13.3b: registry providers usable now (key present, or no key needed). Absent = none. */
+  compatibiliConnessi?: string[]
 }
 
 /** F6.2: perché il lock della corsia API resta tenuto: uscita non registrata, discendenti, file-chiave, cache della chiave. */
