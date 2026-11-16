@@ -664,10 +664,12 @@ export async function vistaImpostazioni($: EngineInterface, d: Dati) {
             onPress={() => void esegui('regole-guida', async () => { if (await c.creaRegole()) $.ui.toast(T('rot.creato')) }, '')} />
         ) : null}
         {errore('regole-guida')}
-        {/* The helper opens exact help addresses only (no anchor): the published button opens the page, the text names the section. */}
+        {/* The helper opens exact help addresses only (no anchor): the published button opens the page; the text with the
+            section's address stays in both states, so the terminal can still copy it. */}
         {SITO_PUBBLICATO
           ? <Button key="regole-guida-apri" variant="secondary" label={T('rot.apri')} onPress={() => void c.fai(() => c.apriPagina(urlAiuto('quick-start')))} />
-          : <Text key="regole-guida-url" wrap="wrap">{T('rot.guida', { url: `${urlAiuto('quick-start')}#rules` })}</Text>}
+          : null}
+        <Text key="regole-guida-url" wrap="wrap">{T('rot.guida', { url: `${urlAiuto('quick-start')}#rules` })}</Text>
       </Box>,
     ]
   }

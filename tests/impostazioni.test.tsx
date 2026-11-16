@@ -25,7 +25,7 @@ import {
 import { bilancia, progettoDa, regoleDa, REGOLE_DEFAULT, risorseDa, RISORSE_DEFAULT, violazioniAvvio } from '../hooks/logica'
 import { campoRegoleMancante, regoleIniziali, testoRegoleIniziali } from '../hooks/regole-iniziali'
 import { LEGENDA, LINGUE, t } from '../hooks/lingua'
-import { destinazioneKnowledgebase, PAGINE_AIUTO, urlAiuto } from '../hooks/aiuto'
+import { destinazioneKnowledgebase, PAGINE_AIUTO, SITO_PUBBLICATO, urlAiuto } from '../hooks/aiuto'
 import { ACCENTO, ALFA_VELO, GRIGIO, VELO } from '../hooks/tema'
 import { MAX_URL, rapportoRedatto, urlRapporto } from '../hooks/rapporto'
 import { usoDesktop } from '../hooks/risorse'
@@ -751,8 +751,10 @@ test('F13.4 Aiuto: ultima sezione, chiusa all\'apertura; una riga per corsia, le
   expect(await ui.find({ key: 'aiuto-copia' })).toBeUndefined()
   const kb = await ui.find({ type: 'Button', key: 'aiuto-knowledgebase' })
   expect([kb?.props.label, kb?.props.variant]).toEqual(['Documentazione', 'primary'])
-  expect(testi(await ui.drawn()).some(x => /^Indirizzo: .*\/docs\/site\/index\.html$/.test(x))).toBe(true)
-  // Il sito non è pubblicato: il tasto chiede all'helper la sola copia locale, col suo segnaposto.
+  // L'indirizzo scritto è quello che il tasto apre: il sito pubblicato, oppure la copia installata con il plugin.
+  const indirizzo = SITO_PUBBLICATO ? `Indirizzo: ${urlAiuto('index')}` : /^Indirizzo: .*\/docs\/site\/index\.html$/
+  expect(testi(await ui.drawn()).some(x => (typeof indirizzo === 'string' ? x === indirizzo : indirizzo.test(x)))).toBe(true)
+  // Prima di Pages il tasto chiede all'helper la sola copia locale, col suo segnaposto; dopo, la home pubblicata.
   expect([destinazioneKnowledgebase(false), destinazioneKnowledgebase(true)]).toEqual(['knowledgebase-locale', urlAiuto('index')])
   expect(LEGENDA.corsie).toEqual(['legenda.r0', 'legenda.r1', 'legenda.r2', 'legenda.r3', 'legenda.r4', 'legenda.r5'])
   expect(t('it', 'legenda.r5')).toContain('Claude')

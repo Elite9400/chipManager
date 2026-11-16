@@ -225,6 +225,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Changed
 
+- **Documentation site published** on GitHub Pages (https://elite9400.github.io/chipManager/site/): Help, «Knowledgebase»
+  and the routing.json guide open its pages; the address stays written for the terminal.
 - **F12 presentation**: spaced cards and rounded attribute pills, compact graphical session cards, filled ready
   **Start** buttons, consistent Load/Settings/setup/doctor sections, clearer Gamma tracks, and a responsive static
   board. Card titles retain translated casing; section labels are uppercase only on desktop. Heading bars never

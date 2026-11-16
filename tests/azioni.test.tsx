@@ -5154,7 +5154,8 @@ test('F14.3 setup: scartato non torna da solo; scartato o fallito si ripropone d
   await ui.unmount()
 })
 
-test('F14.3 setup: all\'avvio si ricontrollano plugin e vincoli; spento dopo la proposta, esecutore o destinazione cambiati, avvio non interattivo = bloccata col motivo', async ($, on) => {
+// Several start scenarios in one session (CPU only, fake clock): about 5 s under a loaded suite.
+test('F14.3 setup: all\'avvio si ricontrollano plugin e vincoli; spento dopo la proposta, esecutore o destinazione cambiati, avvio non interattivo = bloccata col motivo', LUNGA, async ($, on) => {
   let elenco: object[] = [{ id: POCOCK_MOD, scope: 'user', enabled: true }]
   let comandi = [CMD_SETUP]
   const amb = ambienteF14(on, { elenco: () => elenco, comandi: () => comandi })

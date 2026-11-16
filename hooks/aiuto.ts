@@ -9,10 +9,10 @@ export const SITO_AIUTO = 'https://elite9400.github.io/chipManager/site/'
 export const urlAiuto = (p: PaginaAiuto) => `${SITO_AIUTO}${p}.html`
 
 /**
- * GitHub Pages needs the owner's yes at release (F13 r1.10). Until it is on, Help shows each address as copyable text and
- * opens nothing; switching this to true is the only change needed after publishing.
+ * GitHub Pages is on since the 2.2.0 release: Help and «Knowledgebase» open the published pages. Set it back to false
+ * only if the site is taken down (then «Knowledgebase» opens the copy installed with the plugin).
  */
-export const SITO_PUBBLICATO = false
+export const SITO_PUBBLICATO = true
 
 /**
  * RC 2.2.0: until the site is published, «Knowledgebase» opens the copy installed with the plugin. The panel sends only
