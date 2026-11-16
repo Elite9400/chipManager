@@ -6,93 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-### Security
-
-- **Baseline skills: the approval covers everything that runs on its own.** The install preview and the content digest
-  now include MCP and LSP servers (`.mcp.json`, `.lsp.json` or the manifest's `mcpServers`/`lspServers`), monitors and
-  the mod modules a hooks file loads, besides hooks. A manifest field the mod does not know, or a component it cannot
-  read, stops the install. For TokenEconomizer the components its marketplace entry declares count too, and its
-  marketplace manifest may differ from the approved commit only by `defaultEnabled: false` (structural comparison).
-  Every line is shown, 20 to a page, each page confirmed; a preview too long to show stops the install. A hook that is
-  not a `command` (http, prompt, agent) shows every field; every control, format character (zero-width and
-  bidirectional marks, the BOM), line or paragraph separator, and the other invisible fillers show as `\u{..}`. The
-  plugin's `settings.json` and manifest `settings` (with the whole file of the agent `settings.agent` selects), the
-  files in `bin/` (on the Bash PATH), the root `SKILL.md` and the raw frontmatter of every skill and command are shown
-  too; a frontmatter that cannot be delimited, or a folder that cannot be listed, is a refusal. MCP and LSP servers and
-  monitors show their whole entry (`env`, `headers`, `cwd`, `type`), not only the command or address. The dynamic
-  context of skills and commands (every `` !`cmd` `` line and ```` ```! ```` block, which the host runs when the skill is
-  invoked) is shown with file and line number; one that cannot be delimited is a refusal. Skill and command files match
-  in any letter case, default folders are read even when the manifest declares its own, and every output style is shown
-  whole, frontmatter and body. Hangul fillers, the blank Braille pattern and variation selectors show as `\u{..}`.
-- **The approval fingerprints the whole plugin.** The fingerprint is the sha256 of the entire plugin tree on disk, raw
-  bytes of every file and, on POSIX, its owner's executable bit (as git reads it) (`.git` left out), computed from a checkout of the approved
-  revision and from the installed copy alike; a link anywhere is a refusal. The host's marks (`.in_use`, `.orphaned_at`)
-  are refused in the revision, in any letter case, and left out of the installed copy only with the exact name and the
-  exact text the host writes. Any change to
-  any file turns the plugin off at start-up. **Baseline skills approved with earlier builds must be approved again.**
-- **Default rules: no write into `.git` by another name.** The rules path refuses `~` (Windows short names such as
-  `GIT~1`) and segments ending in a dot or a space, for the reader and the helper alike; a folder whose real name is
-  `.git` stops the creation. The real root is fixed (path and dev+ino) before any check; after opening the new file
-  the helper checks it is the one at the name (dev+ino), under that fixed root with no `.git` folder on the way, and the
-  root is still the same, or removes its own file and refuses. Known limit: a folder swapped in the short window after
-  the last real-path check needs a concurrent local process with write access to the repository.
-- **TokenEconomizer runs none of its code at the first consent.** Install only clones, checks the commit and records it
-  disabled; its global configuration and status check run when you enable it, after the second consent. Both questions
-  say so, in six languages.
-- **`routing.json` values cannot reach a command.** Model ids must match `[A-Za-z0-9._:-]{1,80}` and effort values the
-  closed list (low to max); otherwise the rules count as not read, with the field named.
-- **API lane: the helper owns the month and the project.** The budget month is computed by the helper in local time,
-  and the project that picks the month limit must be the chip's own. The Load view uses the same local month.
-- **Dollar caps of chains and director trees.** A project can only lower the account's caps (minimum, as for the cap
-  per run). Under such a cap a step on a remote OpenAI-compatible provider does not start, since its cost is unknown; a
-  local server is free and runs.
-
-### Known limits
-
-- **TokenEconomizer installs only on Windows, from a git checkout without symlinks.** Upstream's `plugin/lib/tokeneconomizer`
-  is a symlink, and the approval refuses any link in the plugin tree, so on Linux, macOS or with `core.symlinks=true`
-  the install stops before the consent, safely, with nothing installed. Settings → Work mode says «Windows only in
-  2.2.0» next to it, in six languages.
-- **TokenEconomizer's runtime is outside the fingerprint.** Its hooks import the package at the root of the clone,
-  outside the fingerprinted `plugin/` folder; that code is checked by the clone's commit and `git status` only, which
-  do not see ignored files. A `.pyc` planted under `__pycache__/` by someone who can already write to the mod's data
-  folder is not detected. Same level as the known limit of the default rules: it needs local write access. The Python
-  commands the mod runs for it set `PYTHONDONTWRITEBYTECODE=1`; its hooks run by the host do not, so if a byte-code cache
-  ever lands in the fingerprinted copy it is still turned off at start-up, and the message says the only difference is
-  `__pycache__/*.pyc`, in six languages, so it can be reported.
-
-### Fixed
-
-- **API lane with a linked `.claude`.** Starting an API chip no longer fails with «the mod's data must be outside any
-  repository» when `.claude` (or the home) is a junction above the data folders: the API lane's commands now register
-  their roots (actions folder, machine folder, config folder) before any check, like the other commands; the baseline
-  skill installer checks its own files against its data folder. A link inside a data folder is still refused.
-- **«Fix» next to the data-path error.** When a chip stops because its data folder is out of place, a Fix button opens
-  the doctor and checks again; if the data can move, it offers the doctor's remedy (copy to the safe default folder,
-  verified, after your confirmation, the old folder left intact); otherwise the doctor shows the path check.
-- **Help: a Knowledgebase button.** It replaces «Copy the addresses». Once the site is published it opens its home
-  page; until then it opens the copy installed with the plugin (`docs/site/index.html`) in the browser: the panel sends
-  only a fixed token, and the helper opens that one file after checking it has no link on the way and stays inside the
-  plugin folder. The address stays written under the button, for the terminal.
-- **`/chipmanager` never fails silently.** If the mod's data cannot be read (or anything else in the command fails), the
-  panel opens on the doctor anyway, and the command answers in the user's language, suggesting `/reload-plugins` after
-  an update. It names only a short list of known, safe reasons; any other error gets a generic sentence (an exception's
-  text never leaves, as it may hold private paths), and the details stay with the doctor's own masked check.
-- **Chain deliveries are one write.** A step's artefact and its `consegnata` record are written together by the helper,
-  with a compare-and-swap on the record version read by the panel: a late or concurrent delivery writes nothing, and an
-  artefact a record has already delivered is never overwritten.
-- **Director children on OpenAI-compatible providers can start.** The director's constraints now carry the compatible
-  providers its project allows (only ever narrowed), the helper copies them into each child, and checks and planning
-  always use the director's current constraints; a child is checked against its own provider.
-- **«Start all» queues a chain step before composing its text.** A rewrite whose review has not been delivered goes to
-  the queue; the text is composed and confirmed when its dependencies are met.
-- **API lane: a run stopped before any process started releases its reservation**, month and group together, so
-  «Retry» under a director cap is not blocked.
-- **Monthly API spend in the Load view and the destination advisor** counts the reported cost like the helper (an
-  unknown cost counts the cap or the reported cost, whichever is higher), with the same register validation; a parity
-  test checks both.
-
-## [2.2.0] - 2026-11-07
+## [2.2.0] - 2026-11-16
 
 ### Added
 
@@ -417,6 +331,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - The doctor no longer reports a project's `routing`, `sensibili` and `background` as unknown fields; its known-field
   lists follow the typed config, checked by a test.
 
+- **API lane with a linked `.claude`.** Starting an API chip no longer fails with «the mod's data must be outside any
+  repository» when `.claude` (or the home) is a junction above the data folders: the API lane's commands now register
+  their roots (actions folder, machine folder, config folder) before any check, like the other commands; the baseline
+  skill installer checks its own files against its data folder. A link inside a data folder is still refused.
+- **«Fix» next to the data-path error.** When a chip stops because its data folder is out of place, a Fix button opens
+  the doctor and checks again; if the data can move, it offers the doctor's remedy (copy to the safe default folder,
+  verified, after your confirmation, the old folder left intact); otherwise the doctor shows the path check.
+- **Help: a Knowledgebase button.** It replaces «Copy the addresses». Once the site is published it opens its home
+  page; until then it opens the copy installed with the plugin (`docs/site/index.html`) in the browser: the panel sends
+  only a fixed token, and the helper opens that one file after checking it has no link on the way and stays inside the
+  plugin folder. The address stays written under the button, for the terminal.
+- **`/chipmanager` never fails silently.** If the mod's data cannot be read (or anything else in the command fails), the
+  panel opens on the doctor anyway, and the command answers in the user's language, suggesting `/reload-plugins` after
+  an update. It names only a short list of known, safe reasons; any other error gets a generic sentence (an exception's
+  text never leaves, as it may hold private paths), and the details stay with the doctor's own masked check.
+- **Chain deliveries are one write.** A step's artefact and its `consegnata` record are written together by the helper,
+  with a compare-and-swap on the record version read by the panel: a late or concurrent delivery writes nothing, and an
+  artefact a record has already delivered is never overwritten.
+- **Director children on OpenAI-compatible providers can start.** The director's constraints now carry the compatible
+  providers its project allows (only ever narrowed), the helper copies them into each child, and checks and planning
+  always use the director's current constraints; a child is checked against its own provider.
+- **«Start all» queues a chain step before composing its text.** A rewrite whose review has not been delivered goes to
+  the queue; the text is composed and confirmed when its dependencies are met.
+- **API lane: a run stopped before any process started releases its reservation**, month and group together, so
+  «Retry» under a director cap is not blocked.
+- **Monthly API spend in the Load view and the destination advisor** counts the reported cost like the helper (an
+  unknown cost counts the cap or the reported cost, whichever is higher), with the same register validation; a parity
+  test checks both.
+
 ### Security
 
 - **API key.** The Anthropic API key lives in the sensitive plugin option, never in the configuration, a brief or
@@ -442,6 +385,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   it is written under the configuration lock only if mode and generation are still the expected ones. No scripts, no
   remote resources, a strict Content-Security-Policy, attempt tokens masked.
 
+- **Baseline skills: the approval covers everything that runs on its own.** The install preview and the content digest
+  now include MCP and LSP servers (`.mcp.json`, `.lsp.json` or the manifest's `mcpServers`/`lspServers`), monitors and
+  the mod modules a hooks file loads, besides hooks. A manifest field the mod does not know, or a component it cannot
+  read, stops the install. For TokenEconomizer the components its marketplace entry declares count too, and its
+  marketplace manifest may differ from the approved commit only by `defaultEnabled: false` (structural comparison).
+  Every line is shown, 20 to a page, each page confirmed; a preview too long to show stops the install. A hook that is
+  not a `command` (http, prompt, agent) shows every field; every control, format character (zero-width and
+  bidirectional marks, the BOM), line or paragraph separator, and the other invisible fillers show as `\u{..}`. The
+  plugin's `settings.json` and manifest `settings` (with the whole file of the agent `settings.agent` selects), the
+  files in `bin/` (on the Bash PATH), the root `SKILL.md` and the raw frontmatter of every skill and command are shown
+  too; a frontmatter that cannot be delimited, or a folder that cannot be listed, is a refusal. MCP and LSP servers and
+  monitors show their whole entry (`env`, `headers`, `cwd`, `type`), not only the command or address. The dynamic
+  context of skills and commands (every `` !`cmd` `` line and ```` ```! ```` block, which the host runs when the skill is
+  invoked) is shown with file and line number; one that cannot be delimited is a refusal. Skill and command files match
+  in any letter case, default folders are read even when the manifest declares its own, and every output style is shown
+  whole, frontmatter and body. Hangul fillers, the blank Braille pattern and variation selectors show as `\u{..}`.
+- **The approval fingerprints the whole plugin.** The fingerprint is the sha256 of the entire plugin tree on disk, raw
+  bytes of every file and, on POSIX, its owner's executable bit (as git reads it) (`.git` left out), computed from a checkout of the approved
+  revision and from the installed copy alike; a link anywhere is a refusal. The host's marks (`.in_use`, `.orphaned_at`)
+  are refused in the revision, in any letter case, and left out of the installed copy only with the exact name and the
+  exact text the host writes. Any change to
+  any file turns the plugin off at start-up. **Baseline skills approved with earlier builds must be approved again.**
+- **Default rules: no write into `.git` by another name.** The rules path refuses `~` (Windows short names such as
+  `GIT~1`) and segments ending in a dot or a space, for the reader and the helper alike; a folder whose real name is
+  `.git` stops the creation. The real root is fixed (path and dev+ino) before any check; after opening the new file
+  the helper checks it is the one at the name (dev+ino), under that fixed root with no `.git` folder on the way, and the
+  root is still the same, or removes its own file and refuses. Known limit: a folder swapped in the short window after
+  the last real-path check needs a concurrent local process with write access to the repository.
+- **TokenEconomizer runs none of its code at the first consent.** Install only clones, checks the commit and records it
+  disabled; its global configuration and status check run when you enable it, after the second consent. Both questions
+  say so, in six languages.
+- **`routing.json` values cannot reach a command.** Model ids must match `[A-Za-z0-9._:-]{1,80}` and effort values the
+  closed list (low to max); otherwise the rules count as not read, with the field named.
+- **API lane: the helper owns the month and the project.** The budget month is computed by the helper in local time,
+  and the project that picks the month limit must be the chip's own. The Load view uses the same local month.
+- **Dollar caps of chains and director trees.** A project can only lower the account's caps (minimum, as for the cap
+  per run). Under such a cap a step on a remote OpenAI-compatible provider does not start, since its cost is unknown; a
+  local server is free and runs.
+
 ### Removed
 
 - The per-card "assign to this project" button, replaced by the one-time request above.
@@ -460,6 +442,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   terminal looks are checked on real captures, not by the tests, which check structure, controls and contrast.
 
 Development history: the plans behind this release, in Italian, are in [`docs/`](docs/).
+
+### Known limits
+
+- **TokenEconomizer installs only on Windows, from a git checkout without symlinks.** Upstream's `plugin/lib/tokeneconomizer`
+  is a symlink, and the approval refuses any link in the plugin tree, so on Linux, macOS or with `core.symlinks=true`
+  the install stops before the consent, safely, with nothing installed. Settings → Work mode says «Windows only in
+  2.2.0» next to it, in six languages.
+- **TokenEconomizer's runtime is outside the fingerprint.** Its hooks import the package at the root of the clone,
+  outside the fingerprinted `plugin/` folder; that code is checked by the clone's commit and `git status` only, which
+  do not see ignored files. A `.pyc` planted under `__pycache__/` by someone who can already write to the mod's data
+  folder is not detected. Same level as the known limit of the default rules: it needs local write access. The Python
+  commands the mod runs for it set `PYTHONDONTWRITEBYTECODE=1`; its hooks run by the host do not, so if a byte-code cache
+  ever lands in the fingerprinted copy it is still turned off at start-up, and the message says the only difference is
+  `__pycache__/*.pyc`, in six languages, so it can be reported.
 
 ## [2.1.0] - 2026-11-05
 
